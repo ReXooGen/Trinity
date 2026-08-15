@@ -99,20 +99,40 @@ namespace trinity::game
         // The socket vector's data pointer for an item value, or 0.
         uintptr_t SocketData(uintptr_t entry)
         {
+            if (entry < kMinPointer) return 0;
             uintptr_t data = 0;
-            if (!ReadPtr(entry + kOff_ItemVal_SocketData, &data) || data < kMinPointer) return 0;
-            return data;
+            // TU 1.17+ offset (+0x60)
+            if (ReadPtr(entry + kOff_ItemVal_SocketData, &data) && data >= kMinPointer)
+                return data;
+            // Legacy offset (+0x58)
+            if (ReadPtr(entry + kOff_ItemVal_SocketData_Legacy, &data) && data >= kMinPointer)
+                return data;
+            return 0;
         }
 
         int UnlockedCount(uintptr_t entry)
         {
-            uint32_t n = 0;
-            if (!Read32(entry + kOff_ItemVal_SocketUnlocked, &n)) return 0;
-            return (n > static_cast<uint32_t>(kSocket_Max)) ? kSocket_Max : static_cast<int>(n);
+            const uintptr_t data = SocketData(entry);
+            if (!data) return 0;
+            int n = 0;
+            for (int k = 0; k < kSocket_Max; ++k)
+            {
+                const uintptr_t rec = data + static_cast<uintptr_t>(k) * kSocketRec_Stride;
+                uint8_t ix = 0xFF;
+                uint16_t mk = 0;
+                if (!Read8(rec + kOff_SockRec_Index, &ix)) break;
+                if (ix == 0xFF) break;
+                if (ix != static_cast<uint8_t>(k)) break;
+                if (!Read16(rec + kOff_SockRec_Marker, &mk)) break;
+                if (mk != 0xFFFF && mk != 0x0000) break;
+                ++n;
+            }
+            return n;
         }
 
         uint16_t GearAt(uintptr_t data, int i)
         {
+            if (!data || i < 0 || i >= kSocket_Max) return kSock_Empty;
             uint16_t g = kSock_Empty;
             Read16(data + static_cast<uintptr_t>(i) * kSocketRec_Stride + kOff_SockRec_GearId, &g);
             return g;
@@ -122,13 +142,14 @@ namespace trinity::game
         // byte for byte the way the game's own socketing writes it.
         bool WriteRecord(uintptr_t data, int i, uint16_t gear)
         {
+            if (!data || i < 0 || i >= kSocket_Max) return false;
             const uintptr_t rec = data + static_cast<uintptr_t>(i) * kSocketRec_Stride;
             const bool filled = (gear != kSock_Empty);
             bool ok = true;
             ok &= Write16(rec + kOff_SockRec_GearId, gear);
             ok &= Write16(rec + kOff_SockRec_Marker, filled ? 0xFFFF : 0x0000);
             ok &= Write8 (rec + kOff_SockRec_Index,  static_cast<uint8_t>(i));
-            ok &= Write8 (rec + kOff_SockRec_State,  filled ? 0x05 : 0x00);
+            ok &= Write8 (rec + kOff_SockRec_State,  filled ? 0x04 : 0x00);
             return ok;
         }
 
@@ -159,8 +180,13 @@ namespace trinity::game
             const uintptr_t data = SocketData(entry);
             if (!data) return;
             for (int k = 0; k < kSocket_Max; ++k)
-                WriteRecord(data, k, GearAt(data, k)); // normalise idx = k, keep the gear
+            {
+                uint16_t g = GearAt(data, k);
+                if (g == 0) g = kSock_Empty;
+                WriteRecord(data, k, g);
+            }
             Write32(entry + kOff_ItemVal_SocketUnlocked, static_cast<uint32_t>(kSocket_Max));
+            Write32(entry + 0x68, static_cast<uint32_t>(kSocket_Max));
         }
 
         // Remove every gear from an unlocked socket on one realm's copy, leaving

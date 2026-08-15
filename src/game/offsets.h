@@ -1398,12 +1398,13 @@ namespace trinity::game
     // Witch-socket does); unlocking a NEW socket also grows a save-data sublist
     // inside the +0x58 target at +0xC0, which we do NOT reproduce - so unlocking
     // renders live but is not durable yet (see Equipment::UnlockAll).
-    inline constexpr uintptr_t kOff_ItemVal_SocketData     = 0x58; // -> record[] (target also has a save sublist @+0xC0)
-    inline constexpr uintptr_t kOff_ItemVal_SocketSize     = 0x60; // u32 vector size (always 5)
-    inline constexpr uintptr_t kOff_ItemVal_SocketCap      = 0x64; // u32 vector capacity (5)
-    inline constexpr uintptr_t kOff_ItemVal_SocketUnlocked = 0x68; // u32 unlocked-socket count = the real socket count
-    inline constexpr uintptr_t kSocketRec_Stride           = 6;
-    inline constexpr int       kSocket_Max                 = 5;    // absolute max (matches the vector capacity)
+    inline constexpr uintptr_t kOff_ItemVal_SocketData        = 0x60; // 1.17+: -> record[] vector data
+    inline constexpr uintptr_t kOff_ItemVal_SocketData_Legacy = 0x58; // Legacy: -> record[]
+    inline constexpr uintptr_t kOff_ItemVal_SocketSize        = 0x68; // u32 vector size (always 5)
+    inline constexpr uintptr_t kOff_ItemVal_SocketCap         = 0x6C; // u32 vector capacity (5)
+    inline constexpr uintptr_t kOff_ItemVal_SocketUnlocked    = 0x70; // u32 unlocked-socket count
+    inline constexpr uintptr_t kSocketRec_Stride              = 6;
+    inline constexpr int       kSocket_Max                    = 5;    // absolute max (matches the vector capacity)
     // Record layout (6 bytes):
     inline constexpr uintptr_t kOff_SockRec_GearId = 0; // u16 abyss-gear typeId (0xFFFF = empty)
     inline constexpr uintptr_t kOff_SockRec_Marker = 2; // u16 0xFFFF when filled, 0x0000 when empty
