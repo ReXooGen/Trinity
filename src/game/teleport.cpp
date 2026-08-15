@@ -148,6 +148,10 @@ namespace trinity::game
         std::array<CandidateSlot, kExpected_MarkerMatches> g_markerCandidates{};
         std::atomic<uint64_t> g_markerProtectFlag{0};
         std::atomic<uint64_t> g_markerProtectDeadline{0};
+        std::atomic<bool> g_pendingMarkerTp{false};
+        std::atomic<float> g_pendingDestX{0.0f};
+        std::atomic<float> g_pendingDestY{0.0f};
+        std::atomic<float> g_pendingDestZ{0.0f};
         uintptr_t g_markerOriginAddress = 0;
         int g_markerCachedCandidate = -1;
         bool g_markerReady = false;
@@ -1316,6 +1320,31 @@ namespace trinity::game
             // reads it (+0xC0). (Super Run lives upstream, in hkLocoStep.)
             ApplyJumpScaling(owner);
 
+            if (g_pendingMarkerTp.load(std::memory_order_acquire))
+            {
+                const Vec3 dest{
+                    g_pendingDestX.load(std::memory_order_relaxed),
+                    g_pendingDestY.load(std::memory_order_relaxed),
+                    g_pendingDestZ.load(std::memory_order_relaxed)
+                };
+                g_pendingMarkerTp.store(false, std::memory_order_release);
+
+                __try
+                {
+                    *reinterpret_cast<Vec3*>(owner + kOff_Player_Dest0) = dest;
+                    *reinterpret_cast<Vec3*>(owner + kOff_Player_Dest1) = dest;
+                    *reinterpret_cast<Vec3*>(owner + 0xC0) = Vec3{ 0.0f, 0.0f, 0.0f };
+
+                    const uintptr_t mp = g_markerPlayer.load(std::memory_order_relaxed);
+                    if (mp >= kMinPointer && mp != owner)
+                    {
+                        *reinterpret_cast<Vec3*>(mp + kOff_Player_Dest0) = dest;
+                        *reinterpret_cast<Vec3*>(mp + kOff_Player_Dest1) = dest;
+                    }
+                }
+                __except (EXCEPTION_EXECUTE_HANDLER) {}
+            }
+
             const uint64_t result = oMoveUpdate(moveOwner, a2, a3, a4, a5, a6, a7);
 
             // Per-frame, game-thread driver for the churn-proof player resolve:
@@ -1667,7 +1696,23 @@ namespace trinity::game
             return MarkerStatus::InvalidCoordinates;
 
         const bool usesFallbackHeight = (marker.y == 0.0f);
-        const float height = usesFallbackHeight ? (fallbackHeight > 0.0f ? fallbackHeight : 1200.0f) : marker.y;
+        float height = marker.y;
+        if (usesFallbackHeight)
+        {
+            if (fallbackHeight > 0.0f)
+            {
+                height = fallbackHeight;
+            }
+            else
+            {
+                const float curY = g_posY.load(std::memory_order_relaxed);
+                if (curY > 200.0f && curY < 3000.0f)
+                    height = curY + 25.0f;
+                else
+                    height = 850.0f;
+            }
+        }
+
         const Vec3 destination{
             marker.x - origin.x,
             height + kMarker_DestLift,
@@ -1679,7 +1724,7 @@ namespace trinity::game
         if (usesFallbackHeight)
         {
             g_markerProtectFlag.store(1, std::memory_order_release);
-            g_markerProtectDeadline.store(GetTickCount64() + 3500, std::memory_order_relaxed);
+            g_markerProtectDeadline.store(GetTickCount64() + 4000, std::memory_order_relaxed);
         }
         else
         {
@@ -1687,35 +1732,28 @@ namespace trinity::game
             g_markerProtectDeadline.store(0, std::memory_order_relaxed);
         }
 
-        bool wrote = false;
+        // Queue on game thread for frame-perfect physics sync
+        g_pendingDestX.store(destination.x, std::memory_order_relaxed);
+        g_pendingDestY.store(destination.y, std::memory_order_relaxed);
+        g_pendingDestZ.store(destination.z, std::memory_order_relaxed);
+        g_pendingMarkerTp.store(true, std::memory_order_release);
+
+        // Immediate application fallback
         __try
         {
             if (moveOwner >= kMinPointer)
             {
                 *reinterpret_cast<Vec3*>(moveOwner + kOff_Player_Dest0) = destination;
                 *reinterpret_cast<Vec3*>(moveOwner + kOff_Player_Dest1) = destination;
-                // Zero out mid-air momentum and falling velocity to eliminate drift
                 *reinterpret_cast<Vec3*>(moveOwner + 0xC0) = Vec3{ 0.0f, 0.0f, 0.0f };
-                wrote = true;
             }
             if (markerPlayer >= kMinPointer && markerPlayer != moveOwner)
             {
                 *reinterpret_cast<Vec3*>(markerPlayer + kOff_Player_Dest0) = destination;
                 *reinterpret_cast<Vec3*>(markerPlayer + kOff_Player_Dest1) = destination;
-                wrote = true;
             }
         }
-        __except (EXCEPTION_EXECUTE_HANDLER)
-        {
-            wrote = false;
-        }
-
-        if (!wrote)
-        {
-            g_markerProtectFlag.store(0, std::memory_order_release);
-            g_markerProtectDeadline.store(0, std::memory_order_relaxed);
-            return MarkerStatus::WriteFailed;
-        }
+        __except (EXCEPTION_EXECUTE_HANDLER) {}
 
         return MarkerStatus::Success;
     }
