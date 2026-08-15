@@ -106,6 +106,16 @@ namespace trinity::game
         // sockets open). Durable, both realms.
         static bool ClearAll(uint16_t tag);
 
+        // --- 1-Click Batch Enhancers -----------------------------------------
+        // Restore durability to 100% on all equipped weapons & armor
+        static bool RepairAll(int* repairedCount = nullptr);
+
+        // Refine all equipped gear to level (default 10)
+        static bool RefineAll(int level = 10, int* refinedCount = nullptr);
+
+        // Force unlock all sockets (all 5 sockets) on every equipped gear
+        static bool UnlockAllGears(int* unlockedCount = nullptr);
+
         // Game-thread upkeep: after a socket edit, re-aggregates the equipped
         // items' effects (the same pass BatchEquip runs on a gear change) so a
         // newly socketed gear takes effect live instead of only after a reload.

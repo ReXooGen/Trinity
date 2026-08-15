@@ -20,6 +20,46 @@
 
 namespace trinity::ui
 {
+    // --- Theme Presets & Dynamic State ---------------------------------------
+    namespace theme
+    {
+        ImU32 HeaderTop  = IM_COL32(128,  10,  26, 255);
+        ImU32 HeaderBot  = IM_COL32( 52,   4,  12, 255);
+        ImU32 Accent     = IM_COL32(214,  36,  56, 255);
+        ImU32 AccentDark = IM_COL32(120,  14,  30, 255);
+
+        struct Preset
+        {
+            ImU32 top, bot, acc, accDark;
+        };
+
+        static const Preset kPresets[] = {
+            // 0: Crimson Red (Default)
+            { IM_COL32(128, 10, 26, 255), IM_COL32(52, 4, 12, 255), IM_COL32(214, 36, 56, 255), IM_COL32(120, 14, 30, 255) },
+            // 1: Cyber Cyan
+            { IM_COL32(10, 80, 128, 255), IM_COL32(4, 30, 52, 255), IM_COL32(0, 195, 255, 255), IM_COL32(14, 90, 120, 255) },
+            // 2: Neon Purple
+            { IM_COL32(100, 10, 128, 255), IM_COL32(40, 4, 52, 255), IM_COL32(185, 36, 214, 255), IM_COL32(100, 14, 120, 255) },
+            // 3: Matrix Emerald
+            { IM_COL32(10, 110, 50, 255), IM_COL32(4, 45, 20, 255), IM_COL32(16, 185, 100, 255), IM_COL32(10, 100, 50, 255) },
+            // 4: Royal Gold
+            { IM_COL32(130, 90, 10, 255), IM_COL32(55, 35, 4, 255), IM_COL32(245, 170, 20, 255), IM_COL32(130, 90, 14, 255) },
+            // 5: Sunset Orange
+            { IM_COL32(135, 45, 10, 255), IM_COL32(55, 18, 4, 255), IM_COL32(255, 95, 30, 255), IM_COL32(135, 50, 14, 255) }
+        };
+
+        void UpdateColors()
+        {
+            int idx = State::Get().themeIndex;
+            if (idx < 0 || idx >= static_cast<int>(sizeof(kPresets) / sizeof(kPresets[0])))
+                idx = 0;
+            HeaderTop  = kPresets[idx].top;
+            HeaderBot  = kPresets[idx].bot;
+            Accent     = kPresets[idx].acc;
+            AccentDark = kPresets[idx].accDark;
+        }
+    }
+
     // --- Shared state (declared in ui_internal.h) -----------------------------
     Nav      g_nav;
     ImFont*  g_fontTitle = nullptr;
@@ -507,6 +547,8 @@ namespace trinity::ui
         ImDrawList* dl = DL();
         ImGuiIO&    io = ImGui::GetIO();
         const float s  = g_scale;
+
+        theme::UpdateColors();
 
         g_width           = 460.0f * s;
         g_x               = 64.0f * s;

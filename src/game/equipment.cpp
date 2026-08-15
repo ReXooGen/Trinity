@@ -473,6 +473,99 @@ namespace trinity::game
         return true;
     }
 
+    bool Equipment::RepairAll(int* repairedCount)
+    {
+        if (repairedCount) *repairedCount = 0;
+        const uintptr_t comp = ClientComp();
+        if (!comp) return false;
+        uintptr_t desc = 0, array = 0;
+        uint32_t count = 0;
+        if (!ReadPtr(comp + kOff_EquipComp_Table, &desc) || desc < kMinPointer) return false;
+        if (!ReadPtr(desc + kOff_EquipTable_Array, &array) || array < kMinPointer) return false;
+        if (!Read32(desc + kOff_EquipTable_Count, &count) || count == 0 || count > 64) return false;
+
+        const uintptr_t scomp = ServerComp();
+        uintptr_t sdesc = 0, sarray = 0;
+        uint32_t scount = 0;
+        if (scomp)
+        {
+            if (ReadPtr(scomp + kOff_EquipComp_Table, &sdesc) && sdesc >= kMinPointer)
+            {
+                ReadPtr(sdesc + kOff_EquipTable_Array, &sarray);
+                Read32(sdesc + kOff_EquipTable_Count, &scount);
+            }
+        }
+
+        int repaired = 0;
+        for (uint32_t i = 0; i < count; ++i)
+        {
+            const uintptr_t entry = array + static_cast<uintptr_t>(i) * kEquipEntry_Stride;
+            uint16_t tid = 0;
+            if (!Read16(entry + kOff_InvSlot_TypeId, &tid) || tid == kInvSlot_EmptyType || tid == 0) continue;
+            int64_t instId = 0;
+            Read64(entry + kOff_ItemVal_InstanceId, &instId);
+
+            // Restore max durability (10000)
+            Write16(entry + kOff_ItemVal_Durability, 10000);
+
+            if (sarray >= kMinPointer && scount > 0)
+            {
+                for (uint32_t s = 0; s < scount; ++s)
+                {
+                    const uintptr_t se = sarray + static_cast<uintptr_t>(s) * kEquipEntry_Stride;
+                    int64_t sid = 0;
+                    if (Read64(se + kOff_ItemVal_InstanceId, &sid) && sid == instId)
+                    {
+                        Write16(se + kOff_ItemVal_Durability, 10000);
+                        break;
+                    }
+                }
+            }
+            ++repaired;
+        }
+        if (repairedCount) *repairedCount = repaired;
+        g_dirty.store(true, std::memory_order_release);
+        return repaired > 0;
+    }
+
+    bool Equipment::RefineAll(int level, int* refinedCount)
+    {
+        if (refinedCount) *refinedCount = 0;
+        const int total = SlotCount();
+        if (total <= 0) return false;
+        int count = 0;
+        for (int i = 0; i < total; ++i)
+        {
+            SlotInfo info{};
+            if (GetSlot(i, &info))
+            {
+                SetRefine(info.tag, level);
+                ++count;
+            }
+        }
+        if (refinedCount) *refinedCount = count;
+        return count > 0;
+    }
+
+    bool Equipment::UnlockAllGears(int* unlockedCount)
+    {
+        if (unlockedCount) *unlockedCount = 0;
+        const int total = SlotCount();
+        if (total <= 0) return false;
+        int count = 0;
+        for (int i = 0; i < total; ++i)
+        {
+            SlotInfo info{};
+            if (GetSlot(i, &info))
+            {
+                UnlockAll(info.tag);
+                ++count;
+            }
+        }
+        if (unlockedCount) *unlockedCount = count;
+        return count > 0;
+    }
+
     // Game thread: if a socket was edited, re-aggregate the equipped items'
     // effects on the client component so the change takes hold now instead of
     // waiting for a reload. This is the same pair BatchEquip runs on a gear

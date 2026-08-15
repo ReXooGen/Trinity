@@ -10,10 +10,10 @@ namespace trinity::ui
     // --- Theme (Crimson Desert: deep reds on near-black) ---------------------
     namespace theme
     {
-        inline constexpr ImU32 HeaderTop  = IM_COL32(128,  10,  26, 255);
-        inline constexpr ImU32 HeaderBot  = IM_COL32( 52,   4,  12, 255);
-        inline constexpr ImU32 Accent     = IM_COL32(214,  36,  56, 255);
-        inline constexpr ImU32 AccentDark = IM_COL32(120,  14,  30, 255);
+        extern ImU32 HeaderTop;
+        extern ImU32 HeaderBot;
+        extern ImU32 Accent;
+        extern ImU32 AccentDark;
         inline constexpr ImU32 RowBg      = IM_COL32( 13,  13,  16, 234);
         inline constexpr ImU32 BarBg      = IM_COL32(  7,   7,   9, 245);
         inline constexpr ImU32 CrumbBg    = IM_COL32( 10,  10,  12, 245);
@@ -23,6 +23,8 @@ namespace trinity::ui
         inline constexpr ImU32 Shadow     = IM_COL32(  0,   0,   0, 160);
         inline constexpr ImU32 SwitchOff  = IM_COL32( 70,  70,  78, 255);
         inline constexpr ImU32 Knob       = IM_COL32(245, 245, 245, 255);
+
+        void UpdateColors();
     }
 
     inline constexpr int kMaxVisible = 12;

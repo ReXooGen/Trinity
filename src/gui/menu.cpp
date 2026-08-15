@@ -425,6 +425,33 @@ namespace trinity::gui
             return;
         }
 
+        if (ui::Option("Repair All Gear", "Restores durability to 100% on all equipped weapons and armor."))
+        {
+            int repaired = 0;
+            if (game::Equipment::RepairAll(&repaired))
+                ui::Toast("Repaired %d equipped piece%s", repaired, repaired == 1 ? "" : "s");
+            else
+                ui::Toast("No equipped gear to repair");
+        }
+
+        if (ui::Option("Max Refine All (+10)", "Sets all equipped gear to refinement level +10."))
+        {
+            int refined = 0;
+            if (game::Equipment::RefineAll(10, &refined))
+                ui::Toast("Refined %d piece%s to +10", refined, refined == 1 ? "" : "s");
+            else
+                ui::Toast("No equipped gear to refine");
+        }
+
+        if (ui::Option("Unlock All Sockets", "Opens all 5 abyss sockets on all equipped weapons and armor."))
+        {
+            int unlocked = 0;
+            if (game::Equipment::UnlockAllGears(&unlocked))
+                ui::Toast("Unlocked sockets on %d piece%s", unlocked, unlocked == 1 ? "" : "s");
+            else
+                ui::Toast("No equipped gear found");
+        }
+
         const int n = game::Equipment::SlotCount();
         for (int i = 0; i < n; ++i)
         {
@@ -711,6 +738,9 @@ namespace trinity::gui
             }
         }
 
+        // Saved Locations (Bookmarks)
+        ui::Submenu("Saved Locations", "saved_locs", "Save and teleport to custom bookmarked coordinates.");
+
         // The game's own fast-travel network: every map gimmick (fast-travel
         // points, ores, chests, shops, bells, dungeons...), grouped by category.
         if (ui::Submenu("Fast Travel", "ftcats",
@@ -846,6 +876,90 @@ namespace trinity::gui
                 }
                 return true;
             });
+
+        ui::End();
+    }
+
+    static void RenderSavedLocations()
+    {
+        State& st = State::Get();
+        ui::Begin();
+
+        float px = 0.0f, py = 0.0f, pz = 0.0f;
+        const bool havePlayer = game::Teleport::GetLastPosition(&px, &py, &pz);
+
+        for (int i = 0; i < State::kMaxSavedLocations; ++i)
+        {
+            auto& loc = st.savedLocations[i];
+            char label[128];
+            char desc[192];
+            if (loc.valid)
+            {
+                snprintf(label, sizeof(label), "%d. %s (X %.0f  Y %.0f  Z %.0f)",
+                         i + 1, loc.name[0] ? loc.name : "Saved Spot", loc.x, loc.y, loc.z);
+                snprintf(desc, sizeof(desc), "Teleport to this saved location.");
+            }
+            else
+            {
+                snprintf(label, sizeof(label), "%d. [Empty Slot]", i + 1);
+                snprintf(desc, sizeof(desc), "Save your current player position to this bookmark slot.");
+            }
+
+            if (ui::Option(label, desc))
+            {
+                if (loc.valid)
+                {
+                    if (game::Teleport::TeleportToCoordinates(loc.x, loc.y, loc.z))
+                        ui::Toast("Teleported to %s", loc.name[0] ? loc.name : "Saved Spot");
+                    else
+                        ui::Toast("Teleport failed");
+                }
+                else
+                {
+                    if (havePlayer)
+                    {
+                        loc.x = px;
+                        loc.y = py;
+                        loc.z = pz;
+                        loc.valid = true;
+                        snprintf(loc.name, sizeof(loc.name), "Location %d", i + 1);
+                        Settings::Save();
+                        ui::Toast("Saved position to slot %d", i + 1);
+                    }
+                    else
+                    {
+                        ui::Toast("Player position not ready");
+                    }
+                }
+            }
+        }
+
+        if (ui::Option("Save Current Position to Slot 1", "Quick save current coordinates into slot 1."))
+        {
+            if (havePlayer)
+            {
+                st.savedLocations[0].x = px;
+                st.savedLocations[0].y = py;
+                st.savedLocations[0].z = pz;
+                st.savedLocations[0].valid = true;
+                if (!st.savedLocations[0].name[0])
+                    snprintf(st.savedLocations[0].name, sizeof(st.savedLocations[0].name), "Location 1");
+                Settings::Save();
+                ui::Toast("Saved to slot 1");
+            }
+            else
+            {
+                ui::Toast("Player position not ready");
+            }
+        }
+
+        if (ui::Option("Clear All Saved Locations", "Resets all bookmark slots."))
+        {
+            for (int i = 0; i < State::kMaxSavedLocations; ++i)
+                st.savedLocations[i] = State::SavedLocation{};
+            Settings::Save();
+            ui::Toast("Cleared all saved locations");
+        }
 
         ui::End();
     }
@@ -1715,6 +1829,15 @@ namespace trinity::gui
         ui::Submenu("Keybinds", "keybinds",
                    "Set the keyboard and controller binds for opening the menu and Free Flight.");
 
+        static const char* const kThemeNames[] = {
+            "Crimson Red", "Cyber Cyan", "Neon Purple", "Matrix Emerald", "Royal Gold", "Sunset Orange"
+        };
+        if (ui::Combo("Theme Color", &st.themeIndex, kThemeNames, 6,
+                      "Customize the mod menu accent and header colors."))
+        {
+            save = true;
+        }
+
         save |= ui::Toggle("Show FPS Counter", &st.showFps, "Shows your FPS in the corner of the screen.") && st.autoSave;
 
         if (ui::Toggle("Auto Save Features", &st.autoSave,
@@ -1784,6 +1907,7 @@ namespace trinity::gui
             }
         }
         else if (!strcmp(cur, "keybinds")) RenderKeybinds();
+        else if (!strcmp(cur, "saved_locs")) RenderSavedLocations();
         else if (!strcmp(cur, "ftcats"))   RenderFastTravelCats();
         else if (!strcmp(cur, "ftnodes"))  RenderFastTravelNodes();
         else if (!strcmp(cur, "dyeslots"))  RenderDyeSlots();

@@ -1757,4 +1757,42 @@ namespace trinity::game
 
         return MarkerStatus::Success;
     }
+
+    bool Teleport::TeleportToCoordinates(float x, float y, float z)
+    {
+        const uintptr_t moveOwner = g_playerMoveOwner.load(std::memory_order_acquire);
+        const uintptr_t markerPlayer = g_markerPlayer.load(std::memory_order_acquire);
+        if (moveOwner < kMinPointer && markerPlayer < kMinPointer)
+            return false;
+
+        const Vec3 destination{ x, y, z };
+        if (!FiniteCoordinate(destination))
+            return false;
+
+        g_markerProtectFlag.store(1, std::memory_order_release);
+        g_markerProtectDeadline.store(GetTickCount64() + 3500, std::memory_order_relaxed);
+
+        g_pendingDestX.store(destination.x, std::memory_order_relaxed);
+        g_pendingDestY.store(destination.y, std::memory_order_relaxed);
+        g_pendingDestZ.store(destination.z, std::memory_order_relaxed);
+        g_pendingMarkerTp.store(true, std::memory_order_release);
+
+        __try
+        {
+            if (moveOwner >= kMinPointer)
+            {
+                *reinterpret_cast<Vec3*>(moveOwner + kOff_Player_Dest0) = destination;
+                *reinterpret_cast<Vec3*>(moveOwner + kOff_Player_Dest1) = destination;
+                *reinterpret_cast<Vec3*>(moveOwner + 0xC0) = Vec3{ 0.0f, 0.0f, 0.0f };
+            }
+            if (markerPlayer >= kMinPointer && markerPlayer != moveOwner)
+            {
+                *reinterpret_cast<Vec3*>(markerPlayer + kOff_Player_Dest0) = destination;
+                *reinterpret_cast<Vec3*>(markerPlayer + kOff_Player_Dest1) = destination;
+            }
+        }
+        __except (EXCEPTION_EXECUTE_HANDLER) {}
+
+        return true;
+    }
 }

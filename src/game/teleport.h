@@ -84,6 +84,9 @@ namespace trinity::game
         // Returns false if no valid marker exists.
         static bool GetMarkerPosition(float* x, float* y, float* z);
 
+        // Teleports the active player to arbitrary world coordinates (x, y, z).
+        static bool TeleportToCoordinates(float x, float y, float z);
+
         // Teleports the active player to the detected map marker.
         // Uses fallbackHeight (default 1200.0f) if the marker altitude is 0.
         // Activates temporary fall protection when safe insertion is needed.

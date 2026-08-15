@@ -97,12 +97,28 @@ namespace trinity
             else if (!strcmp(key, "invStackSizeVal"))     vals.invStackSizeVal     = atoi(val);
             else if (!strcmp(key, "showFps"))             vals.showFps             = atoi(val) != 0;
             else if (!strcmp(key, "fileLogging"))         vals.fileLogging         = atoi(val) != 0;
+            else if (!strcmp(key, "themeIndex"))          vals.themeIndex          = atoi(val);
+            else if (!strncmp(key, "loc", 3))
+            {
+                int idx = key[3] - '0';
+                if (idx >= 0 && idx < State::kMaxSavedLocations)
+                {
+                    if (!strcmp(key + 4, "_valid")) vals.savedLocations[idx].valid = (atoi(val) != 0);
+                    else if (!strcmp(key + 4, "_name")) snprintf(vals.savedLocations[idx].name, sizeof(vals.savedLocations[idx].name), "%s", val);
+                    else if (!strcmp(key + 4, "_x")) vals.savedLocations[idx].x = strtof(val, nullptr);
+                    else if (!strcmp(key + 4, "_y")) vals.savedLocations[idx].y = strtof(val, nullptr);
+                    else if (!strcmp(key + 4, "_z")) vals.savedLocations[idx].z = strtof(val, nullptr);
+                }
+            }
         }
         fclose(f);
 
         State& st  = State::Get();
         st.autoSave = vals.autoSave;
         st.fileLogging = vals.fileLogging;
+        st.themeIndex = vals.themeIndex;
+        for (int i = 0; i < State::kMaxSavedLocations; ++i)
+            st.savedLocations[i] = vals.savedLocations[i];
 
         // Every key/pad bind persists regardless of Auto Save - a rebind you
         // can't keep between sessions is a bug, not a "feature value". A garbled
@@ -214,7 +230,8 @@ namespace trinity
                 "invStackSize=%d\n"
                 "invStackSizeVal=%d\n"
                 "showFps=%d\n"
-                "fileLogging=%d\n",
+                "fileLogging=%d\n"
+                "themeIndex=%d\n",
                 st.openKeyVk,
                 st.openPadMask,
                 st.flyUpKeyVk,
@@ -246,7 +263,18 @@ namespace trinity
                 st.invStackSize ? 1 : 0,
                 st.invStackSizeVal,
                 st.showFps ? 1 : 0,
-                st.fileLogging ? 1 : 0);
+                st.fileLogging ? 1 : 0,
+                st.themeIndex);
+
+        for (int i = 0; i < State::kMaxSavedLocations; ++i)
+        {
+            const auto& loc = st.savedLocations[i];
+            if (loc.valid)
+            {
+                fprintf(f, "loc%d_valid=1\nloc%d_name=%s\nloc%d_x=%.3f\nloc%d_y=%.3f\nloc%d_z=%.3f\n",
+                        i, i, loc.name, i, loc.x, i, loc.y, i, loc.z);
+            }
+        }
         const bool ok = fflush(f) == 0;
         fclose(f);
 

@@ -119,6 +119,21 @@ namespace trinity
         bool invStackSize    = false;
         int  invStackSizeVal = 999999;
 
+        // UI Theme: 0=Crimson Red, 1=Cyber Cyan, 2=Neon Purple, 3=Matrix Emerald, 4=Royal Gold, 5=Sunset Orange
+        int themeIndex = 0;
+
+        // Bookmark / Saved Locations
+        struct SavedLocation
+        {
+            char  name[32] = "";
+            float x = 0.0f;
+            float y = 0.0f;
+            float z = 0.0f;
+            bool  valid = false;
+        };
+        static constexpr int kMaxSavedLocations = 5;
+        SavedLocation savedLocations[kMaxSavedLocations];
+
         // Overlay extras.
         bool showFps = false;
         bool fileLogging = true; // mirror the console to Trinity.log

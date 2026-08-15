@@ -1427,6 +1427,7 @@ namespace trinity::game
     //   * whether the server accepts an out-of-band level on reconcile/save.
     inline constexpr uintptr_t kOff_ItemVal_RefineLevel = 0x0A; // u16, == kOff_ItemVal_Subtype
     inline constexpr int       kRefine_Max              = 10;
+    inline constexpr uintptr_t kOff_ItemVal_Durability  = 0x40; // u16 durability (max ~10000 or 1000)
 
     // The equipped-item EFFECT refresh (IDB sub_7C88A0): re-applies every
     // equipped item's effects - re-reading each item's abyss-gear sockets and
