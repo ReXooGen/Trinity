@@ -1,0 +1,8 @@
+; Copy this file to Trinity.ini beside Trinity.asi if desired.
+; Trinity will preserve and update its full settings file from the in-game menu.
+
+; Save console messages to a fresh Trinity.log each session.
+fileLogging=1
+
+; Restore feature selections between sessions.
+autoSave=0

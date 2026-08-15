@@ -1,0 +1,44 @@
+# Build output
+/build/
+/build-*/
+/out/
+/cmake-build-*/
+CMakeFiles/
+CMakeCache.txt
+cmake_install.cmake
+*.sln
+*.vcxproj*
+*.obj
+*.pdb
+*.ilk
+*.lib
+*.exp
+*.asi
+*.dll
+
+# Visual Studio / editors
+.vs/
+.vscode/
+*.user
+*.suo
+
+# Runtime and local configuration
+Trinity.ini
+Trinity.log
+Trinity_DyeWatch.txt
+*.bak
+*.dmp
+
+# OS / Python
+.DS_Store
+Thumbs.db
+__pycache__/
+*.pyc
+
+# Notes & Changelogs
+RELEASE_NOTES_*.md
+TRINITY_*.md
+CLEAN_ADD_ITEM_RECOVERY.md
+CHANGELOG.md
+SECURITY.md
+THIRD_PARTY_NOTICES.md

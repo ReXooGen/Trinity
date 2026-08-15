@@ -1,0 +1,46 @@
+// Windows version resource for Trinity.asi.
+//
+// A PE that carries proper VERSIONINFO (company / product / version) scores as
+// far more legitimate to AV ML classifiers than a metadata-less binary. The
+// numeric version is pulled from core/version.h so there is one source of truth.
+//
+// If you add an application icon later, drop it next to this file and uncomment
+// the IDI_ICON1 line below.
+
+#include <windows.h>
+#include "core/version.h"
+
+// IDI_ICON1 ICON "Trinity.ico"
+
+VS_VERSION_INFO VERSIONINFO
+ FILEVERSION    TRINITY_VERSION_MAJOR,TRINITY_VERSION_MINOR,TRINITY_VERSION_PATCH,0
+ PRODUCTVERSION TRINITY_VERSION_MAJOR,TRINITY_VERSION_MINOR,TRINITY_VERSION_PATCH,0
+ FILEFLAGSMASK  VS_FFI_FILEFLAGSMASK
+#ifdef _DEBUG
+ FILEFLAGS      VS_FF_DEBUG
+#else
+ FILEFLAGS      0x0L
+#endif
+ FILEOS         VOS_NT_WINDOWS32
+ FILETYPE       VFT_DLL
+ FILESUBTYPE    VFT2_UNKNOWN
+BEGIN
+    BLOCK "StringFileInfo"
+    BEGIN
+        BLOCK "040904b0"        // U.S. English, Unicode
+        BEGIN
+            VALUE "CompanyName",      "XeTrinityz"
+            VALUE "FileDescription",  "Trinity - Mod Menu for Crimson Desert"
+            VALUE "FileVersion",      TRINITY_VERSION
+            VALUE "InternalName",     "Trinity.asi"
+            VALUE "OriginalFilename", "Trinity.asi"
+            VALUE "ProductName",      "Trinity"
+            VALUE "ProductVersion",   TRINITY_VERSION
+            VALUE "LegalCopyright",   "Copyright (C) 2026 XeTrinityz"
+        END
+    END
+    BLOCK "VarFileInfo"
+    BEGIN
+        VALUE "Translation", 0x409, 1200
+    END
+END
