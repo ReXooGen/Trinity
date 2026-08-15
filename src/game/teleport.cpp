@@ -130,6 +130,7 @@ namespace trinity::game
             std::atomic<uint32_t>            zBits{0};
             alignas(4) std::atomic<uint32_t> writer{0};
             std::atomic<uint32_t>            valid{0};
+            alignas(8) std::atomic<uint64_t> seq{0};
         };
 
         struct InlineHook
@@ -372,6 +373,9 @@ namespace trinity::game
             AppendBytes(code, { 0xB8, 0x01, 0x00, 0x00, 0x00 });         // mov eax, 1
             code.push_back(0xA3);                                         // mov [abs], eax
             AppendVal(code, reinterpret_cast<uintptr_t>(&slot.valid));
+            AppendBytes(code, { 0x48, 0xB8 });                            // mov rax, &slot.seq
+            AppendVal(code, reinterpret_cast<uintptr_t>(&slot.seq));
+            AppendBytes(code, { 0xF0, 0x48, 0xFF, 0x00 });                // lock inc qword ptr [rax]
             AppendBytes(code, { 0x48, 0xB8 });                            // mov rax, &slot.writer
             AppendVal(code, reinterpret_cast<uintptr_t>(&slot.writer));
             AppendBytes(code, { 0xC7, 0x00, 0x00, 0x00, 0x00, 0x00 });   // mov dword ptr [rax], 0
@@ -596,7 +600,7 @@ namespace trinity::game
             return FiniteCoordinate(value) && (value.x != 0.0f || value.y != 0.0f || value.z != 0.0f);
         }
 
-        bool ReadMarkerCandidate(size_t index, Vec3& value)
+        bool ReadMarkerCandidate(size_t index, Vec3& value, uint64_t& outSeq)
         {
             if (index >= g_markerCandidates.size()) return false;
             CandidateSlot& slot = g_markerCandidates[index];
@@ -606,6 +610,7 @@ namespace trinity::game
             const bool valid = (slot.valid.load(std::memory_order_relaxed) != 0);
             const uint64_t xy = slot.xyBits.load(std::memory_order_relaxed);
             const uint32_t z = slot.zBits.load(std::memory_order_relaxed);
+            outSeq = slot.seq.load(std::memory_order_relaxed);
             slot.writer.store(0, std::memory_order_release);
             if (!valid) return false;
             memcpy(&value.x, &xy, sizeof(xy));
@@ -615,16 +620,28 @@ namespace trinity::game
 
         bool FindActiveMarker(Vec3& marker)
         {
-            if (g_markerCachedCandidate >= 0 &&
-                ReadMarkerCandidate(static_cast<size_t>(g_markerCachedCandidate), marker))
-                return true;
+            uint64_t bestSeq = 0;
+            Vec3 bestMarker{};
+            bool found = false;
+
             for (size_t i = 0; i < g_markerCandidates.size(); ++i)
             {
-                if (ReadMarkerCandidate(i, marker))
+                Vec3 cand{};
+                uint64_t seq = 0;
+                if (ReadMarkerCandidate(i, cand, seq))
                 {
-                    g_markerCachedCandidate = static_cast<int>(i);
-                    return true;
+                    if (!found || seq >= bestSeq)
+                    {
+                        bestSeq = seq;
+                        bestMarker = cand;
+                        found = true;
+                    }
                 }
+            }
+            if (found)
+            {
+                marker = bestMarker;
+                return true;
             }
             return false;
         }
@@ -1636,10 +1653,9 @@ namespace trinity::game
         if (!g_markerReady)
             return MarkerStatus::NotReady;
 
-        uintptr_t player = g_markerPlayer.load(std::memory_order_acquire);
-        if (player < kMinPointer)
-            player = g_playerMoveOwner.load(std::memory_order_acquire);
-        if (player < kMinPointer)
+        const uintptr_t moveOwner = g_playerMoveOwner.load(std::memory_order_acquire);
+        const uintptr_t markerPlayer = g_markerPlayer.load(std::memory_order_acquire);
+        if (moveOwner < kMinPointer && markerPlayer < kMinPointer)
             return MarkerStatus::NoPlayer;
 
         Vec3 marker{};
@@ -1674,9 +1690,20 @@ namespace trinity::game
         bool wrote = false;
         __try
         {
-            *reinterpret_cast<Vec3*>(player + kOff_Player_Dest0) = destination;
-            *reinterpret_cast<Vec3*>(player + kOff_Player_Dest1) = destination;
-            wrote = true;
+            if (moveOwner >= kMinPointer)
+            {
+                *reinterpret_cast<Vec3*>(moveOwner + kOff_Player_Dest0) = destination;
+                *reinterpret_cast<Vec3*>(moveOwner + kOff_Player_Dest1) = destination;
+                // Zero out mid-air momentum and falling velocity to eliminate drift
+                *reinterpret_cast<Vec3*>(moveOwner + 0xC0) = Vec3{ 0.0f, 0.0f, 0.0f };
+                wrote = true;
+            }
+            if (markerPlayer >= kMinPointer && markerPlayer != moveOwner)
+            {
+                *reinterpret_cast<Vec3*>(markerPlayer + kOff_Player_Dest0) = destination;
+                *reinterpret_cast<Vec3*>(markerPlayer + kOff_Player_Dest1) = destination;
+                wrote = true;
+            }
         }
         __except (EXCEPTION_EXECUTE_HANDLER)
         {

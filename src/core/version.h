@@ -7,4 +7,4 @@
 #define TRINITY_VERSION_MINOR 0
 #define TRINITY_VERSION_PATCH 0
 
-#define TRINITY_VERSION "v1.0.0 (vTweak by Lian)"
+#define TRINITY_VERSION "1.0.0 (vTweak by Lian)"
