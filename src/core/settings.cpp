@@ -98,13 +98,40 @@ namespace trinity
             else if (!strcmp(key, "showFps"))             vals.showFps             = atoi(val) != 0;
             else if (!strcmp(key, "fileLogging"))         vals.fileLogging         = atoi(val) != 0;
             else if (!strcmp(key, "themeIndex"))          vals.themeIndex          = atoi(val);
-            else if (!strncmp(key, "loc", 3))
+            else if (!strncmp(key, "loc_", 4))
+            {
+                int idx = -1;
+                char field[32] = "";
+                if (sscanf(key, "loc_%[a-z]_%d", field, &idx) == 2 && idx >= 0 && idx < 500)
+                {
+                    if (idx >= static_cast<int>(vals.savedLocations.size()))
+                        vals.savedLocations.resize(idx + 1);
+                    if (!strcmp(field, "name"))
+                    {
+                        snprintf(vals.savedLocations[idx].name, sizeof(vals.savedLocations[idx].name), "%s", val);
+                        size_t len = strlen(vals.savedLocations[idx].name);
+                        while (len > 0 && (vals.savedLocations[idx].name[len - 1] == '\r' || vals.savedLocations[idx].name[len - 1] == '\n'))
+                            vals.savedLocations[idx].name[--len] = '\0';
+                    }
+                    else if (!strcmp(field, "x")) vals.savedLocations[idx].x = strtof(val, nullptr);
+                    else if (!strcmp(field, "y")) vals.savedLocations[idx].y = strtof(val, nullptr);
+                    else if (!strcmp(field, "z")) vals.savedLocations[idx].z = strtof(val, nullptr);
+                }
+            }
+            else if (!strncmp(key, "loc", 3) && key[3] >= '0' && key[3] <= '9')
             {
                 int idx = key[3] - '0';
-                if (idx >= 0 && idx < State::kMaxSavedLocations)
+                if (idx >= 0 && idx < 500)
                 {
-                    if (!strcmp(key + 4, "_valid")) vals.savedLocations[idx].valid = (atoi(val) != 0);
-                    else if (!strcmp(key + 4, "_name")) snprintf(vals.savedLocations[idx].name, sizeof(vals.savedLocations[idx].name), "%s", val);
+                    if (idx >= static_cast<int>(vals.savedLocations.size()))
+                        vals.savedLocations.resize(idx + 1);
+                    if (!strcmp(key + 4, "_name"))
+                    {
+                        snprintf(vals.savedLocations[idx].name, sizeof(vals.savedLocations[idx].name), "%s", val);
+                        size_t len = strlen(vals.savedLocations[idx].name);
+                        while (len > 0 && (vals.savedLocations[idx].name[len - 1] == '\r' || vals.savedLocations[idx].name[len - 1] == '\n'))
+                            vals.savedLocations[idx].name[--len] = '\0';
+                    }
                     else if (!strcmp(key + 4, "_x")) vals.savedLocations[idx].x = strtof(val, nullptr);
                     else if (!strcmp(key + 4, "_y")) vals.savedLocations[idx].y = strtof(val, nullptr);
                     else if (!strcmp(key + 4, "_z")) vals.savedLocations[idx].z = strtof(val, nullptr);
@@ -117,8 +144,12 @@ namespace trinity
         st.autoSave = vals.autoSave;
         st.fileLogging = vals.fileLogging;
         st.themeIndex = vals.themeIndex;
-        for (int i = 0; i < State::kMaxSavedLocations; ++i)
-            st.savedLocations[i] = vals.savedLocations[i];
+        st.savedLocations.clear();
+        for (const auto& loc : vals.savedLocations)
+        {
+            if (loc.name[0] != '\0' || loc.x != 0.0f || loc.y != 0.0f || loc.z != 0.0f)
+                st.savedLocations.push_back(loc);
+        }
 
         // Every key/pad bind persists regardless of Auto Save - a rebind you
         // can't keep between sessions is a bug, not a "feature value". A garbled
@@ -266,13 +297,13 @@ namespace trinity
                 st.fileLogging ? 1 : 0,
                 st.themeIndex);
 
-        for (int i = 0; i < State::kMaxSavedLocations; ++i)
+        for (size_t i = 0; i < st.savedLocations.size(); ++i)
         {
             const auto& loc = st.savedLocations[i];
-            if (loc.valid)
+            if (loc.name[0] != '\0' || loc.x != 0.0f || loc.y != 0.0f || loc.z != 0.0f)
             {
-                fprintf(f, "loc%d_valid=1\nloc%d_name=%s\nloc%d_x=%.3f\nloc%d_y=%.3f\nloc%d_z=%.3f\n",
-                        i, i, loc.name, i, loc.x, i, loc.y, i, loc.z);
+                fprintf(f, "loc_name_%zu=%s\nloc_x_%zu=%.3f\nloc_y_%zu=%.3f\nloc_z_%zu=%.3f\n",
+                        i, loc.name[0] ? loc.name : "Saved Spot", i, loc.x, i, loc.y, i, loc.z);
             }
         }
         const bool ok = fflush(f) == 0;

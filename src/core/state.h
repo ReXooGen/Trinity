@@ -1,5 +1,7 @@
 #pragma once
 
+#include <vector>
+
 namespace trinity
 {
     // Sentinel bits (outside the real XInput wButtons range) that let the two
@@ -122,17 +124,15 @@ namespace trinity
         // UI Theme: 0=Crimson Red, 1=Cyber Cyan, 2=Neon Purple, 3=Matrix Emerald, 4=Royal Gold, 5=Sunset Orange
         int themeIndex = 0;
 
-        // Bookmark / Saved Locations
+        // Bookmark / Saved Locations (dynamic unlimited list)
         struct SavedLocation
         {
-            char  name[32] = "";
+            char  name[64] = "";
             float x = 0.0f;
             float y = 0.0f;
             float z = 0.0f;
-            bool  valid = false;
         };
-        static constexpr int kMaxSavedLocations = 5;
-        SavedLocation savedLocations[kMaxSavedLocations];
+        std::vector<SavedLocation> savedLocations;
 
         // Overlay extras.
         bool showFps = false;

@@ -888,64 +888,18 @@ namespace trinity::gui
         float px = 0.0f, py = 0.0f, pz = 0.0f;
         const bool havePlayer = game::Teleport::GetLastPosition(&px, &py, &pz);
 
-        for (int i = 0; i < State::kMaxSavedLocations; ++i)
-        {
-            auto& loc = st.savedLocations[i];
-            char label[128];
-            char desc[192];
-            if (loc.valid)
-            {
-                snprintf(label, sizeof(label), "%d. %s (X %.0f  Y %.0f  Z %.0f)",
-                         i + 1, loc.name[0] ? loc.name : "Saved Spot", loc.x, loc.y, loc.z);
-                snprintf(desc, sizeof(desc), "Teleport to this saved location.");
-            }
-            else
-            {
-                snprintf(label, sizeof(label), "%d. [Empty Slot]", i + 1);
-                snprintf(desc, sizeof(desc), "Save your current player position to this bookmark slot.");
-            }
-
-            if (ui::Option(label, desc))
-            {
-                if (loc.valid)
-                {
-                    if (game::Teleport::TeleportToCoordinates(loc.x, loc.y, loc.z))
-                        ui::Toast("Teleported to %s", loc.name[0] ? loc.name : "Saved Spot");
-                    else
-                        ui::Toast("Teleport failed");
-                }
-                else
-                {
-                    if (havePlayer)
-                    {
-                        loc.x = px;
-                        loc.y = py;
-                        loc.z = pz;
-                        loc.valid = true;
-                        snprintf(loc.name, sizeof(loc.name), "Location %d", i + 1);
-                        Settings::Save();
-                        ui::Toast("Saved position to slot %d", i + 1);
-                    }
-                    else
-                    {
-                        ui::Toast("Player position not ready");
-                    }
-                }
-            }
-        }
-
-        if (ui::Option("Save Current Position to Slot 1", "Quick save current coordinates into slot 1."))
+        if (ui::Option("+ Save Current Location", "Saves your active player coordinates as a new custom bookmark."))
         {
             if (havePlayer)
             {
-                st.savedLocations[0].x = px;
-                st.savedLocations[0].y = py;
-                st.savedLocations[0].z = pz;
-                st.savedLocations[0].valid = true;
-                if (!st.savedLocations[0].name[0])
-                    snprintf(st.savedLocations[0].name, sizeof(st.savedLocations[0].name), "Location 1");
+                State::SavedLocation loc{};
+                loc.x = px;
+                loc.y = py;
+                loc.z = pz;
+                snprintf(loc.name, sizeof(loc.name), "Location #%zu", st.savedLocations.size() + 1);
+                st.savedLocations.push_back(loc);
                 Settings::Save();
-                ui::Toast("Saved to slot 1");
+                ui::Toast("Saved '%s' (X %.0f, Y %.0f, Z %.0f)", loc.name, px, py, pz);
             }
             else
             {
@@ -953,12 +907,44 @@ namespace trinity::gui
             }
         }
 
-        if (ui::Option("Clear All Saved Locations", "Resets all bookmark slots."))
+        if (st.savedLocations.empty())
         {
-            for (int i = 0; i < State::kMaxSavedLocations; ++i)
-                st.savedLocations[i] = State::SavedLocation{};
-            Settings::Save();
-            ui::Toast("Cleared all saved locations");
+            ui::Option("No saved locations", "Click '+ Save Current Location' above to bookmark any spot.");
+        }
+        else
+        {
+            for (size_t i = 0; i < st.savedLocations.size(); ++i)
+            {
+                const auto& loc = st.savedLocations[i];
+                char label[144];
+                char desc[192];
+                snprintf(label, sizeof(label), "%zu. %s  (X %.0f  Y %.0f  Z %.0f)",
+                         i + 1, loc.name[0] ? loc.name : "Saved Spot", loc.x, loc.y, loc.z);
+                snprintf(desc, sizeof(desc), "Teleport to %s at X %.0f, Y %.0f, Z %.0f.",
+                         loc.name[0] ? loc.name : "this spot", loc.x, loc.y, loc.z);
+
+                if (ui::Option(label, desc))
+                {
+                    if (game::Teleport::TeleportToCoordinates(loc.x, loc.y, loc.z))
+                        ui::Toast("Teleported to %s", loc.name[0] ? loc.name : "Saved Spot");
+                    else
+                        ui::Toast("Teleport failed");
+                }
+            }
+
+            if (ui::Option("- Delete Last Location", "Removes the most recently added location."))
+            {
+                st.savedLocations.pop_back();
+                Settings::Save();
+                ui::Toast("Removed last saved location");
+            }
+
+            if (ui::Option("Clear All Saved Locations", "Deletes all custom bookmarked locations."))
+            {
+                st.savedLocations.clear();
+                Settings::Save();
+                ui::Toast("All saved locations cleared");
+            }
         }
 
         ui::End();
