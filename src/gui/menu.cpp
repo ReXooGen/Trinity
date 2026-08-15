@@ -673,16 +673,16 @@ namespace trinity::gui
         if (hasMarker)
         {
             if (my == 0.0f)
-                snprintf(markerBtnLabel, sizeof(markerBtnLabel), "Marker: X %.0f  Y (Sky)  Z %.0f", mx, mz);
+                snprintf(markerBtnLabel, sizeof(markerBtnLabel), "Teleport to Destination: X %.0f  Y (Sky)  Z %.0f", mx, mz);
             else
-                snprintf(markerBtnLabel, sizeof(markerBtnLabel), "Marker: X %.0f  Y %.0f  Z %.0f", mx, my, mz);
-            snprintf(markerBtnDesc, sizeof(markerBtnDesc), "Teleport to active map marker (Hotkey: %s).",
+                snprintf(markerBtnLabel, sizeof(markerBtnLabel), "Teleport to Destination: X %.0f  Y %.0f  Z %.0f", mx, my, mz);
+            snprintf(markerBtnDesc, sizeof(markerBtnDesc), "Teleport to active map destination (Hotkey: %s).",
                      KeyName(st.markerTeleportKeyVk));
         }
         else
         {
-            snprintf(markerBtnLabel, sizeof(markerBtnLabel), "Map Marker: None");
-            snprintf(markerBtnDesc, sizeof(markerBtnDesc), "Place a marker/waypoint on the world map first.");
+            snprintf(markerBtnLabel, sizeof(markerBtnLabel), "Teleport to Destination: None");
+            snprintf(markerBtnDesc, sizeof(markerBtnDesc), "Set a destination/waypoint on the world map first.");
         }
 
         if (ui::Option(markerBtnLabel, markerBtnDesc))
@@ -691,22 +691,22 @@ namespace trinity::gui
             switch (res)
             {
             case game::Teleport::MarkerStatus::Success:
-                ui::Toast("Teleported to map marker");
+                ui::Toast("Teleported to destination");
                 break;
             case game::Teleport::MarkerStatus::NoMarker:
-                ui::Toast("No map marker found on map");
+                ui::Toast("No destination found on map");
                 break;
             case game::Teleport::MarkerStatus::NoPlayer:
                 ui::Toast("Player not ready");
                 break;
             case game::Teleport::MarkerStatus::InvalidCoordinates:
-                ui::Toast("Invalid marker coordinates");
+                ui::Toast("Invalid destination coordinates");
                 break;
             case game::Teleport::MarkerStatus::UnsafeContext:
-                ui::Toast("Unsafe marker context");
+                ui::Toast("Unsafe destination context");
                 break;
             default:
-                ui::Toast("Marker teleport failed");
+                ui::Toast("Destination teleport failed");
                 break;
             }
         }

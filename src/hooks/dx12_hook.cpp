@@ -933,22 +933,22 @@ namespace trinity::hooks
                 switch (res)
                 {
                 case game::Teleport::MarkerStatus::Success:
-                    ui::Toast("Teleported to map marker");
+                    ui::Toast("Teleported to destination");
                     break;
                 case game::Teleport::MarkerStatus::NoMarker:
-                    ui::Toast("No map marker found on map");
+                    ui::Toast("No destination found on map");
                     break;
                 case game::Teleport::MarkerStatus::NoPlayer:
                     ui::Toast("Player not ready");
                     break;
                 case game::Teleport::MarkerStatus::InvalidCoordinates:
-                    ui::Toast("Invalid marker coordinates");
+                    ui::Toast("Invalid destination coordinates");
                     break;
                 case game::Teleport::MarkerStatus::UnsafeContext:
-                    ui::Toast("Unsafe marker context");
+                    ui::Toast("Unsafe destination context");
                     break;
                 default:
-                    ui::Toast("Marker teleport failed");
+                    ui::Toast("Destination teleport failed");
                     break;
                 }
             }
