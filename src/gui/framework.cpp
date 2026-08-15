@@ -490,6 +490,7 @@ namespace trinity::ui
                                        add(Icon::PadX, "Reset"); break;
             case RowKind::Bind:    add(Icon::PadDpad, "Pick"); add(Icon::PadA, "Rebind");
                                    add(Icon::PadX, "Reset"); break;
+            case RowKind::Bookmark: add(Icon::PadA, "Open"); add(Icon::PadX, "Delete"); break;
             default: break;
             }
         }
@@ -517,6 +518,7 @@ namespace trinity::ui
                                        add(Icon::KeyEnter, "Type"); add(Icon::KeyDel, "Reset"); break;
             case RowKind::Bind:    add(Icon::KeyLeft, ""); add(Icon::KeyRight, "Pick");
                                    add(Icon::KeyEnter, "Rebind"); add(Icon::KeyDel, "Reset"); break;
+            case RowKind::Bookmark: add(Icon::KeyEnter, "Open"); add(Icon::KeyDel, "Delete"); break;
             default: break;
             }
         }
@@ -902,6 +904,12 @@ namespace trinity::ui
             else                 g_stack.pop_back();
         }
         g_pendingPop = false;
+    }
+
+    void PushMenu(const char* id, const char* title)
+    {
+        g_pendingPushId    = id    ? id    : "";
+        g_pendingPushTitle = title ? title : "";
     }
 
     void PopMenu()

@@ -922,11 +922,22 @@ namespace trinity::gui
                 char desc[192];
                 snprintf(label, sizeof(label), "%zu. %s  (X %.0f  Y %.0f  Z %.0f)",
                          i + 1, loc.name[0] ? loc.name : "Saved Spot", loc.x, loc.y, loc.z);
-                snprintf(desc, sizeof(desc), "Open options to teleport, rename, or update this location.");
+                snprintf(desc, sizeof(desc), "Enter/A: Open details  |  Del/X: Delete location");
 
-                if (ui::Submenu(label, "loc_manage", desc))
+                const ui::BookmarkAction action = ui::BookmarkRow(label, desc);
+                if (action == ui::BookmarkAction::Open)
                 {
                     s_curLocIdx = static_cast<int>(i);
+                    ui::PushMenu("loc_manage", loc.name[0] ? loc.name : "Saved Location");
+                }
+                else if (action == ui::BookmarkAction::Delete)
+                {
+                    char deletedName[64];
+                    snprintf(deletedName, sizeof(deletedName), "%s", loc.name[0] ? loc.name : "Saved Spot");
+                    st.savedLocations.erase(st.savedLocations.begin() + i);
+                    Settings::Save();
+                    ui::Toast("Deleted '%s'", deletedName);
+                    break;
                 }
             }
 

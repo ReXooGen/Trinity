@@ -1043,6 +1043,34 @@ namespace trinity::ui
         return changed;
     }
 
+    BookmarkAction BookmarkRow(const char* label, const char* desc)
+    {
+        RowResult r = RowBase(label, desc, RowKind::Bookmark);
+
+        if (r.drawn)
+        {
+            ImDrawList* dl = DL();
+            const float s  = g_scale;
+            const float cy = (r.mn.y + r.mx.y) * 0.5f;
+            const float rx = r.mx.x - 14.0f * s;
+            ArrowH(dl, ImVec2(rx - 4.0f * s, cy), 6.0f * s, true,
+                   r.selected ? theme::TextBright : theme::TextDim);
+        }
+
+        if (r.selected && g_nav.clear)
+        {
+            g_nav.clear = false;
+            return BookmarkAction::Delete;
+        }
+
+        if (r.activated)
+        {
+            return BookmarkAction::Open;
+        }
+
+        return BookmarkAction::None;
+    }
+
     // --- Color swatch row -------------------------------------------------------
     // See widgets.h. One RowBase row whose value area is circular color
     // buttons; the focus ring is this row's own second axis, so Up/Down walk

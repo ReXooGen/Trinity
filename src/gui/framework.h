@@ -68,8 +68,8 @@ namespace trinity::ui
     // about to be replaced, like switching fast-travel categories).
     void ResetMenu(const char* id);
 
-    // Programmatically go back one level (same as the user pressing Back),
-    // applied at the end of the frame.
+    // Programmatically push or go back one level, applied at the end of the frame.
+    void PushMenu(const char* id, const char* title);
     void PopMenu();
 
     // Submenu id at the top of the navigation stack; "" while at a tab root.

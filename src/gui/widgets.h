@@ -92,6 +92,10 @@ namespace trinity::ui
     // Enter / Esc stops. Backspace edits, Del / X clears. Returns true when buffer changed.
     bool TextInput(const char* label, char* buf, size_t cap, const char* desc = nullptr);
 
+    // Saved Location bookmark row: Enter/A opens options, Del/X deletes location directly.
+    enum class BookmarkAction { None, Open, Delete };
+    BookmarkAction BookmarkRow(const char* label, const char* desc = nullptr);
+
     // --- Inventory item row ---------------------------------------------------
     // One item with its quantity edited IN PLACE - browsing and editing are the
     // same list, so nothing pops up over the page. Left/Right step the amount

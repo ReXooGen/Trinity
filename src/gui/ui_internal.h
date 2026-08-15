@@ -73,7 +73,7 @@ namespace trinity::ui
     // Bind is the keybinds page's two-column rebind row (keyboard | controller):
     // Left/Right pick which device column has focus, Enter/A rebinds it, Del/X
     // resets it - so its footer must advertise "pick" as well as rebind/reset.
-    enum class RowKind { None, Action, Toggle, Value, Choice, Submenu, Search, Typing, ToggleValue, Item, ItemAdd, ValueAction, TypingApply, Bind };
+    enum class RowKind { None, Action, Toggle, Value, Choice, Submenu, Search, Typing, ToggleValue, Item, ItemAdd, ValueAction, TypingApply, Bind, Bookmark };
 
     // --- Shared state (defined in framework.cpp) -----------------------------
     extern Nav     g_nav;
