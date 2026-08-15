@@ -880,6 +880,8 @@ namespace trinity::gui
         ui::End();
     }
 
+    static int s_curLocIdx = -1;
+
     static void RenderSavedLocations()
     {
         State& st = State::Get();
@@ -920,23 +922,12 @@ namespace trinity::gui
                 char desc[192];
                 snprintf(label, sizeof(label), "%zu. %s  (X %.0f  Y %.0f  Z %.0f)",
                          i + 1, loc.name[0] ? loc.name : "Saved Spot", loc.x, loc.y, loc.z);
-                snprintf(desc, sizeof(desc), "Teleport to %s at X %.0f, Y %.0f, Z %.0f.",
-                         loc.name[0] ? loc.name : "this spot", loc.x, loc.y, loc.z);
+                snprintf(desc, sizeof(desc), "Open options to teleport, rename, or update this location.");
 
-                if (ui::Option(label, desc))
+                if (ui::Submenu(label, "loc_manage", desc))
                 {
-                    if (game::Teleport::TeleportToCoordinates(loc.x, loc.y, loc.z))
-                        ui::Toast("Teleported to %s", loc.name[0] ? loc.name : "Saved Spot");
-                    else
-                        ui::Toast("Teleport failed");
+                    s_curLocIdx = static_cast<int>(i);
                 }
-            }
-
-            if (ui::Option("- Delete Last Location", "Removes the most recently added location."))
-            {
-                st.savedLocations.pop_back();
-                Settings::Save();
-                ui::Toast("Removed last saved location");
             }
 
             if (ui::Option("Clear All Saved Locations", "Deletes all custom bookmarked locations."))
@@ -945,6 +936,64 @@ namespace trinity::gui
                 Settings::Save();
                 ui::Toast("All saved locations cleared");
             }
+        }
+
+        ui::End();
+    }
+
+    static void RenderSavedLocationManage()
+    {
+        State& st = State::Get();
+        if (s_curLocIdx < 0 || s_curLocIdx >= static_cast<int>(st.savedLocations.size()))
+        {
+            ui::Begin();
+            ui::Option("Location not found", "This saved location no longer exists.");
+            ui::End();
+            return;
+        }
+
+        auto& loc = st.savedLocations[s_curLocIdx];
+        ui::Begin(loc.name[0] ? loc.name : "Saved Location");
+
+        char tpLabel[128];
+        snprintf(tpLabel, sizeof(tpLabel), "Teleport Here (X %.0f  Y %.0f  Z %.0f)", loc.x, loc.y, loc.z);
+        if (ui::Option(tpLabel, "Instantly warp your player to these coordinates."))
+        {
+            if (game::Teleport::TeleportToCoordinates(loc.x, loc.y, loc.z))
+                ui::Toast("Teleported to %s", loc.name[0] ? loc.name : "Saved Spot");
+            else
+                ui::Toast("Teleport failed");
+        }
+
+        if (ui::TextInput("Name", loc.name, sizeof(loc.name), "Press Enter/A to rename this location on your keyboard."))
+        {
+            Settings::Save();
+        }
+
+        float px = 0.0f, py = 0.0f, pz = 0.0f;
+        const bool havePlayer = game::Teleport::GetLastPosition(&px, &py, &pz);
+        if (ui::Option("Update to Current Position", "Overwrites the saved coordinates with your current position."))
+        {
+            if (havePlayer)
+            {
+                loc.x = px;
+                loc.y = py;
+                loc.z = pz;
+                Settings::Save();
+                ui::Toast("Updated '%s' to X %.0f, Y %.0f, Z %.0f", loc.name, px, py, pz);
+            }
+            else
+            {
+                ui::Toast("Player position not ready");
+            }
+        }
+
+        if (ui::Option("Delete This Location", "Removes this location from your bookmarks."))
+        {
+            st.savedLocations.erase(st.savedLocations.begin() + s_curLocIdx);
+            Settings::Save();
+            ui::Toast("Location deleted");
+            ui::PopMenu();
         }
 
         ui::End();
@@ -1894,6 +1943,7 @@ namespace trinity::gui
         }
         else if (!strcmp(cur, "keybinds")) RenderKeybinds();
         else if (!strcmp(cur, "saved_locs")) RenderSavedLocations();
+        else if (!strcmp(cur, "loc_manage")) RenderSavedLocationManage();
         else if (!strcmp(cur, "ftcats"))   RenderFastTravelCats();
         else if (!strcmp(cur, "ftnodes"))  RenderFastTravelNodes();
         else if (!strcmp(cur, "dyeslots"))  RenderDyeSlots();

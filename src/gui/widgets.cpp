@@ -968,6 +968,81 @@ namespace trinity::ui
         return changed;
     }
 
+    bool TextInput(const char* label, char* buf, size_t cap, const char* desc)
+    {
+        g_captureSeen = true;
+
+        RowResult r  = RowBase(label, desc, RowKind::Search);
+        bool changed = false;
+
+        if (r.activated)
+        {
+            if (CapMine(buf)) CapEnd(buf);
+            else              CapBegin(buf);
+        }
+        if (!r.selected)
+            CapEnd(buf);
+
+        if (r.selected && g_nav.clear && buf[0])
+        {
+            g_nav.clear = false;
+            buf[0]      = 0;
+            changed     = true;
+        }
+
+        const bool typing = CapMine(buf);
+        if (typing)
+        {
+            g_hintKind = RowKind::Typing;
+
+            if (g_nav.back)
+            {
+                g_nav.back = false;
+                const size_t len = strlen(buf);
+                if (len > 0) { buf[len - 1] = 0; changed = true; }
+                else         CapEnd(buf);
+            }
+
+            ImGuiIO& io = ImGui::GetIO();
+            for (int n = 0; n < io.InputQueueCharacters.Size; ++n)
+            {
+                const ImWchar c = io.InputQueueCharacters[n];
+                if (c >= 32 && c < 127)
+                {
+                    const size_t len = strlen(buf);
+                    if (len + 1 < cap)
+                    {
+                        buf[len]     = static_cast<char>(c);
+                        buf[len + 1] = 0;
+                        changed      = true;
+                    }
+                }
+            }
+            io.InputQueueCharacters.resize(0);
+        }
+
+        if (r.drawn)
+        {
+            char text[96];
+            if (typing)
+            {
+                const bool blink = (GetTickCount64() / 530) & 1;
+                snprintf(text, sizeof(text), "%s%s", buf, blink ? "_" : " ");
+            }
+            else
+            {
+                snprintf(text, sizeof(text), "%s",
+                         buf[0] ? buf : g_padActive ? "A to edit" : "Enter to edit");
+            }
+
+            const ImU32 col = typing      ? theme::TextBright
+                            : buf[0]      ? theme::Accent
+                            : r.selected  ? theme::TextBright : theme::TextDim;
+            DrawRowValue(r, text, false, col);
+        }
+        return changed;
+    }
+
     // --- Color swatch row -------------------------------------------------------
     // See widgets.h. One RowBase row whose value area is circular color
     // buttons; the focus ring is this row's own second axis, so Up/Down walk

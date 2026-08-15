@@ -88,6 +88,10 @@ namespace trinity::ui
     // the buffer changed this frame.
     bool Search(char* buf, size_t cap, const char* desc = nullptr);
 
+    // Editable text field (e.g. rename bookmark). Enter / A starts typing;
+    // Enter / Esc stops. Backspace edits, Del / X clears. Returns true when buffer changed.
+    bool TextInput(const char* label, char* buf, size_t cap, const char* desc = nullptr);
+
     // --- Inventory item row ---------------------------------------------------
     // One item with its quantity edited IN PLACE - browsing and editing are the
     // same list, so nothing pops up over the page. Left/Right step the amount
