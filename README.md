@@ -6,26 +6,28 @@ Trinity is an in-game DirectX 12 mod menu for **Crimson Desert**, originally cre
 
 ---
 
-## What's New in This Version
+## What's New in v1.1.0
 
-- **Full Multi-Storage Slot Alignment (`0xC8` Stride)**:
-  - Fixed an offset shift bug where items in slots after slot 0 failed to detect.
-  - All 9+ storages are now 100% visible and editable: **Inventory, Quest Items, Camp, Camp WareHouse, Private Storage, Bank, Wardrobe, Pet Feeders, and Housing Chests**.
-  - All shields, weapons, and accessories appear correctly in their respective categories.
+- **Abyss Socket TU 1.17+ Alignment & Live Socketing**:
+  - Aligned the Abyss socket data array pointer to `+0x60` and implemented accurate unlocked record state decoding.
+  - Fixes the socket editor displaying all slots as empty and enables seamless Abyss Gear socketing.
 
-- **Uncategorised Storage Unlocked**:
-  - Unlocked read-only restrictions on Uncategorised items: you can now search, view raw IDs, modify quantities, or remove items cleanly.
+- **Batch Equipment Enhancer (1-Click)**:
+  - **Repair All Gear**: Instantly restores 100% durability across all equipped weapons and armor.
+  - **Max Refinement (+10) All**: Upgrades all equipped items to maximum refinement level (+10).
+  - **Unlock All Sockets**: Unlocks all 5 Abyss sockets on all equipped gear in one click.
 
-- **One-Click Auto Map Marker Teleport**:
-  - Instantly teleport to any marker placed on the World Map.
-  - Automatically calculates elevation and applies temporary **Safe Landing Protection** so you never clip inside rocks or take fall damage.
-  - Removed manual height sliders for a seamless one-click teleport experience.
+- **Unlimited Dynamic Saved Locations (Bookmarks)**:
+  - Bookmark unlimited custom player coordinates across the world map.
+  - In-place keyboard/controller **Rename** feature for custom labels (e.g. "Base Camp", "Dungeon Entrance").
+  - Instant **Teleport to Bookmark** and direct **Delete (`Del` / `X`)** shortcut key per location.
+  - Fully persisted to `Trinity.ini`.
 
-- **Item Name Translation & Prettification**:
-  - Automatically prettifies internal engine strings and translates quest/character items (e.g. `Ziane_Diary` -> `Jian's Journal`).
+- **Dynamic Theme Customizer**:
+  - 6 selectable menu color themes: **Crimson Red**, **Cyber Cyan**, **Neon Purple**, **Matrix Emerald**, **Royal Gold**, and **Sunset Orange**.
 
-- **God Mode / Boss Protection Timer Fix**:
-  - Fixed immortal enemy bugs by correctly expiring temporary fall immunity inside the movement tick.
+- **Destination Teleport with Live Coordinates**:
+  - Re-anchored destination teleport with active coordinate display and robust physics thread synchronization.
 
 ---
 
