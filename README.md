@@ -26,6 +26,21 @@ Trinity is an in-game DirectX 12 mod menu for **Crimson Desert**, originally cre
 
 ---
 
+## What's New in v1.2.0
+
+- **Add Item Engine Fix (TU 1.18.00+ / 18.0.01 Compatibility)**:
+  - Fixed Add Item execution pipeline (`CommitAdd`) and memory signatures matching the latest game executable.
+  - Resolves `"not ready"` error when spawning weapons, armor, materials, or consumables.
+
+- **Multi-Language Support (Localization System)**:
+  - Added in-game language selection with full translations: **English**, **Simplified Chinese (简体中文)**, and **Korean (한국어)**.
+  - Automatically loads and saves language preference to `Trinity.ini`.
+
+- **Updated Subsystem Signatures**:
+  - Re-anchored NPC and pet friendliness modifier signatures (`kSig_FriendlySetNpc`, `kSig_FriendlySetPet`) and inventory holder resolvers for TU 1.18+.
+
+---
+
 ## What's New in v1.1.0
 
 - **Abyss Socket TU 1.17+ Alignment & Live Socketing**:

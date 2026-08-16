@@ -93,7 +93,10 @@ if (Test-Path -LiteralPath $shaPath) {
     Copy-Item -Path (Join-Path $source 'winmm-x64.SHA512') -Destination (Join-Path $pkgDir 'winmm-x64.SHA512') -Force
 }
 
-$zipName = "Trinity-v1.1.1-vTweak.zip"
+$versionHeader = Get-Content (Join-Path $source 'src\core\version.h') -Raw
+$versionMatch = [regex]::Match($versionHeader, '#define\s+TRINITY_VERSION\s+"([^"\s]+)')
+$versionStr = if ($versionMatch.Success) { $versionMatch.Groups[1].Value } else { "1.2.0" }
+$zipName = "Trinity-v$versionStr-vTweak.zip"
 $zipPath = Join-Path $releaseDir $zipName
 if (Test-Path -LiteralPath $zipPath) {
     Remove-Item -LiteralPath $zipPath -Force
