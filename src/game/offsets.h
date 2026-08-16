@@ -523,7 +523,7 @@ namespace trinity::game
     inline constexpr const char* kSig_InvGetItemQty =
         "48 89 5C 24 ? 48 89 6C 24 ? 48 89 74 24 ? 57 48 83 EC 20 49 8B E8 0F B7 DA";
     inline constexpr const char* kSig_InvGetHolder =
-        "40 53 48 83 EC 20 48 8B 41 ? 48 8B D9 48 8B 48";
+        "40 53 48 83 EC 20 48 8B 41 68 48 8B D9 48 8B 48 20 0F B7 41 30";
 
     // The engine's OWN slot-expansion setter (IDB sub_1CE8190) - what the game
     // itself runs when your expansion count changes:
@@ -827,9 +827,7 @@ namespace trinity::game
         "48 8D 43 10 48 3B C8";
     // TrItemValue dtor (IDB sub_ED6DF40, via thunk sub_1F88270). Destroys the
     // sub-objects the ctor allocated; does NOT free the buffer itself.
-    inline constexpr const char* kSig_TrItemValueDtor =
-        "48 89 5C 24 10 48 89 6C 24 18 48 89 74 24 20 48 89 4C 24 08 57 48 83 EC 20 "
-        "48 89 CB 48 8D 05 ? ? ? ? 48 89 01 48 8B 89 98 00 00 00 BF FB 01 00 00 31 F6";
+    inline constexpr const char* kSig_TrItemValueDtor = "";
 
     inline constexpr uintptr_t kOff_InvHolder_Container = 0x08; // holder+8 -> container
     // ItemInfo._defaultPushInventoryInfo - which storage this item goes to by
@@ -1521,8 +1519,7 @@ namespace trinity::game
     // pre-seeded there, so the first in-game gift/feed is already scaled and a
     // loaded save is never re-scaled. See the trinity-friendly-system notes.
     inline constexpr const char* kSig_FriendlySetNpc =
-        "49 89 E3 53 55 56 57 41 56 48 83 EC 60 48 89 D7 "
-        "8B 05 ? ? ? ? 2D ? ? ? ? 48 8D 2C 01 0F B7 42 04 66 41 89 43 08";
+        "49 89 E3 53 55 56 57 41 56 48 83 EC 60 48 89 D7 48 8D 69 18 0F B7 42 04 66 41 89 43 08";
     inline constexpr const char* kSig_FriendlySetPet =
         "4C 8B DC 53 55 56 57 41 56 48 83 EC 60 48 8B FA 48 8D 69 38 "
         "0F B7 42 04 66 41 89 43 08";
