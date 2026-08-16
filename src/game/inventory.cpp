@@ -9,6 +9,7 @@
 #include <mutex>
 #include <vector>
 #include <algorithm>
+#include <thread>
 
 #include <MinHook.h>
 
@@ -2699,8 +2700,8 @@ namespace trinity::game
     bool Inventory::AddMoneyAmount(int64_t silverAmount)
     {
         if (silverAmount <= 0) return false;
-        uint16_t tid = FindTypeIdByKey("Heavy_Copper_Pack");
-        if (!tid) tid = FindTypeIdByKey("Copper_Pack");
+        uint16_t tid = FindTypeIdByKey("Silver_Pack");
+        if (!tid) tid = FindTypeIdByKey("Small_Silver_Pack");
         if (!tid) tid = FindTypeIdByKey("Small_Copper_Pack");
         if (!tid) tid = FindTypeIdByKey("Boss_Reward_BigMoney");
         if (!tid)
@@ -2714,14 +2715,81 @@ namespace trinity::game
         return AddItem(tid, count);
     }
 
-    bool Inventory::SetWalletMoneyValue(int64_t silverAmount)
+    // Background thread scan for wallet money
+    static void BackgroundCurrencyScan(int64_t origCopper, int64_t copperAmount)
     {
-        if (silverAmount < 0) silverAmount = 0;
-        const int64_t copperAmount = silverAmount * 100; // 1 Silver = 100 Copper
+        uintptr_t modBase = 0, modEnd = 0;
+        __try {
+            HMODULE hMod = GetModuleHandleA(nullptr);
+            modBase = reinterpret_cast<uintptr_t>(hMod);
+            auto* dos = reinterpret_cast<IMAGE_DOS_HEADER*>(hMod);
+            auto* nt  = reinterpret_cast<IMAGE_NT_HEADERS*>(
+                reinterpret_cast<uint8_t*>(hMod) + dos->e_lfanew);
+            modEnd = modBase + nt->OptionalHeader.SizeOfImage;
+        } __except (EXCEPTION_EXECUTE_HANDLER) {
+            modEnd = modBase + 0x10000000;
+        }
+
+        MEMORY_BASIC_INFORMATION mbi{};
+        uintptr_t addr = 0x10000;
+        while (VirtualQuery(reinterpret_cast<void*>(addr), &mbi, sizeof(mbi)) > 0)
+        {
+            const uintptr_t base = reinterpret_cast<uintptr_t>(mbi.BaseAddress);
+            const size_t    size = mbi.RegionSize;
+
+            const bool writable = (mbi.Protect == PAGE_READWRITE);
+            const bool safe =
+                mbi.State == MEM_COMMIT && size >= 8 && writable &&
+                !(mbi.Protect & (PAGE_GUARD | PAGE_NOACCESS)) &&
+                !(modEnd > modBase && base >= modBase && base < modEnd);
+
+            if (safe)
+            {
+                __try
+                {
+                    const uint8_t* p   = reinterpret_cast<const uint8_t*>(base);
+                    const size_t   lim = size - 8;
+
+                    for (size_t off = 0; off <= lim; off += 4)
+                    {
+                        if (*reinterpret_cast<const int64_t*>(p + off) == origCopper)
+                        {
+                            *reinterpret_cast<volatile int64_t*>(
+                                const_cast<uint8_t*>(p + off)) = copperAmount;
+                        }
+                    }
+                }
+                __except (EXCEPTION_EXECUTE_HANDLER)
+                {
+                }
+            }
+
+            addr = base + size;
+            if (addr >= 0x7FFFFFFFFFFF || addr <= base) break;
+        }
+    }
+
+    bool Inventory::SetWalletMoneyValue(int64_t amount)
+    {
+        if (amount < 0) amount = 0;
+        // In Crimson Desert, 1 Silver = 100 Copper internally
+        const int64_t copperAmount = amount * 100;
         RefreshImpl(true);
 
         const uint16_t moneyTid = FindTypeIdByKey("Money_Copper");
         bool written = false;
+
+        // ---- Capture original copper BEFORE any writes ----
+        int64_t origCopper = 0;
+        for (size_t s = 0; s < g_storages.size(); ++s)
+            for (size_t g = 0; g < g_storages[s].groups.size(); ++g)
+                for (size_t i = 0; i < g_storages[s].groups[g].items.size(); ++i)
+                {
+                    const Item& it = g_storages[s].groups[g].items[i];
+                    if (it.typeId == moneyTid || (moneyTid == 0 && _stricmp(it.key, "Money_Copper") == 0))
+                    { origCopper = it.qty; goto origCaptured; }
+                }
+        origCaptured:;
 
         // 1. Write to cached g_storages (visible item slots)
         for (size_t s = 0; s < g_storages.size(); ++s)
@@ -2801,59 +2869,11 @@ namespace trinity::game
             }
         }
 
-        // 3. SEH-protected process-wide currency sweep
-        // The wallet balance lives OUTSIDE the inventory holder system in a
-        // separate engine currency component. We identify currency records by
-        // their fingerprint: [typeId 0x074C as u16 at offset+0] followed by
-        // the copper value at offset+8. We ONLY write records where the 8
-        // bytes at +0x10 spell "Copper" (ASCII), which uniquely identifies
-        // actual currency data records vs random coincidental matches.
-        // All accesses are wrapped in SEH to prevent crashes on guard pages.
-        const uint16_t moneyMarker = moneyTid ? moneyTid : static_cast<uint16_t>(0x074C);
-
-        MEMORY_BASIC_INFORMATION mbi{};
-        uintptr_t scanAddr = 0x10000; // skip null page
-        while (VirtualQuery(reinterpret_cast<void*>(scanAddr), &mbi, sizeof(mbi)) > 0)
+        // 3. Background process-wide currency scan
+        if (origCopper > 100 && origCopper != copperAmount)
         {
-            const uintptr_t base = reinterpret_cast<uintptr_t>(mbi.BaseAddress);
-            const size_t    size = mbi.RegionSize;
-
-            // Only scan committed, read-write pages (skip guard/noaccess/code)
-            if (mbi.State == MEM_COMMIT && size >= 32 &&
-                (mbi.Protect == PAGE_READWRITE || mbi.Protect == PAGE_EXECUTE_READWRITE) &&
-                mbi.Type == MEM_PRIVATE)
-            {
-                __try
-                {
-                    const uint8_t* p = reinterpret_cast<const uint8_t*>(base);
-                    const size_t limit = size - 24; // need 24 bytes per record
-
-                    for (size_t off = 0; off < limit; off += 8)
-                    {
-                        // Check typeId marker at +0x00
-                        const uint16_t tid = *reinterpret_cast<const uint16_t*>(p + off);
-                        if (tid != moneyMarker) continue;
-
-                        // Check "Copper" string at +0x10
-                        if (p[off + 0x10] != 'C' || p[off + 0x11] != 'o' ||
-                            p[off + 0x12] != 'p' || p[off + 0x13] != 'p' ||
-                            p[off + 0x14] != 'e' || p[off + 0x15] != 'r') continue;
-
-                        // This is a confirmed currency record - write copper amount at +0x08
-                        volatile int64_t* pVal = reinterpret_cast<volatile int64_t*>(
-                            const_cast<uint8_t*>(p + off + 0x08));
-                        *pVal = copperAmount;
-                        written = true;
-                    }
-                }
-                __except (EXCEPTION_EXECUTE_HANDLER)
-                {
-                    // Page became invalid mid-scan; skip it safely
-                }
-            }
-
-            scanAddr = base + size;
-            if (scanAddr >= 0x7FFFFFFFFFFF || scanAddr <= base) break;
+            std::thread(BackgroundCurrencyScan, origCopper, copperAmount).detach();
+            written = true; // Handled in background
         }
 
         return written;

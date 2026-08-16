@@ -194,6 +194,35 @@ namespace trinity::game
         // on the first call to any of the above, which walks the whole table).
         static bool CatalogReady();
 
+        // --- Item & Currency helpers ----------------------------------------
+        // Finds an item typeId by its engine key (e.g. "Abyss_Artifact", "Heavy_Copper_Pack").
+        static uint16_t FindTypeIdByKey(const char* key);
+
+        // Add a specific item by its engine key (e.g. "Abyss_Artifact", "Heavy_Copper_Pack")
+        static bool AddItemByKey(const char* key, int64_t count);
+
+        // Add a specific money pouch/pack by key name (e.g. "Heavy_Copper_Pack", "Copper_Pack")
+        static bool AddMoneyPouch(const char* itemKey, int64_t count);
+
+        // Add money directly calculated in copper pouches/packs (silverAmount converted to pouch count)
+        static bool AddMoneyAmount(int64_t silverAmount);
+
+        // Directly writes money value to the Money_Copper slot in both client and server holders.
+        // Save and reload the game to reflect in the top-right spendable wallet balance.
+        static bool SetWalletMoneyValue(int64_t amount);
+
+        // --- Sealed Abyss Artifact Smart Management (1..150) ----------------
+        struct SealedArtifactStatus
+        {
+            int totalUniqueOwned = 0;
+            int totalMax = 150;
+            bool owned[151]{};
+        };
+
+        static SealedArtifactStatus GetSealedArtifactStatus();
+        static int AddMissingSealedArtifacts(int targetTotal = 150);
+        static int CleanDuplicateSealedArtifacts();
+
         // True once the server-authority holder is known. Normally true within
         // a second of loading a save, with no player action: loading commits
         // the server containers (before the client one even exists), and the

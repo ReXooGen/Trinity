@@ -374,7 +374,7 @@ namespace trinity::ui
         g_nav.pageDown = key(ImGuiKey_PageDown, true);
         g_nav.home     = key(ImGuiKey_Home, false);
         g_nav.end      = key(ImGuiKey_End, false);
-        g_nav.select   = key(ImGuiKey_Enter, false) || key(ImGuiKey_KeypadEnter, false);
+        g_nav.select   = key(ImGuiKey_Enter, false) || key(ImGuiKey_KeypadEnter, false) || (!st.textCapture && key(ImGuiKey_Space, false));
         g_nav.back     = key(ImGuiKey_Backspace, false);
         g_nav.clear    = key(ImGuiKey_Delete, false);
 

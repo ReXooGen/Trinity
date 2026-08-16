@@ -133,7 +133,9 @@ if (-not (Test-Path -LiteralPath $steamModsDir)) {
 }
 try {
     Copy-Item -Path (Join-Path $pkgDir 'Trinity.asi') -Destination (Join-Path $steamModsDir 'Trinity.asi') -Force -ErrorAction Stop
-    Write-Host "Auto-deployed Trinity.asi to Steam mods folder: $steamModsDir"
+    Copy-Item -Path (Join-Path $pkgDir 'Trinity_zh.ini') -Destination (Join-Path $steamModsDir 'Trinity_zh.ini') -Force -ErrorAction SilentlyContinue
+    Copy-Item -Path (Join-Path $pkgDir 'Trinity_ko.ini') -Destination (Join-Path $steamModsDir 'Trinity_ko.ini') -Force -ErrorAction SilentlyContinue
+    Write-Host "Auto-deployed Trinity.asi and translations to Steam mods folder: $steamModsDir"
 } catch {
     Write-Host "Note: Game may be running in mods folder, copy skipped: $_"
 }

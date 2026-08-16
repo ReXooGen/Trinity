@@ -392,6 +392,8 @@ namespace trinity::ui
                 const int rc = EditTick(true, &out);
                 if (rc == 1)
                 {
+                    if (out < minV) out = minV;
+                    if (out > maxV) out = maxV;
                     *value  = static_cast<float>(out);
                     changed = true;
                 }
@@ -463,6 +465,8 @@ namespace trinity::ui
                 const int rc = EditTick(true, &out);
                 if (rc == 1)
                 {
+                    if (out < minV) out = minV;
+                    if (out > maxV) out = maxV;
                     *value   = static_cast<float>(out);
                     *enabled = true;
                     changed  = true;
@@ -601,6 +605,8 @@ namespace trinity::ui
                 const int rc = EditTick(false, &out);
                 if (rc == 1)
                 {
+                    if (out < minV) out = minV;
+                    if (out > maxV) out = maxV;
                     *value   = static_cast<int>(out);
                     *enabled = true;
                     changed  = true;
@@ -735,6 +741,8 @@ namespace trinity::ui
                 const int rc = EditTick(false, &out);
                 if (rc == 1)
                 {
+                    if (out < minV) out = minV;
+                    if (out > maxV) out = maxV;
                     *value  = static_cast<int>(out);
                     changed = true;
                 }

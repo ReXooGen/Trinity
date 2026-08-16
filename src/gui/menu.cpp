@@ -1630,14 +1630,14 @@ namespace trinity::gui
         }
 
         // 2. POUCHES & CHESTS METHOD (Instant in-bag use)
-        ui::IntOption(LOC("Full Copper Pouches (Count)"), &s_customPouchCount, 1, 99999, 100, 1000,
-                      LOC("Quantity of Full Copper Pouches to spawn. Open them in-game for silver."));
+        ui::IntOption(LOC("Full Silver Pouches (Count)"), &s_customPouchCount, 1, 99999, 100, 1000,
+                      LOC("Quantity of Full Silver Pouches to spawn. Open them in-game for silver."));
 
-        if (ui::Option(LOC(">> Spawn Full Copper Pouches <<"),
-                       LOC("Press Enter / Space / Click to inject Full Copper Pouches into bag.")))
+        if (ui::Option(LOC(">> Spawn Full Silver Pouches <<"),
+                       LOC("Press Enter / Space / Click to inject Full Silver Pouches into bag.")))
         {
-            if (game::Inventory::AddItemByKey("Heavy_Copper_Pack", s_customPouchCount))
-                ui::Toast(LOC("Added %d Full Copper Pouches"), s_customPouchCount);
+            if (game::Inventory::AddItemByKey("Silver_Pack", s_customPouchCount))
+                ui::Toast(LOC("Added %d Full Silver Pouches"), s_customPouchCount);
             else
                 ui::Toast(LOC("Failed to add pouches - inventory full or not ready"));
         }
@@ -1654,10 +1654,10 @@ namespace trinity::gui
                 ui::Toast(LOC("Failed to add chests"));
         }
 
-        if (ui::Option(LOC("Add 1,000x Full Copper Pouches"), LOC("Spawns 1,000x Full Copper Pouches (~10M Silver value).")))
+        if (ui::Option(LOC("Add 1,000x Full Silver Pouches"), LOC("Spawns 1,000x Full Silver Pouches (~10M Silver value).")))
         {
-            if (game::Inventory::AddItemByKey("Heavy_Copper_Pack", 1000))
-                ui::Toast(LOC("Added 1,000x Full Copper Pouches"));
+            if (game::Inventory::AddItemByKey("Silver_Pack", 1000))
+                ui::Toast(LOC("Added 1,000x Full Silver Pouches"));
         }
 
         if (ui::Option(LOC("Add 100x Plunderer's Gold Chests"), LOC("Spawns 100x Plunderer's Gold Chests (Huge Gold Reward).")))
