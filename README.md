@@ -156,6 +156,7 @@ Trinity is fully open-source under the MIT license. We gratefully acknowledge al
 - **Orcax1399** — Research insights credited by the original project
 - **Gugi96** — Working ASI / reference research that helped guide compatibility repairs
 - **slingblade2047** — Crimson Desert 1.17/1.18 compatibility work ([https://github.com/slingblade2047/Trinity](https://github.com/slingblade2047/Trinity))
+- **Nostyxx** — Creator of CrimsonWeather ([https://github.com/Nostyxx/CrimsonWeather](https://github.com/Nostyxx/CrimsonWeather)) for the pioneering weather and atmosphere research
 - **ReXooGen / Lian** — Additional vTweak features, localization, and maintenance ([https://github.com/ReXooGen/Trinity](https://github.com/ReXooGen/Trinity))
 
 ---
