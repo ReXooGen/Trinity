@@ -71,6 +71,22 @@ if (Test-Path (Join-Path $source 'README.md')) {
     Copy-Item -Path (Join-Path $source 'README.md') -Destination (Join-Path $pkgDir 'README.md') -Force
 }
 
+# Copy ASI Loader (winmm.dll) and checksum file
+$parentDir = Split-Path $source -Parent
+$winmmPath = Join-Path $parentDir 'winmm.dll'
+if (Test-Path -LiteralPath $winmmPath) {
+    Copy-Item -Path $winmmPath -Destination (Join-Path $pkgDir 'winmm.dll') -Force
+} elseif (Test-Path -LiteralPath (Join-Path $source 'winmm.dll')) {
+    Copy-Item -Path (Join-Path $source 'winmm.dll') -Destination (Join-Path $pkgDir 'winmm.dll') -Force
+}
+
+$shaPath = Join-Path $parentDir 'winmm-x64.SHA512'
+if (Test-Path -LiteralPath $shaPath) {
+    Copy-Item -Path $shaPath -Destination (Join-Path $pkgDir 'winmm-x64.SHA512') -Force
+} elseif (Test-Path -LiteralPath (Join-Path $source 'winmm-x64.SHA512')) {
+    Copy-Item -Path (Join-Path $source 'winmm-x64.SHA512') -Destination (Join-Path $pkgDir 'winmm-x64.SHA512') -Force
+}
+
 $zipName = "Trinity-v1.1.1-vTweak.zip"
 $zipPath = Join-Path $releaseDir $zipName
 if (Test-Path -LiteralPath $zipPath) {
