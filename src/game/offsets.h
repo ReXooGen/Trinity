@@ -1236,6 +1236,20 @@ namespace trinity::game
     inline constexpr uintptr_t kOff_Tod_LowerLimit  = 0x3D4; // f32 clamp lower
     inline constexpr uintptr_t kOff_Tod_UpperLimit  = 0x3D8; // f32 clamp upper
 
+    // --- Weather & Atmosphere (world.cpp) ------------------------------------
+    // Dynamic AOB patterns for weather intensity and wind hooks in TU 1.18.00+:
+    inline constexpr const char* kSig_WeatherRain =
+        "48 8B 51 ?? 4C 8B D1 48 85 D2 B9 40 00 00 00 48 8D 42 18 48 0F 44 C1 41 80 7A 31 00 4C 8B 08 4D 8D 81 6C 01 00 00";
+
+    inline constexpr const char* kSig_WeatherSnow =
+        "48 8B 51 ?? 4C 8B D1 48 85 D2 B9 40 00 00 00 48 8D 42 18 48 0F 44 C1 41 80 7A 31 00 4C 8B 08 4D 8D 81 68 01 00 00";
+
+    inline constexpr const char* kSig_WeatherDust =
+        "48 8B 41 ?? 41 B8 40 00 00 00 48 85 C0 41 B9 60 01 00 00 48 8D 50 18 B8 CC 01 00 00 49 0F 44 D0";
+
+    inline constexpr const char* kSig_WeatherWind =
+        "48 89 5C 24 08 57 48 83 EC 30 48 8B 01 48 8B D9 48 85 C0 48 8B FA B9 40 00 00 00 4C 8D 40 18 4C 0F 44 C1";
+
     // --- Armor dye / material / repair-condition (dye.cpp) -------------------
     // The dyehouse system, fully RE'd 2026-07-17 from the server's own dye
     // transaction (IDB sub_257C330 - it logs "sql->dyeItem"):
