@@ -150,8 +150,13 @@ The compiled mod will be located at `build/Release/Trinity.asi`.
 
 ## Credits & Acknowledgments
 
-- **XeTrinityz** — Original creator of [Trinity](https://github.com/XeTrinityz/Trinity).
-- **ReXooGen (Lian)** — 1.17+ compatibility fork, inventory stride & storage fixes, and auto marker navigation.
+Trinity is fully open-source under the MIT license. We gratefully acknowledge all contributors whose research and code made this project possible:
+
+- **XeTrinityz** — Original Trinity creator and maintainer ([https://github.com/XeTrinityz/Trinity](https://github.com/XeTrinityz/Trinity))
+- **Orcax1399** — Research insights credited by the original project
+- **Gugi96** — Working ASI / reference research that helped guide compatibility repairs
+- **slingblade2047** — Crimson Desert 1.17/1.18 compatibility work ([https://github.com/slingblade2047/Trinity](https://github.com/slingblade2047/Trinity))
+- **ReXooGen / Lian** — Additional vTweak features, localization, and maintenance ([https://github.com/ReXooGen/Trinity](https://github.com/ReXooGen/Trinity))
 
 ---
-*Crimson Desert is a trademark of Pearl Abyss. This project is open-source and intended solely for single-player modding and educational purposes.*
+*Crimson Desert is a trademark of Pearl Abyss. This project is open-source under the MIT license and intended solely for single-player modding and educational purposes.*
