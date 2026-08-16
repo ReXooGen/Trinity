@@ -714,7 +714,7 @@ namespace trinity::gui
 
         if (ui::Option(markerBtnLabel, markerBtnDesc))
         {
-            const auto res = game::Teleport::TeleportToMarker();
+            const auto res = game::Teleport::TeleportToMarker(st.markerFallbackHeight);
             switch (res)
             {
             case game::Teleport::MarkerStatus::Success:
@@ -736,6 +736,13 @@ namespace trinity::gui
                 ui::Toast("Destination teleport failed");
                 break;
             }
+        }
+
+        if (ui::FloatOption("Sky Arrival Altitude", &st.markerFallbackHeight, 50.0f, 3000.0f, 25.0f, 550.0f, "%.0f",
+                            "Altitude to teleport to when destination marker does not specify height."))
+        {
+            if (st.autoSave)
+                Settings::Save();
         }
 
         // Saved Locations (Bookmarks)

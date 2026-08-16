@@ -1,6 +1,7 @@
 #pragma once
 
 #include <cstddef>
+#include <cstdint>
 
 namespace trinity::game
 {
@@ -89,7 +90,13 @@ namespace trinity::game
 
         // Teleports the active player to the detected map marker.
         // Uses fallbackHeight (default 1200.0f) if the marker altitude is 0.
-        // Activates temporary fall protection when safe insertion is needed.
+        // Activates safe landing / fall protection.
         static MarkerStatus TeleportToMarker(float fallbackHeight = 1200.0f);
+
+        // Returns true if safe landing / fall damage protection is actively protecting the player.
+        static bool IsProtected();
+
+        // Activates or extends safe landing protection for a specified duration in milliseconds.
+        static void ActivateProtection(uint64_t initialDurationMs = 15000);
     };
 }

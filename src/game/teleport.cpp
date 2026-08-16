@@ -148,6 +148,7 @@ namespace trinity::game
         std::array<CandidateSlot, kExpected_MarkerMatches> g_markerCandidates{};
         std::atomic<uint64_t> g_markerProtectFlag{0};
         std::atomic<uint64_t> g_markerProtectDeadline{0};
+        std::atomic<uint64_t> g_protectionStartTime{0};
         std::atomic<bool> g_pendingMarkerTp{false};
         std::atomic<float> g_pendingDestX{0.0f};
         std::atomic<float> g_pendingDestY{0.0f};
@@ -529,6 +530,7 @@ namespace trinity::game
             g_markerProtectDeadline.store(0, std::memory_order_relaxed);
             g_markerPlayer.store(0, std::memory_order_relaxed);
             g_markerProtectFlag.store(0, std::memory_order_relaxed);
+            g_protectionStartTime.store(0, std::memory_order_relaxed);
             g_markerCachedCandidate = -1;
             for (auto& slot : g_markerCandidates)
             {
@@ -1214,6 +1216,7 @@ namespace trinity::game
                                    uint64_t a4, uint64_t a5, uint64_t a6, uint64_t a7)
         {
             const State& st = State::Get();
+            const bool isProtected = Teleport::IsProtected();
 
             // This stepper fires for EVERY character every frame (the mod's
             // highest-frequency hook). Both features it drives are off in the
@@ -1221,7 +1224,7 @@ namespace trinity::game
             // return-address/air-mover math when neither is on - NPCs then cost
             // nothing. g_flightEngaged only matters while Free Flight is on, so
             // leaving it unchanged here is correct.
-            if (!st.superRun && !st.freeFlight)
+            if (!st.superRun && !st.freeFlight && !isProtected)
             {
                 oLocoStep(comp, dt, vel, a4, a5, a6, a7);
                 return;
@@ -1259,6 +1262,33 @@ namespace trinity::game
                 const uintptr_t off =
                     reinterpret_cast<uintptr_t>(_ReturnAddress()) - base;
                 inAirMover = off >= kAirMover_Lo && off < kAirMover_Hi;
+            }
+
+            // Automatic God Mode / Safe Landing:
+            // While the player is airborne after teleporting, continuously extend
+            // the protection deadline so God Mode stays active until the player
+            // lands on the ground + 4-second grace window.
+            if (isPlayer && isProtected)
+            {
+                if (inAirMover)
+                {
+                    const uint64_t now = GetTickCount64();
+                    const uint64_t start = g_protectionStartTime.load(std::memory_order_relaxed);
+                    if (start != 0 && now >= start && (now - start) < 60000)
+                    {
+                        g_markerProtectDeadline.store(now + 4000, std::memory_order_relaxed);
+                    }
+                }
+
+                // Cushion terminal downward velocity to prevent ground clipping
+                if (vel)
+                {
+                    float vy = 0.0f;
+                    if (RawReadFloat(vel + 1, &vy) && vy < -45.0f)
+                    {
+                        RawWriteFloat(vel + 1, -45.0f);
+                    }
+                }
             }
 
             if (st.superRun && st.superRunMult != 1.0f && vel)
@@ -1677,6 +1707,20 @@ namespace trinity::game
         return true;
     }
 
+    bool Teleport::IsProtected()
+    {
+        const uint64_t deadline = g_markerProtectDeadline.load(std::memory_order_relaxed);
+        return (deadline != 0 && GetTickCount64() < deadline);
+    }
+
+    void Teleport::ActivateProtection(uint64_t initialDurationMs)
+    {
+        const uint64_t now = GetTickCount64();
+        g_protectionStartTime.store(now, std::memory_order_relaxed);
+        g_markerProtectDeadline.store(now + initialDurationMs, std::memory_order_release);
+        g_markerProtectFlag.store(1, std::memory_order_release);
+    }
+
     Teleport::MarkerStatus Teleport::TeleportToMarker(float fallbackHeight)
     {
         if (!g_markerReady)
@@ -1695,7 +1739,7 @@ namespace trinity::game
         if (g_markerOriginAddress == 0 || !mem::ReadVec3(g_markerOriginAddress, &origin.x) || !FiniteCoordinate(origin))
             return MarkerStatus::InvalidCoordinates;
 
-        const bool usesFallbackHeight = (marker.y == 0.0f);
+        const bool usesFallbackHeight = (marker.y == 0.0f || std::abs(marker.y) < 1.0f);
         float height = marker.y;
         if (usesFallbackHeight)
         {
@@ -1712,6 +1756,10 @@ namespace trinity::game
                     height = 850.0f;
             }
         }
+        else
+        {
+            height = marker.y - origin.y;
+        }
 
         const Vec3 destination{
             marker.x - origin.x,
@@ -1721,16 +1769,8 @@ namespace trinity::game
         if (!FiniteCoordinate(destination))
             return MarkerStatus::InvalidCoordinates;
 
-        if (usesFallbackHeight)
-        {
-            g_markerProtectFlag.store(1, std::memory_order_release);
-            g_markerProtectDeadline.store(GetTickCount64() + 4000, std::memory_order_relaxed);
-        }
-        else
-        {
-            g_markerProtectFlag.store(0, std::memory_order_release);
-            g_markerProtectDeadline.store(0, std::memory_order_relaxed);
-        }
+        // Activate God Mode protection (automatically held while in the air, expires 4s after landing)
+        ActivateProtection(15000);
 
         // Queue on game thread for frame-perfect physics sync
         g_pendingDestX.store(destination.x, std::memory_order_relaxed);
@@ -1769,8 +1809,8 @@ namespace trinity::game
         if (!FiniteCoordinate(destination))
             return false;
 
-        g_markerProtectFlag.store(1, std::memory_order_release);
-        g_markerProtectDeadline.store(GetTickCount64() + 3500, std::memory_order_relaxed);
+        // Activate God Mode protection (automatically held while in the air, expires 4s after landing)
+        ActivateProtection(15000);
 
         g_pendingDestX.store(destination.x, std::memory_order_relaxed);
         g_pendingDestY.store(destination.y, std::memory_order_relaxed);

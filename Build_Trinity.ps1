@@ -9,21 +9,28 @@ $source = $PSScriptRoot
 $build = Join-Path $source 'build-clean'
 $vswhere = Join-Path ${env:ProgramFiles(x86)} 'Microsoft Visual Studio\Installer\vswhere.exe'
 
-if (-not (Get-Command cmake.exe -ErrorAction SilentlyContinue)) {
-    throw 'CMake was not found. Install CMake or add it to PATH.'
-}
-
 if (-not (Test-Path -LiteralPath $vswhere)) {
-    throw 'Visual Studio Installer was not found. Install Visual Studio 2022 Build Tools with Desktop development with C++.'
+    throw 'Visual Studio Installer was not found. Install Visual Studio Build Tools with Desktop development with C++.'
 }
 
-$visualStudio = & $vswhere -latest -version '[17.0,18.0)' -products * -requires Microsoft.VisualStudio.Component.VC.Tools.x86.x64 -property installationPath
+$visualStudio = & $vswhere -latest -version '[17.0,20.0)' -products * -requires Microsoft.VisualStudio.Component.VC.Tools.x86.x64 -property installationPath
+if (-not $visualStudio) {
+    $visualStudio = & $vswhere -latest -products * -requires Microsoft.VisualStudio.Component.VC.Tools.x86.x64 -property installationPath
+}
 if (-not $visualStudio) {
     throw 'The Visual Studio C++ x64 compiler is missing. Add the Desktop development with C++ workload.'
 }
 
 $vcvars = Join-Path $visualStudio 'VC\Auxiliary\Build\vcvars64.bat'
 $ninja = Join-Path $visualStudio 'Common7\IDE\CommonExtensions\Microsoft\CMake\Ninja\ninja.exe'
+$vsCmake = Join-Path $visualStudio 'Common7\IDE\CommonExtensions\Microsoft\CMake\CMake\bin\cmake.exe'
+if (Test-Path -LiteralPath $vsCmake) {
+    $env:PATH = "$(Split-Path $vsCmake);$env:PATH"
+}
+
+if (-not (Get-Command cmake.exe -ErrorAction SilentlyContinue)) {
+    throw 'CMake was not found. Install CMake or add it to PATH.'
+}
 if (-not (Test-Path -LiteralPath $vcvars)) { throw "Developer environment not found: $vcvars" }
 if (-not (Test-Path -LiteralPath $ninja)) { throw "Ninja not found: $ninja" }
 
@@ -40,5 +47,11 @@ $asi = Get-ChildItem -LiteralPath $build -Recurse -Filter '*.asi' |
     Sort-Object LastWriteTime -Descending |
     Select-Object -First 1
 if (-not $asi) { throw 'Build completed, but Trinity.asi was not found.' }
+
+$releaseDir = Join-Path $source 'build\Release'
+if (Test-Path -LiteralPath $releaseDir) {
+    Copy-Item -Path $asi.FullName -Destination (Join-Path $releaseDir $asi.Name) -Force
+    Write-Host "Copied to: $(Join-Path $releaseDir $asi.Name)"
+}
 
 Write-Host "Built: $($asi.FullName)"

@@ -446,6 +446,7 @@ namespace trinity::ui
         const float s          = g_scale;
         const float trackW     = 40.0f * s;
         const float trackRight = r.mx.x - 14.0f * s;
+        const float valRight   = trackRight - trackW - 20.0f * s;
 
         if (editing)
         {
@@ -476,26 +477,19 @@ namespace trinity::ui
         {
             if (r.activated)
             {
-                if (g_nav.selectPad)
+                ImGuiIO& io = ImGui::GetIO();
+                const bool onValueText = (ImGui::IsMouseClicked(ImGuiMouseButton_Left) &&
+                                          io.MousePos.x >= valRight - 60.0f * s &&
+                                          io.MousePos.x <= valRight + 10.0f * s);
+                if (onValueText)
                 {
-                    *enabled = !*enabled;
-                    changed  = true;
+                    EditBegin(value);
+                    editing = true;
                 }
                 else
                 {
-                    ImGuiIO& io = ImGui::GetIO();
-                    const bool onSwitch = (io.MousePos.x >= trackRight - trackW - 6.0f * s &&
-                                           io.MousePos.x <= trackRight + 6.0f * s);
-                    if (onSwitch && ImGui::IsMouseClicked(ImGuiMouseButton_Left))
-                    {
-                        *enabled = !*enabled;
-                        changed  = true;
-                    }
-                    else
-                    {
-                        EditBegin(value);
-                        editing = true;
-                    }
+                    *enabled = !*enabled;
+                    changed  = true;
                 }
             }
 
@@ -503,6 +497,22 @@ namespace trinity::ui
             {
                 *enabled = !*enabled;
                 changed  = true;
+            }
+
+            // Direct digit typing: pressing numbers 0-9 starts typing mode automatically
+            if (r.selected && !editing)
+            {
+                ImGuiIO& io = ImGui::GetIO();
+                for (int n = 0; n < io.InputQueueCharacters.Size; ++n)
+                {
+                    const ImWchar c = io.InputQueueCharacters[n];
+                    if ((c >= '0' && c <= '9') || c == '.')
+                    {
+                        EditBegin(value);
+                        editing = true;
+                        break;
+                    }
+                }
             }
 
             const float st = step * (g_nav.adjustBoost ? 10.0f : 1.0f);
@@ -605,26 +615,20 @@ namespace trinity::ui
         {
             if (r.activated)
             {
-                if (g_nav.selectPad)
+                ImGuiIO& io = ImGui::GetIO();
+                const float valRight = trackRight - trackW - 20.0f * s;
+                const bool onValueText = (ImGui::IsMouseClicked(ImGuiMouseButton_Left) &&
+                                          io.MousePos.x >= valRight - 60.0f * s &&
+                                          io.MousePos.x <= valRight + 10.0f * s);
+                if (onValueText)
                 {
-                    *enabled = !*enabled;
-                    changed  = true;
+                    EditBegin(value);
+                    editing = true;
                 }
                 else
                 {
-                    ImGuiIO& io = ImGui::GetIO();
-                    const bool onSwitch = (io.MousePos.x >= trackRight - trackW - 6.0f * s &&
-                                           io.MousePos.x <= trackRight + 6.0f * s);
-                    if (onSwitch && ImGui::IsMouseClicked(ImGuiMouseButton_Left))
-                    {
-                        *enabled = !*enabled;
-                        changed  = true;
-                    }
-                    else
-                    {
-                        EditBegin(value);
-                        editing = true;
-                    }
+                    *enabled = !*enabled;
+                    changed  = true;
                 }
             }
 
@@ -632,6 +636,22 @@ namespace trinity::ui
             {
                 *enabled = !*enabled;
                 changed  = true;
+            }
+
+            // Direct digit typing: pressing numbers 0-9 starts typing mode automatically
+            if (r.selected && !editing)
+            {
+                ImGuiIO& io = ImGui::GetIO();
+                for (int n = 0; n < io.InputQueueCharacters.Size; ++n)
+                {
+                    const ImWchar c = io.InputQueueCharacters[n];
+                    if (c >= '0' && c <= '9')
+                    {
+                        EditBegin(value);
+                        editing = true;
+                        break;
+                    }
+                }
             }
 
             const int st = step * (g_nav.adjustBoost ? 10 : 1);

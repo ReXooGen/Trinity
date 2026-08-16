@@ -1,4 +1,5 @@
 #include "player.h"
+#include "teleport.h"
 
 #include <Windows.h>
 #include <atomic>
@@ -267,7 +268,8 @@ namespace trinity::game
         bool AnyStatFeatureActive(const State& st)
         {
             return st.godMode || st.infStamina || st.infSpirit ||
-                   st.dmgInMult != 1.0f || st.dmgOutMult != 1.0f;
+                   st.dmgInMult != 1.0f || st.dmgOutMult != 1.0f ||
+                   Teleport::IsProtected();
         }
 
         void TickResolveSelf()
@@ -476,7 +478,14 @@ namespace trinity::game
             const int64_t result = oStatCommit(entry, time, target, flag);
 
             const State& st = State::Get();
-            if (st.godMode    && InSet(g_hpEntries,     kMaxPlayers,     e)) PinEntry(e);
+            bool isPlayerHp = InSet(g_hpEntries, kMaxPlayers, e);
+            if (!isPlayerHp && g_hpEntries[0].load(std::memory_order_relaxed) == 0)
+            {
+                int32_t t = 0;
+                if (StatEntryType(e, &t) && IsHealthType(t)) isPlayerHp = true;
+            }
+
+            if ((st.godMode || (isPlayerHp && Teleport::IsProtected())) && isPlayerHp) PinEntry(e);
             if (st.infStamina && InSet(g_stamEntries,   kMaxStatEntries, e)) PinEntry(e);
             if (st.infSpirit  && InSet(g_spiritEntries, kMaxStatEntries, e)) PinEntry(e);
 
@@ -524,7 +533,17 @@ namespace trinity::game
             // Only HP loss is damage; heals, regen and every other status ride
             // this dispatcher too and must pass through unchanged.
             if (delta < 0 && statusId == StatType_Health)
-                delta = ScaleDamage(reinterpret_cast<uintptr_t>(targetOwner), sourceCtx, delta);
+            {
+                const uintptr_t owner = reinterpret_cast<uintptr_t>(targetOwner);
+                if (Teleport::IsProtected() && (InSet(g_targetOwners, kMaxPlayers, owner) || g_targetOwners[0].load(std::memory_order_relaxed) == 0))
+                {
+                    delta = 0; // nullify incoming fall/impact damage during safe landing protection
+                }
+                else
+                {
+                    delta = ScaleDamage(owner, sourceCtx, delta);
+                }
+            }
 
             return oDamageApply(targetOwner, statusId, time, delta, sourceCtx,
                                 a6, a7, a8, a9, a10, out);

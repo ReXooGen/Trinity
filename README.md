@@ -6,6 +6,26 @@ Trinity is an in-game DirectX 12 mod menu for **Crimson Desert**, originally cre
 
 ---
 
+## Screenshots & In-Game Previews
+
+| Player Menu | Travel & Destination Teleport |
+| :---: | :---: |
+| ![Player Menu](image.png) | ![Travel Menu](image2.png) |
+
+| Inventory & Max Stack Size | World & Game Speed Control |
+| :---: | :---: |
+| ![Inventory Menu](image3.png) | ![World Menu](image4.png) |
+
+| System Settings & Themes | Equipment Enhancer & Sockets |
+| :---: | :---: |
+| ![System Menu](image5.png) | ![Edit Equipment](image6.png) |
+
+| Unlimited Custom Bookmarks | Storage Filters & Item Editor |
+| :---: | :---: |
+| ![Saved Locations](image7.png) | ![Storage Editor](image8.png) |
+
+---
+
 ## What's New in v1.1.0
 
 - **Abyss Socket TU 1.17+ Alignment & Live Socketing**:
@@ -26,8 +46,9 @@ Trinity is an in-game DirectX 12 mod menu for **Crimson Desert**, originally cre
 - **Dynamic Theme Customizer**:
   - 6 selectable menu color themes: **Crimson Red**, **Cyber Cyan**, **Neon Purple**, **Matrix Emerald**, **Royal Gold**, and **Sunset Orange**.
 
-- **Destination Teleport with Live Coordinates**:
+- **Destination Teleport with Live Coordinates & Safe Landing**:
   - Re-anchored destination teleport with active coordinate display and robust physics thread synchronization.
+  - Automatic God Mode / invulnerability protection until player touches the ground.
 
 ---
 
@@ -53,7 +74,7 @@ Trinity is an in-game DirectX 12 mod menu for **Crimson Desert**, originally cre
 
 ## Installation
 
-1. Install a compatible **ASI Loader** for Crimson Desert.
+1. Install a compatible **ASI Loader** for Crimson Desert (e.g. `dinput8.dll` or `winmm.dll`).
 2. Copy `Trinity.asi` into the game root directory (where `CrimsonDesert.exe` is located) or into your loader's `plugins/` folder.
 3. Launch the game and load your save.
 4. Press **Insert** (Keyboard) or **LB + D-pad Down** (Controller) to open the Trinity menu.
@@ -66,9 +87,10 @@ Trinity is an in-game DirectX 12 mod menu for **Crimson Desert**, originally cre
 | :--- | :--- | :--- |
 | **Open / Close Menu** | `Insert` (or `Esc` to close) | `LB` + `D-pad Down` |
 | **Navigate** | `Arrow Keys` / Mouse Click | `D-pad` |
-| **Select / Toggle** | `Enter` or Left Click | `A` |
+| **Select / Toggle** | `Enter` / `Space` / Left Click | `A` |
 | **Back / Parent Menu** | `Backspace` | `B` |
-| **Adjust Value / Amount** | `Left` / `Right` | `D-pad Left` / `Right` |
+| **Adjust Value / Amount** | `Left` / `Right` (Hold `Shift` for boost) | `D-pad Left` / `Right` |
+| **Direct Numeric Input** | Type `0`–`9` or click number text | N/A |
 | **Tab Switching** | `Q` / `E` or `Tab` | `LB` / `RB` |
 
 Keybindings can be customized under **SYSTEM > Keybinds**.
@@ -86,8 +108,7 @@ Keybindings can be customized under **SYSTEM > Keybinds**.
 ### Build Command:
 ```powershell
 # Configure and build Release x64 binary
-cmake -S . -B build -G "Visual Studio 17 2022" -A x64
-cmake --build build --config Release
+powershell -ExecutionPolicy Bypass -File .\Build_Trinity.ps1
 ```
 The compiled mod will be located at `build/Release/Trinity.asi`.
 
