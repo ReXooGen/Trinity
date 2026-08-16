@@ -2814,40 +2814,6 @@ namespace trinity::game
             }
         }
 
-        // 3. Fast in-process memory sweep for live currency records
-        // Replaces all currency balances in UI caches, active transactions, and player states
-        uintptr_t scanAddr = 0;
-        MEMORY_BASIC_INFORMATION mbi{};
-        while (VirtualQuery(reinterpret_cast<void*>(scanAddr), &mbi, sizeof(mbi)) > 0)
-        {
-            const uintptr_t base = reinterpret_cast<uintptr_t>(mbi.BaseAddress);
-            const size_t size = mbi.RegionSize;
-
-            if (mbi.State == MEM_COMMIT &&
-                (mbi.Protect & (PAGE_READWRITE | PAGE_EXECUTE_READWRITE)) &&
-                !(mbi.Protect & (PAGE_GUARD | PAGE_NOACCESS)))
-            {
-                const uint8_t* p = reinterpret_cast<const uint8_t*>(base);
-                const size_t limit = (size >= 32) ? size - 32 : 0;
-
-                for (size_t off = 0; off < limit; off += 8)
-                {
-                    // Currency record with [typeId u16] at +0x00 and "Copper" at +0x10
-                    const uint16_t tid0 = *reinterpret_cast<const uint16_t*>(p + off);
-                    if (tid0 == moneyTid || (moneyTid != 0 && tid0 == 1868) || (moneyTid == 0 && tid0 == 0x074C))
-                    {
-                        if (memcmp(p + off + 0x10, "Copper", 6) == 0)
-                        {
-                            *reinterpret_cast<int64_t*>(const_cast<uint8_t*>(p + off + 0x08)) = copperAmount;
-                            written = true;
-                        }
-                    }
-                }
-            }
-            scanAddr = base + size;
-            if (scanAddr >= 0x7FFFFFFFFFFF) break;
-        }
-
         return written;
     }
 
