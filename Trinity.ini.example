@@ -51,3 +51,7 @@ fileLogging=1
 
 ; Theme Color: 0=Crimson Red, 1=Cyber Cyan, 2=Neon Purple, 3=Matrix Emerald, 4=Royal Gold, 5=Sunset Orange
 themeIndex=0
+
+; UI Language: en (English default), zh (Simplified Chinese), ko (Korean), etc.
+language=en
+

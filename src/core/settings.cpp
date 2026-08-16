@@ -8,6 +8,7 @@
 #include "logger.h"
 #include "mod.h"
 #include "state.h"
+#include "localization.h"
 
 namespace trinity
 {
@@ -98,6 +99,13 @@ namespace trinity
             else if (!strcmp(key, "showFps"))             vals.showFps             = atoi(val) != 0;
             else if (!strcmp(key, "fileLogging"))         vals.fileLogging         = atoi(val) != 0;
             else if (!strcmp(key, "themeIndex"))          vals.themeIndex          = atoi(val);
+            else if (!strcmp(key, "language"))
+            {
+                snprintf(vals.languageCode, sizeof(vals.languageCode), "%s", val);
+                size_t len = strlen(vals.languageCode);
+                while (len > 0 && (vals.languageCode[len - 1] == '\r' || vals.languageCode[len - 1] == '\n' || vals.languageCode[len - 1] == ' '))
+                    vals.languageCode[--len] = '\0';
+            }
             else if (!strncmp(key, "loc_", 4))
             {
                 int idx = -1;
@@ -197,6 +205,12 @@ namespace trinity
         st.invStackSize    = vals.invStackSize;
         st.invStackSizeVal = ClampI(vals.invStackSizeVal, 1, 999999999);
         st.showFps       = vals.showFps;
+
+        // Apply language setting
+        snprintf(st.languageCode, sizeof(st.languageCode), "%s", vals.languageCode);
+        loc::SetLanguageByCode(st.languageCode);
+        st.languageIndex = loc::GetCurrentLanguageIndex();
+
         LOG_OK("Trinity.ini loaded - restored feature settings from last session.");
     }
 
@@ -262,7 +276,8 @@ namespace trinity
                 "invStackSizeVal=%d\n"
                 "showFps=%d\n"
                 "fileLogging=%d\n"
-                "themeIndex=%d\n",
+                "themeIndex=%d\n"
+                "language=%s\n",
                 st.openKeyVk,
                 st.openPadMask,
                 st.flyUpKeyVk,
@@ -295,7 +310,8 @@ namespace trinity
                 st.invStackSizeVal,
                 st.showFps ? 1 : 0,
                 st.fileLogging ? 1 : 0,
-                st.themeIndex);
+                st.themeIndex,
+                loc::GetLanguageCode(st.languageIndex));
 
         for (size_t i = 0; i < st.savedLocations.size(); ++i)
         {

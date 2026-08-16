@@ -67,6 +67,12 @@ Copy-Item -Path $asi.FullName -Destination (Join-Path $pkgDir 'Trinity.asi') -Fo
 if (Test-Path (Join-Path $source 'Trinity.ini.example')) {
     Copy-Item -Path (Join-Path $source 'Trinity.ini.example') -Destination (Join-Path $pkgDir 'Trinity.ini.example') -Force
 }
+if (Test-Path (Join-Path $source 'Trinity_zh.ini')) {
+    Copy-Item -Path (Join-Path $source 'Trinity_zh.ini') -Destination (Join-Path $pkgDir 'Trinity_zh.ini') -Force
+}
+if (Test-Path (Join-Path $source 'Trinity_ko.ini')) {
+    Copy-Item -Path (Join-Path $source 'Trinity_ko.ini') -Destination (Join-Path $pkgDir 'Trinity_ko.ini') -Force
+}
 if (Test-Path (Join-Path $source 'README.md')) {
     Copy-Item -Path (Join-Path $source 'README.md') -Destination (Join-Path $pkgDir 'README.md') -Force
 }
@@ -95,4 +101,30 @@ if (Test-Path -LiteralPath $zipPath) {
 
 Compress-Archive -Path "$pkgDir\*" -DestinationPath $zipPath -Force
 Write-Host "Created Release ZIP: $zipPath"
+
+# Auto-deploy to parent directory
+if (Test-Path -LiteralPath $parentDir) {
+    Copy-Item -Path (Join-Path $pkgDir 'Trinity.asi') -Destination (Join-Path $parentDir 'Trinity.asi') -Force
+    Copy-Item -Path (Join-Path $pkgDir 'Trinity_zh.ini') -Destination (Join-Path $parentDir 'Trinity_zh.ini') -Force
+    Copy-Item -Path (Join-Path $pkgDir 'Trinity_ko.ini') -Destination (Join-Path $parentDir 'Trinity_ko.ini') -Force
+    Write-Host "Auto-deployed to: $parentDir"
+}
+
+# Auto-deploy to Steam game installation folder
+$steamGameDir = "C:\Program Files (x86)\Steam\steamapps\common\Crimson Desert\bin64"
+if (Test-Path -LiteralPath $steamGameDir) {
+    Copy-Item -Path (Join-Path $pkgDir 'Trinity.asi') -Destination (Join-Path $steamGameDir 'Trinity.asi') -Force
+    Copy-Item -Path (Join-Path $pkgDir 'Trinity_zh.ini') -Destination (Join-Path $steamGameDir 'Trinity_zh.ini') -Force
+    Copy-Item -Path (Join-Path $pkgDir 'Trinity_ko.ini') -Destination (Join-Path $steamGameDir 'Trinity_ko.ini') -Force
+    Write-Host "Auto-deployed to Steam game folder: $steamGameDir"
+}
+
+# Auto-deploy to Steam mods folder (ASI only)
+$steamModsDir = "C:\Program Files (x86)\Steam\steamapps\common\Crimson Desert\mods"
+if (-not (Test-Path -LiteralPath $steamModsDir)) {
+    New-Item -ItemType Directory -Path $steamModsDir -Force | Out-Null
+}
+Copy-Item -Path (Join-Path $pkgDir 'Trinity.asi') -Destination (Join-Path $steamModsDir 'Trinity.asi') -Force
+Write-Host "Auto-deployed Trinity.asi to Steam mods folder: $steamModsDir"
+
 Write-Host "Built: $($asi.FullName)"

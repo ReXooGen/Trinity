@@ -14,6 +14,7 @@
 #include "../core/state.h"
 #include "../core/text.h"
 #include "../core/logger.h"
+#include "../core/localization.h"
 #include "../game/player.h"
 #include "../game/teleport.h"
 #include "../game/inventory.h"
@@ -74,41 +75,39 @@ namespace trinity::gui
         State& st = State::Get();
         ui::Begin();
 
-        ui::Submenu("Dye Equipment", "dyeslots",
+        ui::Submenu(LOC("Dye Equipment"), "dyeslots",
                     game::Dye::Ready()
-                        ? "Recolor your equipped gear."
-                        : "Recolor your equipped gear. Load into the world first.");
+                        ? LOC("Recolor your equipped gear.")
+                        : LOC("Recolor your equipped gear. Load into the world first."));
 
-        ui::Submenu("Edit Equipment", "equipslots",
+        ui::Submenu(LOC("Edit Equipment"), "equipslots",
                     game::Equipment::Ready()
-                        ? "Refine your gear and socket abyss gears into it."
-                        : "Refine and socket your gear. Load into the world first.");
+                        ? LOC("Refine your gear and socket abyss gears into it.")
+                        : LOC("Refine and socket your gear. Load into the world first."));
 
         bool changed = false;
-        changed |= ui::Toggle("God Mode", &st.godMode,
+        changed |= ui::Toggle(LOC("God Mode"), &st.godMode,
                    game::Player::Ready()
-                       ? "Keeps your health full."
-                       : "Keeps your health full. Load into the game world first.");
-        changed |= ui::Toggle("Infinite Stamina", &st.infStamina,
-                   "Keeps your stamina full.");
-        changed |= ui::Toggle("Infinite Spirit", &st.infSpirit,
-                   "Keeps your spirit full.");
-        changed |= ui::ToggleFloat("Super Run", &st.superRun, &st.superRunMult, 1.0f, 10.0f, 0.25f, 2.0f, "%.2fx",
-                        "Move faster than normal.");
-        changed |= ui::ToggleFloat("Super Jump", &st.superJump, &st.superJumpMult, 1.0f, 10.0f, 0.25f, 2.0f, "%.2fx",
-                        "Jump higher than normal.");
-        changed |= ui::ToggleFloat("Free Flight", &st.freeFlight, &st.flightSpeed, 1.0f, 40.0f, 1.0f, 8.0f, "%.0f",
-                        "While airborne, hold Caps Lock / RB to rise or Ctrl / Right Trigger "
-                        "to sink. Let go and normal physics resume - jumps and aerial attacks "
-                        "are untouched.");
-        changed |= ui::ToggleFloat("Trust Multiplier", &st.trustMult, &st.trustMultVal, 1.0f, 25.0f, 0.25f, 3.0f, "%.2fx",
+                       ? LOC("Keeps your health full.")
+                       : LOC("Keeps your health full. Load into the game world first."));
+        changed |= ui::Toggle(LOC("Infinite Stamina"), &st.infStamina,
+                   LOC("Keeps your stamina full."));
+        changed |= ui::Toggle(LOC("Infinite Spirit"), &st.infSpirit,
+                   LOC("Keeps your spirit full."));
+        changed |= ui::ToggleFloat(LOC("Super Run"), &st.superRun, &st.superRunMult, 1.0f, 10.0f, 0.25f, 2.0f, "%.2fx",
+                        LOC("Move faster than normal."));
+        changed |= ui::ToggleFloat(LOC("Super Jump"), &st.superJump, &st.superJumpMult, 1.0f, 10.0f, 0.25f, 2.0f, "%.2fx",
+                        LOC("Jump higher than normal."));
+        changed |= ui::ToggleFloat(LOC("Free Flight"), &st.freeFlight, &st.flightSpeed, 1.0f, 40.0f, 1.0f, 8.0f, "%.0f",
+                        LOC("While airborne, hold Caps Lock / RB to rise or Ctrl / Right Trigger to sink. Let go and normal physics resume - jumps and aerial attacks are untouched."));
+        changed |= ui::ToggleFloat(LOC("Trust Multiplier"), &st.trustMult, &st.trustMultVal, 1.0f, 25.0f, 0.25f, 3.0f, "%.2fx",
                         game::Friendly::Ready()
-                            ? "Gifting NPCs or feeding animals builds trust faster."
-                            : "Gifting NPCs or feeding animals builds trust faster. Unavailable right now.");
-        changed |= ui::FloatOption("Outgoing Damage", &st.dmgOutMult, 0.0f, 20.0f, 0.25f, 1.0f, "%.2fx",
-                        "Adjusts how much damage you deal.");
-        changed |= ui::FloatOption("Incoming Damage", &st.dmgInMult, 0.0f, 10.0f, 0.25f, 1.0f, "%.2fx",
-                        "Adjusts how much damage you take.");
+                            ? LOC("Gifting NPCs or feeding animals builds trust faster.")
+                            : LOC("Gifting NPCs or feeding animals builds trust faster. Unavailable right now."));
+        changed |= ui::FloatOption(LOC("Outgoing Damage"), &st.dmgOutMult, 0.0f, 20.0f, 0.25f, 1.0f, "%.2fx",
+                        LOC("Adjusts how much damage you deal."));
+        changed |= ui::FloatOption(LOC("Incoming Damage"), &st.dmgInMult, 0.0f, 10.0f, 0.25f, 1.0f, "%.2fx",
+                        LOC("Adjusts how much damage you take."));
 
         if (changed && st.autoSave)
             Settings::Save();
@@ -425,31 +424,31 @@ namespace trinity::gui
             return;
         }
 
-        if (ui::Option("Repair All Gear", "Restores durability to 100% on all equipped weapons and armor."))
+        if (ui::Option(LOC("Repair All Gear"), LOC("Restores durability to 100% on all equipped weapons and armor.")))
         {
             int repaired = 0;
             if (game::Equipment::RepairAll(&repaired))
-                ui::Toast("Repaired %d equipped piece%s", repaired, repaired == 1 ? "" : "s");
+                ui::Toast(LOC("Repaired %d equipped piece%s"), repaired, repaired == 1 ? "" : "s");
             else
-                ui::Toast("No equipped gear to repair");
+                ui::Toast(LOC("No equipped gear to repair"));
         }
 
-        if (ui::Option("Max Refine All (+10)", "Sets all equipped gear to refinement level +10."))
+        if (ui::Option(LOC("Max Refine All (+10)"), LOC("Sets all equipped gear to refinement level +10.")))
         {
             int refined = 0;
             if (game::Equipment::RefineAll(10, &refined))
-                ui::Toast("Refined %d piece%s to +10", refined, refined == 1 ? "" : "s");
+                ui::Toast(LOC("Refined %d piece%s to +10"), refined, refined == 1 ? "" : "s");
             else
-                ui::Toast("No equipped gear to refine");
+                ui::Toast(LOC("No equipped gear to refine"));
         }
 
-        if (ui::Option("Unlock All Sockets", "Opens all 5 abyss sockets on all equipped weapons and armor."))
+        if (ui::Option(LOC("Unlock All Sockets"), LOC("Opens all 5 abyss sockets on all equipped weapons and armor.")))
         {
             int unlocked = 0;
             if (game::Equipment::UnlockAllGears(&unlocked))
-                ui::Toast("Unlocked sockets on %d piece%s", unlocked, unlocked == 1 ? "" : "s");
+                ui::Toast(LOC("Unlocked sockets on %d piece%s"), unlocked, unlocked == 1 ? "" : "s");
             else
-                ui::Toast("No equipped gear found");
+                ui::Toast(LOC("No equipped gear found"));
         }
 
         const int n = game::Equipment::SlotCount();
@@ -460,15 +459,15 @@ namespace trinity::gui
 
             char label[176];
             if (si.unlockedCount > 0)
-                snprintf(label, sizeof(label), "%s - %s  (%d/%d socket%s used)",
-                         si.slotName, si.itemName, si.filledCount, si.unlockedCount,
-                         si.unlockedCount == 1 ? "" : "s");
+                snprintf(label, sizeof(label), "%s - %s  (%d/%d %s)",
+                         LOC(si.slotName), si.itemName, si.filledCount, si.unlockedCount,
+                         LOC("sockets used"));
             else
-                snprintf(label, sizeof(label), "%s - %s  (no sockets)",
-                         si.slotName, si.itemName);
+                snprintf(label, sizeof(label), "%s - %s  (%s)",
+                         LOC(si.slotName), si.itemName, LOC("no sockets"));
 
             if (ui::SubmenuItem(label, si.icon[0] ? si.icon : nullptr, "equipedit",
-                                "Refine this piece and edit its abyss-gear sockets."))
+                                LOC("Refine this piece and edit its abyss-gear sockets.")))
             {
                 // A different piece gets a fresh picker page.
                 if (s_eqTag != si.tag || strcmp(s_eqItem, si.itemName) != 0)
@@ -479,7 +478,7 @@ namespace trinity::gui
             }
         }
         if (n == 0)
-            ui::Option("Nothing equipped", "Equip some gear first.");
+            ui::Option(LOC("Nothing equipped"), LOC("Equip some gear first."));
 
         ui::End();
     }
@@ -491,31 +490,31 @@ namespace trinity::gui
         game::Equipment::SlotInfo si{};
         if (!EqSlotForTag(s_eqTag, &si))
         {
-            ui::Option("Not equipped", "This piece is no longer equipped.");
+            ui::Option(LOC("Not equipped"), LOC("This piece is no longer equipped."));
             ui::End();
             return;
         }
 
         if (si.unlockedCount < game::Equipment::kMaxSockets)
         {
-            if (ui::Option("Unlock all sockets",
-                           "Opens every socket on this piece (up to 5), then socket gears into them."))
+            if (ui::Option(LOC("Unlock all sockets"),
+                           LOC("Opens every socket on this piece (up to 5), then socket gears into them.")))
             {
                 if (game::Equipment::UnlockAll(si.tag))
-                    ui::Toast("All sockets unlocked");
+                    ui::Toast(LOC("All sockets unlocked"));
                 else
-                    ui::Toast("Could not unlock - see the log");
+                    ui::Toast(LOC("Could not unlock - see the log"));
             }
         }
         if (si.filledCount > 0)
         {
-            if (ui::Option("Clear all sockets",
-                           "Removes every abyss gear from this piece, leaving the sockets open."))
+            if (ui::Option(LOC("Clear all sockets"),
+                           LOC("Removes every abyss gear from this piece, leaving the sockets open.")))
             {
                 if (game::Equipment::ClearAll(si.tag))
-                    ui::Toast("All sockets cleared");
+                    ui::Toast(LOC("All sockets cleared"));
                 else
-                    ui::Toast("Could not clear - see the log");
+                    ui::Toast(LOC("Could not clear - see the log"));
             }
         }
 
@@ -524,40 +523,39 @@ namespace trinity::gui
         // writes both realms and persists.
         {
             int lvl = s_eqRefine;
-            if (ui::IntOption("Refinement", &lvl, 0, game::Equipment::kRefineMax, 1, si.refineLevel,
-                              "Refine this piece from 0 to 10."))
+            if (ui::IntOption(LOC("Refinement"), &lvl, 0, game::Equipment::kRefineMax, 1, si.refineLevel,
+                              LOC("Refine this piece from 0 to 10.")))
             {
                 s_eqRefine = lvl;
                 bool p = false;
                 if (game::Equipment::SetRefine(si.tag, lvl, &p))
-                    ui::Toast(p ? "Refinement set to %d" : "Refinement %d (this session)", lvl);
+                    ui::Toast(p ? LOC("Refinement set") : LOC("Refinement set (this session)"));
                 else
-                    ui::Toast("Could not set refinement - see the log");
+                    ui::Toast(LOC("Could not set refinement - see the log"));
             }
         }
 
         if (si.unlockedCount == 0)
         {
-            ui::Option("No sockets yet", "Unlock sockets above to add abyss gears.");
+            ui::Option(LOC("No sockets yet"), LOC("Unlock sockets above to add abyss gears."));
             ui::End();
             return;
         }
 
         if (!game::Equipment::EditsPersist())
-            ui::Option("Note: not saving yet",
-                       "Your save is still loading - gear edits apply visually but revert "
-                       "on reload until this clears.");
+            ui::Option(LOC("Note: not saving yet"),
+                       LOC("Your save is still loading - gear edits apply visually but revert on reload until this clears."));
 
         for (int k = 0; k < si.unlockedCount; ++k)
         {
             const game::Equipment::Socket& so = si.sockets[k];
             char label[112];
-            snprintf(label, sizeof(label), "Socket %d: %s", k + 1,
-                     so.filled ? so.gearName : "Empty");
+            snprintf(label, sizeof(label), "%s %d: %s", LOC("Socket"), k + 1,
+                     so.filled ? so.gearName : LOC("Empty"));
             if (ui::SubmenuItem(label, (so.filled && so.gearIcon[0]) ? so.gearIcon : nullptr,
                                 "equipgear",
-                                so.filled ? "Change or remove this abyss gear."
-                                          : "Add an abyss gear to this socket."))
+                                so.filled ? LOC("Change or remove this abyss gear.")
+                                          : LOC("Add an abyss gear to this socket.")))
             {
                 s_eqSocket = k;
                 s_eqFind[0] = 0;
@@ -640,28 +638,28 @@ namespace trinity::gui
 
         const bool ready = game::World::Ready();
         bool changed = false;
-        changed |= ui::ToggleFloat("Game Speed", &st.gameSpeed, &st.gameSpeedMult, 0.1f, 5.0f, 0.05f, 1.0f, "%.2fx",
+        changed |= ui::ToggleFloat(LOC("Game Speed"), &st.gameSpeed, &st.gameSpeedMult, 0.1f, 5.0f, 0.05f, 1.0f, "%.2fx",
                    ready
-                       ? "Speeds up or slows down the game."
-                       : "Speeds up or slows down the game. Unavailable right now.");
+                       ? LOC("Speeds up or slows down the game.")
+                       : LOC("Speeds up or slows down the game. Unavailable right now."));
 
         const bool timeReady = game::World::TimeOfDayReady();
-        changed |= ui::Toggle("Freeze Time of Day", &st.timeFrozen,
+        changed |= ui::Toggle(LOC("Freeze Time of Day"), &st.timeFrozen,
                    timeReady
-                       ? "Holds the clock at the current time; the world keeps running normally."
-                       : "Holds the clock in place. Unavailable right now.");
+                       ? LOC("Holds the clock at the current time; the world keeps running normally.")
+                       : LOC("Holds the clock in place. Unavailable right now."));
 
         // Advance the clock by however many hours the user dials in. Left/Right
         // step the amount (held: x10), Enter types an exact one, then the same
         // press applies it (see ui::IntAction).
         static int s_advHours = 1;
-        if (ui::IntAction("Advance Time", &s_advHours, 1, 240, 1, 1,
+        if (ui::IntAction(LOC("Advance Time"), &s_advHours, 1, 240, 1, 1,
                    timeReady
-                       ? "Skips the clock forward by this many hours; time keeps flowing after."
-                       : "Skips the clock forward. Unavailable right now."))
+                       ? LOC("Skips the clock forward by this many hours; time keeps flowing after.")
+                       : LOC("Skips the clock forward. Unavailable right now.")))
         {
             if (game::World::AdvanceTimeOfDayHours(s_advHours))
-                ui::Toast("Advanced %d hour%s", s_advHours, s_advHours == 1 ? "" : "s");
+                ui::Toast(LOC("Advanced %d hours"), s_advHours);
         }
 
         if (changed && st.autoSave)
@@ -680,15 +678,15 @@ namespace trinity::gui
         {
             char buf[96];
             snprintf(buf, sizeof(buf), "X %.2f  Y %.2f  Z %.2f", x, y, z);
-            if (ui::Option(buf, "Copy these coordinates to the clipboard."))
+            if (ui::Option(buf, LOC("Copy these coordinates to the clipboard.")))
             {
                 if (game::Teleport::CopyPositionToClipboard())
-                    ui::Toast("Coordinates copied to clipboard");
+                    ui::Toast(LOC("Coordinates copied to clipboard"));
             }
         }
         else
         {
-            ui::Option("No position yet", "Load into the world and take a step first.");
+            ui::Option(LOC("No position yet"), LOC("Load into the world and take a step first."));
         }
 
         // Map Marker Teleport
@@ -700,16 +698,17 @@ namespace trinity::gui
         if (hasMarker)
         {
             if (my == 0.0f)
-                snprintf(markerBtnLabel, sizeof(markerBtnLabel), "Teleport to Destination: X %.0f  Y (Sky)  Z %.0f", mx, mz);
+                snprintf(markerBtnLabel, sizeof(markerBtnLabel), "%s: X %.0f  Y (%s)  Z %.0f", LOC("Teleport to Destination"), mx, LOC("Sky"), mz);
             else
-                snprintf(markerBtnLabel, sizeof(markerBtnLabel), "Teleport to Destination: X %.0f  Y %.0f  Z %.0f", mx, my, mz);
-            snprintf(markerBtnDesc, sizeof(markerBtnDesc), "Teleport to active map destination (Hotkey: %s).",
+                snprintf(markerBtnLabel, sizeof(markerBtnLabel), "%s: X %.0f  Y %.0f  Z %.0f", LOC("Teleport to Destination"), mx, my, mz);
+            snprintf(markerBtnDesc, sizeof(markerBtnDesc), "%s (%s: %s).",
+                     LOC("Teleport to active map destination"), LOC("Hotkey"),
                      KeyName(st.markerTeleportKeyVk));
         }
         else
         {
-            snprintf(markerBtnLabel, sizeof(markerBtnLabel), "Teleport to Destination: None");
-            snprintf(markerBtnDesc, sizeof(markerBtnDesc), "Set a destination/waypoint on the world map first.");
+            snprintf(markerBtnLabel, sizeof(markerBtnLabel), "%s: %s", LOC("Teleport to Destination"), LOC("None"));
+            snprintf(markerBtnDesc, sizeof(markerBtnDesc), "%s", LOC("Set a destination/waypoint on the world map first."));
         }
 
         if (ui::Option(markerBtnLabel, markerBtnDesc))
@@ -718,40 +717,40 @@ namespace trinity::gui
             switch (res)
             {
             case game::Teleport::MarkerStatus::Success:
-                ui::Toast("Teleported to destination");
+                ui::Toast(LOC("Teleported to destination"));
                 break;
             case game::Teleport::MarkerStatus::NoMarker:
-                ui::Toast("No destination found on map");
+                ui::Toast(LOC("No destination found on map"));
                 break;
             case game::Teleport::MarkerStatus::NoPlayer:
-                ui::Toast("Player not ready");
+                ui::Toast(LOC("Player not ready"));
                 break;
             case game::Teleport::MarkerStatus::InvalidCoordinates:
-                ui::Toast("Invalid destination coordinates");
+                ui::Toast(LOC("Invalid destination coordinates"));
                 break;
             case game::Teleport::MarkerStatus::UnsafeContext:
-                ui::Toast("Unsafe destination context");
+                ui::Toast(LOC("Unsafe destination context"));
                 break;
             default:
-                ui::Toast("Destination teleport failed");
+                ui::Toast(LOC("Destination teleport failed"));
                 break;
             }
         }
 
-        if (ui::FloatOption("Sky Arrival Altitude", &st.markerFallbackHeight, 50.0f, 3000.0f, 25.0f, 550.0f, "%.0f",
-                            "Altitude to teleport to when destination marker does not specify height."))
+        if (ui::FloatOption(LOC("Sky Arrival Altitude"), &st.markerFallbackHeight, 50.0f, 3000.0f, 25.0f, 550.0f, "%.0f",
+                            LOC("Altitude to teleport to when destination marker does not specify height.")))
         {
             if (st.autoSave)
                 Settings::Save();
         }
 
         // Saved Locations (Bookmarks)
-        ui::Submenu("Saved Locations", "saved_locs", "Save and teleport to custom bookmarked coordinates.");
+        ui::Submenu(LOC("Saved Locations"), "saved_locs", LOC("Save and teleport to custom bookmarked coordinates."));
 
         // The game's own fast-travel network: every map gimmick (fast-travel
         // points, ores, chests, shops, bells, dungeons...), grouped by category.
-        if (ui::Submenu("Fast Travel", "ftcats",
-                        "Warp to any location on the map."))
+        if (ui::Submenu(LOC("Fast Travel"), "ftcats",
+                        LOC("Warp to any location on the map.")))
         {
             game::Teleport::LoadCatalog();
         }
@@ -889,6 +888,31 @@ namespace trinity::gui
 
     static int s_curLocIdx = -1;
 
+    static void GetLocationDisplayName(const State::SavedLocation& loc, size_t index, char* out, size_t cap)
+    {
+        if (!loc.name[0])
+        {
+            snprintf(out, cap, "%s #%zu", LOC("Location"), index + 1);
+            return;
+        }
+
+        int num = 0;
+        if (sscanf(loc.name, "Location #%d", &num) == 1 ||
+            sscanf(loc.name, "위치 #%d", &num) == 1 ||
+            sscanf(loc.name, "位置 #%d", &num) == 1)
+        {
+            snprintf(out, cap, "%s #%d", LOC("Location"), num);
+            return;
+        }
+        if (!strcmp(loc.name, "Saved Spot") || !strcmp(loc.name, "Saved Location"))
+        {
+            snprintf(out, cap, "%s #%zu", LOC("Location"), index + 1);
+            return;
+        }
+
+        snprintf(out, cap, "%s", loc.name);
+    }
+
     static void RenderSavedLocations()
     {
         State& st = State::Get();
@@ -897,7 +921,7 @@ namespace trinity::gui
         float px = 0.0f, py = 0.0f, pz = 0.0f;
         const bool havePlayer = game::Teleport::GetLastPosition(&px, &py, &pz);
 
-        if (ui::Option("+ Save Current Location", "Saves your active player coordinates as a new custom bookmark."))
+        if (ui::Option(LOC("+ Save Current Location"), LOC("Saves your active player coordinates as a new custom bookmark.")))
         {
             if (havePlayer)
             {
@@ -908,51 +932,57 @@ namespace trinity::gui
                 snprintf(loc.name, sizeof(loc.name), "Location #%zu", st.savedLocations.size() + 1);
                 st.savedLocations.push_back(loc);
                 Settings::Save();
-                ui::Toast("Saved '%s' (X %.0f, Y %.0f, Z %.0f)", loc.name, px, py, pz);
+
+                char dispName[64];
+                GetLocationDisplayName(loc, st.savedLocations.size() - 1, dispName, sizeof(dispName));
+                ui::Toast(LOC("Saved '%s' (X %.0f, Y %.0f, Z %.0f)"), dispName, px, py, pz);
             }
             else
             {
-                ui::Toast("Player position not ready");
+                ui::Toast(LOC("Player position not ready"));
             }
         }
 
         if (st.savedLocations.empty())
         {
-            ui::Option("No saved locations", "Click '+ Save Current Location' above to bookmark any spot.");
+            ui::Option(LOC("No saved locations"), LOC("Click '+ Save Current Location' above to bookmark any spot."));
         }
         else
         {
             for (size_t i = 0; i < st.savedLocations.size(); ++i)
             {
                 const auto& loc = st.savedLocations[i];
+                char dispName[64];
+                GetLocationDisplayName(loc, i, dispName, sizeof(dispName));
+
                 char label[144];
                 char desc[192];
                 snprintf(label, sizeof(label), "%zu. %s  (X %.0f  Y %.0f  Z %.0f)",
-                         i + 1, loc.name[0] ? loc.name : "Saved Spot", loc.x, loc.y, loc.z);
-                snprintf(desc, sizeof(desc), "Enter/A: Open details  |  Del/X: Delete location");
+                         i + 1, dispName, loc.x, loc.y, loc.z);
+                snprintf(desc, sizeof(desc), "%s", LOC("Enter/A: Open details  |  Del/X: Delete location"));
 
                 const ui::BookmarkAction action = ui::BookmarkRow(label, desc);
                 if (action == ui::BookmarkAction::Open)
                 {
                     s_curLocIdx = static_cast<int>(i);
-                    ui::PushMenu("loc_manage", loc.name[0] ? loc.name : "Saved Location");
+                    ui::PushMenu("loc_manage", dispName);
                 }
                 else if (action == ui::BookmarkAction::Delete)
                 {
                     char deletedName[64];
-                    snprintf(deletedName, sizeof(deletedName), "%s", loc.name[0] ? loc.name : "Saved Spot");
+                    snprintf(deletedName, sizeof(deletedName), "%s", dispName);
                     st.savedLocations.erase(st.savedLocations.begin() + i);
                     Settings::Save();
-                    ui::Toast("Deleted '%s'", deletedName);
+                    ui::Toast(LOC("Deleted '%s'"), deletedName);
                     break;
                 }
             }
 
-            if (ui::Option("Clear All Saved Locations", "Deletes all custom bookmarked locations."))
+            if (ui::Option(LOC("Clear All Saved Locations"), LOC("Deletes all custom bookmarked locations.")))
             {
                 st.savedLocations.clear();
                 Settings::Save();
-                ui::Toast("All saved locations cleared");
+                ui::Toast(LOC("All saved locations cleared"));
             }
         }
 
@@ -965,32 +995,34 @@ namespace trinity::gui
         if (s_curLocIdx < 0 || s_curLocIdx >= static_cast<int>(st.savedLocations.size()))
         {
             ui::Begin();
-            ui::Option("Location not found", "This saved location no longer exists.");
+            ui::Option(LOC("Location not found"), LOC("This saved location no longer exists."));
             ui::End();
             return;
         }
 
         auto& loc = st.savedLocations[s_curLocIdx];
-        ui::Begin(loc.name[0] ? loc.name : "Saved Location");
+        char dispName[64];
+        GetLocationDisplayName(loc, s_curLocIdx, dispName, sizeof(dispName));
+        ui::Begin(dispName);
 
         char tpLabel[128];
-        snprintf(tpLabel, sizeof(tpLabel), "Teleport Here (X %.0f  Y %.0f  Z %.0f)", loc.x, loc.y, loc.z);
-        if (ui::Option(tpLabel, "Instantly warp your player to these coordinates."))
+        snprintf(tpLabel, sizeof(tpLabel), "%s (X %.0f  Y %.0f  Z %.0f)", LOC("Teleport Here"), loc.x, loc.y, loc.z);
+        if (ui::Option(tpLabel, LOC("Instantly warp your player to these coordinates.")))
         {
             if (game::Teleport::TeleportToCoordinates(loc.x, loc.y, loc.z))
-                ui::Toast("Teleported to %s", loc.name[0] ? loc.name : "Saved Spot");
+                ui::Toast(LOC("Teleported to %s"), dispName);
             else
-                ui::Toast("Teleport failed");
+                ui::Toast(LOC("Teleport failed"));
         }
 
-        if (ui::TextInput("Name", loc.name, sizeof(loc.name), "Press Enter/A to rename this location on your keyboard."))
+        if (ui::TextInput(LOC("Name"), loc.name, sizeof(loc.name), LOC("Press Enter/A to rename this location on your keyboard.")))
         {
             Settings::Save();
         }
 
         float px = 0.0f, py = 0.0f, pz = 0.0f;
         const bool havePlayer = game::Teleport::GetLastPosition(&px, &py, &pz);
-        if (ui::Option("Update to Current Position", "Overwrites the saved coordinates with your current position."))
+        if (ui::Option(LOC("Update to Current Position"), LOC("Overwrites the saved coordinates with your current position.")))
         {
             if (havePlayer)
             {
@@ -998,19 +1030,19 @@ namespace trinity::gui
                 loc.y = py;
                 loc.z = pz;
                 Settings::Save();
-                ui::Toast("Updated '%s' to X %.0f, Y %.0f, Z %.0f", loc.name, px, py, pz);
+                ui::Toast(LOC("Updated '%s' to X %.0f, Y %.0f, Z %.0f"), dispName, px, py, pz);
             }
             else
             {
-                ui::Toast("Player position not ready");
+                ui::Toast(LOC("Player position not ready"));
             }
         }
 
-        if (ui::Option("Delete This Location", "Removes this location from your bookmarks."))
+        if (ui::Option(LOC("Delete This Location"), LOC("Removes this location from your bookmarks.")))
         {
             st.savedLocations.erase(st.savedLocations.begin() + s_curLocIdx);
             Settings::Save();
-            ui::Toast("Location deleted");
+            ui::Toast(LOC("Location deleted"));
             ui::PopMenu();
         }
 
@@ -1166,17 +1198,17 @@ namespace trinity::gui
         State& st = State::Get();
         ui::Begin();
 
-        ui::Submenu("Add Item", "invadd", "Add any item in the game to your inventory.");
-        ui::Submenu("Item Editor", "invedit", "Browse and edit what you're carrying.");
+        ui::Submenu(LOC("Add Item"), "invadd", LOC("Add any item in the game to your inventory."));
+        ui::Submenu(LOC("Item Editor"), "invedit", LOC("Browse and edit what you're carrying."));
 
         bool changed = false;
-        if (ui::ToggleInt("Slot Size", &st.invSlotSize, &st.invSlotSizeVal,
+        if (ui::ToggleInt(LOC("Slot Size"), &st.invSlotSize, &st.invSlotSizeVal,
                           1, 9999, 10, 2000,
-                          "Sets every storage's slot count to this number."))
+                          LOC("Sets every storage's slot count to this number.")))
             changed = true;
-        if (ui::ToggleInt("Max Stack Size", &st.invStackSize, &st.invStackSizeVal,
+        if (ui::ToggleInt(LOC("Max Stack Size"), &st.invStackSize, &st.invStackSizeVal,
                           1, 999999999, 1000, 999999,
-                          "Sets every item's max stack size to this number."))
+                          LOC("Sets every item's max stack size to this number.")))
             changed = true;
 
         if (changed && st.autoSave)
@@ -1191,9 +1223,8 @@ namespace trinity::gui
 
         if (!game::Inventory::Ready())
         {
-            ui::Option("Loading inventory...",
-                       "Reading your items - if this persists, open your in-game "
-                       "inventory once and come back here.");
+            ui::Option(LOC("Loading inventory..."),
+                       LOC("Reading your items - if this persists, open your in-game inventory once and come back here."));
             ui::End();
             return;
         }
@@ -1204,13 +1235,13 @@ namespace trinity::gui
         // the row selected on arrival is a storage - the thing this tab is for -
         // and not the housekeeping below it.
         const int n = game::Inventory::StorageCount();
-        RenderCategoryList(n, "invstore", "Browse and edit what is kept in this storage.",
+        RenderCategoryList(n, "invstore", LOC("Browse and edit what is kept in this storage."),
                            &s_invStore, s_invFind,
                            [](int s, char* label, size_t cap)
                            {
                                const int cnt = game::Inventory::StorageItemCount(s);
                                if (cnt == 0) return false;
-                               snprintf(label, cap, "%s  (%d)", game::Inventory::StorageName(s), cnt);
+                               snprintf(label, cap, "%s  (%d)", LOC(game::Inventory::StorageName(s)), cnt);
                                return true;
                            },
                            [](int) -> const char* { return nullptr; }, // storages carry no icon
@@ -1222,10 +1253,10 @@ namespace trinity::gui
                                ui::ResetMenu("invcat");
                            });
 
-        if (ui::Option("Refresh", "Reloads your inventory from the game."))
+        if (ui::Option(LOC("Refresh"), LOC("Reloads your inventory from the game.")))
         {
             game::Inventory::ForceRefresh();
-            ui::Toast("Inventory refreshed");
+            ui::Toast(LOC("Inventory refreshed"));
         }
 
         ui::End();
@@ -1237,14 +1268,14 @@ namespace trinity::gui
     // the category the game keeps it in.
     static void RenderInventoryStorage()
     {
-        ui::Begin(game::Inventory::StorageName(s_invStore));
+        ui::Begin(LOC(game::Inventory::StorageName(s_invStore)));
 
         game::Inventory::Refresh();
 
         const int n = game::Inventory::CategoryCount(s_invStore);
         if (n == 0)
         {
-            ui::Option("Empty", "Nothing in this storage right now.");
+            ui::Option(LOC("Empty"), LOC("Nothing in this storage right now."));
             ui::End();
             return;
         }
@@ -1256,18 +1287,18 @@ namespace trinity::gui
             ui::ListJump();
 
         ui::Search(s_invFind, sizeof(s_invFind),
-                   "Find an item anywhere in this storage, whatever category it is in.");
+                   LOC("Find an item anywhere in this storage, whatever category it is in."));
 
         if (!s_invFind[0])
         {
-            RenderCategoryList(n, "invcat", "Browse and edit items in this category.",
+            RenderCategoryList(n, "invcat", LOC("Browse and edit items in this category."),
                                &s_invCat, s_invFilter,
                                [](int c, char* label, size_t cap)
                                {
                                    const int cnt = game::Inventory::ItemCount(s_invStore, c);
                                    if (cnt == 0) return false;
                                    snprintf(label, cap, "%s  (%d)",
-                                            game::Inventory::CategoryName(s_invStore, c), cnt);
+                                            LOC(game::Inventory::CategoryName(s_invStore, c)), cnt);
                                    return true;
                                },
                                [](int c) { return game::Inventory::CategoryIcon(s_invStore, c); },
@@ -1286,48 +1317,29 @@ namespace trinity::gui
                     ++shown;
         }
         if (shown == 0)
-            ui::Option("No matches", "Nothing in this storage is called that.");
+            ui::Option(LOC("No matches"), LOC("Nothing in this storage is called that."));
 
         ui::End();
     }
 
-    // Set All: one quantity onto every item the category page is showing, so a
-    // category of forty arrows takes one action instead of forty. `shown` is
-    // how many rows the list below will draw - the filter narrows what Set All
-    // touches, because the list you are looking at is the list it edits, the
-    // same promise the per-item rows make.
-    //
-    // The amount and the action are one row (ui::IntAction, which exists for
-    // this): typing an exact amount and firing are still two separate presses,
-    // so nothing here writes to forty items on the press that starts an edit -
-    // that just no longer costs a second row and a trip between the two to say
-    // one number. The description does not name the amount any more, because
-    // the amount is now sitting on the same row it describes.
     static void RenderSetAll(int shown, bool locked)
     {
         char desc[224];
         if (locked)
-            snprintf(desc, sizeof(desc),
-                     "Editing is locked until your save finishes loading.");
+            snprintf(desc, sizeof(desc), "%s",
+                     LOC("Editing is locked until your save finishes loading."));
         else if (shown == 0)
-            snprintf(desc, sizeof(desc), "Nothing here to set.");
+            snprintf(desc, sizeof(desc), "%s", LOC("Nothing here to set."));
         else if (s_invFilter[0])
-            snprintf(desc, sizeof(desc), "Sets the %d matching item%s below to this amount.",
-                     shown, shown == 1 ? "" : "s");
+            snprintf(desc, sizeof(desc), "%s", LOC("Sets matching items below to this amount."));
         else
-            snprintf(desc, sizeof(desc), "Sets every item in %s to this amount - all %d of them.",
-                     game::Inventory::CategoryName(s_invStore, s_invCat), shown);
+            snprintf(desc, sizeof(desc), "%s", LOC("Sets every item in this category to this amount."));
 
-        // A locked or empty page still shows the row and its amount, it just
-        // has nothing to write: an inert row that says why beats one that
-        // vanishes and takes the explanation with it.
         const bool inert = locked || shown == 0;
-        if (!ui::IntAction("Set All", &s_invSetAllQty, 1, 999999999, 1, 999, desc) ||
+        if (!ui::IntAction(LOC("Set All"), &s_invSetAllQty, 1, 999999999, 1, 999, desc) ||
             inert)
             return;
 
-        // Indices stay put: SetQuantity edits the stack in place, it never adds
-        // or drops one, so the list is not reordered under this loop.
         const int total = game::Inventory::ItemCount(s_invStore, s_invCat);
         int done = 0;
         for (int i = 0; i < total; ++i)
@@ -1335,30 +1347,26 @@ namespace trinity::gui
                 game::Inventory::SetQuantity(s_invStore, s_invCat, i, s_invSetAllQty))
                 ++done;
 
-        ui::Toast("Set %d item%s to x%d", done, done == 1 ? "" : "s", s_invSetAllQty);
+        ui::Toast(LOC("Set %d items to x%d"), done, s_invSetAllQty);
     }
 
     static void RenderInventoryCat()
     {
-        ui::Begin(game::Inventory::CategoryName(s_invStore, s_invCat));
+        ui::Begin(LOC(game::Inventory::CategoryName(s_invStore, s_invCat)));
 
         game::Inventory::Refresh();
         const int total = game::Inventory::ItemCount(s_invStore, s_invCat);
         if (total == 0)
         {
-            ui::Option("Empty", "Nothing in this category right now.");
+            ui::Option(LOC("Empty"), LOC("Nothing in this category right now."));
             ui::End();
             return;
         }
 
-        // No ListJump here at all: every row below is an item row that wants
-        // Left/Right for its amount. PgUp/PgDn/Home/End still page the list.
-        ui::Search(s_invFilter, sizeof(s_invFilter), "Narrow this category down by name.");
+        ui::Search(s_invFilter, sizeof(s_invFilter), LOC("Narrow this category down by name."));
 
         const bool locked = !game::Inventory::EditsPersist();
 
-        // Exactly the rows the list below will draw, counted before Set All so
-        // it can name the number, and reused afterwards for "No matches".
         int shown = 0;
         for (int i = 0; i < total; ++i)
             if (ItemShown(s_invStore, s_invCat, i, s_invFilter, nullptr))
@@ -1369,19 +1377,11 @@ namespace trinity::gui
         for (int i = 0; i < total; ++i)
             RenderItemRow(s_invStore, s_invCat, i, s_invFilter, /*showCat=*/false, locked);
         if (shown == 0)
-            ui::Option("No matches", "Nothing in this category is called that.");
+            ui::Option(LOC("No matches"), LOC("Nothing in this category is called that."));
 
         ui::End();
     }
 
-    // Add Item: category -> item, the same walk as the Editor. Deliberately so -
-    // it is the same information out of the same game tables, and a second,
-    // differently-shaped way to look at your items would just be something else
-    // to learn. The only level the Editor has that this cannot is storage: a
-    // catalog item is not in one yet, and when added it picks its own.
-
-    // The add itself runs on the game thread a frame or so after the click, so
-    // its result is reported wherever we are when it lands, not at the click.
     static void ReportPendingAdd()
     {
         static game::Inventory::AddState s_lastAdd = game::Inventory::AddState::Idle;
@@ -1389,19 +1389,16 @@ namespace trinity::gui
         if (now == s_lastAdd) return;
         if (now == game::Inventory::AddState::Added)
         {
-            ui::Toast("Item added");
-            game::Inventory::ForceRefresh(); // show it in the Editor immediately
+            ui::Toast(LOC("Item added"));
+            game::Inventory::ForceRefresh();
         }
         else if (now == game::Inventory::AddState::Failed)
         {
-            ui::Toast("Could not add that item - see the log");
+            ui::Toast(LOC("Could not add that item - see the log"));
         }
         s_lastAdd = now;
     }
 
-    // The Add All companion to ReportPendingAdd: a bulk add drains over a couple
-    // of seconds on the game thread, so its result lands here whenever we are
-    // when the queue empties. Latches on the active->idle edge, once.
     static void ReportBulkAdd()
     {
         static bool s_wasActive = false;
@@ -1409,18 +1406,14 @@ namespace trinity::gui
         if (s_wasActive && !b.active)
         {
             if (b.failed == 0)
-                ui::Toast("Added %d item%s", b.added, b.added == 1 ? "" : "s");
+                ui::Toast(LOC("Added %d items"), b.added);
             else
-                ui::Toast("Added %d, %d could not be added - see the log", b.added, b.failed);
-            game::Inventory::ForceRefresh(); // show them in the Editor immediately
+                ui::Toast(LOC("Added %d items, some failed"), b.added);
+            game::Inventory::ForceRefresh();
         }
         s_wasActive = b.active;
     }
 
-    // One catalog item as an addable row. Mirrors RenderItemRow: same shape,
-    // same filter test, returns whether it actually showed. `showCat` names the
-    // item's category for the catalog-wide search, where rows come from all over
-    // and would otherwise not say where they belong.
     static bool RenderAddRow(int cat, int idx, const char* filter, bool showCat, bool locked)
     {
         game::Inventory::ItemInfo it{};
@@ -1429,22 +1422,21 @@ namespace trinity::gui
 
         char desc[224];
         if (locked)
-            snprintf(desc, sizeof(desc), "Adding is locked until your save finishes loading.");
+            snprintf(desc, sizeof(desc), "%s", LOC("Adding is locked until your save finishes loading."));
         else if (showCat)
-            snprintf(desc, sizeof(desc), "%s, in %s.",
-                     it.name, game::Inventory::CatalogCategoryName(cat));
+            snprintf(desc, sizeof(desc), "%s (%s)",
+                     it.name, LOC(game::Inventory::CatalogCategoryName(cat)));
         else
-            snprintf(desc, sizeof(desc), "Set how many, then add it.");
+            snprintf(desc, sizeof(desc), "%s", LOC("Set how many, then add it."));
 
-        // The catalog is static, so an item's identity here is just where it is.
         const unsigned long long key = CatalogKey(cat, idx, it.typeId);
         const long long n = ui::ItemAddRow(it.name, it.icon, key, locked, desc);
         if (n > 0)
         {
             if (game::Inventory::AddItem(it.typeId, n))
-                ui::Toast("Adding %lld x %s...", n, it.name);
+                ui::Toast(LOC("Adding %lld x %s..."), n, it.name);
             else
-                ui::Toast("Could not add %s", it.name);
+                ui::Toast(LOC("Could not add %s"), it.name);
         }
         return true;
     }
@@ -1455,34 +1447,31 @@ namespace trinity::gui
         ReportPendingAdd();
         ReportBulkAdd();
 
-        const int n = game::Inventory::CatalogCategoryCount(); // builds it on first call
+        const int n = game::Inventory::CatalogCategoryCount();
         if (n == 0)
         {
-            ui::Option("Catalog unavailable",
-                       "The game's item table did not resolve, so there is nothing to add from.");
+            ui::Option(LOC("Catalog unavailable"),
+                       LOC("The game's item table did not resolve, so there is nothing to add from."));
             ui::End();
             return;
         }
 
-        // Same rule as the storage page: Left/Right belong to the item rows when
-        // searching, and ListJump consumes both, so it is only mapped while this
-        // page is a plain category list.
         if (!s_invAddFind[0])
             ui::ListJump();
 
         ui::Search(s_invAddFind, sizeof(s_invAddFind),
-                   "Find any item in the game by name, whatever category it is in.");
+                   LOC("Find any item in the game by name, whatever category it is in."));
 
         if (!s_invAddFind[0])
         {
-            RenderCategoryList(n, "invaddcat", "Add any item from this category.",
+            RenderCategoryList(n, "invaddcat", LOC("Add any item from this category."),
                                &s_invAddCat, s_invAddFilter,
                                [](int c, char* label, size_t cap)
                                {
                                    const int cnt = game::Inventory::CatalogItemCount(c);
                                    if (cnt == 0) return false;
                                    snprintf(label, cap, "%s  (%d)",
-                                            game::Inventory::CatalogCategoryName(c), cnt);
+                                            LOC(game::Inventory::CatalogCategoryName(c)), cnt);
                                    return true;
                                },
                                [](int c) { return game::Inventory::CatalogCategoryIcon(c); },
@@ -1500,46 +1489,30 @@ namespace trinity::gui
                 if (RenderAddRow(c, i, s_invAddFind, /*showCat=*/true, locked))
                     ++shown;
         }
-        // The catalog is thousands of rows deep - far more than the storage-wide
-        // search it mirrors ever sees - so a short search matches hundreds. Cap
-        // the list rather than build a page nobody can get to the bottom of.
         if (shown == 0)
-            ui::Option("No matches", "No item in the game is called that.");
+            ui::Option(LOC("No matches"), LOC("No item in the game is called that."));
         else if (shown >= 200)
-            ui::Option("More matches...", "Only the first 200 are listed - keep typing to narrow it down.");
+            ui::Option(LOC("More matches..."), LOC("Only the first 200 are listed - keep typing to narrow it down."));
 
         ui::End();
     }
 
-    // Add All: one amount of every catalog item the category page is showing,
-    // queued in a single action - the Add Item mirror of the Editor's Set All.
-    // `shown` is how many rows the list below will draw, so the filter narrows
-    // what Add All touches too: the list you are looking at is the list it adds.
-    // The adds run a few per frame on the game thread (see AddItemsBulk), so a
-    // big category fills in over a second or two rather than hitching a frame.
     static void RenderAddAll(int cat, const char* filter, int shown, bool locked)
     {
         char desc[224];
         if (locked)
-            snprintf(desc, sizeof(desc), "Adding is locked until your save finishes loading.");
+            snprintf(desc, sizeof(desc), "%s", LOC("Adding is locked until your save finishes loading."));
         else if (shown == 0)
-            snprintf(desc, sizeof(desc), "Nothing here to add.");
+            snprintf(desc, sizeof(desc), "%s", LOC("Nothing here to add."));
         else if (filter && filter[0])
-            snprintf(desc, sizeof(desc), "Adds this many of each of the %d matching item%s below.",
-                     shown, shown == 1 ? "" : "s");
+            snprintf(desc, sizeof(desc), "%s", LOC("Adds this many of each matching item below."));
         else
-            snprintf(desc, sizeof(desc), "Adds this many of every item in %s - all %d of them.",
-                     game::Inventory::CatalogCategoryName(cat), shown);
+            snprintf(desc, sizeof(desc), "%s", LOC("Adds this many of every item in this category."));
 
-        // A locked or empty page still shows the row and its amount, it just has
-        // nothing to queue - the same choice Set All makes.
         const bool inert = locked || shown == 0;
-        if (!ui::IntAction("Add All", &s_invAddAllQty, 1, 999999999, 1, 5, desc) || inert)
+        if (!ui::IntAction(LOC("Add All"), &s_invAddAllQty, 1, 999999999, 1, 5, desc) || inert)
             return;
 
-        // Gather exactly the rows the list draws, then hand the batch off in one
-        // call. AddItemsBulk re-checks each id, so a stale row is skipped, not a
-        // failure.
         std::vector<uint16_t> ids;
         ids.reserve(static_cast<size_t>(shown));
         const int total = game::Inventory::CatalogItemCount(cat);
@@ -1554,34 +1527,29 @@ namespace trinity::gui
 
         const int count = static_cast<int>(ids.size());
         if (game::Inventory::AddItemsBulk(ids.data(), count, s_invAddAllQty))
-            ui::Toast("Adding %d of each - %d item%s...",
-                      s_invAddAllQty, count, count == 1 ? "" : "s");
+            ui::Toast(LOC("Adding %d of each - %d items..."), s_invAddAllQty, count);
         else
-            ui::Toast("Still adding the last batch - let it finish first");
+            ui::Toast(LOC("Still adding the last batch - let it finish first"));
     }
 
     static void RenderInventoryAddCat()
     {
-        ui::Begin(game::Inventory::CatalogCategoryName(s_invAddCat));
+        ui::Begin(LOC(game::Inventory::CatalogCategoryName(s_invAddCat)));
         ReportPendingAdd();
         ReportBulkAdd();
 
         const int total = game::Inventory::CatalogItemCount(s_invAddCat);
         if (total == 0)
         {
-            ui::Option("Empty", "Nothing in this category.");
+            ui::Option(LOC("Empty"), LOC("Nothing in this category."));
             ui::End();
             return;
         }
 
-        // No ListJump: every row below (and Add All itself) wants Left/Right for
-        // its amount.
-        ui::Search(s_invAddFilter, sizeof(s_invAddFilter), "Narrow this category down by name.");
+        ui::Search(s_invAddFilter, sizeof(s_invAddFilter), LOC("Narrow this category down by name."));
 
         const bool locked = !game::Inventory::EditsPersist();
 
-        // Count what the filter will show first, so Add All can name the number -
-        // the same order the Editor's Set All uses.
         int shown = 0;
         for (int i = 0; i < total; ++i)
         {
@@ -1596,7 +1564,7 @@ namespace trinity::gui
         for (int i = 0; i < total; ++i)
             RenderAddRow(s_invAddCat, i, s_invAddFilter, /*showCat=*/false, locked);
         if (shown == 0)
-            ui::Option("No matches", "Nothing in this category is called that.");
+            ui::Option(LOC("No matches"), LOC("Nothing in this category is called that."));
 
         ui::End();
     }
@@ -1838,32 +1806,32 @@ namespace trinity::gui
         // frames so the highlight stays where the user left it on each row.
         static int s_curMenu = 0, s_curMarker = 0, s_curUp = 0, s_curDown = 0;
 
-        KeybindActionRow("Open Menu", "Opens and closes this menu.",
+        KeybindActionRow(LOC("Open Menu"), LOC("Opens and closes this menu."),
                          &s_curMenu, &st.openKeyVk, &st.openPadMask,
                          def.openKeyVk, def.openPadMask,
                          BindTarget::MenuKey, BindTarget::MenuPad);
-        KeybindActionRow("Marker Teleport", "Teleport directly to the map marker / custom waypoint placed on the map.",
+        KeybindActionRow(LOC("Marker Teleport"), LOC("Teleport directly to the map marker / custom waypoint placed on the map."),
                          &s_curMarker, &st.markerTeleportKeyVk, &st.markerTeleportPadMask,
                          def.markerTeleportKeyVk, def.markerTeleportPadMask,
                          BindTarget::MarkerKey, BindTarget::MarkerPad);
-        KeybindActionRow("Fly Up", "While Free Flight is on and you're airborne, hold this to rise.",
+        KeybindActionRow(LOC("Fly Up"), LOC("While Free Flight is on and you're airborne, hold this to rise."),
                          &s_curUp, &st.flyUpKeyVk, &st.flyUpPadMask,
                          def.flyUpKeyVk, def.flyUpPadMask,
                          BindTarget::FlyUpKey, BindTarget::FlyUpPad);
-        KeybindActionRow("Fly Down", "While Free Flight is on and you're airborne, hold this to sink.",
+        KeybindActionRow(LOC("Fly Down"), LOC("While Free Flight is on and you're airborne, hold this to sink."),
                          &s_curDown, &st.flyDownKeyVk, &st.flyDownPadMask,
                          def.flyDownKeyVk, def.flyDownPadMask,
                          BindTarget::FlyDownKey, BindTarget::FlyDownPad);
 
         st.rebindCapture = DriveRebindCapture(st);
 
-        if (ui::Option("Reset All Keybinds",
-                       "Resets every keyboard and controller bind on this page to its default."))
+        if (ui::Option(LOC("Reset All Keybinds"),
+                       LOC("Resets every keyboard and controller bind on this page to its default.")))
         {
             Settings::ResetBinds();
             Settings::Save(); // binds persist regardless of Auto Save
             s_capTarget = BindTarget::None;
-            ui::Toast("Keybinds reset to defaults");
+            ui::Toast(LOC("Keybinds reset to defaults"));
         }
 
         ui::End();
@@ -1879,29 +1847,49 @@ namespace trinity::gui
         // only writes while Auto Save is on.
         bool save = false;
 
-        ui::Submenu("Keybinds", "keybinds",
-                   "Set the keyboard and controller binds for opening the menu and Free Flight.");
+        ui::Submenu(LOC("Keybinds"), "keybinds",
+                   LOC("Set the keyboard and controller binds for opening the menu and Free Flight."));
 
-        static const char* const kThemeNames[] = {
-            "Crimson Red", "Cyber Cyan", "Neon Purple", "Matrix Emerald", "Royal Gold", "Sunset Orange"
+        const char* const localizedThemeNames[] = {
+            LOC("Crimson Red"), LOC("Cyber Cyan"), LOC("Neon Purple"),
+            LOC("Matrix Emerald"), LOC("Royal Gold"), LOC("Sunset Orange")
         };
-        if (ui::Combo("Theme Color", &st.themeIndex, kThemeNames, 6,
-                      "Customize the mod menu accent and header colors."))
+        if (ui::Combo(LOC("Theme Color"), &st.themeIndex, localizedThemeNames, 6,
+                      LOC("Customize the mod menu accent and header colors.")))
         {
             save = true;
         }
 
-        save |= ui::Toggle("Show FPS Counter", &st.showFps, "Shows your FPS in the corner of the screen.") && st.autoSave;
+        // Dynamic Language Selector (detects Trinity_*.ini files)
+        const int langCount = loc::GetLanguageCount();
+        if (langCount > 1)
+        {
+            std::vector<const char*> langNames(langCount);
+            for (int i = 0; i < langCount; ++i)
+                langNames[i] = loc::GetLanguageName(i);
 
-        if (ui::Toggle("Auto Save Features", &st.autoSave,
-                       "Saves your settings automatically and restores them next time."))
+            int curLang = loc::GetCurrentLanguageIndex();
+            if (ui::Combo(LOC("Language"), &curLang, langNames.data(), langCount,
+                          LOC("Select mod menu display language.")))
+            {
+                loc::SetLanguage(curLang);
+                st.languageIndex = curLang;
+                snprintf(st.languageCode, sizeof(st.languageCode), "%s", loc::GetLanguageCode(curLang));
+                save = true;
+            }
+        }
+
+        save |= ui::Toggle(LOC("Show FPS Counter"), &st.showFps, LOC("Shows your FPS in the corner of the screen.")) && st.autoSave;
+
+        if (ui::Toggle(LOC("Auto Save Features"), &st.autoSave,
+                       LOC("Saves your settings automatically and restores them next time.")))
             save = true;
-        if (ui::Option("Reset All to Default",
-                       "Resets every feature to its default."))
+        if (ui::Option(LOC("Reset All to Default"),
+                       LOC("Resets every feature to its default.")))
         {
             Settings::ResetFeatures();
             save |= st.autoSave;
-            ui::Toast("All features reset to defaults");
+            ui::Toast(LOC("All features reset to defaults"));
         }
 
         if (save)
@@ -1915,8 +1903,10 @@ namespace trinity::gui
         State&   st = State::Get();
         ImGuiIO& io = ImGui::GetIO();
 
-        static bool s_tabsSet = (ui::SetTabs(kTabs, TabCount), true);
-        (void)s_tabsSet;
+        const char* const localizedTabs[] = {
+            LOC("PLAYER"), LOC("TRAVEL"), LOC("INVENTORY"), LOC("WORLD"), LOC("SYSTEM")
+        };
+        ui::SetTabs(localizedTabs, TabCount);
 
         // The menu is keyboard/d-pad driven and leaves the mouse to the game so
         // the player can still look around, so we never draw an ImGui cursor.

@@ -11,6 +11,7 @@
 #include <unordered_map>
 
 #include "../core/state.h"
+#include "../core/localization.h"
 
 namespace trinity::ui
 {
@@ -911,7 +912,7 @@ namespace trinity::ui
     {
         g_captureSeen = true;
 
-        RowResult r  = RowBase("Search", desc, RowKind::Search);
+        RowResult r  = RowBase(LOC("Search"), desc, RowKind::Search);
         bool changed = false;
 
         // Enter (or click / A) toggles typing; moving off the row stops it.
@@ -948,11 +949,14 @@ namespace trinity::ui
                 else         CapEnd(buf);
             }
 
+            // Type-to-filter: feed every character the OS delivered this frame
+            // into the buffer, in order. ImGui's input queue has already filtered
+            // out non-printables.
             ImGuiIO& io = ImGui::GetIO();
-            for (int n = 0; n < io.InputQueueCharacters.Size; ++n)
+            for (int i = 0; i < io.InputQueueCharacters.Size; ++i)
             {
-                const ImWchar c = io.InputQueueCharacters[n];
-                if (c >= 32 && c < 127)
+                const ImWchar c = io.InputQueueCharacters[i];
+                if (c >= 32 && c < 127) // ascii only for the filter
                 {
                     const size_t len = strlen(buf);
                     if (len + 1 < cap)
@@ -977,7 +981,7 @@ namespace trinity::ui
             else
             {
                 snprintf(text, sizeof(text), "%s",
-                         buf[0] ? buf : g_padActive ? "A to type" : "Enter to type");
+                         buf[0] ? buf : g_padActive ? LOC("A to type") : LOC("Enter to type"));
             }
 
             const ImU32 col = typing      ? theme::TextBright

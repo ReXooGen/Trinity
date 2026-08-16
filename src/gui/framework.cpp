@@ -16,6 +16,7 @@
 
 #include "../core/state.h"
 #include "../core/version.h"
+#include "../core/localization.h"
 #include "../hooks/xinput_hook.h"
 
 namespace trinity::ui
@@ -126,18 +127,98 @@ namespace trinity::ui
         ImGuiIO& io = ImGui::GetIO();
         char windir[MAX_PATH]{};
         GetWindowsDirectoryA(windir, MAX_PATH);
-        char path[MAX_PATH];
 
-        snprintf(path, sizeof(path), "%s\\Fonts\\segoeui.ttf", windir);
-        g_fontBody = io.Fonts->AddFontFromFileTTF(path, 21.0f * g_scale);
-        snprintf(path, sizeof(path), "%s\\Fonts\\seguisb.ttf", windir);
-        g_fontBold = io.Fonts->AddFontFromFileTTF(path, 21.0f * g_scale);
-        snprintf(path, sizeof(path), "%s\\Fonts\\segoeuib.ttf", windir);
-        g_fontTitle = io.Fonts->AddFontFromFileTTF(path, 30.0f * g_scale);
+        char segoePath[MAX_PATH], seguisbPath[MAX_PATH], segoeuibPath[MAX_PATH];
+        char yaheiPath[MAX_PATH], yaheibdPath[MAX_PATH];
+        char malgunPath[MAX_PATH], malgunbdPath[MAX_PATH];
+
+        snprintf(segoePath, sizeof(segoePath), "%s\\Fonts\\segoeui.ttf", windir);
+        snprintf(seguisbPath, sizeof(seguisbPath), "%s\\Fonts\\seguisb.ttf", windir);
+        snprintf(segoeuibPath, sizeof(segoeuibPath), "%s\\Fonts\\segoeuib.ttf", windir);
+
+        snprintf(yaheiPath, sizeof(yaheiPath), "%s\\Fonts\\msyh.ttc", windir);
+        snprintf(yaheibdPath, sizeof(yaheibdPath), "%s\\Fonts\\msyhbd.ttc", windir);
+
+        snprintf(malgunPath, sizeof(malgunPath), "%s\\Fonts\\malgun.ttf", windir);
+        snprintf(malgunbdPath, sizeof(malgunbdPath), "%s\\Fonts\\malgunbd.ttf", windir);
+
+        const bool hasYahei = (GetFileAttributesA(yaheiPath) != INVALID_FILE_ATTRIBUTES);
+        const bool hasYaheiBd = (GetFileAttributesA(yaheibdPath) != INVALID_FILE_ATTRIBUTES);
+        const bool hasMalgun = (GetFileAttributesA(malgunPath) != INVALID_FILE_ATTRIBUTES);
+        const bool hasMalgunBd = (GetFileAttributesA(malgunbdPath) != INVALID_FILE_ATTRIBUTES);
+
+        // Build a lean, high-speed Chinese glyph range (Common 2500 + all Trinity menu characters)
+        static ImVector<ImWchar> s_zhRanges;
+        if (s_zhRanges.empty() && hasYahei)
+        {
+            ImFontGlyphRangesBuilder builder;
+            builder.AddRanges(io.Fonts->GetGlyphRangesChineseSimplifiedCommon());
+            // Add all extra Chinese characters used in Trinity UI (including 辑, 镶, 嵌, 渊, 斗, 昼, 耀, etc.)
+            builder.AddText("编辑装备精炼深渊符文镶嵌斗气落日耀橙矩阵翡翠赛博青蓝快捷键昼夜时间重置孔位个人仓库营地衣柜推进锁定加快减慢运行速度单手双手武器盾牌远程匕首头盔防具披风手套靴子项链戒指眼镜面具骑乘载具料理药水食材药材杂物书籍配方地图通缉令工具货币记忆钥匙封印文物机关控制库库罐诱饵贸易品未分类搜索输入");
+            builder.BuildRanges(&s_zhRanges);
+        }
+
+        // Build Korean glyph range
+        static ImVector<ImWchar> s_koRanges;
+        if (s_koRanges.empty() && hasMalgun)
+        {
+            ImFontGlyphRangesBuilder builder;
+            builder.AddRanges(io.Fonts->GetGlyphRangesKorean());
+            builder.BuildRanges(&s_koRanges);
+        }
+
+        auto LoadFontWithFallbacks = [&](const char* primaryPath, const char* zhPath, const char* koPath, float size) -> ImFont*
+        {
+            ImFontConfig cfg;
+            cfg.OversampleH = 1;
+            cfg.OversampleV = 1;
+            cfg.PixelSnapH = true;
+
+            ImFont* font = nullptr;
+            if (GetFileAttributesA(primaryPath) != INVALID_FILE_ATTRIBUTES)
+                font = io.Fonts->AddFontFromFileTTF(primaryPath, size, &cfg, io.Fonts->GetGlyphRangesDefault());
+
+            if (!font)
+                font = io.Fonts->AddFontDefault(&cfg);
+
+            ImFontConfig cfgMerge;
+            cfgMerge.MergeMode = true;
+            cfgMerge.OversampleH = 1;
+            cfgMerge.OversampleV = 1;
+            cfgMerge.PixelSnapH = true;
+
+            // Merge Chinese glyphs into THIS font
+            if (zhPath && !s_zhRanges.empty())
+            {
+                io.Fonts->AddFontFromFileTTF(zhPath, size, &cfgMerge, s_zhRanges.Data);
+            }
+
+            // Merge Korean glyphs into THIS font
+            if (koPath && !s_koRanges.empty())
+            {
+                io.Fonts->AddFontFromFileTTF(koPath, size, &cfgMerge, s_koRanges.Data);
+            }
+
+            return font;
+        };
+
+        g_fontBody  = LoadFontWithFallbacks(segoePath,   hasYahei ? yaheiPath : nullptr,     hasMalgun ? malgunPath : nullptr,     21.0f * g_scale);
+        g_fontBold  = LoadFontWithFallbacks(seguisbPath, hasYaheiBd ? yaheibdPath : (hasYahei ? yaheiPath : nullptr), hasMalgunBd ? malgunbdPath : (hasMalgun ? malgunPath : nullptr), 21.0f * g_scale);
+
+        // g_fontTitle is for TRINITY header (Latin)
+        ImFontConfig cfgTitle;
+        cfgTitle.OversampleH = 1;
+        cfgTitle.OversampleV = 1;
+        cfgTitle.PixelSnapH = true;
+        if (GetFileAttributesA(segoeuibPath) != INVALID_FILE_ATTRIBUTES)
+            g_fontTitle = io.Fonts->AddFontFromFileTTF(segoeuibPath, 30.0f * g_scale, &cfgTitle, io.Fonts->GetGlyphRangesDefault());
+        else
+            g_fontTitle = io.Fonts->AddFontDefault(&cfgTitle);
 
         if (!g_fontBody)  g_fontBody  = io.Fonts->AddFontDefault();
         if (!g_fontBold)  g_fontBold  = g_fontBody;
         if (!g_fontTitle) g_fontTitle = g_fontBold;
+
         io.FontDefault = g_fontBody;
     }
 
@@ -425,11 +506,11 @@ namespace trinity::ui
     static Icon TabIcon(const char* name)
     {
         if (!name) return Icon::None;
-        if (!strcmp(name, "PLAYER")) return Icon::TabPlayer;
-        if (!strcmp(name, "TRAVEL")) return Icon::TabTravel;
-        if (!strcmp(name, "INVENTORY")) return Icon::TabItems;
-        if (!strcmp(name, "WORLD"))  return Icon::TabWorld;
-        if (!strcmp(name, "SYSTEM")) return Icon::TabSystem;
+        if (!strcmp(name, "PLAYER") || !strcmp(name, LOC("PLAYER"))) return Icon::TabPlayer;
+        if (!strcmp(name, "TRAVEL") || !strcmp(name, LOC("TRAVEL"))) return Icon::TabTravel;
+        if (!strcmp(name, "INVENTORY") || !strcmp(name, LOC("INVENTORY"))) return Icon::TabItems;
+        if (!strcmp(name, "WORLD") || !strcmp(name, LOC("WORLD"))) return Icon::TabWorld;
+        if (!strcmp(name, "SYSTEM") || !strcmp(name, LOC("SYSTEM"))) return Icon::TabSystem;
         return Icon::None;
     }
 
@@ -474,23 +555,23 @@ namespace trinity::ui
         {
             switch (k)
             {
-            case RowKind::Action:  add(Icon::PadA, "Select"); break;
-            case RowKind::Toggle:  add(Icon::PadA, "Toggle"); break;
-            case RowKind::Value:   add(Icon::PadDpad, "Adjust"); add(Icon::PadX, "Reset"); break;
-            case RowKind::ToggleValue: add(Icon::PadA, "Toggle"); add(Icon::PadDpad, "Adjust");
-                                       add(Icon::PadX, "Reset"); break;
-            case RowKind::Choice:  add(Icon::PadDpad, "pick"); break;
-            case RowKind::Submenu: add(Icon::PadA, "Open"); break;
-            case RowKind::Search:  add(Icon::PadA, "Type"); add(Icon::PadX, "Clear"); break;
-            case RowKind::Typing:  add(Icon::PadA, "Done"); add(Icon::PadB, "Erase"); break;
-            case RowKind::TypingApply: add(Icon::PadA, "Apply"); add(Icon::PadB, "Erase"); break;
-            case RowKind::Item:    add(Icon::PadDpad, "Amount"); add(Icon::PadX, "Remove"); break;
-            case RowKind::ItemAdd: add(Icon::PadDpad, "Amount"); add(Icon::PadA, "Add"); break;
-            case RowKind::ValueAction: add(Icon::PadDpad, "Amount"); add(Icon::PadA, "Apply");
-                                       add(Icon::PadX, "Reset"); break;
-            case RowKind::Bind:    add(Icon::PadDpad, "Pick"); add(Icon::PadA, "Rebind");
-                                   add(Icon::PadX, "Reset"); break;
-            case RowKind::Bookmark: add(Icon::PadA, "Open"); add(Icon::PadX, "Delete"); break;
+            case RowKind::Action:  add(Icon::PadA, LOC("Select")); break;
+            case RowKind::Toggle:  add(Icon::PadA, LOC("Toggle")); break;
+            case RowKind::Value:   add(Icon::PadDpad, LOC("Adjust")); add(Icon::PadX, LOC("Reset")); break;
+            case RowKind::ToggleValue: add(Icon::PadA, LOC("Toggle")); add(Icon::PadDpad, LOC("Adjust"));
+                                       add(Icon::PadX, LOC("Reset")); break;
+            case RowKind::Choice:  add(Icon::PadDpad, LOC("Pick")); break;
+            case RowKind::Submenu: add(Icon::PadA, LOC("Open")); break;
+            case RowKind::Search:  add(Icon::PadA, LOC("Type")); add(Icon::PadX, LOC("Clear")); break;
+            case RowKind::Typing:  add(Icon::PadA, LOC("Done")); add(Icon::PadB, LOC("Erase")); break;
+            case RowKind::TypingApply: add(Icon::PadA, LOC("Apply")); add(Icon::PadB, LOC("Erase")); break;
+            case RowKind::Item:    add(Icon::PadDpad, LOC("Amount")); add(Icon::PadX, LOC("Remove")); break;
+            case RowKind::ItemAdd: add(Icon::PadDpad, LOC("Amount")); add(Icon::PadA, LOC("Add")); break;
+            case RowKind::ValueAction: add(Icon::PadDpad, LOC("Amount")); add(Icon::PadA, LOC("Apply"));
+                                       add(Icon::PadX, LOC("Reset")); break;
+            case RowKind::Bind:    add(Icon::PadDpad, LOC("Pick")); add(Icon::PadA, LOC("Rebind"));
+                                       add(Icon::PadX, LOC("Reset")); break;
+            case RowKind::Bookmark: add(Icon::PadA, LOC("Open")); add(Icon::PadX, LOC("Delete")); break;
             default: break;
             }
         }
@@ -498,27 +579,27 @@ namespace trinity::ui
         {
             switch (k)
             {
-            case RowKind::Action:  add(Icon::KeyEnter, "Select"); break;
-            case RowKind::Toggle:  add(Icon::KeyEnter, "Toggle"); break;
-            case RowKind::Value:   add(Icon::KeyLeft, ""); add(Icon::KeyRight, "Adjust");
-                                   add(Icon::KeyEnter, "Type"); add(Icon::KeyDel, "Reset"); break;
-            case RowKind::ToggleValue: add(Icon::KeyEnter, "Toggle"); add(Icon::KeyLeft, "");
-                                       add(Icon::KeyRight, "Adjust"); add(Icon::KeyDel, "Reset"); break;
-            case RowKind::Choice:  add(Icon::KeyLeft, ""); add(Icon::KeyRight, "Pick"); break;
-            case RowKind::Submenu: add(Icon::KeyEnter, "Open"); break;
-            case RowKind::Search:  add(Icon::KeyEnter, "Type"); add(Icon::KeyDel, "Clear"); break;
-            case RowKind::Typing:  add(Icon::KeyEnter, "Done"); add(Icon::KeyBackspace, "Erase"); break;
-            case RowKind::TypingApply: add(Icon::KeyEnter, "Apply");
-                                       add(Icon::KeyBackspace, "Erase"); break;
-            case RowKind::Item:    add(Icon::KeyLeft, ""); add(Icon::KeyRight, "Amount");
-                                   add(Icon::KeyEnter, "Type"); add(Icon::KeyDel, "Remove"); break;
-            case RowKind::ItemAdd: add(Icon::KeyLeft, ""); add(Icon::KeyRight, "Amount");
-                                   add(Icon::KeyEnter, "Add"); break;
-            case RowKind::ValueAction: add(Icon::KeyLeft, ""); add(Icon::KeyRight, "Amount");
-                                       add(Icon::KeyEnter, "Type"); add(Icon::KeyDel, "Reset"); break;
-            case RowKind::Bind:    add(Icon::KeyLeft, ""); add(Icon::KeyRight, "Pick");
-                                   add(Icon::KeyEnter, "Rebind"); add(Icon::KeyDel, "Reset"); break;
-            case RowKind::Bookmark: add(Icon::KeyEnter, "Open"); add(Icon::KeyDel, "Delete"); break;
+            case RowKind::Action:  add(Icon::KeyEnter, LOC("Select")); break;
+            case RowKind::Toggle:  add(Icon::KeyEnter, LOC("Toggle")); break;
+            case RowKind::Value:   add(Icon::KeyLeft, ""); add(Icon::KeyRight, LOC("Adjust"));
+                                   add(Icon::KeyEnter, LOC("Type")); add(Icon::KeyDel, LOC("Reset")); break;
+            case RowKind::ToggleValue: add(Icon::KeyEnter, LOC("Toggle")); add(Icon::KeyLeft, "");
+                                       add(Icon::KeyRight, LOC("Adjust")); add(Icon::KeyDel, LOC("Reset")); break;
+            case RowKind::Choice:  add(Icon::KeyLeft, ""); add(Icon::KeyRight, LOC("Pick")); break;
+            case RowKind::Submenu: add(Icon::KeyEnter, LOC("Open")); break;
+            case RowKind::Search:  add(Icon::KeyEnter, LOC("Type")); add(Icon::KeyDel, LOC("Clear")); break;
+            case RowKind::Typing:  add(Icon::KeyEnter, LOC("Done")); add(Icon::KeyBackspace, LOC("Erase")); break;
+            case RowKind::TypingApply: add(Icon::KeyEnter, LOC("Apply"));
+                                       add(Icon::KeyBackspace, LOC("Erase")); break;
+            case RowKind::Item:    add(Icon::KeyLeft, ""); add(Icon::KeyRight, LOC("Amount"));
+                                   add(Icon::KeyEnter, LOC("Type")); add(Icon::KeyDel, LOC("Remove")); break;
+            case RowKind::ItemAdd: add(Icon::KeyLeft, ""); add(Icon::KeyRight, LOC("Amount"));
+                                   add(Icon::KeyEnter, LOC("Add")); break;
+            case RowKind::ValueAction: add(Icon::KeyLeft, ""); add(Icon::KeyRight, LOC("Amount"));
+                                       add(Icon::KeyEnter, LOC("Type")); add(Icon::KeyDel, LOC("Reset")); break;
+            case RowKind::Bind:    add(Icon::KeyLeft, ""); add(Icon::KeyRight, LOC("Pick"));
+                                   add(Icon::KeyEnter, LOC("Rebind")); add(Icon::KeyDel, LOC("Reset")); break;
+            case RowKind::Bookmark: add(Icon::KeyEnter, LOC("Open")); add(Icon::KeyDel, LOC("Delete")); break;
             default: break;
             }
         }
@@ -532,13 +613,13 @@ namespace trinity::ui
         auto add = [&](Icon ic, const char* t) { o[n++] = { ic, t }; };
         if (pad)
         {
-            add(Icon::PadB, atRoot ? "Close" : "Back");
-            add(Icon::PadLB, ""); add(Icon::PadRB, "Tab");
+            add(Icon::PadB, atRoot ? LOC("Close") : LOC("Back"));
+            add(Icon::PadLB, ""); add(Icon::PadRB, LOC("Tab"));
         }
         else
         {
-            add(Icon::KeyBackspace, atRoot ? "Close" : "Back");
-            add(Icon::KeyQ, ""); add(Icon::KeyE, "Tab");
+            add(Icon::KeyBackspace, atRoot ? LOC("Close") : LOC("Back"));
+            add(Icon::KeyQ, ""); add(Icon::KeyE, LOC("Tab"));
         }
         return n;
     }

@@ -51,6 +51,7 @@ add_library(Trinity SHARED
     src/dllmain.cpp
     src/core/mod.cpp
     src/core/settings.cpp
+    src/core/localization.cpp
     src/mem/scanner.cpp
     src/game/player.cpp
     src/game/teleport.cpp
