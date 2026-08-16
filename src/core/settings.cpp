@@ -96,7 +96,19 @@ namespace trinity
             else if (!strcmp(key, "invSlotSizeVal"))      vals.invSlotSizeVal      = atoi(val);
             else if (!strcmp(key, "invStackSize"))        vals.invStackSize        = atoi(val) != 0;
             else if (!strcmp(key, "invStackSizeVal"))     vals.invStackSizeVal     = atoi(val);
+            else if (!strcmp(key, "forceClearSky"))       vals.forceClearSky       = atoi(val) != 0;
+            else if (!strcmp(key, "rainIntensity"))       vals.rainIntensity       = strtof(val, nullptr);
+            else if (!strcmp(key, "snowIntensity"))       vals.snowIntensity       = strtof(val, nullptr);
+            else if (!strcmp(key, "dustIntensity"))       vals.dustIntensity       = strtof(val, nullptr);
+            else if (!strcmp(key, "windMultiplier"))      vals.windMultiplier      = strtof(val, nullptr);
+            else if (!strcmp(key, "noWind"))              vals.noWind              = atoi(val) != 0;
+            else if (!strcmp(key, "cloudAmount"))         vals.cloudAmount         = strtof(val, nullptr);
+            else if (!strcmp(key, "cloudDensity"))        vals.cloudDensity        = strtof(val, nullptr);
+            else if (!strcmp(key, "cloudHeight"))         vals.cloudHeight         = strtof(val, nullptr);
+            else if (!strcmp(key, "fogDensity"))          vals.fogDensity          = strtof(val, nullptr);
             else if (!strcmp(key, "clearDistantFog"))     vals.clearDistantFog     = atoi(val) != 0;
+            else if (!strcmp(key, "sunScale"))            vals.sunScale            = strtof(val, nullptr);
+            else if (!strcmp(key, "moonScale"))           vals.moonScale           = strtof(val, nullptr);
             else if (!strcmp(key, "weatherPreset"))       vals.weatherPreset       = atoi(val);
             else if (!strcmp(key, "showFps"))             vals.showFps             = atoi(val) != 0;
             else if (!strcmp(key, "fileLogging"))         vals.fileLogging         = atoi(val) != 0;
@@ -276,7 +288,19 @@ namespace trinity
                 "invSlotSizeVal=%d\n"
                 "invStackSize=%d\n"
                 "invStackSizeVal=%d\n"
+                "forceClearSky=%d\n"
+                "rainIntensity=%.3f\n"
+                "snowIntensity=%.3f\n"
+                "dustIntensity=%.3f\n"
+                "windMultiplier=%.3f\n"
+                "noWind=%d\n"
+                "cloudAmount=%.3f\n"
+                "cloudDensity=%.3f\n"
+                "cloudHeight=%.3f\n"
+                "fogDensity=%.3f\n"
                 "clearDistantFog=%d\n"
+                "sunScale=%.3f\n"
+                "moonScale=%.3f\n"
                 "weatherPreset=%d\n"
                 "showFps=%d\n"
                 "fileLogging=%d\n"
@@ -312,7 +336,19 @@ namespace trinity
                 st.invSlotSizeVal,
                 st.invStackSize ? 1 : 0,
                 st.invStackSizeVal,
+                st.forceClearSky ? 1 : 0,
+                st.rainIntensity,
+                st.snowIntensity,
+                st.dustIntensity,
+                st.windMultiplier,
+                st.noWind ? 1 : 0,
+                st.cloudAmount,
+                st.cloudDensity,
+                st.cloudHeight,
+                st.fogDensity,
                 st.clearDistantFog ? 1 : 0,
+                st.sunScale,
+                st.moonScale,
                 st.weatherPreset,
                 st.showFps ? 1 : 0,
                 st.fileLogging ? 1 : 0,

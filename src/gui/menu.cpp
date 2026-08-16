@@ -705,11 +705,48 @@ namespace trinity::gui
         ui::Begin();
 
         bool changed = false;
+
+        // Force Clear Sky / Instant Clear
+        changed |= ui::Toggle(LOC("Force Clear Sky"), &st.forceClearSky, LOC("Forces constant clear sky with minimal cloud cover."));
+        if (ui::Option(LOC("Instant Clear Weather"), LOC("Immediately disperses rain, storms, and heavy fog.")))
+        {
+            st.forceClearSky = true;
+            st.rainIntensity = 0.0f;
+            st.snowIntensity = 0.0f;
+            st.dustIntensity = 0.0f;
+            st.clearDistantFog = true;
+            st.weatherPreset = 1;
+            game::World::SetWeatherPreset(1);
+            game::World::SetClearDistantFog(true);
+            changed = true;
+            ui::Toast(LOC("Atmosphere cleared"));
+        }
+
+        // Precipitation & Weather
+        changed |= ui::FloatOption(LOC("Rain Intensity"), &st.rainIntensity, 0.0f, 1.0f, 0.05f, 0.0f, "%.2f", LOC("Adjust rainfall density and wetness."));
+        changed |= ui::FloatOption(LOC("Snow Intensity"), &st.snowIntensity, 0.0f, 1.0f, 0.05f, 0.0f, "%.2f", LOC("Adjust snowfall and winter blizzard intensity."));
+        changed |= ui::FloatOption(LOC("Dust / Sandstorm"), &st.dustIntensity, 0.0f, 1.0f, 0.05f, 0.0f, "%.2f", LOC("Adjust desert dust and sandstorm particles."));
+
+        // Wind Controls
+        changed |= ui::FloatOption(LOC("Wind Multiplier"), &st.windMultiplier, 0.0f, 5.0f, 0.1f, 1.0f, "%.2fx", LOC("Scales ambient wind force on grass, trees, and cloth."));
+        changed |= ui::Toggle(LOC("No Wind"), &st.noWind, LOC("Calms all environmental wind physics to complete stillness."));
+
+        // Clouds & Atmosphere
+        changed |= ui::FloatOption(LOC("Cloud Amount"), &st.cloudAmount, 0.0f, 10.0f, 0.1f, 1.0f, "%.2fx", LOC("Scales the volume and coverage of procedural clouds."));
+        changed |= ui::FloatOption(LOC("Cloud Density"), &st.cloudDensity, 0.0f, 5.0f, 0.1f, 1.0f, "%.2fx", LOC("Adjusts cloud thickness and shadow opacity."));
+        changed |= ui::FloatOption(LOC("Cloud Height"), &st.cloudHeight, 0.0f, 5.0f, 0.1f, 1.0f, "%.2fx", LOC("Adjusts the vertical altitude of the cloud layer."));
+
+        // Fog & Visibility
+        changed |= ui::FloatOption(LOC("Fog Density"), &st.fogDensity, 0.0f, 1.0f, 0.05f, 1.0f, "%.2f", LOC("Scales volumetric world fog thickness."));
         if (ui::Toggle(LOC("Clear Distant Fog"), &st.clearDistantFog, LOC("Reduces thick distant fog blur for enhanced scenery and visibility.")))
         {
             game::World::SetClearDistantFog(st.clearDistantFog);
             changed = true;
         }
+
+        // Celestial & Sun/Moon
+        changed |= ui::FloatOption(LOC("Sun Intensity / Size"), &st.sunScale, 0.5f, 3.0f, 0.05f, 1.0f, "%.2fx", LOC("Scales sunlight glare, flare, and disc size."));
+        changed |= ui::FloatOption(LOC("Moon Size"), &st.moonScale, 0.5f, 3.0f, 0.05f, 1.0f, "%.2fx", LOC("Scales the lunar disc radius in the night sky."));
 
         static const char* s_weathers[] = {
             "Dynamic (Game Default)",
@@ -720,22 +757,12 @@ namespace trinity::gui
             "Dense Fog / Mist"
         };
         int wIdx = st.weatherPreset;
-        if (ui::Combo(LOC("Weather Pattern"), &wIdx, s_weathers, 6, LOC("Select and lock active weather atmosphere.")))
+        if (ui::Combo(LOC("Weather Preset"), &wIdx, s_weathers, 6, LOC("Select and lock active weather atmosphere.")))
         {
             st.weatherPreset = wIdx;
             game::World::SetWeatherPreset(wIdx);
             changed = true;
             ui::Toast(LOC("Weather set to %s"), s_weathers[wIdx]);
-        }
-
-        if (ui::Option(LOC("Instant Clear Weather"), LOC("Immediately disperses rain, storms, and heavy fog.")))
-        {
-            st.weatherPreset = 1;
-            st.clearDistantFog = true;
-            game::World::SetWeatherPreset(1);
-            game::World::SetClearDistantFog(true);
-            changed = true;
-            ui::Toast(LOC("Atmosphere cleared"));
         }
 
         if (changed && st.autoSave)
