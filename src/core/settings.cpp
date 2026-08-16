@@ -96,6 +96,8 @@ namespace trinity
             else if (!strcmp(key, "invSlotSizeVal"))      vals.invSlotSizeVal      = atoi(val);
             else if (!strcmp(key, "invStackSize"))        vals.invStackSize        = atoi(val) != 0;
             else if (!strcmp(key, "invStackSizeVal"))     vals.invStackSizeVal     = atoi(val);
+            else if (!strcmp(key, "clearDistantFog"))     vals.clearDistantFog     = atoi(val) != 0;
+            else if (!strcmp(key, "weatherPreset"))       vals.weatherPreset       = atoi(val);
             else if (!strcmp(key, "showFps"))             vals.showFps             = atoi(val) != 0;
             else if (!strcmp(key, "fileLogging"))         vals.fileLogging         = atoi(val) != 0;
             else if (!strcmp(key, "themeIndex"))          vals.themeIndex          = atoi(val);
@@ -274,6 +276,8 @@ namespace trinity
                 "invSlotSizeVal=%d\n"
                 "invStackSize=%d\n"
                 "invStackSizeVal=%d\n"
+                "clearDistantFog=%d\n"
+                "weatherPreset=%d\n"
                 "showFps=%d\n"
                 "fileLogging=%d\n"
                 "themeIndex=%d\n"
@@ -308,6 +312,8 @@ namespace trinity
                 st.invSlotSizeVal,
                 st.invStackSize ? 1 : 0,
                 st.invStackSizeVal,
+                st.clearDistantFog ? 1 : 0,
+                st.weatherPreset,
                 st.showFps ? 1 : 0,
                 st.fileLogging ? 1 : 0,
                 st.themeIndex,

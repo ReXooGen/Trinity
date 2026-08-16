@@ -367,4 +367,64 @@ namespace trinity::game
         }
         return true;
     }
+
+    bool World::SetTimeOfDay(int targetHour)
+    {
+        if (!g_timeClient) return false;
+
+        int day = 0;
+        if (!ReadI32(g_timeClient + kOff_FieldTime_Day, &day)) return false;
+
+        targetHour = targetHour % 24;
+        if (targetHour < 0) targetHour += 24;
+
+        WriteClockDayHour(day, targetHour);
+
+        if (g_todClampApplied)
+        {
+            g_todTargetHour = static_cast<float>(targetHour);
+        }
+        else
+        {
+            const uintptr_t mgr = ResolveTodManager();
+            if (mgr)
+            {
+                const float h = static_cast<float>(targetHour);
+                Write32(mgr + kOff_Tod_LowerLimit, FloatBits(h));
+                Write32(mgr + kOff_Tod_UpperLimit, FloatBits(h));
+            }
+        }
+        return true;
+    }
+
+    bool World::GetCurrentTimeOfDay(int* outDay, int* outHour, int* outMinute)
+    {
+        if (!g_timeClient) return false;
+        int d = 0, h = 0, m = 0;
+        if (!ReadI32(g_timeClient + kOff_FieldTime_Day, &d)) return false;
+        if (!ReadI32(g_timeClient + kOff_FieldTime_Hour, &h)) return false;
+        ReadI32(g_timeClient + 0x08, &m);
+        if (outDay) *outDay = d;
+        if (outHour) *outHour = h;
+        if (outMinute) *outMinute = m;
+        return true;
+    }
+
+    bool World::SetWeatherPreset(int presetId)
+    {
+        State::Get().weatherPreset = presetId;
+        const uintptr_t mgr = ResolveTodManager();
+        if (mgr)
+        {
+            LOG("world: weather preset set to %d", presetId);
+        }
+        return true;
+    }
+
+    bool World::SetClearDistantFog(bool enabled)
+    {
+        State::Get().clearDistantFog = enabled;
+        LOG("world: clear distant fog set to %s", enabled ? "ENABLED" : "DISABLED");
+        return true;
+    }
 }

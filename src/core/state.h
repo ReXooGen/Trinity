@@ -111,6 +111,10 @@ namespace trinity
         // Advance is a one-shot action (menu.cpp), not persisted state.
         bool  timeFrozen = false;
 
+        // Weather & Atmosphere controls (world.cpp)
+        bool clearDistantFog = false;
+        int  weatherPreset   = 0; // 0=Default/Dynamic, 1=Clear / Sunny, 2=Overcast, 3=Rain, 4=Thunderstorm, 5=Fog / Mist
+
         // Inventory-wide overrides (inventory.cpp). Unlike the quantity editor
         // these write into the game's own ItemInfo / InventoryInfo data
         // tables - one number re-stamps every item / storage type at once,

@@ -652,6 +652,98 @@ namespace trinity::gui
         ui::End();
     }
 
+    static void RenderTimePresets()
+    {
+        ui::Begin();
+        const bool timeReady = game::World::TimeOfDayReady();
+
+        int curDay = 0, curHour = 0, curMin = 0;
+        if (game::World::GetCurrentTimeOfDay(&curDay, &curHour, &curMin))
+        {
+            char buf[96];
+            snprintf(buf, sizeof(buf), "%s: %s %d, %02d:%02d", LOC("Current Time"), LOC("Day"), curDay, curHour, curMin);
+            ui::Option(buf, LOC("Current in-game world time."));
+        }
+
+        if (ui::Option(LOC("Dawn / Morning (06:00)"), timeReady ? LOC("Set clock and sun to 06:00 AM (Sunrise).") : LOC("Unavailable right now.")))
+        {
+            if (game::World::SetTimeOfDay(6))
+                ui::Toast(LOC("Set time to 06:00 (Dawn)"));
+        }
+
+        if (ui::Option(LOC("Midday / Noon (12:00)"), timeReady ? LOC("Set clock and sun to 12:00 PM (Full Daylight).") : LOC("Unavailable right now.")))
+        {
+            if (game::World::SetTimeOfDay(12))
+                ui::Toast(LOC("Set time to 12:00 (Noon)"));
+        }
+
+        if (ui::Option(LOC("Sunset / Golden Hour (18:00)"), timeReady ? LOC("Set clock and sun to 06:00 PM (Dusk).") : LOC("Unavailable right now.")))
+        {
+            if (game::World::SetTimeOfDay(18))
+                ui::Toast(LOC("Set time to 18:00 (Sunset)"));
+        }
+
+        if (ui::Option(LOC("Midnight / Night (00:00)"), timeReady ? LOC("Set clock and sun to 12:00 AM (Deep Night).") : LOC("Unavailable right now.")))
+        {
+            if (game::World::SetTimeOfDay(0))
+                ui::Toast(LOC("Set time to 00:00 (Midnight)"));
+        }
+
+        static int s_customHour = 12;
+        if (ui::IntAction(LOC("Set Exact Hour"), &s_customHour, 0, 23, 1, 12, timeReady ? LOC("Set clock directly to this exact hour (0..23).") : LOC("Unavailable right now.")))
+        {
+            if (game::World::SetTimeOfDay(s_customHour))
+                ui::Toast(LOC("Set time to %02d:00"), s_customHour);
+        }
+
+        ui::End();
+    }
+
+    static void RenderWeatherAtmosphere()
+    {
+        State& st = State::Get();
+        ui::Begin();
+
+        bool changed = false;
+        if (ui::Toggle(LOC("Clear Distant Fog"), &st.clearDistantFog, LOC("Reduces thick distant fog blur for enhanced scenery and visibility.")))
+        {
+            game::World::SetClearDistantFog(st.clearDistantFog);
+            changed = true;
+        }
+
+        static const char* s_weathers[] = {
+            "Dynamic (Game Default)",
+            "Clear Sky (Sunny)",
+            "Overcast (Cloudy)",
+            "Rainy (Light Rain)",
+            "Thunderstorm (Storm)",
+            "Dense Fog / Mist"
+        };
+        int wIdx = st.weatherPreset;
+        if (ui::Combo(LOC("Weather Pattern"), &wIdx, s_weathers, 6, LOC("Select and lock active weather atmosphere.")))
+        {
+            st.weatherPreset = wIdx;
+            game::World::SetWeatherPreset(wIdx);
+            changed = true;
+            ui::Toast(LOC("Weather set to %s"), s_weathers[wIdx]);
+        }
+
+        if (ui::Option(LOC("Instant Clear Weather"), LOC("Immediately disperses rain, storms, and heavy fog.")))
+        {
+            st.weatherPreset = 1;
+            st.clearDistantFog = true;
+            game::World::SetWeatherPreset(1);
+            game::World::SetClearDistantFog(true);
+            changed = true;
+            ui::Toast(LOC("Atmosphere cleared"));
+        }
+
+        if (changed && st.autoSave)
+            Settings::Save();
+
+        ui::End();
+    }
+
     static void RenderWorld()
     {
         State& st = State::Get();
@@ -682,6 +774,9 @@ namespace trinity::gui
             if (game::World::AdvanceTimeOfDayHours(s_advHours))
                 ui::Toast(LOC("Advanced %d hours"), s_advHours);
         }
+
+        ui::Submenu(LOC("Time of Day Presets"), "world_time_presets", LOC("Set exact time to Morning, Noon, Sunset, or Midnight."));
+        ui::Submenu(LOC("Weather & Atmosphere"), "world_weather", LOC("Control weather, sky condition, and remove distance fog."));
 
         if (changed && st.autoSave)
             Settings::Save();
@@ -2196,6 +2291,8 @@ namespace trinity::gui
         else if (!strcmp(cur, "invaddcat")) RenderInventoryAddCat();
         else if (!strcmp(cur, "invmoney"))  RenderInventoryMoney();
         else if (!strcmp(cur, "invabyss"))  RenderInventoryAbyss();
+        else if (!strcmp(cur, "world_time_presets")) RenderTimePresets();
+        else if (!strcmp(cur, "world_weather")) RenderWeatherAtmosphere();
         else                              RenderPlayer();
     }
 }

@@ -65,5 +65,15 @@ namespace trinity::game
         // false if Time of Day did not resolve or the clock can't be read right
         // now (e.g. not yet in-world). While frozen, advances the pinned time.
         static bool AdvanceTimeOfDayHours(int hours);
+
+        // Sets the clock to an exact hour (0..23) instantly.
+        static bool SetTimeOfDay(int targetHour);
+
+        // Reads the current clock state.
+        static bool GetCurrentTimeOfDay(int* outDay, int* outHour, int* outMinute);
+
+        // Weather & Atmosphere controls
+        static bool SetWeatherPreset(int presetId);
+        static bool SetClearDistantFog(bool enabled);
     };
 }
