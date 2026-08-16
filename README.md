@@ -24,6 +24,14 @@ Trinity is an in-game DirectX 12 mod menu for **Crimson Desert**, originally cre
 | :---: | :---: |
 | ![Saved Locations](image7.png) | ![Storage Editor](image8.png) |
 
+## What's New in v1.2.1
+
+- **Money & Currency System Overhaul**:
+  - Direct Silver modification with save-and-reload persistence.
+  - Non-blocking background currency scanner (prevents UI freeze/hangs).
+  - Quick Silver Pouch & Gold Chest Spawner (`Silver_Pack`, `Small_Silver_Pack`, `Boss_Reward_BigMoney`).
+  - Added dedicated **Abyss Items & Artifacts** submenu with smart 1-150 Sealed Artifact collection injector, Seeds, Cells, and permanent stat items (+30 HP, +2 MP, +3 SP).
+
 ---
 
 ## What's New in v1.2.0
