@@ -1,5 +1,7 @@
 #pragma once
 
+#include <cstdint>
+
 namespace trinity::game
 {
     // Player stat features (God Mode, Infinite Stamina, Infinite Spirit) and
@@ -46,6 +48,10 @@ namespace trinity::game
 
         // True once at least one protagonist's health entry has been observed.
         static bool Ready();
+
+        // Returns the tracked actor address (0 = Primary/Kliff, 1 = Companion 1, 2 = Companion 2).
+        static uintptr_t GetActor(int index);
+        static int GetTrackedPlayerCount();
 
         // DEBUG: dump every player-ish character in the manager vector to the
         // console - class tag, vtable, possessor round-trip, vital-chain status

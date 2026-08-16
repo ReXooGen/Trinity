@@ -7,6 +7,7 @@
 #include <cstring>
 
 #include "offsets.h"
+#include "player.h"
 #include "dye_data.h"
 #include "inventory.h"
 #include "../core/logger.h"
@@ -112,6 +113,8 @@ namespace trinity::game
             return CompValid(comp) ? comp : 0;
         }
 
+        static int s_activeCharIdx = 0;
+
         // The component we render through, and the one every read in this file
         // reports. The walk leads and the hook capture is only a fallback -
         // same doctrine as the inventory holder: a capture cannot be checked
@@ -119,17 +122,34 @@ namespace trinity::game
         // from the character the engine itself repoints on load.
         uintptr_t ClientComp()
         {
-            const uintptr_t walked = CompForCharacter(Inventory::ClientCharacterAddr());
-            if (walked) return walked;
-            const uintptr_t hooked = g_comp.load(std::memory_order_acquire);
-            return CompValid(hooked) ? hooked : 0;
+            const uintptr_t actor = Inventory::CharacterAddr(s_activeCharIdx);
+            if (actor)
+            {
+                const uintptr_t comp = CompForCharacter(actor);
+                if (comp) return comp;
+            }
+            if (s_activeCharIdx == 0)
+            {
+                const uintptr_t hooked = g_comp.load(std::memory_order_acquire);
+                if (CompValid(hooked)) return hooked;
+            }
+            return 0;
         }
 
         // The server-authority component: what a save reload will show. No
         // fallback - a wrong guess here writes another actor's wardrobe.
         uintptr_t ServerComp()
         {
-            return CompForCharacter(Inventory::ServerCharacterAddr());
+            if (s_activeCharIdx == 0)
+                return CompForCharacter(Inventory::ServerCharacterAddr());
+
+            const uintptr_t actor = Inventory::CharacterAddr(s_activeCharIdx);
+            if (actor)
+            {
+                const uintptr_t comp = CompForCharacter(actor);
+                if (comp) return comp;
+            }
+            return 0;
         }
 
         // Read-only 1.17 component-chain diagnostic. Besides reporting the
@@ -652,6 +672,18 @@ namespace trinity::game
         // point is resolved separately; ProcessRequest refuses safely while
         // it is unavailable.
         return ClientComp() != 0;
+    }
+
+    void Dye::SetActiveCharacter(int index)
+    {
+        if (index < 0) index = 0;
+        s_activeCharIdx = index;
+        g_slotCount = 0;
+    }
+
+    int Dye::GetActiveCharacter()
+    {
+        return s_activeCharIdx;
     }
 
     uintptr_t Dye::ActiveClientComp()

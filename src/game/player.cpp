@@ -580,20 +580,6 @@ namespace trinity::game
 
     void Player::RefreshSelf()
     {
-        // Skip the per-frame character-list walk when nothing consumes its
-        // output. Clear the sets once on the active->idle edge so a re-enable
-        // can never pin a stale/freed entry for the one frame before the next
-        // resolve repopulates; the missed frame is harmless (a re-enabled pin
-        // just starts one tick later).
-        static bool s_wasActive = false;
-        const State& st = State::Get();
-        if (!AnyStatFeatureActive(st))
-        {
-            if (s_wasActive) { ClearPlayerSets(); s_wasActive = false; }
-            return;
-        }
-        s_wasActive = true;
-
         TickResolveSelf();
     }
 
@@ -617,6 +603,23 @@ namespace trinity::game
     bool Player::Ready()
     {
         return g_hpEntries[0].load(std::memory_order_relaxed) >= kMinPointer;
+    }
+
+    uintptr_t Player::GetActor(int index)
+    {
+        if (index < 0 || index >= kMaxPlayers) return 0;
+        return g_actors[index].load(std::memory_order_acquire);
+    }
+
+    int Player::GetTrackedPlayerCount()
+    {
+        int count = 0;
+        for (int i = 0; i < kMaxPlayers; ++i)
+        {
+            if (g_actors[i].load(std::memory_order_acquire) >= kMinPointer)
+                ++count;
+        }
+        return count;
     }
 
 }

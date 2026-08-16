@@ -7,6 +7,7 @@
 #include <cctype>
 
 #include "offsets.h"
+#include "player.h"
 #include "inventory.h"
 #include "dye.h"
 #include "../mem/scanner.h"
@@ -66,13 +67,37 @@ namespace trinity::game
             return CompValid(comp) ? comp : 0;
         }
 
+        static int s_activeCharIdx = 0;
+
         uintptr_t ClientComp()
         {
-            const uintptr_t active = Dye::ActiveClientComp();
-            if (active) return active;
-            return CompForCharacter(Inventory::ClientCharacterAddr());
+            const uintptr_t actor = Inventory::CharacterAddr(s_activeCharIdx);
+            if (actor)
+            {
+                const uintptr_t comp = CompForCharacter(actor);
+                if (comp) return comp;
+            }
+            if (s_activeCharIdx == 0)
+            {
+                const uintptr_t active = Dye::ActiveClientComp();
+                if (active) return active;
+            }
+            return 0;
         }
-        uintptr_t ServerComp() { return CompForCharacter(Inventory::ServerCharacterAddr()); }
+
+        uintptr_t ServerComp()
+        {
+            if (s_activeCharIdx == 0)
+                return CompForCharacter(Inventory::ServerCharacterAddr());
+
+            const uintptr_t actor = Inventory::CharacterAddr(s_activeCharIdx);
+            if (actor)
+            {
+                const uintptr_t comp = CompForCharacter(actor);
+                if (comp) return comp;
+            }
+            return 0;
+        }
 
         // The TrItemValue copy the component keeps for the equipped slot `tag`.
         uintptr_t FindEntryByTag(uintptr_t comp, uint16_t tag)
@@ -341,6 +366,18 @@ namespace trinity::game
 
     bool Equipment::Ready()        { return ClientComp() != 0; }
     bool Equipment::EditsPersist() { return ServerComp() != 0; }
+
+    void Equipment::SetActiveCharacter(int index)
+    {
+        if (index < 0) index = 0;
+        s_activeCharIdx = index;
+        g_slotCount = 0; // invalidate snapshot so next read rebuilds fresh
+    }
+
+    int Equipment::GetActiveCharacter()
+    {
+        return s_activeCharIdx;
+    }
 
     int Equipment::SlotCount()
     {

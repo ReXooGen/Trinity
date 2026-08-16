@@ -35,6 +35,10 @@ namespace trinity::game
         static bool Ready();
         static uintptr_t ActiveClientComp();
 
+        // Character selection (0 = Kliff, 1 = Damiane, 2 = Oongka)
+        static void SetActiveCharacter(int index);
+        static int  GetActiveCharacter();
+
         // --- Equipped-slot snapshot (menu side; guarded reads only) ---------
         // Rebuilt on every call cheap enough for a menu frame: the table is
         // ~a dozen entries. Indices are positions in the snapshot, valid only

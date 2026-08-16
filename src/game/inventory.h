@@ -272,6 +272,7 @@ namespace trinity::game
         // flag).
         static uintptr_t ClientCharacterAddr();
         static uintptr_t ServerCharacterAddr();
+        static uintptr_t CharacterAddr(int index);
         static uintptr_t RealmFlagAddress(uint8_t* outVal);
     };
 }

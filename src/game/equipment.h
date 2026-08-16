@@ -40,6 +40,10 @@ namespace trinity::game
         // reload will not keep them - the UI can warn with this.
         static bool EditsPersist();
 
+        // Character selection (0 = Kliff, 1 = Damiane, 2 = Oongka)
+        static void SetActiveCharacter(int index);
+        static int  GetActiveCharacter();
+
         static constexpr int kMaxSockets = 5;
         static constexpr int kRefineMax  = 10; // refinement caps at level 10
 

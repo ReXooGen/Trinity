@@ -13,6 +13,8 @@
 #include <MinHook.h>
 
 #include "offsets.h"
+#include "player.h"
+#include "item_names.h"
 #include "../mem/scanner.h"
 #include "../mem/safe_memory.h"
 #include "../mem/hooks.h"
@@ -537,11 +539,21 @@ namespace trinity::game
             }
         }
 
-        // Turn an engine key into a readable label: '_' -> ' ' and a space
-        // inserted at lowercase/digit -> uppercase boundaries ("OneHandSword" ->
+        // Turn an engine key into a readable label: check official in-game
+        // name mappings first, else fallback to '_' -> ' ' and space insertion
+        // at lowercase/digit -> uppercase boundaries ("OneHandSword" ->
         // "One Hand Sword", "Money_Copper" -> "Money Copper").
         void Prettify(const char* key, char* out, size_t n)
         {
+            if (!key || !out || n == 0) return;
+            const char* resolved = ResolveItemDisplayName(key);
+            if (resolved && resolved[0] != '\0')
+            {
+                snprintf(out, n, "%s", resolved);
+                CleanItemName(out, n);
+                return;
+            }
+
             size_t o = 0;
             for (size_t i = 0; key[i] && o < n - 1; ++i)
             {
@@ -1298,11 +1310,11 @@ namespace trinity::game
         if (const HMODULE ntdll = GetModuleHandleW(L"ntdll.dll"))
             oNtQueryInfoThread = reinterpret_cast<NtQueryInformationThread_t>(
                 GetProcAddress(ntdll, "NtQueryInformationThread"));
-        if (!oItemValueCtor || !oCommitPlacement || !oFreePlacements || !oItemValueDtor || !oNtQueryInfoThread)
-            LOG_WARN("inventory: add-item path incomplete (ctor=%d commit=%d free=%d dtor=%d teb=%d)"
+        if (!oItemValueCtor || !oCommitPlacement || !oFreePlacements || !oNtQueryInfoThread)
+            LOG_WARN("inventory: add-item path incomplete (ctor=%d commit=%d free=%d teb=%d)"
                      " - Add Item will be refused.",
                      oItemValueCtor ? 1 : 0, oCommitPlacement ? 1 : 0, oFreePlacements ? 1 : 0,
-                     oItemValueDtor ? 1 : 0, oNtQueryInfoThread ? 1 : 0);
+                     oNtQueryInfoThread ? 1 : 0);
 
         if (!g_candLockInit)
         {
@@ -2045,6 +2057,104 @@ namespace trinity::game
         return IsLiveCharacter(c) ? c : 0;
     }
 
+    // Identify character identity from equipped items:
+    // 0 = Kliff / Default, 1 = Damiane, 2 = Oongka
+    static int IdentifyCharacterFromEquip(uintptr_t container)
+    {
+        if (container < kMinPointer) return -1;
+        uintptr_t sub = 0, comp = 0, owner = 0;
+        if (!ReadPtr(container + kOff_Container_Sub, &sub) || sub < kMinPointer) return -1;
+        if (!ReadPtr(sub + kOff_Sub_EquipComp, &comp) || comp < kMinPointer) return -1;
+        if (!ReadPtr(comp + kOff_EquipComp_Owner, &owner) || owner != container) return -1;
+
+        uintptr_t desc = 0, array = 0;
+        uint32_t count = 0;
+        if (!ReadPtr(comp + kOff_EquipComp_Table, &desc) || desc < kMinPointer) return -1;
+        if (!ReadPtr(desc + kOff_EquipTable_Array, &array) || array < kMinPointer) return -1;
+        if (!Read32(desc + kOff_EquipTable_Count, &count) || count == 0 || count > 64) return -1;
+
+        for (uint32_t i = 0; i < count; ++i)
+        {
+            const uintptr_t entry = array + static_cast<uintptr_t>(i) * kEquipEntry_Stride;
+            uint16_t tid = 0;
+            if (!Read16(entry + kOff_InvSlot_TypeId, &tid) || tid == kInvSlot_EmptyType || tid == 0) continue;
+
+            char key[96] = "";
+            if (KeyForType(tid, key, sizeof(key)))
+            {
+                if (strstr(key, "Damian") || strstr(key, "Demian") || strstr(key, "Demeniss") || strstr(key, "Rapier"))
+                    return 1; // Damiane
+                if (strstr(key, "Oongka") || strstr(key, "Giant") || strstr(key, "Tynion"))
+                    return 2; // Oongka
+                if (strstr(key, "Kliff") || strstr(key, "DarknessKing"))
+                    return 0; // Kliff
+            }
+        }
+        return -1; // Unrecognized
+    }
+
+    uintptr_t Inventory::CharacterAddr(int index)
+    {
+        const uintptr_t clientC = ResolveClientContainer();
+        if (index == 0) return IsLiveCharacter(clientC) ? clientC : 0;
+
+        // Collect all candidate containers
+        uintptr_t candidates[64] = {};
+        int candCount = 0;
+
+        auto addCand = [&](uintptr_t c) {
+            if (c < kMinPointer || c == clientC) return;
+            for (int i = 0; i < candCount; ++i)
+                if (candidates[i] == c) return;
+            if (candCount < 64) candidates[candCount++] = c;
+        };
+
+        // 1. Container manager array
+        if (clientC)
+        {
+            uintptr_t sub = 0, holder = 0;
+            if (ReadPtr(clientC + kOff_Container_Sub, &sub) && sub >= kMinPointer &&
+                ReadPtr(sub + kOff_Sub_Holder, &holder) && holder >= kMinPointer)
+            {
+                uintptr_t arr = 0;
+                uint32_t count = 0;
+                if (ReadPtr(holder + 0x18, &arr) && arr >= kMinPointer &&
+                    Read32(holder + 0x20, &count) && count > 1 && count <= 64)
+                {
+                    for (uint32_t i = 0; i < count; ++i)
+                    {
+                        uintptr_t c = 0;
+                        if (ReadPtr(arr + static_cast<uintptr_t>(i) * 8, &c) && c >= kMinPointer)
+                            addCand(c);
+                    }
+                }
+            }
+        }
+
+        // 2. Snapshot candidates
+        Candidate snap[kMaxCandidates] = {};
+        const int n = SnapshotCandidates(snap);
+        for (int i = 0; i < n; ++i)
+            addCand(snap[i].container);
+
+        // 3. Active world party actors
+        for (int i = 1; i < 3; ++i)
+        {
+            const uintptr_t act = Player::GetActor(i);
+            if (act) addCand(act);
+        }
+
+        // Match container by character identity
+        for (int i = 0; i < candCount; ++i)
+        {
+            const uintptr_t c = candidates[i];
+            if (IdentifyCharacterFromEquip(c) == index)
+                return c;
+        }
+
+        return 0;
+    }
+
     uintptr_t Inventory::RealmFlagAddress(uint8_t* outVal) { return RealmFlagAddr(outVal); }
 
     namespace
@@ -2181,8 +2291,8 @@ namespace trinity::game
             }
 
             // Freed in the target realm, exactly once each, whatever happened.
-            if (planned) { __try { oFreePlacements(out); }     __except (EXCEPTION_EXECUTE_HANDLER) {} }
-            if (built)   { __try { oItemValueDtor(itemVal); }  __except (EXCEPTION_EXECUTE_HANDLER) {} }
+            if (planned) { __try { oFreePlacements(out); }                    __except (EXCEPTION_EXECUTE_HANDLER) {} }
+            if (built && oItemValueDtor) { __try { oItemValueDtor(itemVal); } __except (EXCEPTION_EXECUTE_HANDLER) {} }
             return committed;
         }
 
@@ -2248,16 +2358,20 @@ namespace trinity::game
         bool CommitAdd(uint16_t typeId, int64_t qty)
         {
             const bool ready = oItemValueCtor && oHolderInsert && oCommitPlacement &&
-                               oFreePlacements && oItemValueDtor && oNtQueryInfoThread;
+                               oFreePlacements && oNtQueryInfoThread;
             uintptr_t def = 0;
+            const bool haveDef = DefForRow(g_itemTableGlobal, typeId, &def);
             const uintptr_t clientH = CurrentHolder();
             const uintptr_t serverH = ServerHolder();
-            if (!ready || !DefForRow(g_itemTableGlobal, typeId, &def) || !clientH || !serverH)
+            if (!ready || !haveDef || !clientH || !serverH)
             {
-                LOG_WARN("inventory: add item %u x%lld - not ready (client=%p server=%p def=%p)",
+                LOG_WARN("inventory: add item %u x%lld - not ready (ready=%d client=%p server=%p def=%p ctor=%d ins=%d commit=%d free=%d teb=%d)",
                          typeId, static_cast<long long>(qty),
+                         ready ? 1 : 0,
                          reinterpret_cast<void*>(clientH), reinterpret_cast<void*>(serverH),
-                         reinterpret_cast<void*>(def));
+                         reinterpret_cast<void*>(def),
+                         oItemValueCtor ? 1 : 0, oHolderInsert ? 1 : 0, oCommitPlacement ? 1 : 0,
+                         oFreePlacements ? 1 : 0, oNtQueryInfoThread ? 1 : 0);
                 return false;
             }
 

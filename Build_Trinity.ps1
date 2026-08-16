@@ -113,10 +113,14 @@ if (Test-Path -LiteralPath $parentDir) {
 # Auto-deploy to Steam game installation folder
 $steamGameDir = "C:\Program Files (x86)\Steam\steamapps\common\Crimson Desert\bin64"
 if (Test-Path -LiteralPath $steamGameDir) {
-    Copy-Item -Path (Join-Path $pkgDir 'Trinity.asi') -Destination (Join-Path $steamGameDir 'Trinity.asi') -Force
-    Copy-Item -Path (Join-Path $pkgDir 'Trinity_zh.ini') -Destination (Join-Path $steamGameDir 'Trinity_zh.ini') -Force
-    Copy-Item -Path (Join-Path $pkgDir 'Trinity_ko.ini') -Destination (Join-Path $steamGameDir 'Trinity_ko.ini') -Force
-    Write-Host "Auto-deployed to Steam game folder: $steamGameDir"
+    try {
+        Copy-Item -Path (Join-Path $pkgDir 'Trinity.asi') -Destination (Join-Path $steamGameDir 'Trinity.asi') -Force -ErrorAction Stop
+        Copy-Item -Path (Join-Path $pkgDir 'Trinity_zh.ini') -Destination (Join-Path $steamGameDir 'Trinity_zh.ini') -Force -ErrorAction Stop
+        Copy-Item -Path (Join-Path $pkgDir 'Trinity_ko.ini') -Destination (Join-Path $steamGameDir 'Trinity_ko.ini') -Force -ErrorAction Stop
+        Write-Host "Auto-deployed to Steam game folder: $steamGameDir"
+    } catch {
+        Write-Host "Note: Game may be running in bin64, copy skipped (will apply when game restarts): $_"
+    }
 }
 
 # Auto-deploy to Steam mods folder (ASI only)
@@ -124,7 +128,11 @@ $steamModsDir = "C:\Program Files (x86)\Steam\steamapps\common\Crimson Desert\mo
 if (-not (Test-Path -LiteralPath $steamModsDir)) {
     New-Item -ItemType Directory -Path $steamModsDir -Force | Out-Null
 }
-Copy-Item -Path (Join-Path $pkgDir 'Trinity.asi') -Destination (Join-Path $steamModsDir 'Trinity.asi') -Force
-Write-Host "Auto-deployed Trinity.asi to Steam mods folder: $steamModsDir"
+try {
+    Copy-Item -Path (Join-Path $pkgDir 'Trinity.asi') -Destination (Join-Path $steamModsDir 'Trinity.asi') -Force -ErrorAction Stop
+    Write-Host "Auto-deployed Trinity.asi to Steam mods folder: $steamModsDir"
+} catch {
+    Write-Host "Note: Game may be running in mods folder, copy skipped: $_"
+}
 
 Write-Host "Built: $($asi.FullName)"

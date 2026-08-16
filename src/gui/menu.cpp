@@ -196,11 +196,21 @@ namespace trinity::gui
     {
         ui::Begin();
 
+        static const char* const kCharNames[] = { "Kliff", "Damiane", "Oongka" };
+        int dyeChar = game::Dye::GetActiveCharacter();
+        if (ui::Combo(LOC("Character"), &dyeChar, kCharNames, 3, LOC("Select which character's armor to dye.")))
+        {
+            game::Dye::SetActiveCharacter(dyeChar);
+        }
+
         if (!game::Dye::Ready())
         {
-            ui::Option("Waiting for your equipment...",
-                       "Load into the world - if this persists, change any "
-                       "equipment piece once so the mod can see your gear.");
+            if (dyeChar > 0)
+                ui::Option(LOC("Character not loaded"),
+                           LOC("This companion is not currently loaded in memory."));
+            else
+                ui::Option(LOC("Waiting for your equipment..."),
+                           LOC("Load into the world - if this persists, change any equipment piece once so the mod can see your gear."));
             ui::End();
             return;
         }
@@ -417,9 +427,20 @@ namespace trinity::gui
     {
         ui::Begin();
 
+        static const char* const kCharNames[] = { "Kliff", "Damiane", "Oongka" };
+        int eqChar = game::Equipment::GetActiveCharacter();
+        if (ui::Combo(LOC("Character"), &eqChar, kCharNames, 3, LOC("Select which character's equipment to view and edit.")))
+        {
+            game::Equipment::SetActiveCharacter(eqChar);
+        }
+
         if (!game::Equipment::Ready())
         {
-            ui::Option("Waiting for your equipment...", "Load into the world first.");
+            if (eqChar > 0)
+                ui::Option(LOC("Character not loaded"),
+                           LOC("This companion is not currently loaded in memory."));
+            else
+                ui::Option(LOC("Waiting for your equipment..."), LOC("Load into the world first."));
             ui::End();
             return;
         }
