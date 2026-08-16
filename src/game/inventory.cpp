@@ -884,23 +884,26 @@ namespace trinity::game
         uintptr_t ServerHolder()
         {
             const uintptr_t clientC = ResolveClientContainer();
-
-            // The cache is trusted only while its container is still a live
-            // character AND still derives to the very holder we cached - a
-            // freed holder reads back as a sane bucket array, so identity is
-            // the only check worth making here.
-            const ULONGLONG now     = GetTickCount64();
-            const uintptr_t cached  = g_serverHolder.load(std::memory_order_acquire);
-            const uintptr_t cachedC = g_serverContainer.load(std::memory_order_acquire);
-            if (cached && now - g_serverTick.load(std::memory_order_relaxed) < 1000 &&
-                IsLiveCharacter(cachedC) && HolderForContainer(cachedC) == cached)
-                return cached;
-
             const uintptr_t clientH = CurrentHolder();
             if (!clientC || !clientH) return 0;
             const uint32_t want = HolderBucketCount(clientH);
             if (!want) return 0;
 
+            const ULONGLONG now     = GetTickCount64();
+            const uintptr_t cached  = g_serverHolder.load(std::memory_order_acquire);
+            const uintptr_t cachedC = g_serverContainer.load(std::memory_order_acquire);
+
+            // 1. Fast path: if cached holder is valid, mirrors client buckets, and container is intact
+            if (cached && cached != clientH && HolderLooksValid(cached) && HolderBucketCount(cached) == want)
+            {
+                if (cachedC && (HolderForContainer(cachedC) == cached || IsLiveCharacter(cachedC)))
+                {
+                    g_serverTick.store(now, std::memory_order_relaxed);
+                    return cached;
+                }
+            }
+
+            // 2. Scan candidate list captured from engine commits
             Candidate snap[kMaxCandidates] = {};
             const int n = SnapshotCandidates(snap);
             for (int i = 0; i < n; ++i)
@@ -909,25 +912,25 @@ namespace trinity::game
                 if (!c || c == clientC) continue;
                 if (!IsLiveCharacter(c)) continue;          // a planner copy, or long dead
 
-                // Derive the holder from the container now rather than trust the
-                // one captured beside it, because the liveness test above proves
-                // the CONTAINER and says nothing about the holder taken with it.
-                // The allocator recycles: a freed container's address can come
-                // back as a new live character, which passes every test above
-                // while the holder captured alongside it is long freed. Deriving
-                // keeps the pair self-consistent by construction.
                 uintptr_t h = HolderForContainer(c);
                 if (!h) h = snap[i].holder; // walk did not apply; captured pair is all we have
                 if (!h || h == clientH) continue;
+                if (!HolderLooksValid(h)) continue;
                 if (HolderBucketCount(h) != want) continue; // not a mirror of ours
                 g_serverHolder.store(h, std::memory_order_release);
                 g_serverContainer.store(c, std::memory_order_release);
                 g_serverTick.store(now, std::memory_order_relaxed);
                 return h;
             }
-            // Nothing usable. Report "not ready" rather than keep handing out a
-            // holder that may since have been freed - that is what took the
-            // in-game editor down with an access violation on 2026-07-15.
+
+            // 3. Fallback: if no new candidate matched (e.g. game is in menu or paused),
+            // but the cached holder is still valid in memory with matching bucket count, keep it!
+            if (cached && cached != clientH && HolderLooksValid(cached) && HolderBucketCount(cached) == want)
+            {
+                return cached;
+            }
+
+            // Nothing usable yet
             g_serverHolder.store(0, std::memory_order_release);
             g_serverContainer.store(0, std::memory_order_release);
             return 0;
@@ -2638,6 +2641,170 @@ namespace trinity::game
         return true;
     }
 
+    uint16_t Inventory::FindTypeIdByKey(const char* key)
+    {
+        if (!key || !key[0]) return 0;
+        BuildCatalog();
+        for (const auto& g : g_catalog)
+        {
+            for (const auto& it : g.items)
+            {
+                if (_stricmp(it.key, key) == 0)
+                    return it.typeId;
+            }
+        }
+        // Fallback: direct table scan in case it had no name or was uncategorized
+        if (g_itemTableGlobal)
+        {
+            uintptr_t table = 0;
+            if (ReadPtr(g_itemTableGlobal, &table) && table >= kMinPointer)
+            {
+                uint32_t count = 0;
+                if (Read32(table + kOff_ItemTable_Count, &count) && count > 0 && count <= 65536)
+                {
+                    char rowKey[64]{};
+                    for (uint32_t row = 0; row < count; ++row)
+                    {
+                        const uint16_t tid = static_cast<uint16_t>(row);
+                        if (tid == kInvSlot_EmptyType || tid == 0) continue;
+                        if (KeyForType(tid, rowKey, sizeof(rowKey)))
+                        {
+                            if (_stricmp(rowKey, key) == 0)
+                                return tid;
+                        }
+                    }
+                }
+            }
+        }
+        return 0;
+    }
+
+    bool Inventory::AddItemByKey(const char* key, int64_t count)
+    {
+        if (!key || count <= 0) return false;
+        uint16_t tid = FindTypeIdByKey(key);
+        if (!tid)
+        {
+            LOG_WARN("inventory: item '%s' not found in item table.", key);
+            return false;
+        }
+        return AddItem(tid, count);
+    }
+
+    bool Inventory::AddMoneyPouch(const char* itemKey, int64_t count)
+    {
+        return AddItemByKey(itemKey, count);
+    }
+
+    bool Inventory::AddMoneyAmount(int64_t silverAmount)
+    {
+        if (silverAmount <= 0) return false;
+        uint16_t tid = FindTypeIdByKey("Heavy_Copper_Pack");
+        if (!tid) tid = FindTypeIdByKey("Copper_Pack");
+        if (!tid) tid = FindTypeIdByKey("Small_Copper_Pack");
+        if (!tid) tid = FindTypeIdByKey("Boss_Reward_BigMoney");
+        if (!tid)
+        {
+            LOG_WARN("inventory: no money pouch definition found in item table.");
+            return false;
+        }
+
+        int64_t count = silverAmount;
+        if (count > 99999) count = 99999;
+        return AddItem(tid, count);
+    }
+
+    bool Inventory::SetWalletMoneyValue(int64_t silverAmount)
+    {
+        if (silverAmount < 0) silverAmount = 0;
+        const int64_t copperAmount = silverAmount * 100; // 1 Silver = 100 Copper
+        RefreshImpl(true);
+
+        const uint16_t moneyTid = FindTypeIdByKey("Money_Copper");
+        bool written = false;
+
+        // 1. Search in cached g_storages
+        for (size_t s = 0; s < g_storages.size(); ++s)
+        {
+            for (size_t g = 0; g < g_storages[s].groups.size(); ++g)
+            {
+                for (size_t i = 0; i < g_storages[s].groups[g].items.size(); ++i)
+                {
+                    Item& it = g_storages[s].groups[g].items[i];
+                    if (it.typeId == moneyTid || (moneyTid == 0 && _stricmp(it.key, "Money_Copper") == 0))
+                    {
+                        if (Write64(it.slot + kOff_InvSlot_Quantity, copperAmount))
+                        {
+                            WriteServerMirror(it.bucketIdx, it.slotIdx, it.typeId, it.qty, copperAmount);
+                            it.qty = copperAmount;
+                            written = true;
+                        }
+                    }
+                }
+            }
+        }
+
+        // 2. Direct walk of all holders (client, server, and all candidate holders)
+        auto writeHolderMoney = [&](uintptr_t holder) {
+            if (!holder || holder < kMinPointer) return false;
+            uintptr_t buckets = 0;
+            uint32_t bcount = 0;
+            if (!ReadPtr(holder + kOff_InvHolder_Buckets, &buckets) || !Read32(holder + kOff_InvHolder_Count, &bcount))
+                return false;
+            if (buckets < kMinPointer || bcount == 0 || bcount > 4096) return false;
+
+            bool hWritten = false;
+            for (uint32_t b = 0; b < bcount; ++b)
+            {
+                uintptr_t bucket = 0;
+                if (!ReadPtr(buckets + static_cast<uintptr_t>(b) * 8, &bucket) || bucket < kMinPointer) continue;
+                uintptr_t slots = 0;
+                uint16_t scount = 0;
+                if (!ReadPtr(bucket + kOff_InvBucket_Slots, &slots) || slots < kMinPointer) continue;
+                if (!Read16(bucket + kOff_InvBucket_Count, &scount) || scount == 0 || scount > 8192) continue;
+
+                for (uint16_t i = 0; i < scount; ++i)
+                {
+                    const uintptr_t slot = slots + static_cast<uintptr_t>(i) * kInvSlot_Stride;
+                    uint16_t tid = 0;
+                    if (!Read16(slot + kOff_InvSlot_TypeId, &tid) || tid == kInvSlot_EmptyType || tid == 0) continue;
+
+                    if (tid == moneyTid || moneyTid == 0)
+                    {
+                        char k[64]{};
+                        if ((moneyTid != 0 && tid == moneyTid) ||
+                            (KeyForType(tid, k, sizeof(k)) && _stricmp(k, "Money_Copper") == 0))
+                        {
+                            Write64(slot + kOff_InvSlot_Quantity, copperAmount);
+                            hWritten = true;
+                        }
+                    }
+                }
+            }
+            return hWritten;
+        };
+
+        const uintptr_t clientH = CurrentHolder();
+        const uintptr_t serverH = ServerHolder();
+        if (writeHolderMoney(clientH)) written = true;
+        if (writeHolderMoney(serverH)) written = true;
+
+        Candidate snap[kMaxCandidates] = {};
+        const int n = SnapshotCandidates(snap);
+        for (int i = 0; i < n; ++i)
+        {
+            if (snap[i].holder)
+                if (writeHolderMoney(snap[i].holder)) written = true;
+            if (snap[i].container)
+            {
+                uintptr_t h = HolderForContainer(snap[i].container);
+                if (h && writeHolderMoney(h)) written = true;
+            }
+        }
+
+        return written;
+    }
+
     bool Inventory::AddItem(uint16_t typeId, int64_t qty)
     {
         if (qty < 1) return false;
@@ -2720,5 +2887,103 @@ namespace trinity::game
         it.qty    = 0;
         it.typeId = kInvSlot_EmptyType; // reflect immediately until next Refresh
         return true;
+    }
+
+    Inventory::SealedArtifactStatus Inventory::GetSealedArtifactStatus()
+    {
+        RefreshImpl(false);
+        SealedArtifactStatus status{};
+        status.totalMax = 150;
+
+        for (const auto& store : g_storages)
+        {
+            for (const auto& group : store.groups)
+            {
+                for (const auto& it : group.items)
+                {
+                    if (it.key && strncmp(it.key, "Sealed_Abyss_Artifact_", 22) == 0)
+                    {
+                        int num = atoi(it.key + 22);
+                        if (num >= 1 && num <= 150)
+                        {
+                            if (!status.owned[num])
+                            {
+                                status.owned[num] = true;
+                                status.totalUniqueOwned++;
+                            }
+                        }
+                    }
+                }
+            }
+        }
+        return status;
+    }
+
+    int Inventory::AddMissingSealedArtifacts(int targetTotal)
+    {
+        if (targetTotal < 1) targetTotal = 1;
+        if (targetTotal > 150) targetTotal = 150;
+
+        SealedArtifactStatus status = GetSealedArtifactStatus();
+        std::vector<uint16_t> batch;
+
+        for (int num = 1; num <= 150 && (status.totalUniqueOwned + static_cast<int>(batch.size())) < targetTotal; ++num)
+        {
+            if (!status.owned[num])
+            {
+                char key[64];
+                snprintf(key, sizeof(key), "Sealed_Abyss_Artifact_%04d", num);
+                uint16_t tid = FindTypeIdByKey(key);
+                if (tid && tid != kInvSlot_EmptyType)
+                {
+                    batch.push_back(tid);
+                    status.owned[num] = true;
+                }
+            }
+        }
+
+        if (batch.empty()) return 0;
+
+        if (AddItemsBulk(batch.data(), static_cast<int>(batch.size()), 1))
+            return static_cast<int>(batch.size());
+
+        return 0;
+    }
+
+    int Inventory::CleanDuplicateSealedArtifacts()
+    {
+        RefreshImpl(true);
+        bool seen[151]{};
+        int removed = 0;
+
+        for (int s = 0; s < static_cast<int>(g_storages.size()); ++s)
+        {
+            for (int g = 0; g < static_cast<int>(g_storages[s].groups.size()); ++g)
+            {
+                for (int i = static_cast<int>(g_storages[s].groups[g].items.size()) - 1; i >= 0; --i)
+                {
+                    const auto& it = g_storages[s].groups[g].items[i];
+                    if (it.key && strncmp(it.key, "Sealed_Abyss_Artifact_", 22) == 0)
+                    {
+                        int num = atoi(it.key + 22);
+                        if (num >= 1 && num <= 150)
+                        {
+                            if (seen[num])
+                            {
+                                if (RemoveItem(s, g, i))
+                                    ++removed;
+                            }
+                            else
+                            {
+                                seen[num] = true;
+                            }
+                        }
+                    }
+                }
+            }
+        }
+        if (removed > 0)
+            ForceRefresh();
+        return removed;
     }
 }
