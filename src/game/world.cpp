@@ -67,8 +67,11 @@ namespace trinity::game
         FieldTimeTick_t oFieldTimeTick = nullptr;
         void* g_fieldTimeTickTarget = nullptr;
 
+        static uintptr_t g_fieldTimeMgr = 0;
+
         void __fastcall hkFieldTimeTick(void* mgr, float delta, float d2)
         {
+            g_fieldTimeMgr = reinterpret_cast<uintptr_t>(mgr);
             if (State::Get().timeFrozen)
                 delta = 0.0f; // clock stops accruing; sun + numeric clock hold
             oFieldTimeTick(mgr, delta, d2);
@@ -354,16 +357,27 @@ namespace trinity::game
 
         WriteClockDayHour(newDay, newHour);
 
-        // While frozen the tick's delta is 0, so nothing rewrites the globals -
-        // the advanced numeric time simply sticks until Freeze is turned off.
-        // But the visible SUN is held by the render-manager clamp, so step its
-        // target hour too - otherwise the clamp would pin the sun in place and
-        // Advance would move only the numbers, not the daylight.
-        if (g_todClampApplied)
+        if (g_fieldTimeMgr)
+        {
+            Write32(g_fieldTimeMgr + 0x2C, FloatBits(static_cast<float>(newHour * 3600)));
+        }
+
+        const uintptr_t renderMgr = ResolveTodManager();
+        if (renderMgr)
+        {
+            const float h = static_cast<float>(newHour);
+            Write32(renderMgr + kOff_Tod_CurrentHour, FloatBits(h));
+            if (g_todClampApplied)
+            {
+                g_todTargetHour = h;
+                Write32(renderMgr + kOff_Tod_LowerLimit, FloatBits(h));
+                Write32(renderMgr + kOff_Tod_UpperLimit, FloatBits(h));
+            }
+        }
+        else if (g_todClampApplied)
         {
             g_todTargetHour = std::fmod(g_todTargetHour + static_cast<float>(hours), 24.0f);
             if (g_todTargetHour < 0.0f) g_todTargetHour += 24.0f;
-            // Next Tick re-pins lower==upper==g_todTargetHour.
         }
         return true;
     }
@@ -380,18 +394,21 @@ namespace trinity::game
 
         WriteClockDayHour(day, targetHour);
 
-        if (g_todClampApplied)
+        if (g_fieldTimeMgr)
         {
-            g_todTargetHour = static_cast<float>(targetHour);
+            Write32(g_fieldTimeMgr + 0x2C, FloatBits(static_cast<float>(targetHour * 3600)));
         }
-        else
+
+        const uintptr_t renderMgr = ResolveTodManager();
+        if (renderMgr)
         {
-            const uintptr_t mgr = ResolveTodManager();
-            if (mgr)
+            const float h = static_cast<float>(targetHour);
+            Write32(renderMgr + kOff_Tod_CurrentHour, FloatBits(h));
+            if (g_todClampApplied)
             {
-                const float h = static_cast<float>(targetHour);
-                Write32(mgr + kOff_Tod_LowerLimit, FloatBits(h));
-                Write32(mgr + kOff_Tod_UpperLimit, FloatBits(h));
+                g_todTargetHour = h;
+                Write32(renderMgr + kOff_Tod_LowerLimit, FloatBits(h));
+                Write32(renderMgr + kOff_Tod_UpperLimit, FloatBits(h));
             }
         }
         return true;

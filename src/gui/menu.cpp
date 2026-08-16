@@ -706,14 +706,12 @@ namespace trinity::gui
 
         bool changed = false;
 
-        // Force Clear Sky / Instant Clear
+        changed |= ui::Toggle(LOC("Clear Distant Fog"), &st.clearDistantFog, LOC("Reduces thick distant fog blur for enhanced scenery and visibility."));
         changed |= ui::Toggle(LOC("Force Clear Sky"), &st.forceClearSky, LOC("Forces constant clear sky with minimal cloud cover."));
+
         if (ui::Option(LOC("Instant Clear Weather"), LOC("Immediately disperses rain, storms, and heavy fog.")))
         {
             st.forceClearSky = true;
-            st.rainIntensity = 0.0f;
-            st.snowIntensity = 0.0f;
-            st.dustIntensity = 0.0f;
             st.clearDistantFog = true;
             st.weatherPreset = 1;
             game::World::SetWeatherPreset(1);
@@ -721,32 +719,6 @@ namespace trinity::gui
             changed = true;
             ui::Toast(LOC("Atmosphere cleared"));
         }
-
-        // Precipitation & Weather
-        changed |= ui::FloatOption(LOC("Rain Intensity"), &st.rainIntensity, 0.0f, 1.0f, 0.05f, 0.0f, "%.2f", LOC("Adjust rainfall density and wetness."));
-        changed |= ui::FloatOption(LOC("Snow Intensity"), &st.snowIntensity, 0.0f, 1.0f, 0.05f, 0.0f, "%.2f", LOC("Adjust snowfall and winter blizzard intensity."));
-        changed |= ui::FloatOption(LOC("Dust / Sandstorm"), &st.dustIntensity, 0.0f, 1.0f, 0.05f, 0.0f, "%.2f", LOC("Adjust desert dust and sandstorm particles."));
-
-        // Wind Controls
-        changed |= ui::FloatOption(LOC("Wind Multiplier"), &st.windMultiplier, 0.0f, 5.0f, 0.1f, 1.0f, "%.2fx", LOC("Scales ambient wind force on grass, trees, and cloth."));
-        changed |= ui::Toggle(LOC("No Wind"), &st.noWind, LOC("Calms all environmental wind physics to complete stillness."));
-
-        // Clouds & Atmosphere
-        changed |= ui::FloatOption(LOC("Cloud Amount"), &st.cloudAmount, 0.0f, 10.0f, 0.1f, 1.0f, "%.2fx", LOC("Scales the volume and coverage of procedural clouds."));
-        changed |= ui::FloatOption(LOC("Cloud Density"), &st.cloudDensity, 0.0f, 5.0f, 0.1f, 1.0f, "%.2fx", LOC("Adjusts cloud thickness and shadow opacity."));
-        changed |= ui::FloatOption(LOC("Cloud Height"), &st.cloudHeight, 0.0f, 5.0f, 0.1f, 1.0f, "%.2fx", LOC("Adjusts the vertical altitude of the cloud layer."));
-
-        // Fog & Visibility
-        changed |= ui::FloatOption(LOC("Fog Density"), &st.fogDensity, 0.0f, 1.0f, 0.05f, 1.0f, "%.2f", LOC("Scales volumetric world fog thickness."));
-        if (ui::Toggle(LOC("Clear Distant Fog"), &st.clearDistantFog, LOC("Reduces thick distant fog blur for enhanced scenery and visibility.")))
-        {
-            game::World::SetClearDistantFog(st.clearDistantFog);
-            changed = true;
-        }
-
-        // Celestial & Sun/Moon
-        changed |= ui::FloatOption(LOC("Sun Intensity / Size"), &st.sunScale, 0.5f, 3.0f, 0.05f, 1.0f, "%.2fx", LOC("Scales sunlight glare, flare, and disc size."));
-        changed |= ui::FloatOption(LOC("Moon Size"), &st.moonScale, 0.5f, 3.0f, 0.05f, 1.0f, "%.2fx", LOC("Scales the lunar disc radius in the night sky."));
 
         static const char* s_weathers[] = {
             "Dynamic (Game Default)",
@@ -789,17 +761,26 @@ namespace trinity::gui
                        ? LOC("Holds the clock at the current time; the world keeps running normally.")
                        : LOC("Holds the clock in place. Unavailable right now."));
 
-        // Advance the clock by however many hours the user dials in. Left/Right
-        // step the amount (held: x10), Enter types an exact one, then the same
-        // press applies it (see ui::IntAction).
+        // Advance Time (Forward)
         static int s_advHours = 1;
-        if (ui::IntAction(LOC("Advance Time"), &s_advHours, 1, 240, 1, 1,
+        if (ui::IntAction(LOC("Advance Time (+)"), &s_advHours, 1, 240, 1, 1,
                    timeReady
                        ? LOC("Skips the clock forward by this many hours; time keeps flowing after.")
                        : LOC("Skips the clock forward. Unavailable right now.")))
         {
             if (game::World::AdvanceTimeOfDayHours(s_advHours))
                 ui::Toast(LOC("Advanced %d hours"), s_advHours);
+        }
+
+        // Rewind Time (Backward)
+        static int s_rewHours = 1;
+        if (ui::IntAction(LOC("Rewind Time (-)"), &s_rewHours, 1, 240, 1, 1,
+                   timeReady
+                       ? LOC("Rewinds the clock backward by this many hours; time keeps flowing after.")
+                       : LOC("Rewinds the clock backward. Unavailable right now.")))
+        {
+            if (game::World::AdvanceTimeOfDayHours(-s_rewHours))
+                ui::Toast(LOC("Rewound %d hours"), s_rewHours);
         }
 
         ui::Submenu(LOC("Time of Day Presets"), "world_time_presets", LOC("Set exact time to Morning, Noon, Sunset, or Midnight."));

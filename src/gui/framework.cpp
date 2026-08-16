@@ -582,7 +582,7 @@ namespace trinity::ui
             case RowKind::Action:  add(Icon::KeyEnter, LOC("Select")); break;
             case RowKind::Toggle:  add(Icon::KeyEnter, LOC("Toggle")); break;
             case RowKind::Value:   add(Icon::KeyLeft, ""); add(Icon::KeyRight, LOC("Adjust"));
-                                   add(Icon::KeyEnter, LOC("Type")); add(Icon::KeyDel, LOC("Reset")); break;
+                                   add(Icon::KeyDel, LOC("Reset")); break;
             case RowKind::ToggleValue: add(Icon::KeyEnter, LOC("Toggle")); add(Icon::KeyLeft, "");
                                        add(Icon::KeyRight, LOC("Adjust")); add(Icon::KeyDel, LOC("Reset")); break;
             case RowKind::Choice:  add(Icon::KeyLeft, ""); add(Icon::KeyRight, LOC("Pick")); break;
@@ -596,7 +596,7 @@ namespace trinity::ui
             case RowKind::ItemAdd: add(Icon::KeyLeft, ""); add(Icon::KeyRight, LOC("Amount"));
                                    add(Icon::KeyEnter, LOC("Add")); break;
             case RowKind::ValueAction: add(Icon::KeyLeft, ""); add(Icon::KeyRight, LOC("Amount"));
-                                       add(Icon::KeyEnter, LOC("Type")); add(Icon::KeyDel, LOC("Reset")); break;
+                                       add(Icon::KeyEnter, LOC("Apply")); add(Icon::KeyDel, LOC("Reset")); break;
             case RowKind::Bind:    add(Icon::KeyLeft, ""); add(Icon::KeyRight, LOC("Pick"));
                                    add(Icon::KeyEnter, LOC("Rebind")); add(Icon::KeyDel, LOC("Reset")); break;
             case RowKind::Bookmark: add(Icon::KeyEnter, LOC("Open")); add(Icon::KeyDel, LOC("Delete")); break;
