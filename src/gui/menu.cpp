@@ -1157,7 +1157,7 @@ namespace trinity::gui
         game::Inventory::ItemInfo it{};
         if (!game::Inventory::GetItemInfo(st, cat, idx, &it)) return false;
         if (!ItemRecordSafe(it)) return false;
-        if (filter && filter[0] && !ContainsNoCase(it.name, filter)) return false;
+        if (filter && filter[0] && !SearchMatches(it.name, filter) && !SearchMatches(it.key, filter)) return false;
         if (out) *out = it;
         return true;
     }
@@ -1219,6 +1219,8 @@ namespace trinity::gui
         State& st = State::Get();
         ui::Begin();
 
+        ui::Submenu(LOC("Money & Currency"), "invmoney", LOC("Directly add money, pouches, chests, or custom currency."));
+        ui::Submenu(LOC("Abyss Items & Artifacts"), "invabyss", LOC("Quickly spawn Abyss Artifacts, Sealed Artifacts, Seeds, and Cells."));
         ui::Submenu(LOC("Add Item"), "invadd", LOC("Add any item in the game to your inventory."));
         ui::Submenu(LOC("Item Editor"), "invedit", LOC("Browse and edit what you're carrying."));
 
@@ -1439,7 +1441,7 @@ namespace trinity::gui
     {
         game::Inventory::ItemInfo it{};
         if (!game::Inventory::GetCatalogItem(cat, idx, &it)) return false;
-        if (filter && filter[0] && !ContainsNoCase(it.name, filter)) return false;
+        if (filter && filter[0] && !SearchMatches(it.name, filter) && !SearchMatches(it.key, filter)) return false;
 
         char desc[224];
         if (locked)
@@ -1576,7 +1578,7 @@ namespace trinity::gui
         {
             game::Inventory::ItemInfo it{};
             if (!game::Inventory::GetCatalogItem(s_invAddCat, i, &it)) continue;
-            if (s_invAddFilter[0] && !ContainsNoCase(it.name, s_invAddFilter)) continue;
+            if (s_invAddFilter[0] && !SearchMatches(it.name, s_invAddFilter) && !SearchMatches(it.key, s_invAddFilter)) continue;
             ++shown;
         }
 
@@ -1586,6 +1588,212 @@ namespace trinity::gui
             RenderAddRow(s_invAddCat, i, s_invAddFilter, /*showCat=*/false, locked);
         if (shown == 0)
             ui::Option(LOC("No matches"), LOC("Nothing in this category is called that."));
+
+        ui::End();
+    }
+
+    // --- Money & Currency Generator -------------------------------------------
+    static int s_directMoneyValue = 10000000;
+    static int s_customPouchCount = 1000;
+    static int s_customChestCount = 100;
+
+    static void RenderInventoryMoney()
+    {
+        ui::Begin(LOC("Money & Currency"));
+        ReportPendingAdd();
+
+        // 1. DIRECT WALLET / SAVE-RELOAD METHOD (WeMod Method)
+        ui::IntOption(LOC("Direct Silver Value"), &s_directMoneyValue, 100, 999999999, 100000, 10000000,
+                      LOC("Enter amount. After applying: SAVE the game and RELOAD that save to see top-right wallet change."));
+
+        if (ui::Option(LOC(">> Apply Direct Silver (Save & Reload) <<"),
+                       LOC("Writes to memory. After pressing: SAVE GAME and LOAD GAME to update the top-right wallet!")))
+        {
+            if (game::Inventory::SetWalletMoneyValue(s_directMoneyValue))
+                ui::Toast(LOC("Silver set to %d! Save & reload game now."), s_directMoneyValue);
+            else
+                ui::Toast(LOC("Failed to set silver - please open bag first."));
+        }
+
+        if (ui::Option(LOC("Set to 10,000,000 Silver (Save & Reload)"),
+                       LOC("Sets coin stack to 10,000,000. Save game and reload save to apply.")))
+        {
+            if (game::Inventory::SetWalletMoneyValue(10000000))
+                ui::Toast(LOC("Set to 10M! Save game & reload now."));
+        }
+
+        if (ui::Option(LOC("Set to 99,999,999 Silver (Save & Reload)"),
+                       LOC("Sets coin stack to 99,999,999. Save game and reload save to apply.")))
+        {
+            if (game::Inventory::SetWalletMoneyValue(99999999))
+                ui::Toast(LOC("Set to 99.9M! Save game & reload now."));
+        }
+
+        // 2. POUCHES & CHESTS METHOD (Instant in-bag use)
+        ui::IntOption(LOC("Full Copper Pouches (Count)"), &s_customPouchCount, 1, 99999, 100, 1000,
+                      LOC("Quantity of Full Copper Pouches to spawn. Open them in-game for silver."));
+
+        if (ui::Option(LOC(">> Spawn Full Copper Pouches <<"),
+                       LOC("Press Enter / Space / Click to inject Full Copper Pouches into bag.")))
+        {
+            if (game::Inventory::AddItemByKey("Heavy_Copper_Pack", s_customPouchCount))
+                ui::Toast(LOC("Added %d Full Copper Pouches"), s_customPouchCount);
+            else
+                ui::Toast(LOC("Failed to add pouches - inventory full or not ready"));
+        }
+
+        ui::IntOption(LOC("Plunderer's Gold Chests (Count)"), &s_customChestCount, 1, 9999, 10, 100,
+                      LOC("Quantity of Plunderer's Gold Chests (Massive Gold) to spawn."));
+
+        if (ui::Option(LOC(">> Spawn Plunderer's Gold Chests <<"),
+                       LOC("Press Enter / Space / Click to inject Gold Chests into bag.")))
+        {
+            if (game::Inventory::AddItemByKey("Boss_Reward_BigMoney", s_customChestCount))
+                ui::Toast(LOC("Added %d Gold Chests"), s_customChestCount);
+            else
+                ui::Toast(LOC("Failed to add chests"));
+        }
+
+        if (ui::Option(LOC("Add 1,000x Full Copper Pouches"), LOC("Spawns 1,000x Full Copper Pouches (~10M Silver value).")))
+        {
+            if (game::Inventory::AddItemByKey("Heavy_Copper_Pack", 1000))
+                ui::Toast(LOC("Added 1,000x Full Copper Pouches"));
+        }
+
+        if (ui::Option(LOC("Add 100x Plunderer's Gold Chests"), LOC("Spawns 100x Plunderer's Gold Chests (Huge Gold Reward).")))
+        {
+            if (game::Inventory::AddItemByKey("Boss_Reward_BigMoney", 100))
+                ui::Toast(LOC("Added 100x Plunderer's Gold Chests"));
+        }
+
+        ui::End();
+    }
+
+    // --- Abyss Items & Artifacts Generator ------------------------------------
+    static int s_targetSealedTotal = 150;
+    static int s_customAbyssArtifactCount = 100;
+
+    static void RenderInventoryAbyss()
+    {
+        ui::Begin(LOC("Abyss Items & Artifacts"));
+        ReportPendingAdd();
+        ReportBulkAdd();
+
+        // 1. Smart Sealed Abyss Artifact Collection (Unique ID Scanner & Injector)
+        const auto status = game::Inventory::GetSealedArtifactStatus();
+        const int missing = status.totalMax - status.totalUniqueOwned;
+
+        char statusLabel[128];
+        snprintf(statusLabel, sizeof(statusLabel), "%s: %d / %d (%d Missing)",
+                 LOC("Sealed Artifacts Collected"), status.totalUniqueOwned, status.totalMax, missing);
+        ui::Option(statusLabel, LOC("Scans your inventory for unique Sealed Abyss Artifact IDs (0001 to 0150)."));
+
+        ui::IntOption(LOC("Target Total Sealed Artifacts"), &s_targetSealedTotal, 1, 150, 1, 10,
+                      LOC("Slider to set target collection amount (1 to 150). Adds only missing numbers."));
+
+        char addMissingDesc[256];
+        snprintf(addMissingDesc, sizeof(addMissingDesc),
+                 "%s (target: %d). %s",
+                 LOC("Injects missing Sealed Abyss Artifacts into bag"),
+                 s_targetSealedTotal,
+                 LOC("Skips numbers you already have so you get only unique ones!"));
+
+        if (ui::Option(LOC(">> Add Missing Sealed Artifacts to Target <<"), addMissingDesc))
+        {
+            const int added = game::Inventory::AddMissingSealedArtifacts(s_targetSealedTotal);
+            if (added > 0)
+                ui::Toast(LOC("Added %d missing Sealed Artifacts"), added);
+            else
+                ui::Toast(LOC("Already have all artifacts up to target %d"), s_targetSealedTotal);
+        }
+
+        if (ui::Option(LOC(">> Add ALL Missing Sealed Artifacts (1 to 150) <<"),
+                       LOC("Adds all missing unique Sealed Artifact numbers to reach 150/150 complete collection.")))
+        {
+            const int added = game::Inventory::AddMissingSealedArtifacts(150);
+            if (added > 0)
+                ui::Toast(LOC("Added %d missing Sealed Artifacts"), added);
+            else
+                ui::Toast(LOC("Collection already complete (150/150)!"));
+        }
+
+        if (ui::Option(LOC("Clean Duplicate Sealed Artifacts"),
+                       LOC("Removes duplicate copies of the same sealed artifact number, leaving exactly 1 of each.")))
+        {
+            const int removed = game::Inventory::CleanDuplicateSealedArtifacts();
+            if (removed > 0)
+                ui::Toast(LOC("Cleaned %d duplicate Sealed Artifacts"), removed);
+            else
+                ui::Toast(LOC("No duplicate Sealed Artifacts found"));
+        }
+
+        // 2. Abyss Artifact (Used for Skills enhancement & Gear Refinement)
+        ui::IntOption(LOC("Abyss Artifacts (Count)"), &s_customAbyssArtifactCount, 1, 99999, 10, 100,
+                      LOC("Quantity of Abyss Artifacts (ready material for skill upgrade & blacksmith)."));
+
+        if (ui::Option(LOC(">> Spawn Abyss Artifacts (Usable Material) <<"),
+                       LOC("Press Enter / Space / Click to inject Abyss Artifacts into your bag.")))
+        {
+            if (game::Inventory::AddItemByKey("Abyss_Artifact", s_customAbyssArtifactCount))
+                ui::Toast(LOC("Added %d Abyss Artifacts"), s_customAbyssArtifactCount);
+            else
+                ui::Toast(LOC("Failed to add Abyss Artifacts"));
+        }
+
+        // 3. Quick 1-Click Presets
+        if (ui::Option(LOC("Add 100x Abyss Artifacts"), LOC("Adds 100x Abyss Artifacts for gear refinement & skills.")))
+        {
+            if (game::Inventory::AddItemByKey("Abyss_Artifact", 100))
+                ui::Toast(LOC("Added 100x Abyss Artifacts"));
+        }
+
+        if (ui::Option(LOC("Add 500x Abyss Artifacts"), LOC("Adds 500x Abyss Artifacts for gear refinement & skills.")))
+        {
+            if (game::Inventory::AddItemByKey("Abyss_Artifact", 500))
+                ui::Toast(LOC("Added 500x Abyss Artifacts"));
+        }
+
+        if (ui::Option(LOC("Add 50x Blessing of the Immortal (Skill Points)"), LOC("Spawns 50x Blessing of the Immortal to boost skills.")))
+        {
+            if (game::Inventory::AddItemByKey("Boss_Reward_SuperSkill", 50))
+                ui::Toast(LOC("Added 50x Blessing of the Immortal"));
+        }
+
+        if (ui::Option(LOC("Add 50x Advanced Skill Manuals"), LOC("Spawns 50x Advanced Skill Manuals (SkillPoint_Book_02).")))
+        {
+            if (game::Inventory::AddItemByKey("SkillPoint_Book_02", 50))
+                ui::Toast(LOC("Added 50x Advanced Skill Manuals"));
+        }
+
+        if (ui::Option(LOC("Add 50x Abyssal Seeds"), LOC("Spawns 50x Abyssal Seeds (AbyssStone_Seed).")))
+        {
+            if (game::Inventory::AddItemByKey("AbyssStone_Seed", 50))
+                ui::Toast(LOC("Added 50x Abyssal Seeds"));
+        }
+
+        if (ui::Option(LOC("Add 50x Abyss Cells"), LOC("Spawns 50x Abyss Cells (AbyssRuinsCreatureCore).")))
+        {
+            if (game::Inventory::AddItemByKey("AbyssRuinsCreatureCore", 50))
+                ui::Toast(LOC("Added 50x Abyss Cells"));
+        }
+
+        if (ui::Option(LOC("Add 10x Vitality of the Abyss (+30 HP)"), LOC("Spawns permanent Abyss HP stat items.")))
+        {
+            if (game::Inventory::AddItemByKey("Abyss_InfiniteStat_Hp30", 10))
+                ui::Toast(LOC("Added 10x Vitality of the Abyss"));
+        }
+
+        if (ui::Option(LOC("Add 10x Spirit of the Abyss (+2 MP)"), LOC("Spawns permanent Abyss MP stat items.")))
+        {
+            if (game::Inventory::AddItemByKey("Abyss_InfiniteStat_Mp2", 10))
+                ui::Toast(LOC("Added 10x Spirit of the Abyss"));
+        }
+
+        if (ui::Option(LOC("Add 10x Breath of the Abyss (+3 SP)"), LOC("Spawns permanent Abyss SP stat items.")))
+        {
+            if (game::Inventory::AddItemByKey("Abyss_InfiniteStat_Sp3", 10))
+                ui::Toast(LOC("Added 10x Breath of the Abyss"));
+        }
 
         ui::End();
     }
@@ -1986,6 +2194,8 @@ namespace trinity::gui
         else if (!strcmp(cur, "invcat"))   RenderInventoryCat();
         else if (!strcmp(cur, "invadd"))    RenderInventoryAdd();
         else if (!strcmp(cur, "invaddcat")) RenderInventoryAddCat();
+        else if (!strcmp(cur, "invmoney"))  RenderInventoryMoney();
+        else if (!strcmp(cur, "invabyss"))  RenderInventoryAbyss();
         else                              RenderPlayer();
     }
 }

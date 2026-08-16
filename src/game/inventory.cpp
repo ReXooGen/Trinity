@@ -2766,16 +2766,28 @@ namespace trinity::game
                 for (uint16_t i = 0; i < scount; ++i)
                 {
                     const uintptr_t slot = slots + static_cast<uintptr_t>(i) * kInvSlot_Stride;
-                    uint16_t tid = 0;
-                    if (!Read16(slot + kOff_InvSlot_TypeId, &tid) || tid == kInvSlot_EmptyType || tid == 0) continue;
+                    uint16_t tid0 = 0, tid8 = 0;
+                    Read16(slot + 0x00, &tid0);
+                    Read16(slot + 0x08, &tid8);
 
-                    if (tid == moneyTid || moneyTid == 0)
+                    // Fungible currency record (+0x00 typeId, +0x08 quantity)
+                    if (tid0 == moneyTid || (moneyTid == 0 && tid0 != 0 && tid0 != kInvSlot_EmptyType))
                     {
                         char k[64]{};
-                        if ((moneyTid != 0 && tid == moneyTid) ||
-                            (KeyForType(tid, k, sizeof(k)) && _stricmp(k, "Money_Copper") == 0))
+                        if ((moneyTid != 0 && tid0 == moneyTid) || (KeyForType(tid0, k, sizeof(k)) && _stricmp(k, "Money_Copper") == 0))
                         {
-                            Write64(slot + kOff_InvSlot_Quantity, copperAmount);
+                            Write64(slot + 0x08, copperAmount);
+                            hWritten = true;
+                        }
+                    }
+
+                    // Standard item slot (+0x08 typeId, +0x10 quantity)
+                    if (tid8 == moneyTid || (moneyTid == 0 && tid8 != 0 && tid8 != kInvSlot_EmptyType))
+                    {
+                        char k[64]{};
+                        if ((moneyTid != 0 && tid8 == moneyTid) || (KeyForType(tid8, k, sizeof(k)) && _stricmp(k, "Money_Copper") == 0))
+                        {
+                            Write64(slot + 0x10, copperAmount);
                             hWritten = true;
                         }
                     }
