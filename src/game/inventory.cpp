@@ -2723,7 +2723,7 @@ namespace trinity::game
         const uint16_t moneyTid = FindTypeIdByKey("Money_Copper");
         bool written = false;
 
-        // 1. Search in cached g_storages
+        // 1. Write to cached g_storages (visible item slots)
         for (size_t s = 0; s < g_storages.size(); ++s)
         {
             for (size_t g = 0; g < g_storages[s].groups.size(); ++g)
@@ -2744,7 +2744,7 @@ namespace trinity::game
             }
         }
 
-        // 2. Direct walk of all holders (client, server, and all candidate holders)
+        // 2. Write to all holder-based slots (client + server + candidates)
         auto writeHolderMoney = [&](uintptr_t holder) {
             if (!holder || holder < kMinPointer) return false;
             uintptr_t buckets = 0;
@@ -2766,28 +2766,15 @@ namespace trinity::game
                 for (uint16_t i = 0; i < scount; ++i)
                 {
                     const uintptr_t slot = slots + static_cast<uintptr_t>(i) * kInvSlot_Stride;
-                    uint16_t tid0 = 0, tid8 = 0;
-                    Read16(slot + 0x00, &tid0);
-                    Read16(slot + 0x08, &tid8);
-
-                    // Fungible currency record (+0x00 typeId, +0x08 quantity)
-                    if (tid0 == moneyTid || (moneyTid == 0 && tid0 != 0 && tid0 != kInvSlot_EmptyType))
+                    uint16_t tid = 0;
+                    if (!Read16(slot + kOff_InvSlot_TypeId, &tid) || tid == kInvSlot_EmptyType || tid == 0) continue;
+                    if (tid == moneyTid || moneyTid == 0)
                     {
                         char k[64]{};
-                        if ((moneyTid != 0 && tid0 == moneyTid) || (KeyForType(tid0, k, sizeof(k)) && _stricmp(k, "Money_Copper") == 0))
+                        if ((moneyTid != 0 && tid == moneyTid) ||
+                            (KeyForType(tid, k, sizeof(k)) && _stricmp(k, "Money_Copper") == 0))
                         {
-                            Write64(slot + 0x08, copperAmount);
-                            hWritten = true;
-                        }
-                    }
-
-                    // Standard item slot (+0x08 typeId, +0x10 quantity)
-                    if (tid8 == moneyTid || (moneyTid == 0 && tid8 != 0 && tid8 != kInvSlot_EmptyType))
-                    {
-                        char k[64]{};
-                        if ((moneyTid != 0 && tid8 == moneyTid) || (KeyForType(tid8, k, sizeof(k)) && _stricmp(k, "Money_Copper") == 0))
-                        {
-                            Write64(slot + 0x10, copperAmount);
+                            Write64(slot + kOff_InvSlot_Quantity, copperAmount);
                             hWritten = true;
                         }
                     }
@@ -2812,6 +2799,61 @@ namespace trinity::game
                 uintptr_t h = HolderForContainer(snap[i].container);
                 if (h && writeHolderMoney(h)) written = true;
             }
+        }
+
+        // 3. SEH-protected process-wide currency sweep
+        // The wallet balance lives OUTSIDE the inventory holder system in a
+        // separate engine currency component. We identify currency records by
+        // their fingerprint: [typeId 0x074C as u16 at offset+0] followed by
+        // the copper value at offset+8. We ONLY write records where the 8
+        // bytes at +0x10 spell "Copper" (ASCII), which uniquely identifies
+        // actual currency data records vs random coincidental matches.
+        // All accesses are wrapped in SEH to prevent crashes on guard pages.
+        const uint16_t moneyMarker = moneyTid ? moneyTid : static_cast<uint16_t>(0x074C);
+
+        MEMORY_BASIC_INFORMATION mbi{};
+        uintptr_t scanAddr = 0x10000; // skip null page
+        while (VirtualQuery(reinterpret_cast<void*>(scanAddr), &mbi, sizeof(mbi)) > 0)
+        {
+            const uintptr_t base = reinterpret_cast<uintptr_t>(mbi.BaseAddress);
+            const size_t    size = mbi.RegionSize;
+
+            // Only scan committed, read-write pages (skip guard/noaccess/code)
+            if (mbi.State == MEM_COMMIT && size >= 32 &&
+                (mbi.Protect == PAGE_READWRITE || mbi.Protect == PAGE_EXECUTE_READWRITE) &&
+                mbi.Type == MEM_PRIVATE)
+            {
+                __try
+                {
+                    const uint8_t* p = reinterpret_cast<const uint8_t*>(base);
+                    const size_t limit = size - 24; // need 24 bytes per record
+
+                    for (size_t off = 0; off < limit; off += 8)
+                    {
+                        // Check typeId marker at +0x00
+                        const uint16_t tid = *reinterpret_cast<const uint16_t*>(p + off);
+                        if (tid != moneyMarker) continue;
+
+                        // Check "Copper" string at +0x10
+                        if (p[off + 0x10] != 'C' || p[off + 0x11] != 'o' ||
+                            p[off + 0x12] != 'p' || p[off + 0x13] != 'p' ||
+                            p[off + 0x14] != 'e' || p[off + 0x15] != 'r') continue;
+
+                        // This is a confirmed currency record - write copper amount at +0x08
+                        volatile int64_t* pVal = reinterpret_cast<volatile int64_t*>(
+                            const_cast<uint8_t*>(p + off + 0x08));
+                        *pVal = copperAmount;
+                        written = true;
+                    }
+                }
+                __except (EXCEPTION_EXECUTE_HANDLER)
+                {
+                    // Page became invalid mid-scan; skip it safely
+                }
+            }
+
+            scanAddr = base + size;
+            if (scanAddr >= 0x7FFFFFFFFFFF || scanAddr <= base) break;
         }
 
         return written;
