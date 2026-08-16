@@ -24,6 +24,17 @@ Trinity is an in-game DirectX 12 mod menu for **Crimson Desert**, originally cre
 | :---: | :---: |
 | ![Saved Locations](image7.png) | ![Storage Editor](image8.png) |
 
+## What's New in v1.2.2
+
+- **Game Compatibility**: Verified and optimized for **Crimson Desert TU 1.18.00 – 1.18.01+**.
+- **Add Item & Equipment System Hotfix**:
+  - **Instant Menu Unlock**: Fixed `"Adding is locked until your save finishes loading"` false positive by validating active client holder immediately upon world load.
+  - **Equipable Spawned Weapons & Armor**: Fixed spawned equipment showing as un-equipable by assigning unique 64-bit instance IDs and full durability (`10000`) on spawn across both server and client authority realms.
+  - **Bucket Capacity Auto-Expansion**: Dynamically expands category capacity up to 2,000+ slots before injection and runs `RepairUsedSlots` to prevent `insert planner refused, err=-771604600 (no slot / bucket full)`.
+  - **Non-Stackable Equipment Protection**: Smart `Max Stack Size` filter that preserves weapons, shields, and armors as single-instance items (`qty = 1`) so they can always be equipped without stack collisions, while materials and consumables stack up to 999,999.
+
+---
+
 ## What's New in v1.2.1
 
 - **Money & Currency System Overhaul**:

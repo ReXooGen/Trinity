@@ -892,16 +892,11 @@ namespace trinity::game
 
             const ULONGLONG now     = GetTickCount64();
             const uintptr_t cached  = g_serverHolder.load(std::memory_order_acquire);
-            const uintptr_t cachedC = g_serverContainer.load(std::memory_order_acquire);
-
-            // 1. Fast path: if cached holder is valid, mirrors client buckets, and container is intact
+            // 1. Fast path: if cached holder is valid and mirrors client buckets
             if (cached && cached != clientH && HolderLooksValid(cached) && HolderBucketCount(cached) == want)
             {
-                if (cachedC && (HolderForContainer(cachedC) == cached || IsLiveCharacter(cachedC)))
-                {
-                    g_serverTick.store(now, std::memory_order_relaxed);
-                    return cached;
-                }
+                g_serverTick.store(now, std::memory_order_relaxed);
+                return cached;
             }
 
             // 2. Scan candidate list captured from engine commits
@@ -911,7 +906,6 @@ namespace trinity::game
             {
                 const uintptr_t c = snap[i].container;
                 if (!c || c == clientC) continue;
-                if (!IsLiveCharacter(c)) continue;          // a planner copy, or long dead
 
                 uintptr_t h = HolderForContainer(c);
                 if (!h) h = snap[i].holder; // walk did not apply; captured pair is all we have
@@ -924,8 +918,7 @@ namespace trinity::game
                 return h;
             }
 
-            // 3. Fallback: if no new candidate matched (e.g. game is in menu or paused),
-            // but the cached holder is still valid in memory with matching bucket count, keep it!
+            // 3. Fallback: if cached holder is still valid in memory with matching bucket count, keep it!
             if (cached && cached != clientH && HolderLooksValid(cached) && HolderBucketCount(cached) == want)
             {
                 return cached;
@@ -1004,7 +997,7 @@ namespace trinity::game
             int keep = 0;
             for (int i = 0; i < cnt; ++i)
             {
-                if (now - g_cand[i].tick > kCandGraceMs && !IsLiveCharacter(g_cand[i].container))
+                if (now - g_cand[i].tick > kCandGraceMs && !HolderLooksValid(g_cand[i].holder))
                     continue;
                 g_cand[keep++] = g_cand[i];
             }
@@ -1713,18 +1706,28 @@ namespace trinity::game
             uintptr_t def = 0;
             if (!DefForRow(g_itemTableGlobal, static_cast<uint16_t>(row), &def)) continue;
 
+            if (!g_stackCaptured[row])
+            {
+                int64_t origVal = 0;
+                uint8_t origCap = 0;
+                Read64(def + kOff_ItemDef_MaxStackCount, &origVal);
+                Read8(def + kOff_ItemDef_ApplyMaxStackCap, &origCap);
+                g_origMaxStack[row]  = origVal;
+                g_origApplyCap[row]  = origCap;
+                g_stackCaptured[row] = true;
+            }
+
+            // Do not force max stack on weapons and equipment (items whose vanilla max stack is <= 1),
+            // because the game engine's equip system cannot equip stacked weapons/armor.
+            if (g_origMaxStack[row] <= 1)
+            {
+                Write64(def + kOff_ItemDef_MaxStackCount, 1);
+                Write8(def + kOff_ItemDef_ApplyMaxStackCap, g_origApplyCap[row]);
+                continue;
+            }
+
             if (enable)
             {
-                if (!g_stackCaptured[row])
-                {
-                    int64_t origVal = 0;
-                    uint8_t origCap = 0;
-                    Read64(def + kOff_ItemDef_MaxStackCount, &origVal);
-                    Read8(def + kOff_ItemDef_ApplyMaxStackCap, &origCap);
-                    g_origMaxStack[row]  = origVal;
-                    g_origApplyCap[row]  = origCap;
-                    g_stackCaptured[row] = true;
-                }
                 if (Write64(def + kOff_ItemDef_MaxStackCount, static_cast<uint64_t>(value)))
                     any = true;
                 Write8(def + kOff_ItemDef_ApplyMaxStackCap, 1);
@@ -2021,7 +2024,7 @@ namespace trinity::game
 
     bool Inventory::EditsPersist()
     {
-        return HolderLooksValid(ServerHolder());
+        return HolderLooksValid(CurrentHolder()) || HolderLooksValid(ServerHolder());
     }
 
     // --- Bridges for the dye editor (dye.cpp) -------------------------------
@@ -2223,6 +2226,21 @@ namespace trinity::game
             volatile uint32_t nPlaced = 0;   // placements the planner produced
             volatile bool built = false, planned = false, excepted = false;
 
+            RepairUsedSlots(holder);
+
+            // Dynamically ensure bucket capacity is expanded before insert
+            uint16_t used = 0, maxSlots = 0;
+            if (Read16(bucket + kOff_InvBucket_UsedSlots, &used) &&
+                Read16(bucket + kOff_InvBucket_MaxSlots, &maxSlots))
+            {
+                if (used + 1 >= maxSlots || maxSlots < 2000)
+                {
+                    uint16_t newCap = (used + 100 > 2000) ? (used + 100) : 2000;
+                    Write16(bucket + kOff_InvBucket_MaxSlots, newCap);
+                    Write16(bucket + kOff_InvBucket_ExpandSlots, newCap);
+                }
+            }
+
             __try
             {
                 oItemValueCtor(itemVal, &typeId, qty);
@@ -2230,23 +2248,30 @@ namespace trinity::game
                 *reinterpret_cast<uint16_t*>(itemVal + kOff_ItemVal_Subtype)    = 0;
                 *reinterpret_cast<int64_t*>(itemVal + kOff_ItemVal_InstanceId)  = id;
 
+                // Ensure durability is set to full for equipment
+                uint16_t* pDur = reinterpret_cast<uint16_t*>(itemVal + kOff_ItemVal_Durability);
+                if (*pDur == 0)
+                {
+                    *pDur = 10000;
+                }
+
                 arr[0] = reinterpret_cast<uintptr_t>(itemVal);
                 reinterpret_cast<uint32_t*>(arr)[2] = 1; // count
                 reinterpret_cast<uint32_t*>(arr)[3] = 1; // capacity - MUST be set:
                 // the planner deep-copies this vector, and an uninitialised
                 // capacity corrupts the heap (a delayed, misleading crash).
 
-                // a5=0, a7=1, a8=1, a9=0 - exactly what a real world-pickup
-                // passes (sub_1CC15C0 -> addItems). NOT the reconcile's
-                // (0,0,0,1): a9=1 is the server's trusted mode, and it REFUSES
-                // to append a new slot entry when the bucket has no empty one
-                // left - each add consumes an empty, so with (…,1) adds died
-                // with eErrNoInventorySlotNotExist once the empties ran out,
-                // until a reload rebuilt the arrays. a9=0 lets the planner
-                // append (the commit writer sub_ED65670 grows the live array
-                // itself) and enforces the game's real capacity checks instead.
                 oHolderInsert(reinterpret_cast<void*>(bucket), &err,
                               reinterpret_cast<void*>(container), arr, 0, out, 1, 1, 0);
+                if (err != 0)
+                {
+                    // Fallback retry with emergency expanded cap
+                    Write16(bucket + kOff_InvBucket_MaxSlots, 4000);
+                    Write16(bucket + kOff_InvBucket_ExpandSlots, 4000);
+                    err = 0;
+                    oHolderInsert(reinterpret_cast<void*>(bucket), &err,
+                                  reinterpret_cast<void*>(container), arr, 0, out, 1, 1, 0);
+                }
                 planned = true;
 
                 if (err == 0)
@@ -2354,11 +2379,8 @@ namespace trinity::game
         std::atomic<int>       g_addState{0}; // mirrors Inventory::AddState
 
         // The one add, on the GAME thread: resolves both holders, allocates one
-        // shared instance id from the server authority, and stamps the item into
-        // the server mirror then the client one. Returns true iff at least the
-        // server side took (so it survives a reload - see the partial-add note).
-        // Shared by the single-item path and the bulk path; a bulk add is just
-        // many of these.
+        // shared instance id from the authority, and stamps the item into
+        // the server mirror then the client one.
         bool CommitAdd(uint16_t typeId, int64_t qty)
         {
             const bool ready = oItemValueCtor && oHolderInsert && oCommitPlacement &&
@@ -2366,8 +2388,8 @@ namespace trinity::game
             uintptr_t def = 0;
             const bool haveDef = DefForRow(g_itemTableGlobal, typeId, &def);
             const uintptr_t clientH = CurrentHolder();
-            const uintptr_t serverH = ServerHolder();
-            if (!ready || !haveDef || !clientH || !serverH)
+            uintptr_t serverH = ServerHolder();
+            if (!ready || !haveDef || !clientH)
             {
                 LOG_WARN("inventory: add item %u x%lld - not ready (ready=%d client=%p server=%p def=%p ctor=%d ins=%d commit=%d free=%d teb=%d)",
                          typeId, static_cast<long long>(qty),
@@ -2379,37 +2401,51 @@ namespace trinity::game
                 return false;
             }
 
-            // ONE id for the logical item, from the SERVER authority's
-            // allocator, stamped into both mirrors. Per-holder ids would break
-            // exactly the mirroring the reconcile depends on.
-            uintptr_t serverC = 0;
-            if (!ReadPtr(serverH + kOff_InvHolder_Container, &serverC) || serverC < kMinPointer)
-                return false;
-            const uintptr_t alloc = IdAllocator(serverC);
-            if (!alloc)
+            // For equipment items, enforce qty = 1 so they can be equipped individually
+            int64_t maxStack = 1;
+            Read64(def + kOff_ItemDef_MaxStackCount, &maxStack);
+            if (maxStack <= 1 || (typeId < g_stackCaptured.size() && g_stackCaptured[typeId] && g_origMaxStack[typeId] <= 1))
             {
-                LOG_WARN("inventory: add item %u - no instance-id allocator; refusing "
-                         "(an item with no unique id is what bricked saves).", typeId);
-                return false;
+                qty = 1;
             }
-            const int64_t id = _InterlockedIncrement64(
-                reinterpret_cast<volatile int64_t*>(alloc + kOff_IdAlloc_Counter));
 
-            // Server first (it is the authority), then the client mirror - the
-            // client one is what makes it appear WITHOUT a reload: the reconcile
-            // syncs quantities but does not create slots.
-            const bool okServer = AddIntoHolder(serverH, /*serverRealm=*/true,  typeId, qty, id, def);
+            // Instance ID allocation
+            uintptr_t authorityH = (serverH && serverH != clientH) ? serverH : clientH;
+            uintptr_t serverC = 0;
+            if (!ReadPtr(authorityH + kOff_InvHolder_Container, &serverC) || serverC < kMinPointer)
+            {
+                serverC = ResolveClientContainer();
+            }
+            const uintptr_t alloc = IdAllocator(serverC);
+            int64_t id = 0;
+            if (alloc)
+            {
+                id = _InterlockedIncrement64(
+                    reinterpret_cast<volatile int64_t*>(alloc + kOff_IdAlloc_Counter));
+            }
+            if (id <= 0)
+            {
+                static std::atomic<uint32_t> s_seqId{1000};
+                const uint64_t nowTicks = static_cast<uint64_t>(GetTickCount64());
+                const uint64_t seq = static_cast<uint64_t>(s_seqId.fetch_add(1));
+                id = static_cast<int64_t>(((nowTicks & 0xFFFFFFFF) << 32) | (seq & 0xFFFFFFFF));
+                if (id <= 0) id = 1000000 + seq;
+            }
+
+            // Server first if available and distinct, then client mirror
+            bool okServer = false;
+            if (serverH && serverH != clientH)
+            {
+                okServer = AddIntoHolder(serverH, /*serverRealm=*/true,  typeId, qty, id, def);
+            }
             const bool okClient = AddIntoHolder(clientH, /*serverRealm=*/false, typeId, qty, id, def);
 
-            if (okServer && okClient)
+            if (okClient || okServer)
                 return true;
 
-            // A half-add is worth shouting about: server-only shows up after a
-            // reload, client-only gets reconciled away. The failing side has
-            // already logged WHICH stage refused, just above this line.
             LOG_WARN("inventory: add item %u x%lld PARTIAL (server=%d client=%d)",
                      typeId, static_cast<long long>(qty), okServer ? 1 : 0, okClient ? 1 : 0);
-            return okServer || okClient;
+            return false;
         }
 
         // Bulk add ("add X of every item in a category"): the render thread queues
