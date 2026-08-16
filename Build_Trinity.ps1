@@ -49,9 +49,34 @@ $asi = Get-ChildItem -LiteralPath $build -Recurse -Filter '*.asi' |
 if (-not $asi) { throw 'Build completed, but Trinity.asi was not found.' }
 
 $releaseDir = Join-Path $source 'build\Release'
-if (Test-Path -LiteralPath $releaseDir) {
-    Copy-Item -Path $asi.FullName -Destination (Join-Path $releaseDir $asi.Name) -Force
-    Write-Host "Copied to: $(Join-Path $releaseDir $asi.Name)"
+if (-not (Test-Path -LiteralPath $releaseDir)) {
+    New-Item -ItemType Directory -Path $releaseDir -Force | Out-Null
 }
 
+$destinationAsi = Join-Path $releaseDir $asi.Name
+Copy-Item -Path $asi.FullName -Destination $destinationAsi -Force
+Write-Host "Copied to: $destinationAsi"
+
+# Package directory and ZIP creation for release (Nexus / GitHub)
+$pkgDir = Join-Path $releaseDir 'package'
+if (-not (Test-Path -LiteralPath $pkgDir)) {
+    New-Item -ItemType Directory -Path $pkgDir -Force | Out-Null
+}
+
+Copy-Item -Path $asi.FullName -Destination (Join-Path $pkgDir 'Trinity.asi') -Force
+if (Test-Path (Join-Path $source 'Trinity.ini.example')) {
+    Copy-Item -Path (Join-Path $source 'Trinity.ini.example') -Destination (Join-Path $pkgDir 'Trinity.ini.example') -Force
+}
+if (Test-Path (Join-Path $source 'README.md')) {
+    Copy-Item -Path (Join-Path $source 'README.md') -Destination (Join-Path $pkgDir 'README.md') -Force
+}
+
+$zipName = "Trinity-v1.1.1-vTweak.zip"
+$zipPath = Join-Path $releaseDir $zipName
+if (Test-Path -LiteralPath $zipPath) {
+    Remove-Item -LiteralPath $zipPath -Force
+}
+
+Compress-Archive -Path "$pkgDir\*" -DestinationPath $zipPath -Force
+Write-Host "Created Release ZIP: $zipPath"
 Write-Host "Built: $($asi.FullName)"
