@@ -16,6 +16,7 @@
 #include "../core/logger.h"
 #include "../core/settings.h"
 #include "../core/state.h"
+#include "../game/player.h"
 #include "../game/teleport.h"
 #include "../gui/framework.h"
 #include "../gui/icons.h"
@@ -894,6 +895,9 @@ namespace trinity::hooks
 
         if (!g_imguiReady || g_renderDisabled)
             return false;
+
+        // Keep character and mount stamina locked full on every frame, even when standing completely motionless
+        game::Player::RefreshSelf();
 
         // Hook the game's XInput module once it has loaded (no-op thereafter) so
         // controller input is blocked from the game while the menu is up.
