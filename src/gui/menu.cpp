@@ -740,6 +740,7 @@ namespace trinity::gui
 
         // 2. Precipitation & Storm Intensities
         changed |= ui::FloatOption(LOC("Rain Intensity"), &st.rainIntensity, 0.0f, 1.0f, 0.05f, 0.0f, "%.2f", LOC("Adjust rainfall density and storm clouds."));
+        changed |= ui::FloatOption(LOC("Snow Intensity"), &st.snowIntensity, 0.0f, 1.0f, 0.05f, 0.0f, "%.2f", LOC("Adjust snowfall and winter blizzard intensity."));
         changed |= ui::FloatOption(LOC("Dust / Sandstorm"), &st.dustIntensity, 0.0f, 1.0f, 0.05f, 0.0f, "%.2f", LOC("Adjust desert dust and sandstorm particles."));
 
         // 3. Cloud Layer Controls

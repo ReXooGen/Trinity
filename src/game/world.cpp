@@ -139,6 +139,97 @@ namespace trinity::game
             }
         }
 
+        // --- Dynamic Weather Intensity Hooks (Rain, Snow, Dust) with bulletproof SEH protection ---
+        using GetWeatherIntensity_t = __m128(__fastcall*)(void* ws);
+        static GetWeatherIntensity_t oGetRainIntensity = nullptr;
+        static GetWeatherIntensity_t oGetSnowIntensity = nullptr;
+        static GetWeatherIntensity_t oGetDustIntensity = nullptr;
+        static void* g_rainIntensityTarget = nullptr;
+        static void* g_snowIntensityTarget = nullptr;
+        static void* g_dustIntensityTarget = nullptr;
+
+        __m128 __fastcall hkGetRainIntensity(void* ws)
+        {
+            if (!ws || reinterpret_cast<uintptr_t>(ws) < kMinPointer)
+                return _mm_set_ss(0.0f);
+
+            const State& st = State::Get();
+            if (st.forceClearSky) return _mm_set_ss(0.0f);
+            if (st.rainIntensity > 0.001f) return _mm_set_ss(st.rainIntensity);
+            if (st.weatherPreset == 1) return _mm_set_ss(0.0f);
+            if (st.weatherPreset == 3) return _mm_set_ss(0.60f);
+            if (st.weatherPreset == 4) return _mm_set_ss(1.00f);
+
+            if (oGetRainIntensity)
+            {
+                __try
+                {
+                    return oGetRainIntensity(ws);
+                }
+                __except (EXCEPTION_EXECUTE_HANDLER)
+                {
+                    return _mm_set_ss(0.0f);
+                }
+            }
+            return _mm_set_ss(0.0f);
+        }
+
+        __m128 __fastcall hkGetSnowIntensity(void* ws)
+        {
+            if (!ws || reinterpret_cast<uintptr_t>(ws) < kMinPointer)
+                return _mm_set_ss(0.0f);
+
+            const State& st = State::Get();
+            if (st.forceClearSky) return _mm_set_ss(0.0f);
+            if (st.snowIntensity > 0.001f) return _mm_set_ss(st.snowIntensity);
+
+            if (oGetSnowIntensity)
+            {
+                __try
+                {
+                    return oGetSnowIntensity(ws);
+                }
+                __except (EXCEPTION_EXECUTE_HANDLER)
+                {
+                    return _mm_set_ss(0.0f);
+                }
+            }
+            return _mm_set_ss(0.0f);
+        }
+
+        __m128 __fastcall hkGetDustIntensity(void* ws)
+        {
+            if (!ws || reinterpret_cast<uintptr_t>(ws) < kMinPointer)
+                return _mm_set_ss(0.0f);
+
+            const State& st = State::Get();
+            if (st.forceClearSky || st.noWind) return _mm_set_ss(0.0f);
+            if (st.dustIntensity > 0.001f)
+            {
+                float mul = (st.windMultiplier > 0.01f ? st.windMultiplier : 1.0f);
+                return _mm_set_ss(st.dustIntensity * mul);
+            }
+
+            if (oGetDustIntensity)
+            {
+                __try
+                {
+                    __m128 orig = oGetDustIntensity(ws);
+                    float val = _mm_cvtss_f32(orig);
+                    if (st.windMultiplier > 0.01f && st.windMultiplier != 1.0f)
+                    {
+                        val *= st.windMultiplier;
+                    }
+                    return _mm_set_ss(val);
+                }
+                __except (EXCEPTION_EXECUTE_HANDLER)
+                {
+                    return _mm_set_ss(0.0f);
+                }
+            }
+            return _mm_set_ss(0.0f);
+        }
+
         // --- Safe Weather & Atmosphere discovery (Non-hooking field controller) ---
         static uintptr_t g_pEnvManager = 0;
 
@@ -301,6 +392,17 @@ namespace trinity::game
                 }
             }
         }
+
+        // Dynamic weather intensity hooks (Rain, Snow, Dust)
+        mem::InstallHook("world: rain intensity", kSig_WeatherRain,
+                         "Rain control disabled", hkGetRainIntensity,
+                         &oGetRainIntensity, &g_rainIntensityTarget);
+        mem::InstallHook("world: snow intensity", kSig_WeatherSnow,
+                         "Snow control disabled", hkGetSnowIntensity,
+                         &oGetSnowIntensity, &g_snowIntensityTarget);
+        mem::InstallHook("world: dust intensity", kSig_WeatherDust,
+                         "Dust control disabled", hkGetDustIntensity,
+                         &oGetDustIntensity, &g_dustIntensityTarget);
 
         // Safe EnvManager pointer resolution for Atmosphere & Weather (Zero hooks)
         {
@@ -497,6 +599,14 @@ namespace trinity::game
             g_todClampApplied = false;
         }
         g_todEngineGlobal = 0;
+
+        // Unhook dynamic weather intensity hooks
+        mem::RemoveHook(&g_rainIntensityTarget);
+        mem::RemoveHook(&g_snowIntensityTarget);
+        mem::RemoveHook(&g_dustIntensityTarget);
+        oGetRainIntensity = nullptr;
+        oGetSnowIntensity = nullptr;
+        oGetDustIntensity = nullptr;
 
         // Unhook the field-time tick (freeze) and forget the clock globals.
         mem::RemoveHook(&g_fieldTimeTickTarget);
