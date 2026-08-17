@@ -147,12 +147,17 @@ namespace trinity::game
         }
 
         bool IsHealthType(int32_t t)  { return t == StatType_Health; }
-        // Stamina-typed gauges for player and mount:
-        // 17 (stamina meter), 18 (mount spirit/energy), 19 (mount gallop gauge),
-        // 20 (sprint gate), 22 (authoritative stamina pool).
-        bool IsStaminaType(int32_t t) {
-            return t == StatType_Stamina || t == StatType_Spirit || t == StatType_MountSprint ||
+        // On-foot Player stamina gauges: 17 (stamina meter), 20 (sprint gate), 22 (authoritative stamina pool).
+        bool IsPlayerStaminaType(int32_t t) {
+            return t == StatType_Stamina || t == StatType_SprintSt || t == StatType_StaminaPool117;
+        }
+        // Mount & Horse stamina gauges: 19 (authoritative mount sprint/gallop), 17, 18, 20, 22.
+        bool IsMountStaminaType(int32_t t) {
+            return t == StatType_MountSprint || t == StatType_Stamina || t == StatType_Spirit ||
                    t == StatType_SprintSt || t == StatType_StaminaPool117;
+        }
+        bool IsStaminaType(int32_t t) {
+            return IsPlayerStaminaType(t) || (t == StatType_MountSprint);
         }
         // Both spirit-typed gauges: 18 (an internal meter) and 21 (the pool the
         // HUD bar and skill spend actually draw from). Pinning both keeps the
@@ -345,22 +350,38 @@ namespace trinity::game
                     nextActors[nPlayers] = c.actor;
                     nextTargets[nPlayers] = c.targetOwner;
                     ++nPlayers;
-                }
 
-                // Scan all stat entries for stamina (types 17, 18, 19, 20, 22) and spirit (types 18, 21, 23)
-                for (int k = 1; k < kStatArray_ScanEntries; ++k)
-                {
-                    const uintptr_t e = c.statArray + k * kSizeof_StatEntry;
-                    int32_t stt = 0;
-                    if (!StatEntryType(e, &stt)) continue;
-                    if (IsStaminaType(stt))
+                    for (int k = 1; k < kStatArray_ScanEntries; ++k)
                     {
-                        if (nStam < kMaxStatEntries) nextStam[nStam++] = e;
-                        if (nMountStam < kMaxStatEntries) nextMountStam[nMountStam++] = e;
+                        const uintptr_t e = c.statArray + k * kSizeof_StatEntry;
+                        int32_t stt = 0;
+                        if (!StatEntryType(e, &stt)) continue;
+                        if (IsPlayerStaminaType(stt))
+                        {
+                            if (nStam < kMaxStatEntries) nextStam[nStam++] = e;
+                        }
+                        else if (stt == StatType_MountSprint)
+                        {
+                            if (nMountStam < kMaxStatEntries) nextMountStam[nMountStam++] = e;
+                        }
+                        else if (IsSpiritType(stt))
+                        {
+                            if (nSpir < kMaxStatEntries) nextSpir[nSpir++] = e;
+                        }
                     }
-                    else if (isPlayer && IsSpiritType(stt))
+                }
+                else
+                {
+                    // Mount entities for player and all companions/NPCs
+                    for (int k = 1; k < kStatArray_ScanEntries; ++k)
                     {
-                        if (nSpir < kMaxStatEntries) nextSpir[nSpir++] = e;
+                        const uintptr_t e = c.statArray + k * kSizeof_StatEntry;
+                        int32_t stt = 0;
+                        if (!StatEntryType(e, &stt)) continue;
+                        if (IsMountStaminaType(stt))
+                        {
+                            if (nMountStam < kMaxStatEntries) nextMountStam[nMountStam++] = e;
+                        }
                     }
                 }
             }
@@ -379,7 +400,6 @@ namespace trinity::game
                 // every gauge collected from later preview/duplicate bodies.
                 nPlayers = kMaxPartyPlayers;
                 nStam = 0;
-                nMountStam = 0;
                 nSpir = 0;
                 for (int i = 0; i < nPlayers; ++i)
                 {
@@ -389,9 +409,12 @@ namespace trinity::game
                         const uintptr_t e = statArray + k * kSizeof_StatEntry;
                         int32_t stt = 0;
                         if (!StatEntryType(e, &stt)) continue;
-                        if (IsStaminaType(stt))
+                        if (IsPlayerStaminaType(stt))
                         {
                             if (nStam < kMaxStatEntries) nextStam[nStam++] = e;
+                        }
+                        else if (stt == StatType_MountSprint)
+                        {
                             if (nMountStam < kMaxStatEntries) nextMountStam[nMountStam++] = e;
                         }
                         else if (IsSpiritType(stt))
@@ -466,10 +489,13 @@ namespace trinity::game
             // gauges once per game update. This avoids touching guessed
             // addresses or non-player stats.
             const State& st = State::Get();
-            if (st.infStamina || st.infMountStamina)
+            if (st.infStamina)
             {
                 for (int i = 0; i < nStam; ++i)
                     PinEntry(g_stamEntries[i].load(std::memory_order_relaxed));
+            }
+            if (st.infMountStamina)
+            {
                 for (int i = 0; i < nMountStam; ++i)
                     PinEntry(g_mountStamEntries[i].load(std::memory_order_relaxed));
             }
@@ -523,12 +549,19 @@ namespace trinity::game
 
             if ((st.godMode || (isPlayerHp && Teleport::IsProtected())) && isPlayerHp) PinEntry(e);
             
-            if (st.infStamina || st.infMountStamina)
+            if (st.infStamina)
+            {
+                if (InSet(g_stamEntries, kMaxStatEntries, e))
+                {
+                    PinEntry(e);
+                }
+            }
+
+            if (st.infMountStamina)
             {
                 int32_t t = 0;
-                if (InSet(g_stamEntries, kMaxStatEntries, e) ||
-                    InSet(g_mountStamEntries, kMaxStatEntries, e) ||
-                    (StatEntryType(e, &t) && IsStaminaType(t)))
+                if (InSet(g_mountStamEntries, kMaxStatEntries, e) ||
+                    (StatEntryType(e, &t) && t == StatType_MountSprint))
                 {
                     PinEntry(e);
                 }
