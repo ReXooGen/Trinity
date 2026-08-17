@@ -20,7 +20,9 @@ namespace trinity::game
     using mem::Read64;
     using mem::Read32;
     using mem::Read8;
+    using mem::ReadFloat;
     using mem::Write64;
+    using mem::WriteFloat;
 
     namespace
     {
@@ -289,7 +291,7 @@ namespace trinity::game
         // (which gate on these same flags first) simply never look at the sets.
         bool AnyStatFeatureActive(const State& st)
         {
-            return st.godMode || st.infStamina || st.infMountStamina || st.infSpirit ||
+            return st.godMode || st.infStamina || st.infMountStamina || st.noMountCooldown || st.infSpirit ||
                    st.dmgInMult != 1.0f || st.dmgOutMult != 1.0f ||
                    Teleport::IsProtected();
         }
@@ -499,27 +501,54 @@ namespace trinity::game
                     PinEntry(g_spiritEntries[i].load(std::memory_order_relaxed));
             }
 
-            if (st.noMountCooldown)
+            if (st.infMountStamina || st.noMountCooldown)
             {
                 for (uint32_t i = 0; i < count; ++i)
                 {
                     uint64_t ch = 0;
                     if (!Read64(static_cast<uintptr_t>(data) + 8ull * i, &ch) || ch < kMinPointer) continue;
-                    uint64_t vt = 0;
-                    if (Read64(ch, &vt) && vt >= kMinPointer)
+                    
+                    uint64_t act = 0;
+                    if (Read64(static_cast<uintptr_t>(ch) + kOff_Owner_Actor, &act) && act >= kMinPointer)
                     {
-                        uint64_t fn1 = 0, fn2 = 0;
-                        if (Read64(vt + 0x298, &fn1) && fn1 >= kMinPointer)
+                        // Wyvern / Mount flight duration & summon lifetime timers at act + 0xC8 and act + 0x108
+                        uint64_t subC8 = 0, sub108 = 0;
+                        if (Read64(static_cast<uintptr_t>(act) + 0xC8, &subC8) && subC8 >= kMinPointer)
                         {
-                            using ResetCallCooltime_t = void(__fastcall*)(void*);
-                            auto pfn = reinterpret_cast<ResetCallCooltime_t>(fn1);
-                            __try { pfn(reinterpret_cast<void*>(ch)); } __except (EXCEPTION_EXECUTE_HANDLER) {}
+                            float maxVal = 0.0f;
+                            if (ReadFloat(static_cast<uintptr_t>(subC8) + 0x0B0, &maxVal) && maxVal > 0.0f)
+                            {
+                                WriteFloat(static_cast<uintptr_t>(subC8) + 0x180, maxVal);
+                            }
                         }
-                        if (Read64(vt + 0x2A0, &fn2) && fn2 >= kMinPointer && fn2 != fn1)
+                        if (Read64(static_cast<uintptr_t>(act) + 0x108, &sub108) && sub108 >= kMinPointer)
                         {
-                            using ResetCallCooltime_t = void(__fastcall*)(void*);
-                            auto pfn = reinterpret_cast<ResetCallCooltime_t>(fn2);
-                            __try { pfn(reinterpret_cast<void*>(ch)); } __except (EXCEPTION_EXECUTE_HANDLER) {}
+                            float maxVal = 0.0f;
+                            if (ReadFloat(static_cast<uintptr_t>(sub108) + 0x040, &maxVal) && maxVal > 0.0f)
+                            {
+                                WriteFloat(static_cast<uintptr_t>(sub108) + 0x110, maxVal);
+                            }
+                        }
+                    }
+
+                    if (st.noMountCooldown)
+                    {
+                        uint64_t vt = 0;
+                        if (Read64(ch, &vt) && vt >= kMinPointer)
+                        {
+                            uint64_t fn1 = 0, fn2 = 0;
+                            if (Read64(vt + 0x298, &fn1) && fn1 >= kMinPointer)
+                            {
+                                using ResetCallCooltime_t = void(__fastcall*)(void*);
+                                auto pfn = reinterpret_cast<ResetCallCooltime_t>(fn1);
+                                __try { pfn(reinterpret_cast<void*>(ch)); } __except (EXCEPTION_EXECUTE_HANDLER) {}
+                            }
+                            if (Read64(vt + 0x2A0, &fn2) && fn2 >= kMinPointer && fn2 != fn1)
+                            {
+                                using ResetCallCooltime_t = void(__fastcall*)(void*);
+                                auto pfn = reinterpret_cast<ResetCallCooltime_t>(fn2);
+                                __try { pfn(reinterpret_cast<void*>(ch)); } __except (EXCEPTION_EXECUTE_HANDLER) {}
+                            }
                         }
                     }
                 }

@@ -79,6 +79,18 @@ namespace trinity::mem
         __try { *reinterpret_cast<volatile uint64_t*>(addr) = val; return true; }
         __except (EXCEPTION_EXECUTE_HANDLER) { return false; }
     }
+    inline bool ReadFloat(uintptr_t addr, float* out)
+    {
+        if (addr < game::kMinPointer) return false;
+        __try { *out = *reinterpret_cast<volatile float*>(addr); return true; }
+        __except (EXCEPTION_EXECUTE_HANDLER) { return false; }
+    }
+    inline bool WriteFloat(uintptr_t addr, float val)
+    {
+        if (addr < game::kMinPointer) return false;
+        __try { *reinterpret_cast<volatile float*>(addr) = val; return true; }
+        __except (EXCEPTION_EXECUTE_HANDLER) { return false; }
+    }
 
     // Three packed floats (a Vec3) at addr+0/4/8.
     inline bool ReadVec3(uintptr_t addr, float* out)
