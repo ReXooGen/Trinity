@@ -78,6 +78,7 @@ namespace trinity
             else if (!strcmp(key, "autoSave"))            vals.autoSave            = atoi(val) != 0;
             else if (!strcmp(key, "godMode"))             vals.godMode             = atoi(val) != 0;
             else if (!strcmp(key, "infStamina"))          vals.infStamina          = atoi(val) != 0;
+            else if (!strcmp(key, "infMountStamina"))     vals.infMountStamina     = atoi(val) != 0;
             else if (!strcmp(key, "infSpirit"))           vals.infSpirit           = atoi(val) != 0;
             else if (!strcmp(key, "dmgOutMult"))          vals.dmgOutMult          = strtof(val, nullptr);
             else if (!strcmp(key, "dmgInMult"))           vals.dmgInMult           = strtof(val, nullptr);
@@ -200,9 +201,10 @@ namespace trinity
 
         // Clamp the floats to the same ranges the menu rows enforce, in case
         // the file was hand-edited.
-        st.godMode       = vals.godMode;
-        st.infStamina    = vals.infStamina;
-        st.infSpirit     = vals.infSpirit;
+        st.godMode         = vals.godMode;
+        st.infStamina      = vals.infStamina;
+        st.infMountStamina = vals.infMountStamina;
+        st.infSpirit       = vals.infSpirit;
         st.dmgOutMult    = ClampF(vals.dmgOutMult, 0.0f, 20.0f);
         st.dmgInMult     = ClampF(vals.dmgInMult, 0.0f, 10.0f);
         st.gameSpeed     = vals.gameSpeed;
@@ -272,6 +274,7 @@ namespace trinity
                 "autoSave=%d\n"
                 "godMode=%d\n"
                 "infStamina=%d\n"
+                "infMountStamina=%d\n"
                 "infSpirit=%d\n"
                 "dmgOutMult=%.3f\n"
                 "dmgInMult=%.3f\n"
@@ -322,6 +325,7 @@ namespace trinity
                 st.autoSave ? 1 : 0,
                 st.godMode ? 1 : 0,
                 st.infStamina ? 1 : 0,
+                st.infMountStamina ? 1 : 0,
                 st.infSpirit ? 1 : 0,
                 st.dmgOutMult,
                 st.dmgInMult,
@@ -389,6 +393,7 @@ namespace trinity
         State&      st = State::Get();
         st.godMode              = def.godMode;
         st.infStamina           = def.infStamina;
+        st.infMountStamina      = def.infMountStamina;
         st.infSpirit            = def.infSpirit;
         st.dmgOutMult           = def.dmgOutMult;
         st.dmgInMult            = def.dmgInMult;

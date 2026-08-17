@@ -42,9 +42,10 @@ namespace trinity
         bool rebindCapture = false;
 
         // Player stat features (player.cpp).
-        bool godMode    = false;
-        bool infStamina = false;
-        bool infSpirit  = false;
+        bool godMode         = false;
+        bool infStamina      = false;
+        bool infMountStamina = false;
+        bool infSpirit       = false;
 
         // Battle-damage multipliers (player.cpp). Applied to the signed HP
         // delta at the damage-apply dispatcher; 1.0 = game behavior.

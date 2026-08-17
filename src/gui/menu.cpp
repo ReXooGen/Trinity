@@ -92,6 +92,8 @@ namespace trinity::gui
                        : LOC("Keeps your health full. Load into the game world first."));
         changed |= ui::Toggle(LOC("Infinite Stamina"), &st.infStamina,
                    LOC("Keeps your stamina full."));
+        changed |= ui::Toggle(LOC("Infinite Mount Stamina"), &st.infMountStamina,
+                   LOC("Mounts and horses never run out of stamina while galloping or sprinting."));
         changed |= ui::Toggle(LOC("Infinite Spirit"), &st.infSpirit,
                    LOC("Keeps your spirit full."));
         changed |= ui::ToggleFloat(LOC("Super Run"), &st.superRun, &st.superRunMult, 1.0f, 10.0f, 0.25f, 2.0f, "%.2fx",

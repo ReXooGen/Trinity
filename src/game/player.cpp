@@ -109,6 +109,7 @@ namespace trinity::game
 
         std::atomic<uintptr_t> g_hpEntries[kMaxPlayers]{};
         std::atomic<uintptr_t> g_stamEntries[kMaxStatEntries]{};
+        std::atomic<uintptr_t> g_mountStamEntries[kMaxStatEntries]{};
         std::atomic<uintptr_t> g_spiritEntries[kMaxStatEntries]{};
         // Battle-damage identities, one per tracked player. A player's actor is
         // the attacker side of an outgoing hit; its vital/target owner (the
@@ -256,6 +257,7 @@ namespace trinity::game
             for (int i = 0; i < kMaxStatEntries; ++i)
             {
                 g_stamEntries[i].store(0, std::memory_order_release);
+                g_mountStamEntries[i].store(0, std::memory_order_release);
                 g_spiritEntries[i].store(0, std::memory_order_release);
             }
         }
@@ -267,7 +269,7 @@ namespace trinity::game
         // (which gate on these same flags first) simply never look at the sets.
         bool AnyStatFeatureActive(const State& st)
         {
-            return st.godMode || st.infStamina || st.infSpirit ||
+            return st.godMode || st.infStamina || st.infMountStamina || st.infSpirit ||
                    st.dmgInMult != 1.0f || st.dmgOutMult != 1.0f ||
                    Teleport::IsProtected();
         }
@@ -310,8 +312,9 @@ namespace trinity::game
             uintptr_t nextActors[kMaxPlayers]{};
             uintptr_t nextTargets[kMaxPlayers]{};
             uintptr_t nextStam[kMaxStatEntries]{};
+            uintptr_t nextMountStam[kMaxStatEntries]{};
             uintptr_t nextSpir[kMaxStatEntries]{};
-            int nPlayers = 0, nStam = 0, nSpir = 0;
+            int nPlayers = 0, nStam = 0, nMountStam = 0, nSpir = 0;
             for (uint32_t i = 0; i < count; ++i)
             {
                 uint64_t ch = 0;
@@ -341,8 +344,21 @@ namespace trinity::game
                     const uintptr_t e = c.statArray + k * kSizeof_StatEntry;
                     int32_t stt = 0;
                     if (!StatEntryType(e, &stt)) continue;
-                    if (IsStaminaType(stt))     { if (nStam < kMaxStatEntries) nextStam[nStam++] = e; }
-                    else if (isPlayer && IsSpiritType(stt)) { if (nSpir < kMaxStatEntries) nextSpir[nSpir++] = e; }
+                    if (IsStaminaType(stt))
+                    {
+                        if (isPlayer)
+                        {
+                            if (nStam < kMaxStatEntries) nextStam[nStam++] = e;
+                        }
+                        else
+                        {
+                            if (nMountStam < kMaxStatEntries) nextMountStam[nMountStam++] = e;
+                        }
+                    }
+                    else if (isPlayer && IsSpiritType(stt))
+                    {
+                        if (nSpir < kMaxStatEntries) nextSpir[nSpir++] = e;
+                    }
                 }
             }
 
@@ -422,6 +438,8 @@ namespace trinity::game
             }
             for (int i = 0; i < nStam; ++i)
                 g_stamEntries[i].store(nextStam[i], std::memory_order_release);
+            for (int i = 0; i < nMountStam; ++i)
+                g_mountStamEntries[i].store(nextMountStam[i], std::memory_order_release);
             for (int i = 0; i < nSpir; ++i)
                 g_spiritEntries[i].store(nextSpir[i], std::memory_order_release);
 
@@ -434,6 +452,7 @@ namespace trinity::game
                 g_targetOwners[i].store(0, std::memory_order_release);
             }
             for (int i = nStam; i < kMaxStatEntries; ++i) g_stamEntries[i].store(0, std::memory_order_release);
+            for (int i = nMountStam; i < kMaxStatEntries; ++i) g_mountStamEntries[i].store(0, std::memory_order_release);
             for (int i = nSpir; i < kMaxStatEntries; ++i) g_spiritEntries[i].store(0, std::memory_order_release);
 
             // 1.17 does not route every stamina/spirit drain through the old
@@ -445,6 +464,9 @@ namespace trinity::game
             if (st.infStamina)
                 for (int i = 0; i < nStam; ++i)
                     PinEntry(g_stamEntries[i].load(std::memory_order_relaxed));
+            if (st.infMountStamina)
+                for (int i = 0; i < nMountStam; ++i)
+                    PinEntry(g_mountStamEntries[i].load(std::memory_order_relaxed));
             if (st.infSpirit)
                 for (int i = 0; i < nSpir; ++i)
                     PinEntry(g_spiritEntries[i].load(std::memory_order_relaxed));
@@ -454,8 +476,8 @@ namespace trinity::game
             static int s_lastPlayers = -1, s_lastStam = -1, s_lastSpir = -1;
             if (nPlayers != s_lastPlayers || nStam != s_lastStam || nSpir != s_lastSpir)
             {
-                LOG("player: stat discovery - players=%d stamina=%d spirit=%d flags(stamina=%d spirit=%d).",
-                    nPlayers, nStam, nSpir, st.infStamina ? 1 : 0, st.infSpirit ? 1 : 0);
+                LOG("player: stat discovery - players=%d stamina=%d mountStam=%d spirit=%d flags(stamina=%d mount=%d spirit=%d).",
+                    nPlayers, nStam, nMountStam, nSpir, st.infStamina ? 1 : 0, st.infMountStamina ? 1 : 0, st.infSpirit ? 1 : 0);
                 s_lastPlayers = nPlayers;
                 s_lastStam = nStam;
                 s_lastSpir = nSpir;
@@ -492,15 +514,8 @@ namespace trinity::game
             }
 
             if ((st.godMode || (isPlayerHp && Teleport::IsProtected())) && isPlayerHp) PinEntry(e);
-            if (st.infStamina)
-            {
-                int32_t t = 0;
-                if (InSet(g_stamEntries, kMaxStatEntries, e) ||
-                    (StatEntryType(e, &t) && IsStaminaType(t)))
-                {
-                    PinEntry(e);
-                }
-            }
+            if (st.infStamina && InSet(g_stamEntries, kMaxStatEntries, e)) PinEntry(e);
+            if (st.infMountStamina && InSet(g_mountStamEntries, kMaxStatEntries, e)) PinEntry(e);
             if (st.infSpirit  && InSet(g_spiritEntries, kMaxStatEntries, e)) PinEntry(e);
 
             return result;
