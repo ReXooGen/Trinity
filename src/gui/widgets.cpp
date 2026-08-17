@@ -787,72 +787,24 @@ namespace trinity::ui
         return changed;
     }
 
-    // IntOption's sibling that fires on commit rather than reporting every
-    // change - see widgets.h for why Enter can be both the edit and the action.
     bool IntAction(const char* label, int* value, int minV, int maxV,
                    int step, int defV, const char* desc)
     {
         RowResult r       = RowBase(label, desc, RowKind::ValueAction);
         bool      fired   = false;
-        bool      editing = (s_editPtr == value);
 
-        if (editing)
+        const int st = step * (g_nav.adjustBoost ? 10 : 1);
+        if (r.left)  *value -= st;
+        if (r.right) *value += st;
+
+        if (r.activated)
         {
-            if (!r.selected)
-            {
-                EditEnd();
-                editing = false;
-            }
-            else
-            {
-                if (g_hintKind == RowKind::ValueAction) g_hintKind = RowKind::TypingApply;
-
-                // An empty buffer commits the amount already on the row, so
-                // Enter twice fires with what you can see and there is no
-                // "type it out again" tax on the amount you already picked.
-                const double cur = static_cast<double>(*value);
-                double    out    = 0.0;
-                const int rc     = EditTick(false, &out, &cur);
-                if (rc == 1)
-                {
-                    if (out < minV) out = minV;
-                    if (out > maxV) out = maxV;
-                    *value = static_cast<int>(out);
-                    fired  = true;
-                }
-                if (rc != 0)
-                {
-                    EditEnd();
-                    editing = false;
-                }
-            }
+            fired = true;
         }
-        else
+        if (r.clear)
         {
-            const int st = step * (g_nav.adjustBoost ? 10 : 1);
-            if (r.left)  *value -= st;
-            if (r.right) *value += st;
-
-            if (r.activated)
-            {
-                // A pad cannot type, so there A fires with the amount shown -
-                // the same split ItemRow makes. Keyboard and mouse get the
-                // edit, and the commit that follows is what fires.
-                if (g_nav.selectPad)
-                {
-                    fired = true;
-                }
-                else
-                {
-                    EditBegin(value);
-                    editing = true;
-                }
-            }
-            if (r.clear)
-            {
-                g_nav.clear = false;
-                *value = defV;
-            }
+            g_nav.clear = false;
+            *value = defV;
         }
 
         if (*value < minV) *value = minV;
@@ -860,16 +812,8 @@ namespace trinity::ui
 
         char buf[32];
         snprintf(buf, sizeof(buf), "%d", *value);
+        DrawRowValue(r, buf, true);
 
-        if (editing)
-        {
-            g_captureSeen = true;
-            DrawEditValue(r, buf); // the amount an empty buffer would fire with
-        }
-        else
-        {
-            DrawRowValue(r, buf, true);
-        }
         return fired;
     }
 
