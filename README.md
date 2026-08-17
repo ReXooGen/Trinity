@@ -24,6 +24,16 @@ Trinity is an in-game DirectX 12 mod menu for **Crimson Desert**, originally cre
 | :---: | :---: |
 | ![Saved Locations](image7.png) | ![Storage Editor](image8.png) |
 
+## What's New in v1.2.3
+
+- **Infinite Mount Stamina TU 1.18+ Fix**: Restored full infinite stamina support for horses, mounts, and dragons while galloping and sprinting.
+- **Continuous Stamina & Spirit Auto-Refresh**: Refined stat commit interception so any consumed player or mount stamina and spirit instantly refreshes back to 100% full capacity in real-time.
+- **Character Spontaneous Combustion Fix**: Completely purged thermal and elemental debuff meters (types 17, 18, 28, 48) from the scanner, permanently resolving the bug where characters caught fire upon spawn.
+- **Protagonist Scanning Stability**: Hardened `TickResolveSelf` vital chain validation to eliminate access violation crashes in crowded NPC areas.
+- **Game Compatibility**: Fully optimized and verified for **Crimson Desert TU 1.18.00 – 1.18.01+**.
+
+---
+
 ## What's New in v1.2.2
 
 - **Game Compatibility**: Verified and optimized for **Crimson Desert TU 1.18.00 – 1.18.01+**.
