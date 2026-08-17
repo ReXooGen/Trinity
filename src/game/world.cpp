@@ -157,8 +157,8 @@ namespace trinity::game
             if (st.forceClearSky) return _mm_set_ss(0.0f);
             if (st.rainIntensity > 0.001f) return _mm_set_ss(st.rainIntensity);
             if (st.weatherPreset == 1) return _mm_set_ss(0.0f);
-            if (st.weatherPreset == 3) return _mm_set_ss(0.60f);
-            if (st.weatherPreset == 4) return _mm_set_ss(1.00f);
+            if (st.weatherPreset == 3) return _mm_set_ss(1.50f);
+            if (st.weatherPreset == 4) return _mm_set_ss(4.00f);
 
             if (oGetRainIntensity)
             {
@@ -277,7 +277,28 @@ namespace trinity::game
                 if (st.cloudThick != 1.0f)
                 {
                     packedOut[0x1B] *= st.cloudThick;
+                    packedOut[0x1E] *= st.cloudThick;
                     packedOut[0x32] *= st.cloudThick;
+                }
+
+                // Dark storm atmosphere and ominous lighting
+                const bool isStorm = (st.weatherPreset == 4) || (st.rainIntensity >= 1.50f);
+                if (isStorm)
+                {
+                    // Dim sun and moon light to create a dark stormy sky
+                    packedOut[0x00] *= 0.15f; // Sun light intensity
+                    packedOut[0x05] *= 0.15f; // Moon light intensity
+                    // Darken cloud scattering so clouds appear dark and menacing
+                    packedOut[0x20] *= 0.15f; // Cloud scattering
+                    // Dense cloud volume
+                    if (packedOut[0x1B] < 3.0f) packedOut[0x1B] = 3.5f;
+                    packedOut[0x1E] = 3.0f; // Heavy cloud alpha
+                }
+                else if (st.weatherPreset == 2 || st.rainIntensity >= 0.50f)
+                {
+                    // Overcast / Cloudy / Rain
+                    packedOut[0x00] *= 0.55f;
+                    packedOut[0x20] *= 0.55f;
                 }
 
                 if (st.cloudTop != 1.0f)
@@ -290,10 +311,20 @@ namespace trinity::game
                     packedOut[0x30] *= st.cloudBase;
                 }
 
-                if (st.cloudScrollSpeed != 1.0f)
+                if (st.noWind)
+                {
+                    packedOut[0x23] = 0.0f;
+                    packedOut[0x24] = 0.0f;
+                }
+                else if (st.cloudScrollSpeed != 1.0f)
                 {
                     packedOut[0x23] *= st.cloudScrollSpeed;
                     packedOut[0x24] *= st.cloudScrollSpeed;
+                }
+                else if (isStorm)
+                {
+                    packedOut[0x23] *= 3.0f; // Fast drifting storm clouds
+                    packedOut[0x24] *= 3.0f;
                 }
             }
             __except (EXCEPTION_EXECUTE_HANDLER)
@@ -809,33 +840,44 @@ namespace trinity::game
             st.clearDistantFog = false;
             st.rainIntensity   = 0.0f;
             st.dustIntensity   = 0.0f;
-            st.cloudThick      = 1.80f;
-            st.fogA            = 1.20f;
-            st.fogB            = 1.10f;
+            st.cloudThick      = 2.50f;
+            st.cloudTop        = 1.20f;
+            st.cloudBase       = 1.00f;
+            st.cloudScrollSpeed= 1.20f;
+            st.fogA            = 1.30f;
+            st.fogB            = 1.20f;
             st.windMultiplier  = 1.20f;
+            st.windGust        = 1.00f;
             st.noWind          = false;
             break;
         case 3: // Rainy (Light Rain)
             st.forceClearSky   = false;
             st.clearDistantFog = false;
-            st.rainIntensity   = 0.50f;
+            st.rainIntensity   = 1.50f;
             st.dustIntensity   = 0.0f;
-            st.cloudThick      = 1.60f;
-            st.fogA            = 1.30f;
-            st.fogB            = 1.20f;
-            st.windMultiplier  = 1.50f;
+            st.cloudThick      = 2.00f;
+            st.cloudTop        = 1.20f;
+            st.cloudBase       = 1.00f;
+            st.cloudScrollSpeed= 1.50f;
+            st.fogA            = 1.40f;
+            st.fogB            = 1.30f;
+            st.windMultiplier  = 1.80f;
+            st.windGust        = 1.50f;
             st.noWind          = false;
             break;
         case 4: // Thunderstorm (Storm)
             st.forceClearSky   = false;
             st.clearDistantFog = false;
-            st.rainIntensity   = 1.00f;
+            st.rainIntensity   = 4.00f; // Heavy torrential storm downpour
             st.dustIntensity   = 0.0f;
-            st.cloudThick      = 2.00f;
-            st.fogA            = 1.50f;
-            st.fogB            = 1.40f;
-            st.windMultiplier  = 2.50f;
-            st.windGust        = 2.00f;
+            st.cloudThick      = 4.00f; // Heavy dark storm clouds
+            st.cloudTop        = 1.50f;
+            st.cloudBase       = 0.80f; // Low dark overcast ceiling
+            st.cloudScrollSpeed= 3.00f; // Fast moving storm winds
+            st.fogA            = 2.20f; // Thick stormy mist
+            st.fogB            = 2.00f;
+            st.windMultiplier  = 3.50f; // Strong storm wind
+            st.windGust        = 2.50f;
             st.noWind          = false;
             break;
         case 5: // Dense Fog / Mist
@@ -843,9 +885,11 @@ namespace trinity::game
             st.clearDistantFog = false;
             st.rainIntensity   = 0.0f;
             st.dustIntensity   = 0.0f;
-            st.cloudThick      = 1.50f;
-            st.fogA            = 2.00f;
-            st.fogB            = 2.00f;
+            st.cloudThick      = 2.00f;
+            st.cloudTop        = 1.00f;
+            st.cloudBase       = 0.50f;
+            st.fogA            = 3.50f;
+            st.fogB            = 3.00f;
             st.windMultiplier  = 0.50f;
             st.noWind          = false;
             break;

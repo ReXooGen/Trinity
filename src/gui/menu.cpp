@@ -741,19 +741,19 @@ namespace trinity::gui
         }
 
         // 2. Precipitation & Storm Intensities
-        changed |= ui::FloatOption(LOC("Rain Intensity"), &st.rainIntensity, 0.0f, 1.0f, 0.05f, 0.0f, "%.2f", LOC("Adjust rainfall density and storm clouds."));
-        changed |= ui::FloatOption(LOC("Snow Intensity"), &st.snowIntensity, 0.0f, 1.0f, 0.05f, 0.0f, "%.2f", LOC("Adjust snowfall and winter blizzard intensity."));
-        changed |= ui::FloatOption(LOC("Dust / Sandstorm"), &st.dustIntensity, 0.0f, 1.0f, 0.05f, 0.0f, "%.2f", LOC("Adjust desert dust and sandstorm particles."));
+        changed |= ui::FloatOption(LOC("Rain Intensity"), &st.rainIntensity, 0.0f, 5.0f, 0.10f, 0.0f, "%.2f", LOC("Adjust rainfall density and storm clouds."));
+        changed |= ui::FloatOption(LOC("Snow Intensity"), &st.snowIntensity, 0.0f, 5.0f, 0.10f, 0.0f, "%.2f", LOC("Adjust snowfall and winter blizzard intensity."));
+        changed |= ui::FloatOption(LOC("Dust / Sandstorm"), &st.dustIntensity, 0.0f, 5.0f, 0.10f, 0.0f, "%.2f", LOC("Adjust desert dust and sandstorm particles."));
 
         // 3. Cloud Layer Controls
-        changed |= ui::FloatOption(LOC("Cloud Thickness"), &st.cloudThick, 0.0f, 2.0f, 0.05f, 1.0f, "%.2f", LOC("Controls cloud volume density and sky coverage."));
-        changed |= ui::FloatOption(LOC("Cloud Top Altitude"), &st.cloudTop, 0.1f, 2.0f, 0.05f, 1.0f, "%.2f", LOC("Adjusts top elevation ceiling of cloud formations."));
-        changed |= ui::FloatOption(LOC("Cloud Base Altitude"), &st.cloudBase, 0.1f, 2.0f, 0.05f, 1.0f, "%.2f", LOC("Adjusts lower boundary elevation of cloud bottoms."));
+        changed |= ui::FloatOption(LOC("Cloud Thickness"), &st.cloudThick, 0.0f, 5.0f, 0.10f, 1.0f, "%.2f", LOC("Controls cloud volume density and sky coverage."));
+        changed |= ui::FloatOption(LOC("Cloud Top Altitude"), &st.cloudTop, 0.1f, 3.0f, 0.05f, 1.0f, "%.2f", LOC("Adjusts top elevation ceiling of cloud formations."));
+        changed |= ui::FloatOption(LOC("Cloud Base Altitude"), &st.cloudBase, 0.1f, 3.0f, 0.05f, 1.0f, "%.2f", LOC("Adjusts lower boundary elevation of cloud bottoms."));
         changed |= ui::FloatOption(LOC("Cloud Drift Speed"), &st.cloudScrollSpeed, 0.0f, 5.0f, 0.1f, 1.0f, "%.2fx", LOC("Scales motion speed of cloud layer drifting across the sky."));
 
         // 4. Fog & Atmospheric Depth
-        changed |= ui::FloatOption(LOC("Fog Scattering (A)"), &st.fogA, 0.0f, 2.0f, 0.05f, 1.0f, "%.2f", LOC("Adjusts foreground fog density and light scattering."));
-        changed |= ui::FloatOption(LOC("Fog Horizon Blend (B)"), &st.fogB, 0.0f, 2.0f, 0.05f, 1.0f, "%.2f", LOC("Adjusts distant horizon fog and mountain mist blend."));
+        changed |= ui::FloatOption(LOC("Fog Scattering (A)"), &st.fogA, 0.0f, 5.0f, 0.10f, 1.0f, "%.2f", LOC("Adjusts foreground fog density and light scattering."));
+        changed |= ui::FloatOption(LOC("Fog Horizon Blend (B)"), &st.fogB, 0.0f, 5.0f, 0.10f, 1.0f, "%.2f", LOC("Adjusts distant horizon fog and mountain mist blend."));
 
         // 5. Environmental Wind & Turbulence
         changed |= ui::FloatOption(LOC("Wind Speed Multiplier"), &st.windMultiplier, 0.0f, 5.0f, 0.1f, 1.0f, "%.2fx", LOC("Scales ambient wind force and environmental breeze."));
