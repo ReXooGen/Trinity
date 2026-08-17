@@ -364,6 +364,10 @@ namespace trinity::game
                         {
                             if (nStam < kMaxStatEntries) nextStam[nStam++] = e;
                         }
+                        else if (stt == StatType_MountSprint || stt == StatType_MountAbility || stt == 18 || stt == 19 || stt == 48)
+                        {
+                            if (nMountStam < kMaxStatEntries) nextMountStam[nMountStam++] = e;
+                        }
                         else if (IsSpiritType(stt))
                         {
                             if (nSpir < kMaxStatEntries) nextSpir[nSpir++] = e;
@@ -412,6 +416,10 @@ namespace trinity::game
                         if (IsPlayerStaminaType(stt))
                         {
                             if (nStam < kMaxStatEntries) nextStam[nStam++] = e;
+                        }
+                        else if (stt == StatType_MountSprint || stt == StatType_MountAbility || stt == 18 || stt == 19 || stt == 48)
+                        {
+                            if (nMountStam < kMaxStatEntries) nextMountStam[nMountStam++] = e;
                         }
                         else if (IsSpiritType(stt))
                         {
@@ -709,6 +717,31 @@ namespace trinity::game
 
     void Player::RefreshSelf()
     {
+        const State& st = State::Get();
+        if (st.infStamina)
+        {
+            for (int i = 0; i < kMaxStatEntries; ++i)
+            {
+                uintptr_t e = g_stamEntries[i].load(std::memory_order_relaxed);
+                if (e >= kMinPointer) PinEntry(e);
+            }
+        }
+        if (st.infMountStamina)
+        {
+            for (int i = 0; i < kMaxStatEntries; ++i)
+            {
+                uintptr_t e = g_mountStamEntries[i].load(std::memory_order_relaxed);
+                if (e >= kMinPointer) PinEntry(e);
+            }
+        }
+        if (st.infSpirit)
+        {
+            for (int i = 0; i < kMaxStatEntries; ++i)
+            {
+                uintptr_t e = g_spiritEntries[i].load(std::memory_order_relaxed);
+                if (e >= kMinPointer) PinEntry(e);
+            }
+        }
         TickResolveSelf();
     }
 
