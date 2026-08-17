@@ -720,6 +720,14 @@ namespace trinity::gui
             ui::Toast(LOC("Atmosphere cleared"));
         }
 
+        // Safe Live Atmosphere & Intensity Controls (Field-injection via EnvManager)
+        changed |= ui::FloatOption(LOC("Rain Intensity"), &st.rainIntensity, 0.0f, 1.0f, 0.05f, 0.0f, "%.2f", LOC("Adjust rainfall density and storm cloud thickness."));
+        changed |= ui::FloatOption(LOC("Dust / Sandstorm"), &st.dustIntensity, 0.0f, 1.0f, 0.05f, 0.0f, "%.2f", LOC("Adjust desert dust and sandstorm particles."));
+
+        // Wind Multipliers
+        changed |= ui::FloatOption(LOC("Wind Multiplier"), &st.windMultiplier, 0.0f, 5.0f, 0.1f, 1.0f, "%.2fx", LOC("Scales ambient wind force and storm particles."));
+        changed |= ui::Toggle(LOC("No Wind"), &st.noWind, LOC("Calms all environmental wind and dust to complete stillness."));
+
         static const char* s_weathers[] = {
             "Dynamic (Game Default)",
             "Clear Sky (Sunny)",

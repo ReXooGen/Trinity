@@ -139,6 +139,63 @@ namespace trinity::game
             }
         }
 
+        // --- Safe Weather & Atmosphere discovery (Non-hooking field controller) ---
+        static uintptr_t g_pEnvManager = 0;
+
+        struct ResolvedWeatherEnv
+        {
+            uintptr_t entity       = 0;
+            uintptr_t weatherState = 0;
+            uintptr_t cloudNode    = 0;
+            uintptr_t windNode     = 0;
+            bool      valid        = false;
+        };
+
+        ResolvedWeatherEnv ResolveWeatherEnv()
+        {
+            ResolvedWeatherEnv env{};
+            if (!g_pEnvManager) return env;
+
+            __try
+            {
+                uintptr_t envMgr = 0;
+                if (!mem::ReadPtr(g_pEnvManager, &envMgr) || envMgr < kMinPointer)
+                    return env;
+
+                uintptr_t* vt = *reinterpret_cast<uintptr_t**>(envMgr);
+                if (!vt || reinterpret_cast<uintptr_t>(vt) < kMinPointer)
+                    return env;
+
+                auto getEntity = reinterpret_cast<uintptr_t(__fastcall*)(uintptr_t)>(vt[0x40 / 8]);
+                if (!getEntity || reinterpret_cast<uintptr_t>(getEntity) < kMinPointer)
+                    return env;
+
+                env.entity = getEntity(envMgr);
+                if (env.entity < kMinPointer)
+                    return env;
+
+                uintptr_t ws = 0;
+                if (!mem::ReadPtr(env.entity + 0xEE0, &ws) || ws < kMinPointer)
+                    return env;
+
+                env.weatherState = ws;
+
+                uintptr_t result = 0;
+                if (!mem::ReadPtr(ws + 0x50, &result) || result < kMinPointer)
+                    return env;
+
+                mem::ReadPtr(result + 0x18, &env.cloudNode);
+                mem::ReadPtr(result + 0x20, &env.windNode);
+
+                env.valid = (env.cloudNode >= kMinPointer);
+            }
+            __except (EXCEPTION_EXECUTE_HANDLER)
+            {
+                env = ResolvedWeatherEnv{};
+            }
+            return env;
+        }
+
         // --- Master field-clock discovery ------------------------------------
         // One signature over sub_1CA3890's realm-select read yields both realm
         // globals: resolve the RIP operands of the two `vmovups` (server, then
@@ -235,6 +292,23 @@ namespace trinity::game
             }
         }
 
+        // Safe EnvManager pointer resolution for Atmosphere & Weather (Zero hooks)
+        {
+            const uintptr_t envSig = mem::FindPattern(kSig_EnvManager);
+            if (envSig)
+            {
+                g_pEnvManager = mem::ResolveRipAt(envSig + kOff_EnvManager_Mov, kLen_EnvManager_Mov);
+                if (g_pEnvManager >= kMinPointer)
+                {
+                    LOG("world: safe EnvManager pointer resolved: 0x%llX", g_pEnvManager);
+                }
+                else
+                {
+                    g_pEnvManager = 0;
+                }
+            }
+        }
+
         return ok;
     }
 
@@ -299,6 +373,52 @@ namespace trinity::game
                 Write32(mgr + kOff_Tod_UpperLimit, FloatBits(g_todOrigUpper));
             }
             g_todClampApplied = false;
+        }
+
+        // Live Weather & Atmosphere parameter injection (Zero hooks, 100% crash-safe)
+        const ResolvedWeatherEnv env = ResolveWeatherEnv();
+        if (env.valid && env.cloudNode)
+        {
+            __try
+            {
+                if (st.clearDistantFog)
+                {
+                    Write32(env.cloudNode + CN::FOG_A, FloatBits(0.0f));
+                    Write32(env.cloudNode + CN::FOG_B, FloatBits(0.0f));
+                }
+                if (st.forceClearSky)
+                {
+                    Write32(env.cloudNode + CN::FOG_A, FloatBits(0.0f));
+                    Write32(env.cloudNode + CN::FOG_B, FloatBits(0.0f));
+                    Write32(env.cloudNode + CN::STORM_THRESH, FloatBits(0.0f));
+                    Write32(env.cloudNode + CN::DUST_THRESH, FloatBits(0.0f));
+                    Write32(env.cloudNode + CN::CLOUD_THICK, FloatBits(0.0f));
+                }
+                else
+                {
+                    if (st.rainIntensity > 0.001f)
+                    {
+                        Write32(env.cloudNode + CN::STORM_THRESH, FloatBits(st.rainIntensity));
+                        Write32(env.cloudNode + CN::CLOUD_THICK, FloatBits(Clamp(st.rainIntensity * 1.5f, 0.4f, 1.0f)));
+                    }
+                    if (st.dustIntensity > 0.001f)
+                    {
+                        Write32(env.cloudNode + CN::DUST_BASE, FloatBits(st.dustIntensity * 5.0f));
+                        Write32(env.cloudNode + CN::DUST_THRESH, FloatBits(st.dustIntensity));
+                    }
+                    if (st.noWind)
+                    {
+                        Write32(env.cloudNode + CN::DUST_WIND_SCALE, FloatBits(0.0f));
+                    }
+                    else if (st.windMultiplier > 0.01f && st.windMultiplier != 1.0f)
+                    {
+                        Write32(env.cloudNode + CN::DUST_WIND_SCALE, FloatBits(st.windMultiplier));
+                    }
+                }
+            }
+            __except (EXCEPTION_EXECUTE_HANDLER)
+            {
+            }
         }
     }
 

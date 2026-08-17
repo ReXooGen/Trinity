@@ -1237,18 +1237,24 @@ namespace trinity::game
     inline constexpr uintptr_t kOff_Tod_UpperLimit  = 0x3D8; // f32 clamp upper
 
     // --- Weather & Atmosphere (world.cpp) ------------------------------------
-    // Dynamic AOB patterns for weather intensity and wind hooks in TU 1.18.00+:
-    inline constexpr const char* kSig_WeatherRain =
-        "48 8B 51 ?? 4C 8B D1 48 85 D2 B9 40 00 00 00 48 8D 42 18 48 0F 44 C1 41 80 7A 31 00 4C 8B 08 4D 8D 81 6C 01 00 00";
+    // Safe non-hooking EnvManager resolution and cloud/atmosphere nodes in TU 1.18.00+:
+    inline constexpr const char* kSig_EnvManager =
+        "48 8B 0D ?? ?? ?? ?? 48 8B 01 FF 50 40 48 8B 88 ?? 0E 00 00";
+    inline constexpr uintptr_t kOff_EnvManager_Mov = 3;
+    inline constexpr int       kLen_EnvManager_Mov = 7;
 
-    inline constexpr const char* kSig_WeatherSnow =
-        "48 8B 51 ?? 4C 8B D1 48 85 D2 B9 40 00 00 00 48 8D 42 18 48 0F 44 C1 41 80 7A 31 00 4C 8B 08 4D 8D 81 68 01 00 00";
-
-    inline constexpr const char* kSig_WeatherDust =
-        "48 8B 41 ?? 41 B8 40 00 00 00 48 85 C0 41 B9 60 01 00 00 48 8D 50 18 B8 CC 01 00 00 49 0F 44 D0";
-
-    inline constexpr const char* kSig_WeatherWind =
-        "48 89 5C 24 08 57 48 83 EC 30 48 8B 01 48 8B D9 48 85 C0 48 8B FA B9 40 00 00 00 4C 8D 40 18 4C 0F 44 C1";
+    namespace CN {
+        inline constexpr ptrdiff_t FOG_A           = 0x134;
+        inline constexpr ptrdiff_t DUST_BASE       = 0x138;
+        inline constexpr ptrdiff_t CLOUD_TOP       = 0x13C;
+        inline constexpr ptrdiff_t CLOUD_THICK     = 0x140;
+        inline constexpr ptrdiff_t CLOUD_BASE      = 0x144;
+        inline constexpr ptrdiff_t DUST_WIND_SCALE = 0x158;
+        inline constexpr ptrdiff_t DUST_THRESH     = 0x198;
+        inline constexpr ptrdiff_t STORM_THRESH    = 0x19C;
+        inline constexpr ptrdiff_t FOG_B           = 0x1A0;
+        inline constexpr ptrdiff_t DUST_ADD        = 0x1A4;
+    }
 
     // --- Armor dye / material / repair-condition (dye.cpp) -------------------
     // The dyehouse system, fully RE'd 2026-07-17 from the server's own dye
