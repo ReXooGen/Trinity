@@ -312,31 +312,37 @@ namespace trinity::game
             uintptr_t nextStam[kMaxStatEntries]{};
             uintptr_t nextSpir[kMaxStatEntries]{};
             int nPlayers = 0, nStam = 0, nSpir = 0;
-            for (uint32_t i = 0; i < count && nPlayers < kMaxPlayers; ++i)
+            for (uint32_t i = 0; i < count; ++i)
             {
                 uint64_t ch = 0;
                 if (!Read64(static_cast<uintptr_t>(data) + 8ull * i, &ch) || ch < kMinPointer) continue;
                 const uintptr_t owner = static_cast<uintptr_t>(ch);
-                uint64_t vt = 0;
-                if (!Read64(owner, &vt) || vt != anchorVt) continue;
                 SelfChain c;
                 if (!WalkSelfChain(owner, &c)) continue;
 
-                nextHp[nPlayers] = c.statArray;
-                nextActors[nPlayers] = c.actor;
-                nextTargets[nPlayers] = c.targetOwner;
-                ++nPlayers;
+                uint64_t vt = 0;
+                Read64(owner, &vt);
+                const bool isPlayer = (vt == anchorVt);
+
+                if (isPlayer && nPlayers < kMaxPlayers)
+                {
+                    nextHp[nPlayers] = c.statArray;
+                    nextActors[nPlayers] = c.actor;
+                    nextTargets[nPlayers] = c.targetOwner;
+                    ++nPlayers;
+                }
 
                 // The stat entries form one contiguous 0x90-stride array with
                 // health first; scan it and record every stamina gauge (type 17 /
-                // sprint type 20) and spirit gauge (type 18 / pool type 21).
+                // sprint type 20 / pool 22) for player AND active mount, and spirit gauge
+                // (type 18 / pool type 21 / pool 23) for players.
                 for (int k = 1; k < kStatArray_ScanEntries; ++k)
                 {
                     const uintptr_t e = c.statArray + k * kSizeof_StatEntry;
                     int32_t stt = 0;
                     if (!StatEntryType(e, &stt)) continue;
                     if (IsStaminaType(stt))     { if (nStam < kMaxStatEntries) nextStam[nStam++] = e; }
-                    else if (IsSpiritType(stt)) { if (nSpir < kMaxStatEntries) nextSpir[nSpir++] = e; }
+                    else if (isPlayer && IsSpiritType(stt)) { if (nSpir < kMaxStatEntries) nextSpir[nSpir++] = e; }
                 }
             }
 
@@ -486,7 +492,15 @@ namespace trinity::game
             }
 
             if ((st.godMode || (isPlayerHp && Teleport::IsProtected())) && isPlayerHp) PinEntry(e);
-            if (st.infStamina && InSet(g_stamEntries,   kMaxStatEntries, e)) PinEntry(e);
+            if (st.infStamina)
+            {
+                int32_t t = 0;
+                if (InSet(g_stamEntries, kMaxStatEntries, e) ||
+                    (StatEntryType(e, &t) && IsStaminaType(t)))
+                {
+                    PinEntry(e);
+                }
+            }
             if (st.infSpirit  && InSet(g_spiritEntries, kMaxStatEntries, e)) PinEntry(e);
 
             return result;
