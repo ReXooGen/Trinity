@@ -77,45 +77,6 @@ namespace trinity::game
             oFieldTimeTick(mgr, delta, d2);
         }
 
-        // Weather intensity hook prototypes
-        using GetWeatherIntensity_t = __m128(__fastcall*)(void* ws);
-        static GetWeatherIntensity_t oGetRainIntensity = nullptr;
-        static GetWeatherIntensity_t oGetSnowIntensity = nullptr;
-        static GetWeatherIntensity_t oGetDustIntensity = nullptr;
-
-        static void* g_rainIntensityTarget = nullptr;
-        static void* g_snowIntensityTarget = nullptr;
-        static void* g_dustIntensityTarget = nullptr;
-
-        __m128 __fastcall hkGetRainIntensity(void* ws)
-        {
-            const State& st = State::Get();
-            if (st.forceClearSky) return _mm_set_ss(0.0f);
-            if (st.rainIntensity > 0.001f) return _mm_set_ss(st.rainIntensity);
-            if (st.weatherPreset == 1) return _mm_set_ss(0.0f); // Clear
-            if (st.weatherPreset == 3) return _mm_set_ss(0.6f); // Rain
-            if (st.weatherPreset == 4) return _mm_set_ss(1.0f); // Storm
-            return oGetRainIntensity ? oGetRainIntensity(ws) : _mm_set_ss(0.0f);
-        }
-
-        __m128 __fastcall hkGetSnowIntensity(void* ws)
-        {
-            const State& st = State::Get();
-            if (st.forceClearSky) return _mm_set_ss(0.0f);
-            if (st.snowIntensity > 0.001f) return _mm_set_ss(st.snowIntensity);
-            return oGetSnowIntensity ? oGetSnowIntensity(ws) : _mm_set_ss(0.0f);
-        }
-
-        __m128 __fastcall hkGetDustIntensity(void* ws)
-        {
-            const State& st = State::Get();
-            if (st.forceClearSky || st.noWind) return _mm_set_ss(0.0f);
-            if (st.dustIntensity > 0.001f) return _mm_set_ss(st.dustIntensity * 15.0f * st.windMultiplier);
-            __m128 orig = oGetDustIntensity ? oGetDustIntensity(ws) : _mm_set_ss(0.0f);
-            float val = _mm_cvtss_f32(orig);
-            return _mm_set_ss(val * st.windMultiplier);
-        }
-
         // Reinterpret a float as its 32-bit pattern for a raw Write32.
         uint32_t FloatBits(float f)
         {
@@ -274,19 +235,6 @@ namespace trinity::game
             }
         }
 
-        // Dynamic weather intensity hooks (Rain, Snow, Dust)
-        mem::InstallHook("world: rain intensity", kSig_WeatherRain,
-                         "Rain control disabled", hkGetRainIntensity,
-                         &oGetRainIntensity, &g_rainIntensityTarget);
-
-        mem::InstallHook("world: snow intensity", kSig_WeatherSnow,
-                         "Snow control disabled", hkGetSnowIntensity,
-                         &oGetSnowIntensity, &g_snowIntensityTarget);
-
-        mem::InstallHook("world: dust intensity", kSig_WeatherDust,
-                         "Dust control disabled", hkGetDustIntensity,
-                         &oGetDustIntensity, &g_dustIntensityTarget);
-
         return ok;
     }
 
@@ -379,14 +327,6 @@ namespace trinity::game
         mem::RemoveHook(&g_fieldTimeTickTarget);
         oFieldTimeTick = nullptr;
         g_timeClient = g_timeServer = 0;
-
-        // Unhook dynamic weather hooks
-        mem::RemoveHook(&g_rainIntensityTarget);
-        mem::RemoveHook(&g_snowIntensityTarget);
-        mem::RemoveHook(&g_dustIntensityTarget);
-        oGetRainIntensity = nullptr;
-        oGetSnowIntensity = nullptr;
-        oGetDustIntensity = nullptr;
     }
 
     bool World::Ready()

@@ -712,9 +712,6 @@ namespace trinity::gui
         if (ui::Option(LOC("Instant Clear Weather"), LOC("Immediately disperses rain, storms, and heavy fog.")))
         {
             st.forceClearSky = true;
-            st.rainIntensity = 0.0f;
-            st.snowIntensity = 0.0f;
-            st.dustIntensity = 0.0f;
             st.clearDistantFog = true;
             st.weatherPreset = 1;
             game::World::SetWeatherPreset(1);
@@ -722,15 +719,6 @@ namespace trinity::gui
             changed = true;
             ui::Toast(LOC("Atmosphere cleared"));
         }
-
-        // Active Weather Intensity Sliders (Hooked via native engine getters)
-        changed |= ui::FloatOption(LOC("Rain Intensity"), &st.rainIntensity, 0.0f, 1.0f, 0.05f, 0.0f, "%.2f", LOC("Adjust rainfall density and wetness."));
-        changed |= ui::FloatOption(LOC("Snow Intensity"), &st.snowIntensity, 0.0f, 1.0f, 0.05f, 0.0f, "%.2f", LOC("Adjust snowfall and winter blizzard intensity."));
-        changed |= ui::FloatOption(LOC("Dust / Sandstorm"), &st.dustIntensity, 0.0f, 1.0f, 0.05f, 0.0f, "%.2f", LOC("Adjust desert dust and sandstorm particles."));
-
-        // Wind Multipliers
-        changed |= ui::FloatOption(LOC("Wind Multiplier"), &st.windMultiplier, 0.0f, 5.0f, 0.1f, 1.0f, "%.2fx", LOC("Scales ambient wind force and storm particles."));
-        changed |= ui::Toggle(LOC("No Wind"), &st.noWind, LOC("Calms all environmental wind and dust to complete stillness."));
 
         static const char* s_weathers[] = {
             "Dynamic (Game Default)",
