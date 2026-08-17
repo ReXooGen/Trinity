@@ -1247,6 +1247,9 @@ namespace trinity::game
     inline constexpr const char* kSig_WeatherDust =
         "48 8B 41 ?? 41 B8 40 00 00 00 48 85 C0 41 B9 60 01 00 00 48 8D 50 18 B8 CC 01 00 00 49 0F 44 D0";
 
+    inline constexpr const char* kSig_WindPack =
+        "48 89 5C 24 08 57 48 83 EC 30 48 8B 01 48 8B D9 48 85 C0 48 8B FA B9 40 00 00 00 4C 8D 40 18 4C 0F 44 C1";
+
     // Safe EnvManager resolution and cloud/atmosphere nodes in TU 1.18.00+:
     inline constexpr const char* kSig_EnvManager =
         "48 8B 0D ?? ?? ?? ?? 48 8B 01 FF 50 40 48 8B 88 F0 0E 00 00";

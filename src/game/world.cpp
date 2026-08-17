@@ -207,7 +207,7 @@ namespace trinity::game
             if (st.dustIntensity > 0.001f)
             {
                 float mul = (st.windMultiplier > 0.01f ? st.windMultiplier : 1.0f);
-                return _mm_set_ss(st.dustIntensity * mul);
+                return _mm_set_ss(st.dustIntensity * 15.0f * mul);
             }
 
             if (oGetDustIntensity)
@@ -228,6 +228,77 @@ namespace trinity::game
                 }
             }
             return _mm_set_ss(0.0f);
+        }
+
+        // --- Wind & Cloud/Fog Pack Hook (Shader pipeline parameters) ---
+        using WindPack_t = void(__fastcall*)(void* windNodePtr, float* packedOut);
+        static WindPack_t oWindPack = nullptr;
+        static void* g_windPackTarget = nullptr;
+
+        void __fastcall hkWindPack(void* windNodePtr, float* packedOut)
+        {
+            if (oWindPack)
+            {
+                __try
+                {
+                    oWindPack(windNodePtr, packedOut);
+                }
+                __except (EXCEPTION_EXECUTE_HANDLER)
+                {
+                    return;
+                }
+            }
+
+            if (!packedOut || reinterpret_cast<uintptr_t>(packedOut) < kMinPointer)
+                return;
+
+            __try
+            {
+                const State& st = State::Get();
+                if (st.forceClearSky)
+                {
+                    packedOut[0x1B] = 0.0f; // Cloud amount
+                    packedOut[0x11] = 0.0f; // Fog density
+                    packedOut[0x17] = 0.0f;
+                    return;
+                }
+
+                if (st.clearDistantFog)
+                {
+                    packedOut[0x11] = 0.0f;
+                    packedOut[0x17] = 0.0f;
+                }
+                else
+                {
+                    if (st.fogA != 1.0f) packedOut[0x11] *= st.fogA;
+                    if (st.fogB != 1.0f) packedOut[0x17] *= st.fogB;
+                }
+
+                if (st.cloudThick != 1.0f)
+                {
+                    packedOut[0x1B] *= st.cloudThick;
+                    packedOut[0x32] *= st.cloudThick;
+                }
+
+                if (st.cloudTop != 1.0f)
+                {
+                    packedOut[0x2F] *= st.cloudTop;
+                }
+
+                if (st.cloudBase != 1.0f)
+                {
+                    packedOut[0x30] *= st.cloudBase;
+                }
+
+                if (st.cloudScrollSpeed != 1.0f)
+                {
+                    packedOut[0x23] *= st.cloudScrollSpeed;
+                    packedOut[0x24] *= st.cloudScrollSpeed;
+                }
+            }
+            __except (EXCEPTION_EXECUTE_HANDLER)
+            {
+            }
         }
 
         // --- Safe Weather & Atmosphere discovery (Non-hooking field controller) ---
@@ -403,6 +474,9 @@ namespace trinity::game
         mem::InstallHook("world: dust intensity", kSig_WeatherDust,
                          "Dust control disabled", hkGetDustIntensity,
                          &oGetDustIntensity, &g_dustIntensityTarget);
+        mem::InstallHook("world: wind pack", kSig_WindPack,
+                         "Cloud and Fog control disabled", hkWindPack,
+                         &oWindPack, &g_windPackTarget);
 
         // Safe EnvManager pointer resolution for Atmosphere & Weather (Zero hooks)
         {
@@ -604,9 +678,11 @@ namespace trinity::game
         mem::RemoveHook(&g_rainIntensityTarget);
         mem::RemoveHook(&g_snowIntensityTarget);
         mem::RemoveHook(&g_dustIntensityTarget);
+        mem::RemoveHook(&g_windPackTarget);
         oGetRainIntensity = nullptr;
         oGetSnowIntensity = nullptr;
         oGetDustIntensity = nullptr;
+        oWindPack = nullptr;
 
         // Unhook the field-time tick (freeze) and forget the clock globals.
         mem::RemoveHook(&g_fieldTimeTickTarget);
