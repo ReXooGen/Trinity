@@ -147,15 +147,30 @@ namespace trinity::game
         }
 
         bool IsHealthType(int32_t t)  { return t == StatType_Health; }
-        // Both stamina-typed gauges: 17 (a stamina meter) and 20 (the gauge the
-        // sprint gate actually consumes). Pinning both keeps the bar full.
-        bool IsStaminaType(int32_t t) { return t == StatType_Stamina || t == StatType_SprintSt ||
-                                               t == StatType_StaminaPool117; }
+        // Stamina-typed gauges for player and mount:
+        // 17 (stamina meter), 18 (mount spirit/energy), 19 (mount gallop gauge),
+        // 20 (sprint gate), 22 (authoritative stamina pool).
+        bool IsStaminaType(int32_t t) {
+            return t == StatType_Stamina || t == StatType_Spirit || t == StatType_MountSprint ||
+                   t == StatType_SprintSt || t == StatType_StaminaPool117;
+        }
         // Both spirit-typed gauges: 18 (an internal meter) and 21 (the pool the
         // HUD bar and skill spend actually draw from). Pinning both keeps the
         // displayed bar full, mirroring the stamina/sprint-gauge split above.
         bool IsSpiritType(int32_t t)  { return t == StatType_Spirit || t == StatType_SpiritPool ||
                                                t == StatType_SpiritPool117; }
+
+        uint8_t GetOwnerTag(uintptr_t owner)
+        {
+            uint64_t td = 0;
+            uint8_t tag = 0;
+            if (Read64(owner + kOff_Owner_TypeDesc, &td) && td >= kMinPointer &&
+                Read8(static_cast<uintptr_t>(td) + 1, &tag))
+            {
+                return tag;
+            }
+            return 0;
+        }
 
         // True if `e` is a member of one of the resolved player sets (a tiny
         // linear scan; a fresh resolve keeps each set to just the live bodies').
@@ -192,10 +207,8 @@ namespace trinity::game
         // secondary protagonist and would slip past a tag-only test.
         bool IsPlayerClass(uintptr_t owner)
         {
-            uint64_t td = 0;
-            uint8_t tag = 0;
-            return Read64(owner + kOff_Owner_TypeDesc, &td) && td >= kMinPointer &&
-                   Read8(static_cast<uintptr_t>(td) + 1, &tag) && ((tag - 1) & 0xF7) == 0;
+            const uint8_t tag = GetOwnerTag(owner);
+            return ((tag - 1) & 0xF7) == 0;
         }
 
         // The player's resolved identity/stat chain for one tick.
@@ -323,41 +336,44 @@ namespace trinity::game
                 SelfChain c;
                 if (!WalkSelfChain(owner, &c)) continue;
 
-                uint64_t vt = 0;
-                Read64(owner, &vt);
-                const bool isPlayer = (vt == anchorVt);
+                const uint8_t tag = GetOwnerTag(owner);
+                const bool isPlayer = (tag == 1 || tag == 4 || tag == 5);
+                const bool isMount = (tag == 6);
 
-                if (isPlayer && nPlayers < kMaxPlayers)
+                if (isPlayer && nPlayers < kMaxPartyPlayers)
                 {
                     nextHp[nPlayers] = c.statArray;
                     nextActors[nPlayers] = c.actor;
                     nextTargets[nPlayers] = c.targetOwner;
                     ++nPlayers;
-                }
 
-                // The stat entries form one contiguous 0x90-stride array with
-                // health first; scan it and record every stamina gauge (type 17 /
-                // sprint type 20 / pool 22) for player AND active mount, and spirit gauge
-                // (type 18 / pool type 21 / pool 23) for players.
-                for (int k = 1; k < kStatArray_ScanEntries; ++k)
-                {
-                    const uintptr_t e = c.statArray + k * kSizeof_StatEntry;
-                    int32_t stt = 0;
-                    if (!StatEntryType(e, &stt)) continue;
-                    if (IsStaminaType(stt))
+                    for (int k = 1; k < kStatArray_ScanEntries; ++k)
                     {
-                        if (isPlayer)
+                        const uintptr_t e = c.statArray + k * kSizeof_StatEntry;
+                        int32_t stt = 0;
+                        if (!StatEntryType(e, &stt)) continue;
+                        if (stt == StatType_Stamina || stt == StatType_SprintSt || stt == StatType_StaminaPool117)
                         {
                             if (nStam < kMaxStatEntries) nextStam[nStam++] = e;
                         }
-                        else
+                        else if (IsSpiritType(stt))
+                        {
+                            if (nSpir < kMaxStatEntries) nextSpir[nSpir++] = e;
+                        }
+                    }
+                }
+                else if (isMount || (!isPlayer && tag != 0))
+                {
+                    // Mount stamina gauges (type 17, 18, 19, 20, 22)
+                    for (int k = 1; k < kStatArray_ScanEntries; ++k)
+                    {
+                        const uintptr_t e = c.statArray + k * kSizeof_StatEntry;
+                        int32_t stt = 0;
+                        if (!StatEntryType(e, &stt)) continue;
+                        if (IsStaminaType(stt))
                         {
                             if (nMountStam < kMaxStatEntries) nextMountStam[nMountStam++] = e;
                         }
-                    }
-                    else if (isPlayer && IsSpiritType(stt))
-                    {
-                        if (nSpir < kMaxStatEntries) nextSpir[nSpir++] = e;
                     }
                 }
             }
@@ -515,7 +531,15 @@ namespace trinity::game
 
             if ((st.godMode || (isPlayerHp && Teleport::IsProtected())) && isPlayerHp) PinEntry(e);
             if (st.infStamina && InSet(g_stamEntries, kMaxStatEntries, e)) PinEntry(e);
-            if (st.infMountStamina && InSet(g_mountStamEntries, kMaxStatEntries, e)) PinEntry(e);
+            if (st.infMountStamina)
+            {
+                int32_t t = 0;
+                if (InSet(g_mountStamEntries, kMaxStatEntries, e) ||
+                    (StatEntryType(e, &t) && (t == StatType_MountSprint || t == StatType_SprintSt)))
+                {
+                    PinEntry(e);
+                }
+            }
             if (st.infSpirit  && InSet(g_spiritEntries, kMaxStatEntries, e)) PinEntry(e);
 
             return result;

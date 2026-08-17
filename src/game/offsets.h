@@ -91,9 +91,10 @@ namespace trinity::game
     // the attribute enum index). Confirmed against this build.
     enum StatType : int32_t
     {
-        StatType_Health   = 0,
-        StatType_Stamina  = 17, // a stamina-typed gauge, but NOT the sprint one
-        StatType_Spirit   = 18, // internal spirit gauge - NOT the HUD bar
+        StatType_Health      = 0,
+        StatType_Stamina     = 17, // a stamina-typed gauge, but NOT the sprint one
+        StatType_Spirit      = 18, // internal spirit / mount energy gauge
+        StatType_MountSprint = 19, // authoritative mount/horse gallop & sprint gauge
         // The gauge that actually depletes while sprinting. Found empirically:
         // it was the only array slot decreasing during a sprint (base 120000,
         // draining ~7000/s), and unlike the others it carries a real cap.
