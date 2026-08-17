@@ -506,6 +506,32 @@ namespace trinity::game
                     PinEntry(g_spiritEntries[i].load(std::memory_order_relaxed));
             }
 
+            if (st.noMountCooldown)
+            {
+                for (uint32_t i = 0; i < count; ++i)
+                {
+                    uint64_t ch = 0;
+                    if (!Read64(static_cast<uintptr_t>(data) + 8ull * i, &ch) || ch < kMinPointer) continue;
+                    uint64_t vt = 0;
+                    if (Read64(ch, &vt) && vt >= kMinPointer)
+                    {
+                        uint64_t fn1 = 0, fn2 = 0;
+                        if (Read64(vt + 0x298, &fn1) && fn1 >= kMinPointer)
+                        {
+                            using ResetCallCooltime_t = void(__fastcall*)(void*);
+                            auto pfn = reinterpret_cast<ResetCallCooltime_t>(fn1);
+                            __try { pfn(reinterpret_cast<void*>(ch)); } __except (EXCEPTION_EXECUTE_HANDLER) {}
+                        }
+                        if (Read64(vt + 0x2A0, &fn2) && fn2 >= kMinPointer && fn2 != fn1)
+                        {
+                            using ResetCallCooltime_t = void(__fastcall*)(void*);
+                            auto pfn = reinterpret_cast<ResetCallCooltime_t>(fn2);
+                            __try { pfn(reinterpret_cast<void*>(ch)); } __except (EXCEPTION_EXECUTE_HANDLER) {}
+                        }
+                    }
+                }
+            }
+
             // Log only when discovery changes, so the console shows whether
             // the player chain and gauge typing are healthy without frame spam.
             static int s_lastPlayers = -1, s_lastStam = -1, s_lastSpir = -1;

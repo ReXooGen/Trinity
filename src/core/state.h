@@ -45,6 +45,7 @@ namespace trinity
         bool godMode         = false;
         bool infStamina      = false;
         bool infMountStamina = false;
+        bool noMountCooldown = false;
         bool infSpirit       = false;
 
         // Battle-damage multipliers (player.cpp). Applied to the signed HP

@@ -79,6 +79,7 @@ namespace trinity
             else if (!strcmp(key, "godMode"))             vals.godMode             = atoi(val) != 0;
             else if (!strcmp(key, "infStamina"))          vals.infStamina          = atoi(val) != 0;
             else if (!strcmp(key, "infMountStamina"))     vals.infMountStamina     = atoi(val) != 0;
+            else if (!strcmp(key, "noMountCooldown"))     vals.noMountCooldown     = atoi(val) != 0;
             else if (!strcmp(key, "infSpirit"))           vals.infSpirit           = atoi(val) != 0;
             else if (!strcmp(key, "dmgOutMult"))          vals.dmgOutMult          = strtof(val, nullptr);
             else if (!strcmp(key, "dmgInMult"))           vals.dmgInMult           = strtof(val, nullptr);
@@ -275,6 +276,7 @@ namespace trinity
                 "godMode=%d\n"
                 "infStamina=%d\n"
                 "infMountStamina=%d\n"
+                "noMountCooldown=%d\n"
                 "infSpirit=%d\n"
                 "dmgOutMult=%.3f\n"
                 "dmgInMult=%.3f\n"
@@ -326,6 +328,7 @@ namespace trinity
                 st.godMode ? 1 : 0,
                 st.infStamina ? 1 : 0,
                 st.infMountStamina ? 1 : 0,
+                st.noMountCooldown ? 1 : 0,
                 st.infSpirit ? 1 : 0,
                 st.dmgOutMult,
                 st.dmgInMult,
@@ -394,6 +397,7 @@ namespace trinity
         st.godMode              = def.godMode;
         st.infStamina           = def.infStamina;
         st.infMountStamina      = def.infMountStamina;
+        st.noMountCooldown      = def.noMountCooldown;
         st.infSpirit            = def.infSpirit;
         st.dmgOutMult           = def.dmgOutMult;
         st.dmgInMult            = def.dmgInMult;
