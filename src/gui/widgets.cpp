@@ -409,11 +409,6 @@ namespace trinity::ui
             const float st = step * (g_nav.adjustBoost ? 10.0f : 1.0f);
             if (r.left)  { *value -= st; changed = true; }
             if (r.right) { *value += st; changed = true; }
-            if (r.activated && !g_nav.selectPad)
-            {
-                EditBegin(value);
-                editing = true;
-            }
             if (r.clear)
             {
                 g_nav.clear = false;

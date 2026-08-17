@@ -175,19 +175,29 @@ namespace trinity::game
                     return env;
 
                 uintptr_t ws = 0;
-                if (!mem::ReadPtr(env.entity + 0xEE0, &ws) || ws < kMinPointer)
-                    return env;
+                if (!mem::ReadPtr(env.entity + 0xEF0, &ws) || ws < kMinPointer)
+                {
+                    if (!mem::ReadPtr(env.entity + 0xEE0, &ws) || ws < kMinPointer)
+                        mem::ReadPtr(env.entity + 0xED8, &ws);
+                }
+                if (ws < kMinPointer) return env;
 
                 env.weatherState = ws;
 
                 uintptr_t result = 0;
-                if (!mem::ReadPtr(ws + 0x50, &result) || result < kMinPointer)
-                    return env;
+                if (!mem::ReadPtr(ws + 0x60, &result) || result < kMinPointer)
+                {
+                    if (!mem::ReadPtr(ws + 0x50, &result) || result < kMinPointer)
+                        mem::ReadPtr(ws + 0x20, &result);
+                }
 
-                mem::ReadPtr(result + 0x18, &env.cloudNode);
-                mem::ReadPtr(result + 0x20, &env.windNode);
+                if (result >= kMinPointer)
+                {
+                    mem::ReadPtr(result + 0x18, &env.cloudNode);
+                    mem::ReadPtr(result + 0x20, &env.windNode);
+                }
 
-                env.valid = (env.cloudNode >= kMinPointer);
+                env.valid = (env.cloudNode >= kMinPointer || env.weatherState >= kMinPointer);
             }
             __except (EXCEPTION_EXECUTE_HANDLER)
             {
@@ -594,12 +604,80 @@ namespace trinity::game
 
     bool World::SetWeatherPreset(int presetId)
     {
-        State::Get().weatherPreset = presetId;
-        const uintptr_t mgr = ResolveTodManager();
-        if (mgr)
+        State& st = State::Get();
+        st.weatherPreset = presetId;
+
+        switch (presetId)
         {
-            LOG("world: weather preset set to %d", presetId);
+        case 1: // Clear Sky (Sunny)
+            st.forceClearSky   = true;
+            st.clearDistantFog = true;
+            st.rainIntensity   = 0.0f;
+            st.dustIntensity   = 0.0f;
+            st.cloudThick      = 0.0f;
+            st.windMultiplier  = 1.0f;
+            st.noWind          = false;
+            break;
+        case 2: // Overcast (Cloudy)
+            st.forceClearSky   = false;
+            st.clearDistantFog = false;
+            st.rainIntensity   = 0.0f;
+            st.dustIntensity   = 0.0f;
+            st.cloudThick      = 1.80f;
+            st.fogA            = 1.20f;
+            st.fogB            = 1.10f;
+            st.windMultiplier  = 1.20f;
+            st.noWind          = false;
+            break;
+        case 3: // Rainy (Light Rain)
+            st.forceClearSky   = false;
+            st.clearDistantFog = false;
+            st.rainIntensity   = 0.50f;
+            st.dustIntensity   = 0.0f;
+            st.cloudThick      = 1.60f;
+            st.fogA            = 1.30f;
+            st.fogB            = 1.20f;
+            st.windMultiplier  = 1.50f;
+            st.noWind          = false;
+            break;
+        case 4: // Thunderstorm (Storm)
+            st.forceClearSky   = false;
+            st.clearDistantFog = false;
+            st.rainIntensity   = 1.00f;
+            st.dustIntensity   = 0.0f;
+            st.cloudThick      = 2.00f;
+            st.fogA            = 1.50f;
+            st.fogB            = 1.40f;
+            st.windMultiplier  = 2.50f;
+            st.windGust        = 2.00f;
+            st.noWind          = false;
+            break;
+        case 5: // Dense Fog / Mist
+            st.forceClearSky   = false;
+            st.clearDistantFog = false;
+            st.rainIntensity   = 0.0f;
+            st.dustIntensity   = 0.0f;
+            st.cloudThick      = 1.50f;
+            st.fogA            = 2.00f;
+            st.fogB            = 2.00f;
+            st.windMultiplier  = 0.50f;
+            st.noWind          = false;
+            break;
+        default: // 0 = Dynamic (Game Default)
+            st.forceClearSky   = false;
+            st.clearDistantFog = false;
+            st.rainIntensity   = 0.0f;
+            st.dustIntensity   = 0.0f;
+            st.cloudThick      = 1.0f;
+            st.fogA            = 1.0f;
+            st.fogB            = 1.0f;
+            st.windMultiplier  = 1.0f;
+            st.windGust        = 1.0f;
+            st.noWind          = false;
+            break;
         }
+
+        LOG("world: weather preset set to %d", presetId);
         return true;
     }
 

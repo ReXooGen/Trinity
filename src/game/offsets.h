@@ -1239,7 +1239,7 @@ namespace trinity::game
     // --- Weather & Atmosphere (world.cpp) ------------------------------------
     // Safe non-hooking EnvManager resolution and cloud/atmosphere nodes in TU 1.18.00+:
     inline constexpr const char* kSig_EnvManager =
-        "48 8B 0D ?? ?? ?? ?? 48 8B 01 FF 50 40 48 8B 88 ?? 0E 00 00";
+        "48 8B 0D ?? ?? ?? ?? 48 8B 01 FF 50 40 48 8B 88 F0 0E 00 00";
     inline constexpr uintptr_t kOff_EnvManager_Mov = 3;
     inline constexpr int       kLen_EnvManager_Mov = 7;
 
