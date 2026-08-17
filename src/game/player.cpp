@@ -151,13 +151,14 @@ namespace trinity::game
         bool IsPlayerStaminaType(int32_t t) {
             return t == StatType_Stamina || t == StatType_SprintSt || t == StatType_StaminaPool117;
         }
-        // Mount & Horse stamina gauges: 19 (authoritative mount sprint/gallop), 17, 18, 20, 22.
+        // Mount & Horse & Wyvern stamina gauges: 19 (gallop/sprint), 48 (wyvern fire breath / special ability), 17, 18, 20, 22.
         bool IsMountStaminaType(int32_t t) {
-            return t == StatType_MountSprint || t == StatType_Stamina || t == StatType_Spirit ||
+            return t == StatType_MountSprint || t == StatType_MountAbility ||
+                   t == StatType_Stamina || t == StatType_Spirit ||
                    t == StatType_SprintSt || t == StatType_StaminaPool117;
         }
         bool IsStaminaType(int32_t t) {
-            return IsPlayerStaminaType(t) || (t == StatType_MountSprint);
+            return IsPlayerStaminaType(t) || (t == StatType_MountSprint) || (t == StatType_MountAbility);
         }
         // Both spirit-typed gauges: 18 (an internal meter) and 21 (the pool the
         // HUD bar and skill spend actually draw from). Pinning both keeps the
@@ -360,7 +361,7 @@ namespace trinity::game
                         {
                             if (nStam < kMaxStatEntries) nextStam[nStam++] = e;
                         }
-                        else if (stt == StatType_MountSprint)
+                        else if (stt == StatType_MountSprint || stt == StatType_MountAbility)
                         {
                             if (nMountStam < kMaxStatEntries) nextMountStam[nMountStam++] = e;
                         }
@@ -413,7 +414,7 @@ namespace trinity::game
                         {
                             if (nStam < kMaxStatEntries) nextStam[nStam++] = e;
                         }
-                        else if (stt == StatType_MountSprint)
+                        else if (stt == StatType_MountSprint || stt == StatType_MountAbility)
                         {
                             if (nMountStam < kMaxStatEntries) nextMountStam[nMountStam++] = e;
                         }
@@ -561,7 +562,7 @@ namespace trinity::game
             {
                 int32_t t = 0;
                 if (InSet(g_mountStamEntries, kMaxStatEntries, e) ||
-                    (StatEntryType(e, &t) && t == StatType_MountSprint))
+                    (StatEntryType(e, &t) && (t == StatType_MountSprint || t == StatType_MountAbility)))
                 {
                     PinEntry(e);
                 }

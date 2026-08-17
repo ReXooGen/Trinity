@@ -110,6 +110,7 @@ namespace trinity::game
         // entries remain full and are internal/secondary gauges on this build.
         StatType_StaminaPool117 = 22,
         StatType_SpiritPool117  = 23,
+        StatType_MountAbility   = 48, // Wyvern/Dragon fire breath and mount special ability gauge
     };
     // NOTE (movement speed): the player stat array also carries two "rate"
     // entries (type 30 and type 74) that rest at 100000 == 1.0x, but writing
