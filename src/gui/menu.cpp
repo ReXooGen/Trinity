@@ -706,28 +706,7 @@ namespace trinity::gui
 
         bool changed = false;
 
-        changed |= ui::Toggle(LOC("Clear Distant Fog"), &st.clearDistantFog, LOC("Reduces thick distant fog blur for enhanced scenery and visibility."));
-        changed |= ui::Toggle(LOC("Force Clear Sky"), &st.forceClearSky, LOC("Forces constant clear sky with minimal cloud cover."));
-
-        if (ui::Option(LOC("Instant Clear Weather"), LOC("Immediately disperses rain, storms, and heavy fog.")))
-        {
-            st.forceClearSky = true;
-            st.clearDistantFog = true;
-            st.weatherPreset = 1;
-            game::World::SetWeatherPreset(1);
-            game::World::SetClearDistantFog(true);
-            changed = true;
-            ui::Toast(LOC("Atmosphere cleared"));
-        }
-
-        // Safe Live Atmosphere & Intensity Controls (Field-injection via EnvManager)
-        changed |= ui::FloatOption(LOC("Rain Intensity"), &st.rainIntensity, 0.0f, 1.0f, 0.05f, 0.0f, "%.2f", LOC("Adjust rainfall density and storm cloud thickness."));
-        changed |= ui::FloatOption(LOC("Dust / Sandstorm"), &st.dustIntensity, 0.0f, 1.0f, 0.05f, 0.0f, "%.2f", LOC("Adjust desert dust and sandstorm particles."));
-
-        // Wind Multipliers
-        changed |= ui::FloatOption(LOC("Wind Multiplier"), &st.windMultiplier, 0.0f, 5.0f, 0.1f, 1.0f, "%.2fx", LOC("Scales ambient wind force and storm particles."));
-        changed |= ui::Toggle(LOC("No Wind"), &st.noWind, LOC("Calms all environmental wind and dust to complete stillness."));
-
+        // 1. Weather Presets & Overrides
         static const char* s_weathers[] = {
             "Dynamic (Game Default)",
             "Clear Sky (Sunny)",
@@ -744,6 +723,40 @@ namespace trinity::gui
             changed = true;
             ui::Toast(LOC("Weather set to %s"), s_weathers[wIdx]);
         }
+
+        changed |= ui::Toggle(LOC("Clear Distant Fog"), &st.clearDistantFog, LOC("Reduces thick distant fog blur for enhanced scenery and visibility."));
+        changed |= ui::Toggle(LOC("Force Clear Sky"), &st.forceClearSky, LOC("Forces constant clear sky with minimal cloud cover."));
+
+        if (ui::Option(LOC("Instant Clear Weather"), LOC("Immediately disperses rain, storms, and heavy fog.")))
+        {
+            st.forceClearSky = true;
+            st.clearDistantFog = true;
+            st.weatherPreset = 1;
+            game::World::SetWeatherPreset(1);
+            game::World::SetClearDistantFog(true);
+            changed = true;
+            ui::Toast(LOC("Atmosphere cleared"));
+        }
+
+        // 2. Precipitation & Storm Intensities
+        changed |= ui::FloatOption(LOC("Rain Intensity"), &st.rainIntensity, 0.0f, 1.0f, 0.05f, 0.0f, "%.2f", LOC("Adjust rainfall density and storm clouds."));
+        changed |= ui::FloatOption(LOC("Dust / Sandstorm"), &st.dustIntensity, 0.0f, 1.0f, 0.05f, 0.0f, "%.2f", LOC("Adjust desert dust and sandstorm particles."));
+
+        // 3. Cloud Layer Controls
+        changed |= ui::FloatOption(LOC("Cloud Thickness"), &st.cloudThick, 0.0f, 2.0f, 0.05f, 1.0f, "%.2f", LOC("Controls cloud volume density and sky coverage."));
+        changed |= ui::FloatOption(LOC("Cloud Top Altitude"), &st.cloudTop, 0.1f, 2.0f, 0.05f, 1.0f, "%.2f", LOC("Adjusts top elevation ceiling of cloud formations."));
+        changed |= ui::FloatOption(LOC("Cloud Base Altitude"), &st.cloudBase, 0.1f, 2.0f, 0.05f, 1.0f, "%.2f", LOC("Adjusts lower boundary elevation of cloud bottoms."));
+        changed |= ui::FloatOption(LOC("Cloud Drift Speed"), &st.cloudScrollSpeed, 0.0f, 5.0f, 0.1f, 1.0f, "%.2fx", LOC("Scales motion speed of cloud layer drifting across the sky."));
+
+        // 4. Fog & Atmospheric Depth
+        changed |= ui::FloatOption(LOC("Fog Scattering (A)"), &st.fogA, 0.0f, 2.0f, 0.05f, 1.0f, "%.2f", LOC("Adjusts foreground fog density and light scattering."));
+        changed |= ui::FloatOption(LOC("Fog Horizon Blend (B)"), &st.fogB, 0.0f, 2.0f, 0.05f, 1.0f, "%.2f", LOC("Adjusts distant horizon fog and mountain mist blend."));
+
+        // 5. Environmental Wind & Turbulence
+        changed |= ui::FloatOption(LOC("Wind Speed Multiplier"), &st.windMultiplier, 0.0f, 5.0f, 0.1f, 1.0f, "%.2fx", LOC("Scales ambient wind force and environmental breeze."));
+        changed |= ui::FloatOption(LOC("Wind Gust Strength"), &st.windGust, 0.0f, 3.0f, 0.1f, 1.0f, "%.2f", LOC("Controls frequency and intensity of random wind gusts."));
+        changed |= ui::FloatOption(LOC("Turbulence Lift"), &st.windTurbLift, 0.0f, 3.0f, 0.1f, 1.0f, "%.2f", LOC("Controls vertical air currents and particle lift."));
+        changed |= ui::Toggle(LOC("No Wind"), &st.noWind, LOC("Calms all environmental wind and dust to complete stillness."));
 
         if (changed && st.autoSave)
             Settings::Save();

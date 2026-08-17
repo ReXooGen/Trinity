@@ -1256,6 +1256,18 @@ namespace trinity::game
         inline constexpr ptrdiff_t DUST_ADD        = 0x1A4;
     }
 
+    namespace WN {
+        inline constexpr ptrdiff_t DIR_X          = 0x18;
+        inline constexpr ptrdiff_t DIR_Z          = 0x1C;
+        inline constexpr ptrdiff_t TURB_DENS      = 0x60;
+        inline constexpr ptrdiff_t TURB_SCALE     = 0x64;
+        inline constexpr ptrdiff_t TURB_LIFT      = 0x68;
+        inline constexpr ptrdiff_t SPEED          = 0x88;
+        inline constexpr ptrdiff_t GUST           = 0x9C;
+        inline constexpr ptrdiff_t CLOUD_SCROLL_X = 0xD0;
+        inline constexpr ptrdiff_t CLOUD_SCROLL_Z = 0xD4;
+    }
+
     // --- Armor dye / material / repair-condition (dye.cpp) -------------------
     // The dyehouse system, fully RE'd 2026-07-17 from the server's own dye
     // transaction (IDB sub_257C330 - it logs "sql->dyeItem"):

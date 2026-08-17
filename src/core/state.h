@@ -112,23 +112,25 @@ namespace trinity
         bool  timeFrozen = false;
 
         // Weather & Atmosphere controls (world.cpp)
-        bool  forceClearSky   = false;
-        float rainIntensity   = 0.0f;  // 0.00 .. 1.00
-        float snowIntensity   = 0.0f;  // 0.00 .. 1.00
-        float dustIntensity   = 0.0f;  // 0.00 .. 1.00
-        float windMultiplier  = 1.0f;  // 0.00 .. 5.00
-        bool  noWind          = false;
+        bool  forceClearSky    = false;
+        float rainIntensity    = 0.0f;  // 0.00 .. 1.00
+        float snowIntensity    = 0.0f;  // 0.00 .. 1.00
+        float dustIntensity    = 0.0f;  // 0.00 .. 1.00
+        float windMultiplier   = 1.0f;  // 0.00 .. 5.00
+        float windGust         = 1.0f;  // 0.00 .. 3.00
+        float windTurbLift     = 1.0f;  // 0.00 .. 3.00
+        bool  noWind           = false;
 
-        float cloudAmount     = 1.0f;  // 0.00 .. 10.00
-        float cloudDensity    = 1.0f;  // 0.00 .. 5.00
-        float cloudHeight     = 1.0f;  // 0.00 .. 5.00
+        float cloudThick       = 1.0f;  // 0.00 .. 2.00
+        float cloudTop         = 1.0f;  // 0.00 .. 2.00
+        float cloudBase        = 1.0f;  // 0.00 .. 2.00
+        float cloudScrollSpeed = 1.0f;  // 0.00 .. 5.00
 
-        float fogDensity      = 1.0f;  // 0.00 .. 1.00
-        bool  clearDistantFog = false;
+        float fogA             = 1.0f;  // 0.00 .. 2.00
+        float fogB             = 1.0f;  // 0.00 .. 2.00
+        bool  clearDistantFog  = false;
 
-        float sunScale        = 1.0f;  // 0.50 .. 3.00
-        float moonScale       = 1.0f;  // 0.50 .. 3.00
-        int   weatherPreset   = 0;     // 0=Dynamic, 1=Clear, 2=Overcast, 3=Rain, 4=Storm, 5=Fog
+        int   weatherPreset    = 0;     // 0=Dynamic, 1=Clear, 2=Overcast, 3=Rain, 4=Storm, 5=Fog
 
         // Inventory-wide overrides (inventory.cpp). Unlike the quantity editor
         // these write into the game's own ItemInfo / InventoryInfo data

@@ -377,42 +377,87 @@ namespace trinity::game
 
         // Live Weather & Atmosphere parameter injection (Zero hooks, 100% crash-safe)
         const ResolvedWeatherEnv env = ResolveWeatherEnv();
-        if (env.valid && env.cloudNode)
+        if (env.valid)
         {
             __try
             {
-                if (st.clearDistantFog)
+                if (env.cloudNode)
                 {
-                    Write32(env.cloudNode + CN::FOG_A, FloatBits(0.0f));
-                    Write32(env.cloudNode + CN::FOG_B, FloatBits(0.0f));
-                }
-                if (st.forceClearSky)
-                {
-                    Write32(env.cloudNode + CN::FOG_A, FloatBits(0.0f));
-                    Write32(env.cloudNode + CN::FOG_B, FloatBits(0.0f));
-                    Write32(env.cloudNode + CN::STORM_THRESH, FloatBits(0.0f));
-                    Write32(env.cloudNode + CN::DUST_THRESH, FloatBits(0.0f));
-                    Write32(env.cloudNode + CN::CLOUD_THICK, FloatBits(0.0f));
-                }
-                else
-                {
-                    if (st.rainIntensity > 0.001f)
+                    if (st.clearDistantFog)
                     {
-                        Write32(env.cloudNode + CN::STORM_THRESH, FloatBits(st.rainIntensity));
-                        Write32(env.cloudNode + CN::CLOUD_THICK, FloatBits(Clamp(st.rainIntensity * 1.5f, 0.4f, 1.0f)));
+                        Write32(env.cloudNode + CN::FOG_A, FloatBits(0.0f));
+                        Write32(env.cloudNode + CN::FOG_B, FloatBits(0.0f));
                     }
-                    if (st.dustIntensity > 0.001f)
+                    else
                     {
-                        Write32(env.cloudNode + CN::DUST_BASE, FloatBits(st.dustIntensity * 5.0f));
-                        Write32(env.cloudNode + CN::DUST_THRESH, FloatBits(st.dustIntensity));
+                        if (st.fogA != 1.0f) Write32(env.cloudNode + CN::FOG_A, FloatBits(st.fogA));
+                        if (st.fogB != 1.0f) Write32(env.cloudNode + CN::FOG_B, FloatBits(st.fogB));
                     }
+
+                    if (st.forceClearSky)
+                    {
+                        Write32(env.cloudNode + CN::FOG_A, FloatBits(0.0f));
+                        Write32(env.cloudNode + CN::FOG_B, FloatBits(0.0f));
+                        Write32(env.cloudNode + CN::STORM_THRESH, FloatBits(0.0f));
+                        Write32(env.cloudNode + CN::DUST_THRESH, FloatBits(0.0f));
+                        Write32(env.cloudNode + CN::CLOUD_THICK, FloatBits(0.0f));
+                    }
+                    else
+                    {
+                        if (st.rainIntensity > 0.001f)
+                        {
+                            Write32(env.cloudNode + CN::STORM_THRESH, FloatBits(st.rainIntensity));
+                            Write32(env.cloudNode + CN::CLOUD_THICK, FloatBits(Clamp(st.rainIntensity * 1.5f, 0.4f, 1.0f)));
+                        }
+                        if (st.dustIntensity > 0.001f)
+                        {
+                            Write32(env.cloudNode + CN::DUST_BASE, FloatBits(st.dustIntensity * 5.0f));
+                            Write32(env.cloudNode + CN::DUST_THRESH, FloatBits(st.dustIntensity));
+                        }
+                        if (st.cloudThick != 1.0f && st.rainIntensity <= 0.001f)
+                        {
+                            Write32(env.cloudNode + CN::CLOUD_THICK, FloatBits(st.cloudThick));
+                        }
+                        if (st.cloudTop != 1.0f)
+                        {
+                            Write32(env.cloudNode + CN::CLOUD_TOP, FloatBits(st.cloudTop * 0.001f));
+                        }
+                        if (st.cloudBase != 1.0f)
+                        {
+                            Write32(env.cloudNode + CN::CLOUD_BASE, FloatBits(st.cloudBase * 0.001f));
+                        }
+                    }
+                }
+
+                if (env.windNode)
+                {
                     if (st.noWind)
                     {
-                        Write32(env.cloudNode + CN::DUST_WIND_SCALE, FloatBits(0.0f));
+                        Write32(env.windNode + WN::SPEED, FloatBits(0.0f));
+                        Write32(env.windNode + WN::GUST, FloatBits(0.0f));
+                        Write32(env.windNode + WN::TURB_LIFT, FloatBits(0.0f));
+                        if (env.cloudNode) Write32(env.cloudNode + CN::DUST_WIND_SCALE, FloatBits(0.0f));
                     }
-                    else if (st.windMultiplier > 0.01f && st.windMultiplier != 1.0f)
+                    else
                     {
-                        Write32(env.cloudNode + CN::DUST_WIND_SCALE, FloatBits(st.windMultiplier));
+                        if (st.windMultiplier != 1.0f)
+                        {
+                            Write32(env.windNode + WN::SPEED, FloatBits(st.windMultiplier * 2.0f));
+                            if (env.cloudNode) Write32(env.cloudNode + CN::DUST_WIND_SCALE, FloatBits(st.windMultiplier));
+                        }
+                        if (st.windGust != 1.0f)
+                        {
+                            Write32(env.windNode + WN::GUST, FloatBits(st.windGust * 1.5f));
+                        }
+                        if (st.windTurbLift != 1.0f)
+                        {
+                            Write32(env.windNode + WN::TURB_LIFT, FloatBits(st.windTurbLift));
+                        }
+                        if (st.cloudScrollSpeed != 1.0f)
+                        {
+                            Write32(env.windNode + WN::CLOUD_SCROLL_X, FloatBits(st.cloudScrollSpeed));
+                            Write32(env.windNode + WN::CLOUD_SCROLL_Z, FloatBits(st.cloudScrollSpeed));
+                        }
                     }
                 }
             }

@@ -101,14 +101,16 @@ namespace trinity
             else if (!strcmp(key, "snowIntensity"))       vals.snowIntensity       = strtof(val, nullptr);
             else if (!strcmp(key, "dustIntensity"))       vals.dustIntensity       = strtof(val, nullptr);
             else if (!strcmp(key, "windMultiplier"))      vals.windMultiplier      = strtof(val, nullptr);
+            else if (!strcmp(key, "windGust"))            vals.windGust            = strtof(val, nullptr);
+            else if (!strcmp(key, "windTurbLift"))        vals.windTurbLift        = strtof(val, nullptr);
             else if (!strcmp(key, "noWind"))              vals.noWind              = atoi(val) != 0;
-            else if (!strcmp(key, "cloudAmount"))         vals.cloudAmount         = strtof(val, nullptr);
-            else if (!strcmp(key, "cloudDensity"))        vals.cloudDensity        = strtof(val, nullptr);
-            else if (!strcmp(key, "cloudHeight"))         vals.cloudHeight         = strtof(val, nullptr);
-            else if (!strcmp(key, "fogDensity"))          vals.fogDensity          = strtof(val, nullptr);
+            else if (!strcmp(key, "cloudThick"))          vals.cloudThick          = strtof(val, nullptr);
+            else if (!strcmp(key, "cloudTop"))            vals.cloudTop            = strtof(val, nullptr);
+            else if (!strcmp(key, "cloudBase"))           vals.cloudBase           = strtof(val, nullptr);
+            else if (!strcmp(key, "cloudScrollSpeed"))    vals.cloudScrollSpeed    = strtof(val, nullptr);
+            else if (!strcmp(key, "fogA"))                vals.fogA                = strtof(val, nullptr);
+            else if (!strcmp(key, "fogB"))                vals.fogB                = strtof(val, nullptr);
             else if (!strcmp(key, "clearDistantFog"))     vals.clearDistantFog     = atoi(val) != 0;
-            else if (!strcmp(key, "sunScale"))            vals.sunScale            = strtof(val, nullptr);
-            else if (!strcmp(key, "moonScale"))           vals.moonScale           = strtof(val, nullptr);
             else if (!strcmp(key, "weatherPreset"))       vals.weatherPreset       = atoi(val);
             else if (!strcmp(key, "showFps"))             vals.showFps             = atoi(val) != 0;
             else if (!strcmp(key, "fileLogging"))         vals.fileLogging         = atoi(val) != 0;
@@ -293,14 +295,16 @@ namespace trinity
                 "snowIntensity=%.3f\n"
                 "dustIntensity=%.3f\n"
                 "windMultiplier=%.3f\n"
+                "windGust=%.3f\n"
+                "windTurbLift=%.3f\n"
                 "noWind=%d\n"
-                "cloudAmount=%.3f\n"
-                "cloudDensity=%.3f\n"
-                "cloudHeight=%.3f\n"
-                "fogDensity=%.3f\n"
+                "cloudThick=%.3f\n"
+                "cloudTop=%.3f\n"
+                "cloudBase=%.3f\n"
+                "cloudScrollSpeed=%.3f\n"
+                "fogA=%.3f\n"
+                "fogB=%.3f\n"
                 "clearDistantFog=%d\n"
-                "sunScale=%.3f\n"
-                "moonScale=%.3f\n"
                 "weatherPreset=%d\n"
                 "showFps=%d\n"
                 "fileLogging=%d\n"
@@ -341,14 +345,16 @@ namespace trinity
                 st.snowIntensity,
                 st.dustIntensity,
                 st.windMultiplier,
+                st.windGust,
+                st.windTurbLift,
                 st.noWind ? 1 : 0,
-                st.cloudAmount,
-                st.cloudDensity,
-                st.cloudHeight,
-                st.fogDensity,
+                st.cloudThick,
+                st.cloudTop,
+                st.cloudBase,
+                st.cloudScrollSpeed,
+                st.fogA,
+                st.fogB,
                 st.clearDistantFog ? 1 : 0,
-                st.sunScale,
-                st.moonScale,
                 st.weatherPreset,
                 st.showFps ? 1 : 0,
                 st.fileLogging ? 1 : 0,
