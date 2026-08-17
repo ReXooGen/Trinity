@@ -20,9 +20,7 @@ namespace trinity::game
     using mem::Read64;
     using mem::Read32;
     using mem::Read8;
-    using mem::ReadFloat;
     using mem::Write64;
-    using mem::WriteFloat;
 
     namespace
     {
@@ -106,12 +104,11 @@ namespace trinity::game
         // stat writes.
         constexpr int kMaxPlayers      = 8;
         constexpr int kMaxPartyPlayers = 3;
-        constexpr int kMaxGaugePerType = 3;                    // stamina/spirit gauges per body
+        constexpr int kMaxGaugePerType = 16;                   // stamina/spirit gauges per body
         constexpr int kMaxStatEntries  = kMaxPlayers * kMaxGaugePerType;
 
         std::atomic<uintptr_t> g_hpEntries[kMaxPlayers]{};
         std::atomic<uintptr_t> g_stamEntries[kMaxStatEntries]{};
-        std::atomic<uintptr_t> g_mountStamEntries[kMaxStatEntries]{};
         std::atomic<uintptr_t> g_spiritEntries[kMaxStatEntries]{};
         // Battle-damage identities, one per tracked player. A player's actor is
         // the attacker side of an outgoing hit; its vital/target owner (the
@@ -149,36 +146,17 @@ namespace trinity::game
         }
 
         bool IsHealthType(int32_t t)  { return t == StatType_Health; }
-        // On-foot Player stamina gauges: 17 (stamina meter), 20 (sprint gate), 22 (authoritative stamina pool).
-        bool IsPlayerStaminaType(int32_t t) {
-            return t == StatType_Stamina || t == StatType_SprintSt || t == StatType_StaminaPool117;
-        }
-        // Mount & Horse & Wyvern stamina and durability gauges: 19 (gallop/sprint), 48 (wyvern fire breath / special ability), 17, 18, 20, 22, and all positive gauge types.
-        bool IsMountStaminaType(int32_t t) {
-            return t == StatType_MountSprint || t == StatType_MountAbility ||
-                   t == StatType_Stamina || t == StatType_Spirit ||
-                   t == StatType_SprintSt || t == StatType_StaminaPool117 ||
-                   (t > 0 && t <= 100);
-        }
-        bool IsStaminaType(int32_t t) {
-            return IsPlayerStaminaType(t) || IsMountStaminaType(t);
-        }
-        // Both spirit-typed gauges: 18 (an internal meter) and 21 (the pool the
-        // HUD bar and skill spend actually draw from). Pinning both keeps the
-        // displayed bar full, mirroring the stamina/sprint-gauge split above.
-        bool IsSpiritType(int32_t t)  { return t == StatType_Spirit || t == StatType_SpiritPool ||
-                                               t == StatType_SpiritPool117; }
 
-        uint8_t GetOwnerTag(uintptr_t owner)
-        {
-            uint64_t td = 0;
-            uint8_t tag = 0;
-            if (Read64(owner + kOff_Owner_TypeDesc, &td) && td >= kMinPointer &&
-                Read8(static_cast<uintptr_t>(td) + 1, &tag))
-            {
-                return tag;
-            }
-            return 0;
+        // Match authoritative stamina gauges in Crimson Desert (Sprint 20, Pool 22, Mount Gallop/Flight 19).
+        // Strictly purged 17 & 18 (internal Heat/Combustion gauges) and 48 (Fire Breath) to completely prevent character auto-ignition.
+        bool IsStaminaType(int32_t t) {
+            return t == StatType_SprintSt || t == StatType_StaminaPool117 ||
+                   t == StatType_MountSprint || t == 19 || t == 20 || t == 22;
+        }
+
+        // Both spirit-typed HUD gauges: 21 (SpiritPool) and 23 (SpiritPool117)
+        bool IsSpiritType(int32_t t)  {
+            return t == StatType_SpiritPool || t == StatType_SpiritPool117;
         }
 
         // True if `e` is a member of one of the resolved player sets (a tiny
@@ -216,8 +194,10 @@ namespace trinity::game
         // secondary protagonist and would slip past a tag-only test.
         bool IsPlayerClass(uintptr_t owner)
         {
-            const uint8_t tag = GetOwnerTag(owner);
-            return ((tag - 1) & 0xF7) == 0;
+            uint64_t td = 0;
+            uint8_t tag = 0;
+            return Read64(owner + kOff_Owner_TypeDesc, &td) && td >= kMinPointer &&
+                   Read8(static_cast<uintptr_t>(td) + 1, &tag) && ((tag - 1) & 0xF7) == 0;
         }
 
         // The player's resolved identity/stat chain for one tick.
@@ -279,7 +259,6 @@ namespace trinity::game
             for (int i = 0; i < kMaxStatEntries; ++i)
             {
                 g_stamEntries[i].store(0, std::memory_order_release);
-                g_mountStamEntries[i].store(0, std::memory_order_release);
                 g_spiritEntries[i].store(0, std::memory_order_release);
             }
         }
@@ -291,7 +270,7 @@ namespace trinity::game
         // (which gate on these same flags first) simply never look at the sets.
         bool AnyStatFeatureActive(const State& st)
         {
-            return st.godMode || st.infStamina || st.infMountStamina || st.noMountCooldown || st.infSpirit ||
+            return st.godMode || st.infStamina || st.infMountStamina || st.infSpirit ||
                    st.dmgInMult != 1.0f || st.dmgOutMult != 1.0f ||
                    Teleport::IsProtected();
         }
@@ -334,59 +313,31 @@ namespace trinity::game
             uintptr_t nextActors[kMaxPlayers]{};
             uintptr_t nextTargets[kMaxPlayers]{};
             uintptr_t nextStam[kMaxStatEntries]{};
-            uintptr_t nextMountStam[kMaxStatEntries]{};
             uintptr_t nextSpir[kMaxStatEntries]{};
-            int nPlayers = 0, nStam = 0, nMountStam = 0, nSpir = 0;
-            for (uint32_t i = 0; i < count; ++i)
+            int nPlayers = 0, nStam = 0, nSpir = 0;
+            for (uint32_t i = 0; i < count && nPlayers < kMaxPlayers; ++i)
             {
                 uint64_t ch = 0;
                 if (!Read64(static_cast<uintptr_t>(data) + 8ull * i, &ch) || ch < kMinPointer) continue;
                 const uintptr_t owner = static_cast<uintptr_t>(ch);
+                uint64_t vt = 0;
+                if (!Read64(owner, &vt) || vt != anchorVt) continue;
                 SelfChain c;
                 if (!WalkSelfChain(owner, &c)) continue;
 
-                const uint8_t tag = GetOwnerTag(owner);
-                const bool isPlayer = (tag == 1 || tag == 4);
+                nextHp[nPlayers] = c.statArray;
+                nextActors[nPlayers] = c.actor;
+                nextTargets[nPlayers] = c.targetOwner;
+                ++nPlayers;
 
-                if (isPlayer && nPlayers < kMaxPartyPlayers)
+                // Scan protagonist stat array for stamina and spirit gauges
+                for (int k = 1; k < kStatArray_ScanEntries; ++k)
                 {
-                    nextHp[nPlayers] = c.statArray;
-                    nextActors[nPlayers] = c.actor;
-                    nextTargets[nPlayers] = c.targetOwner;
-                    ++nPlayers;
-
-                    for (int k = 1; k < kStatArray_ScanEntries; ++k)
-                    {
-                        const uintptr_t e = c.statArray + k * kSizeof_StatEntry;
-                        int32_t stt = 0;
-                        if (!StatEntryType(e, &stt)) continue;
-                        if (IsPlayerStaminaType(stt))
-                        {
-                            if (nStam < kMaxStatEntries) nextStam[nStam++] = e;
-                        }
-                        else if (stt == StatType_MountSprint || stt == StatType_MountAbility || stt == 18 || stt == 19 || stt == 48)
-                        {
-                            if (nMountStam < kMaxStatEntries) nextMountStam[nMountStam++] = e;
-                        }
-                        else if (IsSpiritType(stt))
-                        {
-                            if (nSpir < kMaxStatEntries) nextSpir[nSpir++] = e;
-                        }
-                    }
-                }
-                else
-                {
-                    // Mount entities (Wyvern tag 5, Horse tag 6, and all party/world mounts)
-                    for (int k = 0; k < kStatArray_ScanEntries; ++k)
-                    {
-                        const uintptr_t e = c.statArray + k * kSizeof_StatEntry;
-                        int32_t stt = 0;
-                        if (!StatEntryType(e, &stt)) continue;
-                        if (IsMountStaminaType(stt))
-                        {
-                            if (nMountStam < kMaxStatEntries) nextMountStam[nMountStam++] = e;
-                        }
-                    }
+                    const uintptr_t e = c.statArray + k * kSizeof_StatEntry;
+                    int32_t stt = 0;
+                    if (!StatEntryType(e, &stt)) continue;
+                    if (IsStaminaType(stt))     { if (nStam < kMaxStatEntries) nextStam[nStam++] = e; }
+                    else if (IsSpiritType(stt)) { if (nSpir < kMaxStatEntries) nextSpir[nSpir++] = e; }
                 }
             }
 
@@ -413,13 +364,9 @@ namespace trinity::game
                         const uintptr_t e = statArray + k * kSizeof_StatEntry;
                         int32_t stt = 0;
                         if (!StatEntryType(e, &stt)) continue;
-                        if (IsPlayerStaminaType(stt))
+                        if (IsStaminaType(stt))
                         {
                             if (nStam < kMaxStatEntries) nextStam[nStam++] = e;
-                        }
-                        else if (stt == StatType_MountSprint || stt == StatType_MountAbility || stt == 18 || stt == 19 || stt == 48)
-                        {
-                            if (nMountStam < kMaxStatEntries) nextMountStam[nMountStam++] = e;
                         }
                         else if (IsSpiritType(stt))
                         {
@@ -470,8 +417,6 @@ namespace trinity::game
             }
             for (int i = 0; i < nStam; ++i)
                 g_stamEntries[i].store(nextStam[i], std::memory_order_release);
-            for (int i = 0; i < nMountStam; ++i)
-                g_mountStamEntries[i].store(nextMountStam[i], std::memory_order_release);
             for (int i = 0; i < nSpir; ++i)
                 g_spiritEntries[i].store(nextSpir[i], std::memory_order_release);
 
@@ -484,119 +429,36 @@ namespace trinity::game
                 g_targetOwners[i].store(0, std::memory_order_release);
             }
             for (int i = nStam; i < kMaxStatEntries; ++i) g_stamEntries[i].store(0, std::memory_order_release);
-            for (int i = nMountStam; i < kMaxStatEntries; ++i) g_mountStamEntries[i].store(0, std::memory_order_release);
             for (int i = nSpir; i < kMaxStatEntries; ++i) g_spiritEntries[i].store(0, std::memory_order_release);
 
-            // 1.17 does not route every stamina/spirit drain through the old
-            // stat-commit funnel. Keep the hook for writes that still use it,
-            // and also pin only the freshly resolved, type-validated player
-            // gauges once per game update. This avoids touching guessed
-            // addresses or non-player stats.
             const State& st = State::Get();
             if (st.infStamina)
-            {
                 for (int i = 0; i < nStam; ++i)
                     PinEntry(g_stamEntries[i].load(std::memory_order_relaxed));
-            }
-            if (st.infMountStamina)
-            {
-                for (int i = 0; i < nMountStam; ++i)
-                    PinEntry(g_mountStamEntries[i].load(std::memory_order_relaxed));
-            }
             if (st.infSpirit)
-            {
                 for (int i = 0; i < nSpir; ++i)
                     PinEntry(g_spiritEntries[i].load(std::memory_order_relaxed));
-            }
-
-            if (st.infMountStamina || st.noMountCooldown)
-            {
-                for (uint32_t i = 0; i < count; ++i)
-                {
-                    uint64_t ch = 0;
-                    if (!Read64(static_cast<uintptr_t>(data) + 8ull * i, &ch) || ch < kMinPointer) continue;
-                    
-                    uint64_t act = 0;
-                    if (Read64(static_cast<uintptr_t>(ch) + kOff_Owner_Actor, &act) && act >= kMinPointer)
-                    {
-                        // Wyvern / Mount flight duration & summon lifetime timers at act + 0xC8 and act + 0x108
-                        uint64_t subC8 = 0, sub108 = 0;
-                        if (Read64(static_cast<uintptr_t>(act) + 0xC8, &subC8) && subC8 >= kMinPointer)
-                        {
-                            float maxVal = 0.0f;
-                            if (ReadFloat(static_cast<uintptr_t>(subC8) + 0x0B0, &maxVal) && maxVal > 0.0f)
-                            {
-                                WriteFloat(static_cast<uintptr_t>(subC8) + 0x180, maxVal);
-                            }
-                        }
-                        if (Read64(static_cast<uintptr_t>(act) + 0x108, &sub108) && sub108 >= kMinPointer)
-                        {
-                            float maxVal = 0.0f;
-                            if (ReadFloat(static_cast<uintptr_t>(sub108) + 0x040, &maxVal) && maxVal > 0.0f)
-                            {
-                                WriteFloat(static_cast<uintptr_t>(sub108) + 0x110, maxVal);
-                            }
-                        }
-                    }
-
-                    if (st.noMountCooldown)
-                    {
-                        uint64_t vt = 0;
-                        if (Read64(ch, &vt) && vt >= kMinPointer)
-                        {
-                            uint64_t fn1 = 0, fn2 = 0;
-                            if (Read64(vt + 0x298, &fn1) && fn1 >= kMinPointer)
-                            {
-                                using ResetCallCooltime_t = void(__fastcall*)(void*);
-                                auto pfn = reinterpret_cast<ResetCallCooltime_t>(fn1);
-                                __try { pfn(reinterpret_cast<void*>(ch)); } __except (EXCEPTION_EXECUTE_HANDLER) {}
-                            }
-                            if (Read64(vt + 0x2A0, &fn2) && fn2 >= kMinPointer && fn2 != fn1)
-                            {
-                                using ResetCallCooltime_t = void(__fastcall*)(void*);
-                                auto pfn = reinterpret_cast<ResetCallCooltime_t>(fn2);
-                                __try { pfn(reinterpret_cast<void*>(ch)); } __except (EXCEPTION_EXECUTE_HANDLER) {}
-                            }
-                        }
-                    }
-                }
-            }
 
             // Log only when discovery changes, so the console shows whether
             // the player chain and gauge typing are healthy without frame spam.
             static int s_lastPlayers = -1, s_lastStam = -1, s_lastSpir = -1;
             if (nPlayers != s_lastPlayers || nStam != s_lastStam || nSpir != s_lastSpir)
             {
-                LOG("player: stat discovery - players=%d stamina=%d mountStam=%d spirit=%d flags(stamina=%d mount=%d spirit=%d).",
-                    nPlayers, nStam, nMountStam, nSpir, st.infStamina ? 1 : 0, st.infMountStamina ? 1 : 0, st.infSpirit ? 1 : 0);
+                LOG("player: stat discovery - players=%d stamina=%d spirit=%d flags(stamina=%d mount=%d spirit=%d).",
+                    nPlayers, nStam, nSpir, st.infStamina ? 1 : 0, st.infMountStamina ? 1 : 0, st.infSpirit ? 1 : 0);
                 s_lastPlayers = nPlayers;
                 s_lastStam = nStam;
                 s_lastSpir = nSpir;
             }
         }
 
-        // --- God Mode / Infinite Stamina / Infinite Spirit: guard the stat-
+        // --- God Mode / Infinite Stamina / Infinite Mount Stamina / Infinite Spirit: guard the stat-
         // commit write ------------------------------------------------------
-        // pa_StatCommit is the one function that writes the authoritative
-        // current value for HP, Stamina and Spirit alike (confirmed live:
-        // sprint-stamina drain and regen both funnel through it as periodic
-        // commits - there is no separate per-frame direct write to bypass).
-        // We let it run, then - if this is one of the current player's entries
-        // and its toggle is on - force current straight back to full. Because
-        // that rewrite happens inside the commit call, before any code up the
-        // stack (e.g. a death check) can observe the lowered value, a single
-        // lethal HP hit can never register, and none of the three stats needs
-        // per-frame polling.
-        //
-        // Only the protagonists' own entries are ever matched (the g_* sets are
-        // populated solely from player-class characters), so enemies and every
-        // other character's stats are never touched.
         int64_t __fastcall hkStatCommit(void* entry, int64_t time, int64_t target, uint16_t flag)
         {
             const uintptr_t e = reinterpret_cast<uintptr_t>(entry);
-            const int64_t result = oStatCommit(entry, time, target, flag);
-
             const State& st = State::Get();
+
             bool isPlayerHp = InSet(g_hpEntries, kMaxPlayers, e);
             if (!isPlayerHp && g_hpEntries[0].load(std::memory_order_relaxed) == 0)
             {
@@ -604,37 +466,51 @@ namespace trinity::game
                 if (StatEntryType(e, &t) && IsHealthType(t)) isPlayerHp = true;
             }
 
+            int32_t entryType = -1;
+            StatEntryType(e, &entryType);
+
+            const bool isPlayerStam = InSet(g_stamEntries, kMaxStatEntries, e) ||
+                                      (st.infStamina && (entryType == 20 || entryType == 22));
+
+            const bool isMountStam = (st.infMountStamina || st.infStamina) &&
+                                     (entryType == StatType_MountSprint || entryType == 19);
+
+            const bool isPlayerSpir = InSet(g_spiritEntries, kMaxStatEntries, e) ||
+                                      (st.infSpirit && (entryType == 21 || entryType == 23));
+
+            const bool shouldLock = (st.godMode && isPlayerHp) ||
+                                    (st.infStamina && isPlayerStam) ||
+                                    isMountStam ||
+                                    (st.infSpirit && isPlayerSpir);
+
+            // Zero-Drop Pre-Commit Interception:
+            // Overwrite target to 100% full capacity BEFORE the engine executes the write
+            // so the engine never writes a reduced number or broadcasts a drop.
+            if (shouldLock)
+            {
+                uint64_t base = 0, cap = 0;
+                if (Read64(e + kOff_StatEntry_Base, &base))
+                {
+                    Read64(e + kOff_StatEntry_Cap, &cap);
+                    const uint64_t full = (cap > base) ? cap : base;
+                    if (full > 0)
+                    {
+                        target = static_cast<int64_t>(full);
+                    }
+                }
+            }
+
+            const int64_t result = oStatCommit(entry, time, target, flag);
+
             if ((st.godMode || (isPlayerHp && Teleport::IsProtected())) && isPlayerHp) PinEntry(e);
-            
-            if (st.infStamina)
-            {
-                if (InSet(g_stamEntries, kMaxStatEntries, e))
-                {
-                    PinEntry(e);
-                }
-            }
-
-            if (st.infMountStamina)
-            {
-                int32_t t = 0;
-                if (InSet(g_mountStamEntries, kMaxStatEntries, e) ||
-                    (StatEntryType(e, &t) && (t == StatType_MountSprint || t == StatType_MountAbility)))
-                {
-                    PinEntry(e);
-                }
-            }
-
-            if (st.infSpirit  && InSet(g_spiritEntries, kMaxStatEntries, e)) PinEntry(e);
+            if (st.infStamina && isPlayerStam) PinEntry(e);
+            if (isMountStam) PinEntry(e);
+            if (st.infSpirit && isPlayerSpir) PinEntry(e);
 
             return result;
         }
 
         // --- Damage multipliers: scale the hit at the apply dispatcher -----
-        // Classify a negative HP delta by which side of it a protagonist is on:
-        // if the victim is any tracked player's target owner it is incoming
-        // damage, otherwise if the attacker actor behind sourceCtx is any tracked
-        // player's actor it is outgoing. Anything else (NPC vs NPC, scripted
-        // drains with no source) passes through untouched.
         int64_t ScaleDamage(uintptr_t targetOwner, uintptr_t sourceCtx, int64_t delta)
         {
             const State& st = State::Get();
@@ -654,8 +530,6 @@ namespace trinity::game
             }
             if (mult == 1.0f) return delta;
 
-            // delta < 0 and mult >= 0, so scaled <= 0; a fraction rounding up
-            // to 0 simply makes the dispatcher treat the hit as a no-op.
             const double scaled = static_cast<double>(delta) * static_cast<double>(mult);
             if (scaled <= static_cast<double>(INT64_MIN)) return INT64_MIN;
             if (scaled >= 0.0) return 0;
@@ -667,18 +541,36 @@ namespace trinity::game
                                          char a6, char a7, char a8, char a9, char a10,
                                          void* out)
         {
-            // Only HP loss is damage; heals, regen and every other status ride
-            // this dispatcher too and must pass through unchanged.
-            if (delta < 0 && statusId == StatType_Health)
+            if (delta < 0)
             {
+                const State& st = State::Get();
                 const uintptr_t owner = reinterpret_cast<uintptr_t>(targetOwner);
-                if (Teleport::IsProtected() && (InSet(g_targetOwners, kMaxPlayers, owner) || g_targetOwners[0].load(std::memory_order_relaxed) == 0))
+                const bool isPlayerTarget = InSet(g_targetOwners, kMaxPlayers, owner) ||
+                                            (g_targetOwners[0].load(std::memory_order_relaxed) == 0);
+
+                if (statusId == StatType_Health)
                 {
-                    delta = 0; // nullify incoming fall/impact damage during safe landing protection
+                    if (Teleport::IsProtected() && isPlayerTarget)
+                    {
+                        delta = 0; // nullify incoming fall/impact damage during safe landing protection
+                    }
+                    else
+                    {
+                        delta = ScaleDamage(owner, sourceCtx, delta);
+                    }
                 }
-                else
+                else if (isPlayerTarget && IsStaminaType(statusId) && st.infStamina)
                 {
-                    delta = ScaleDamage(owner, sourceCtx, delta);
+                    delta = 0; // zero-out stamina drain instantly so the bar NEVER drops even a pixel
+                }
+                else if ((st.infMountStamina || st.infStamina) &&
+                         (statusId == StatType_MountSprint || statusId == 19))
+                {
+                    delta = 0; // zero-out mount/wyvern/dragon stamina drain instantly
+                }
+                else if (isPlayerTarget && IsSpiritType(statusId) && st.infSpirit)
+                {
+                    delta = 0; // zero-out spirit drain instantly
                 }
             }
 
@@ -689,9 +581,6 @@ namespace trinity::game
 
     bool Player::Install()
     {
-        // Resolve the character-manager global: the sole discovery path for the
-        // protagonist party (RefreshSelf walks its vector each tick). Without it
-        // every stat feature below is inert, so this is the critical resolve.
         g_charMgrGlobal = ResolveCharMgrGlobal();
         if (!g_charMgrGlobal)
         {
@@ -699,49 +588,23 @@ namespace trinity::game
                     "Infinite Stamina / Infinite Spirit / damage multipliers disabled.");
         }
 
-        // Hook the stat-commit funnel so HP/Stamina/Spirit are forced back to
-        // full at the exact write site. Non-fatal if it fails - the resolver
-        // still tracks the player, but God Mode, Infinite Stamina and Infinite
-        // Spirit are all lost (they share this one hook).
         mem::InstallHook("player: stat-commit", kSig_StatCommit,
                          "God Mode / Infinite Stamina / Infinite Spirit disabled",
                          &hkStatCommit, &oStatCommit, &g_commitTarget);
 
-        // Hook the damage-apply dispatcher for the damage multipliers.
-        // Non-fatal if it fails - only the multipliers are lost.
         mem::InstallHook("player: damage-apply", kSig_DamageApply, "damage multipliers disabled",
                          &hkDamageApply, &oDamageApply, &g_damageHookTarget);
 
         return true;
     }
 
+    void Player::Tick()
+    {
+        TickResolveSelf();
+    }
+
     void Player::RefreshSelf()
     {
-        const State& st = State::Get();
-        if (st.infStamina)
-        {
-            for (int i = 0; i < kMaxStatEntries; ++i)
-            {
-                uintptr_t e = g_stamEntries[i].load(std::memory_order_relaxed);
-                if (e >= kMinPointer) PinEntry(e);
-            }
-        }
-        if (st.infMountStamina)
-        {
-            for (int i = 0; i < kMaxStatEntries; ++i)
-            {
-                uintptr_t e = g_mountStamEntries[i].load(std::memory_order_relaxed);
-                if (e >= kMinPointer) PinEntry(e);
-            }
-        }
-        if (st.infSpirit)
-        {
-            for (int i = 0; i < kMaxStatEntries; ++i)
-            {
-                uintptr_t e = g_spiritEntries[i].load(std::memory_order_relaxed);
-                if (e >= kMinPointer) PinEntry(e);
-            }
-        }
         TickResolveSelf();
     }
 
@@ -783,5 +646,4 @@ namespace trinity::game
         }
         return count;
     }
-
 }

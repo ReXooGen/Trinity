@@ -42,8 +42,10 @@ namespace trinity::game
         // refresh every tracked protagonist's stat entries. Churn-proof (no
         // cache): a body transition or character swap that reallocates a
         // character is picked up here. Must run on the game thread; the
-        // movement-update tick drives it. Cheap and idempotent - a no-op when no
-        // player is resolvable (not in world).
+        // Game-thread tick to resolve player and mount entities fresh from the character manager
+        static void Tick();
+
+        // Refresh/pin current player and mount stat entries. Safe to call from render thread.
         static void RefreshSelf();
 
         // True once at least one protagonist's health entry has been observed.

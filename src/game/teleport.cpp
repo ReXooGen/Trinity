@@ -1381,6 +1381,7 @@ namespace trinity::game
             // refresh the current-player stat entries from a fresh char-manager
             // walk so god mode / infinite stamina / spirit always target the
             // live player (this is the movement tick the mod already owns).
+            Player::Tick();
             Player::RefreshSelf();
 
             // Apply Game Speed here too: the fixed-timestep override must be

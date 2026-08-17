@@ -85,7 +85,7 @@ namespace trinity::game
     // NOTE: a body carries more than one stamina-typed entry - the sprint gauge
     // (type 20) sits several slots past the type-17 meter - so we track ALL
     // stamina-typed slots, not one offset.
-    inline constexpr int kStatArray_ScanEntries = 16; // slots scanned from health
+    inline constexpr int kStatArray_ScanEntries = 64; // slots scanned from health (covers all extended ability and flight gauges)
 
     // Stat entry type ids (these are the *type* tags stored at entry+0x00, not
     // the attribute enum index). Confirmed against this build.

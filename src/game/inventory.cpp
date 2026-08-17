@@ -1744,6 +1744,104 @@ namespace trinity::game
 
     namespace
     {
+        bool g_noCooldownApplied = false;
+        std::vector<std::vector<uint16_t>> g_origCooltimes;
+        std::vector<int64_t> g_origRespawnTimes;
+        bool g_cooltimesCaptured = false;
+
+        uintptr_t g_characterTableGlobal = 0;
+        bool g_charCooltimesCaptured = false;
+        std::vector<int64_t> g_origCharCooltimes;
+
+        bool SetAllCharacterCooldowns(bool enable)
+        {
+            if (!g_characterTableGlobal)
+                g_characterTableGlobal = FindTableGlobal("characterinfo");
+            if (!g_characterTableGlobal) return false;
+            uintptr_t table = 0;
+            if (!ReadPtr(g_characterTableGlobal, &table)) return false;
+            uint32_t count = 0;
+            if (!Read32(table + kOff_ItemTable_Count, &count) || count == 0 || count > 65536) return false;
+
+            if (!g_charCooltimesCaptured || g_origCharCooltimes.size() != count)
+            {
+                g_origCharCooltimes.assign(count, 0);
+                for (uint32_t row = 0; row < count; ++row)
+                {
+                    uintptr_t def = 0;
+                    if (!DefForRow(g_characterTableGlobal, static_cast<uint16_t>(row), &def)) continue;
+                    int64_t ct = 0;
+                    Read64(def + 0x70, &ct);
+                    g_origCharCooltimes[row] = ct;
+                }
+                g_charCooltimesCaptured = true;
+            }
+
+            bool any = false;
+            for (uint32_t row = 0; row < count; ++row)
+            {
+                uintptr_t def = 0;
+                if (!DefForRow(g_characterTableGlobal, static_cast<uint16_t>(row), &def)) continue;
+                const int64_t targetCt = enable ? 0 : g_origCharCooltimes[row];
+                if (Write64(def + 0x70, targetCt))
+                    any = true;
+            }
+            return any;
+        }
+
+        bool SetAllItemCooldowns(bool enable)
+        {
+            SetAllCharacterCooldowns(enable);
+
+            if (!g_itemTableGlobal) return false;
+            uintptr_t table = 0;
+            if (!ReadPtr(g_itemTableGlobal, &table)) return false;
+            uint32_t count = 0;
+            if (!Read32(table + kOff_ItemTable_Count, &count) || count == 0 || count > 65536) return false;
+
+            if (!g_cooltimesCaptured || g_origCooltimes.size() != count)
+            {
+                g_origCooltimes.resize(count);
+                g_origRespawnTimes.assign(count, 0);
+                for (uint32_t row = 0; row < count; ++row)
+                {
+                    uintptr_t def = 0;
+                    if (!DefForRow(g_itemTableGlobal, static_cast<uint16_t>(row), &def)) continue;
+                    g_origCooltimes[row].resize(10);
+                    for (int k = 0; k < 10; ++k)
+                    {
+                        uint16_t ct = 0;
+                        Read16(def + 0x20C + k * 2, &ct);
+                        g_origCooltimes[row][k] = ct;
+                    }
+                    int64_t respawn = 0;
+                    Read64(def + 0x3F0, &respawn);
+                    g_origRespawnTimes[row] = respawn;
+                }
+                g_cooltimesCaptured = true;
+            }
+
+            bool any = false;
+            for (uint32_t row = 0; row < count; ++row)
+            {
+                uintptr_t def = 0;
+                if (!DefForRow(g_itemTableGlobal, static_cast<uint16_t>(row), &def)) continue;
+
+                for (int k = 0; k < 10; ++k)
+                {
+                    const uint16_t targetCt = enable ? 0 : g_origCooltimes[row][k];
+                    if (Write16(def + 0x20C + k * 2, targetCt))
+                        any = true;
+                }
+                const int64_t targetRespawn = enable ? 0 : g_origRespawnTimes[row];
+                Write64(def + 0x3F0, targetRespawn);
+            }
+            return any;
+        }
+    }
+
+    namespace
+    {
         // Apply (enable=true) or restore (enable=false) the slot cap on every
         // bucket of one holder, by driving the game's OWN expansion setter
         // (kSig_InvSetExpandSlots) rather than writing the cap field. The cap
