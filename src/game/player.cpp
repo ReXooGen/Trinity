@@ -151,14 +151,15 @@ namespace trinity::game
         bool IsPlayerStaminaType(int32_t t) {
             return t == StatType_Stamina || t == StatType_SprintSt || t == StatType_StaminaPool117;
         }
-        // Mount & Horse & Wyvern stamina gauges: 19 (gallop/sprint), 48 (wyvern fire breath / special ability), 17, 18, 20, 22.
+        // Mount & Horse & Wyvern stamina and durability gauges: 19 (gallop/sprint), 48 (wyvern fire breath / special ability), 17, 18, 20, 22, and all positive gauge types.
         bool IsMountStaminaType(int32_t t) {
             return t == StatType_MountSprint || t == StatType_MountAbility ||
                    t == StatType_Stamina || t == StatType_Spirit ||
-                   t == StatType_SprintSt || t == StatType_StaminaPool117;
+                   t == StatType_SprintSt || t == StatType_StaminaPool117 ||
+                   (t > 0 && t <= 100);
         }
         bool IsStaminaType(int32_t t) {
-            return IsPlayerStaminaType(t) || (t == StatType_MountSprint) || (t == StatType_MountAbility);
+            return IsPlayerStaminaType(t) || IsMountStaminaType(t);
         }
         // Both spirit-typed gauges: 18 (an internal meter) and 21 (the pool the
         // HUD bar and skill spend actually draw from). Pinning both keeps the
@@ -343,7 +344,7 @@ namespace trinity::game
                 if (!WalkSelfChain(owner, &c)) continue;
 
                 const uint8_t tag = GetOwnerTag(owner);
-                const bool isPlayer = (tag == 1 || tag == 4 || tag == 5);
+                const bool isPlayer = (tag == 1 || tag == 4);
 
                 if (isPlayer && nPlayers < kMaxPartyPlayers)
                 {
@@ -361,10 +362,6 @@ namespace trinity::game
                         {
                             if (nStam < kMaxStatEntries) nextStam[nStam++] = e;
                         }
-                        else if (stt == StatType_MountSprint || stt == StatType_MountAbility)
-                        {
-                            if (nMountStam < kMaxStatEntries) nextMountStam[nMountStam++] = e;
-                        }
                         else if (IsSpiritType(stt))
                         {
                             if (nSpir < kMaxStatEntries) nextSpir[nSpir++] = e;
@@ -373,8 +370,8 @@ namespace trinity::game
                 }
                 else
                 {
-                    // Mount entities for player and all companions/NPCs
-                    for (int k = 1; k < kStatArray_ScanEntries; ++k)
+                    // Mount entities (Wyvern tag 5, Horse tag 6, and all party/world mounts)
+                    for (int k = 0; k < kStatArray_ScanEntries; ++k)
                     {
                         const uintptr_t e = c.statArray + k * kSizeof_StatEntry;
                         int32_t stt = 0;
@@ -413,10 +410,6 @@ namespace trinity::game
                         if (IsPlayerStaminaType(stt))
                         {
                             if (nStam < kMaxStatEntries) nextStam[nStam++] = e;
-                        }
-                        else if (stt == StatType_MountSprint || stt == StatType_MountAbility)
-                        {
-                            if (nMountStam < kMaxStatEntries) nextMountStam[nMountStam++] = e;
                         }
                         else if (IsSpiritType(stt))
                         {
