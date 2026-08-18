@@ -41,12 +41,17 @@ namespace trinity
         // nor closes the menu. Never persisted.
         bool rebindCapture = false;
 
-        // Player stat features (player.cpp).
+        // Player stat & combat features (player.cpp).
         bool godMode         = false;
+        bool oneHitKill      = false;
+        bool infDurability   = false;
+        bool noFallDamage    = true;
         bool infStamina      = false;
         bool infMountStamina = false;
-        bool noMountCooldown = false;
         bool infSpirit       = false;
+        bool easyParry       = false;
+        bool easyEvade       = false;
+        bool noBounty        = false;
 
         // Battle-damage multipliers (player.cpp). Applied to the signed HP
         // delta at the damage-apply dispatcher; 1.0 = game behavior.
@@ -168,7 +173,7 @@ namespace trinity
         // Persistence (settings.cpp). While on, every feature change is
         // written to Trinity.ini and restored on the next launch. The flag
         // itself always persists so the preference survives sessions.
-        bool autoSave = false;
+        bool autoSave = true;
 
         static State& Get()
         {

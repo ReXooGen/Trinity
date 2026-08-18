@@ -5,9 +5,9 @@
 #include <cstdint>
 #include <cstdio>
 #include <cstring>
-#include <cctype>
 #include <mutex>
 #include <vector>
+#include <unordered_map>
 #include <algorithm>
 #include <thread>
 
@@ -22,6 +22,7 @@
 #include "../core/logger.h"
 #include "../core/text.h"
 #include "../core/state.h"
+#include "../core/version_detect.h"
 
 namespace trinity::game
 {
@@ -34,6 +35,8 @@ namespace trinity::game
     using mem::Write16;
     using mem::Write8;
     using mem::ReadCString;
+
+    inline uintptr_t SlotStride() { return core::GetSlotStride(); }
 
     namespace
     {
@@ -219,16 +222,23 @@ namespace trinity::game
         bool    g_slotApplied     = false;
         int     g_slotAppliedVal  = 0;
 
+        void EnsureTablesResolved();
+
         // Resolve a def pointer out of one of the shared-layout "*info" tables.
         bool DefForRow(uintptr_t tableGlobal, uint16_t row, uintptr_t* out)
         {
             if (!tableGlobal) return false;
             uintptr_t table = 0;
-            if (!ReadPtr(tableGlobal, &table)) return false;
+            if (!ReadPtr(tableGlobal, &table) || table < kMinPointer) return false;
             uint32_t count = 0;
             if (!Read32(table + kOff_ItemTable_Count, &count) || row >= count) return false;
             uintptr_t defs = 0;
-            if (!ReadPtr(table + kOff_ItemTable_Defs, &defs)) return false;
+            // Try +0x50 (TU 1.14 legacy) first, else +0x58 (TU 1.17+ modern)
+            if (!ReadPtr(table + 0x50, &defs) || defs < kMinPointer)
+            {
+                if (!ReadPtr(table + 0x58, &defs) || defs < kMinPointer)
+                    return false;
+            }
             uintptr_t def = 0;
             if (!ReadPtr(defs + static_cast<uintptr_t>(row) * 8, &def)) return false;
             if (def < kMinPointer) return false;
@@ -1192,7 +1202,7 @@ namespace trinity::game
                 uint16_t occ = 0;
                 for (uint16_t i = 0; i < scount; ++i)
                 {
-                    const uintptr_t slot = slots + static_cast<uintptr_t>(i) * kInvSlot_Stride;
+                    const uintptr_t slot = slots + static_cast<uintptr_t>(i) * SlotStride();
                     uint16_t tid = 0;
                     int64_t  qty = 0;
                     if (!Read16(slot + kOff_InvSlot_TypeId, &tid) || tid == kInvSlot_EmptyType || tid == 0) continue;
@@ -1211,60 +1221,73 @@ namespace trinity::game
         // resolvers are byte-identical here (verified), differing only in which
         // global they load and which table-name string they pass - so the same
         // anchor finds both, selected by the name.
-        const uint8_t kItemPrologue[] = {
-            0x48, 0x89, 0x5C, 0x24, 0x10, 0x48, 0x89, 0x6C, 0x24, 0x18,
-            0x56, 0x57, 0x41, 0x56, 0x48, 0x83, 0xEC, 0x50, 0x0F, 0xB7, 0x39,
-            0x48, 0x8B, 0x1D,
-        };
         uintptr_t FindItemPrologueAbove(uintptr_t lea)
         {
-            for (size_t back = 0x20; back <= 0x80; ++back)
+            static const uint8_t kPrologueShort[] = {
+                0x48, 0x89, 0x5C, 0x24, 0x10, 0x48, 0x89, 0x6C, 0x24, 0x18,
+                0x56, 0x57, 0x41, 0x56
+            };
+            for (size_t back = 0x20; back <= 0x100; ++back)
             {
                 const uintptr_t cand = lea - back;
                 bool hit = true;
                 __try
                 {
-                    for (size_t i = 0; i < sizeof(kItemPrologue); ++i)
-                        if (*reinterpret_cast<const uint8_t*>(cand + i) != kItemPrologue[i]) { hit = false; break; }
+                    for (size_t i = 0; i < sizeof(kPrologueShort); ++i)
+                    {
+                        if (*reinterpret_cast<const uint8_t*>(cand + i) != kPrologueShort[i]) { hit = false; break; }
+                    }
+                    if (hit && *reinterpret_cast<const uint8_t*>(cand + 0x15) == 0x48 &&
+                               *reinterpret_cast<const uint8_t*>(cand + 0x16) == 0x8B &&
+                               *reinterpret_cast<const uint8_t*>(cand + 0x17) == 0x1D)
+                    {
+                        return cand;
+                    }
                 }
                 __except (EXCEPTION_EXECUTE_HANDLER) { hit = false; }
-                if (hit) return cand;
             }
             return 0;
         }
-        // ctx for the scan callback: which table we want, whether its name is
-        // loaded indirectly, and where its resolver landed. Matching the name
-        // EXACTLY matters - "categoryinfo" must not match the
-        // "categorygroupinfo" resolver sitting next to it.
+
         struct TableHunt { const char* name; bool indirect; uintptr_t fn; };
 
         bool IsTableRef(uintptr_t match, void* ctx)
         {
             auto* h = static_cast<TableHunt*>(ctx);
             uintptr_t target = mem::ResolveRipAt(match, 7);
-            // Indirect form (`mov r8, cs:<slot>`): the slot holds the char*,
-            // so there is one more hop than the `lea r8, <str>` form.
             if (h->indirect && (!ReadPtr(target, &target) || target < kMinPointer)) return false;
-            char buf[32];
+            char buf[64];
             if (!ReadCString(target, buf, sizeof(buf))) return false;
-            if (strcmp(buf, h->name) != 0) return false;
-            // The table LOADER passes the same string but has a different
-            // prologue, so this is what tells the resolver clone apart from it.
+            if (_stricmp(buf, h->name) != 0) return false;
             const uintptr_t fn = FindItemPrologueAbove(match);
-            if (!fn) return false; // right string, wrong function - keep scanning
+            if (!fn) return false;
             h->fn = fn;
             return true;
         }
 
-        // Resolve a "*info" table's global by string-anchoring its resolver
-        // clone. `indirect` selects the name-load form the clone uses (see
-        // kStr_InventoryInfoTable). Returns 0 if not found; every caller treats
-        // that as optional.
         uintptr_t FindTableGlobal(const char* name, bool indirect = false)
         {
             TableHunt hunt{ name, indirect, 0 };
             mem::FindPatternIf(indirect ? kSig_MovR8Rip : kSig_LeaR8Rip, &IsTableRef, &hunt);
             return hunt.fn ? mem::ResolveRipAt(hunt.fn + kOff_ItemResolver_MovGlobal, 7) : 0;
+        }
+
+        void EnsureTablesResolved()
+        {
+            if (!g_itemTableGlobal)
+                g_itemTableGlobal = FindTableGlobal(kStr_ItemInfoTable);
+            if (!g_grpTableGlobal)
+                g_grpTableGlobal = FindTableGlobal(kStr_ItemGroupInfoTable);
+            if (!g_strTableGlobal)
+                g_strTableGlobal = FindTableGlobal(kStr_StringInfoTable);
+            if (!g_invTableGlobal)
+                g_invTableGlobal = FindTableGlobal(kStr_InventoryInfoTable, /*indirect=*/true);
+            if (!g_locMgrGlobal)
+            {
+                const uintptr_t locGet = mem::FindPattern(kSig_LocStringGet);
+                if (locGet)
+                    g_locMgrGlobal = mem::ResolveRipAt(locGet + kOff_LocGet_MovGlobal, 7);
+            }
         }
     }
 
@@ -1359,9 +1382,13 @@ namespace trinity::game
 
         // Secondary capture path: fires on a real add/drop/buy, not at load.
         // Catches containers that only appear later (e.g. character swap).
-        mem::InstallHook("inventory: holder-insert", kSig_InvHolderInsert,
-                         "server holder relies on the commit hook alone",
-                         &hkHolderInsert, &oHolderInsert, &g_insTarget, 4);
+        if (!mem::InstallHook("inventory: holder-insert", kSig_InvHolderInsert, nullptr,
+                              &hkHolderInsert, &oHolderInsert, &g_insTarget, 2))
+        {
+            mem::InstallHook("inventory: holder-insert legacy", kSig_InvHolderInsert_Legacy,
+                             "server holder relies on the commit hook alone",
+                             &hkHolderInsert, &oHolderInsert, &g_insTarget, 2);
+        }
 
         // Durable container walk (optional but preferred - without it the
         // list only appears once the game happens to query an item count,
@@ -1369,39 +1396,23 @@ namespace trinity::game
         const uintptr_t globAnchor = mem::FindPattern(kSig_InvCoreGlobal);
         if (globAnchor)
             g_coreGlobal = mem::ResolveRipAt(globAnchor + kOff_InvCoreGlobal_Mov, 7);
-        if (!g_coreGlobal)
-            LOG_WARN("inventory: core-global anchor not found - inventory appears only after the HUD queries an item count.");
 
-        // Item defs (optional - the list still works with generic labels if
-        // this fails, but names, categories and tier all hang off it).
+        // Item defs (optional - resolved lazily when inventory is opened).
         g_itemTableGlobal = FindTableGlobal(kStr_ItemInfoTable);
-        if (!g_itemTableGlobal)
-            LOG_WARN("inventory: item-info table not found - items show generic labels and no categories.");
 
-        // The category tree (optional - without it everything lands in one
-        // "Uncategorised" group, which is still browsable and editable).
+        // The category tree (optional - without it everything lands in one group).
         g_grpTableGlobal = FindTableGlobal(kStr_ItemGroupInfoTable);
-        if (!g_grpTableGlobal)
-            LOG_WARN("inventory: ItemGroupInfo table not found - items are not grouped.");
 
-        // Icon sprite names (optional - without it the UI draws no item or
-        // category icons, which is purely cosmetic).
+        // Icon sprite names (optional - for item sprite rendering).
         g_strTableGlobal = FindTableGlobal(kStr_StringInfoTable);
-        if (!g_strTableGlobal)
-            LOG_WARN("inventory: stringinfo table not found - no item or category icons.");
 
-        // Storage names (optional - without it storages still list and edit,
-        // labelled by their engine key instead of the game's own text).
+        // Storage names (optional - labelled by engine key or custom text).
         g_invTableGlobal = FindTableGlobal(kStr_InventoryInfoTable, /*indirect=*/true);
-        if (!g_invTableGlobal)
-            LOG_WARN("inventory: InventoryInfo table not found - storages show engine keys.");
 
         // Real localised names (optional - falls back to prettified keys).
         const uintptr_t locGet = mem::FindPattern(kSig_LocStringGet);
         if (locGet)
             g_locMgrGlobal = mem::ResolveRipAt(locGet + kOff_LocGet_MovGlobal, 7);
-        if (!g_locMgrGlobal)
-            LOG_WARN("inventory: localisation table not found - items show prettified engine keys.");
 
         return true;
     }
@@ -1483,7 +1494,7 @@ namespace trinity::game
 
             for (uint16_t i = 0; i < scount; ++i)
             {
-                const uintptr_t slot = slots + static_cast<uintptr_t>(i) * kInvSlot_Stride;
+                const uintptr_t slot = slots + static_cast<uintptr_t>(i) * SlotStride();
                 uint16_t tid = 0;
                 int64_t  qty = 0;
                 if (!Read16(slot + kOff_InvSlot_TypeId, &tid) || tid == kInvSlot_EmptyType || tid == 0) continue;
@@ -1692,6 +1703,10 @@ namespace trinity::game
         uint32_t count = 0;
         if (!Read32(table + kOff_ItemTable_Count, &count) || count == 0 || count > 65536) return false;
 
+        const bool isLegacy = core::IsLegacyTU();
+        const uintptr_t stackOff = isLegacy ? 0x18 : 0x420;
+        const uintptr_t capOff   = isLegacy ? 0x111 : 0x428;
+
         if (g_stackCaptured.size() != count)
         {
             g_origMaxStack.assign(count, 0);
@@ -1710,32 +1725,23 @@ namespace trinity::game
             {
                 int64_t origVal = 0;
                 uint8_t origCap = 0;
-                Read64(def + kOff_ItemDef_MaxStackCount, &origVal);
-                Read8(def + kOff_ItemDef_ApplyMaxStackCap, &origCap);
+                Read64(def + stackOff, &origVal);
+                Read8(def + capOff, &origCap);
                 g_origMaxStack[row]  = origVal;
                 g_origApplyCap[row]  = origCap;
                 g_stackCaptured[row] = true;
             }
 
-            // Do not force max stack on weapons and equipment (items whose vanilla max stack is <= 1),
-            // because the game engine's equip system cannot equip stacked weapons/armor.
-            if (g_origMaxStack[row] <= 1)
-            {
-                Write64(def + kOff_ItemDef_MaxStackCount, 1);
-                Write8(def + kOff_ItemDef_ApplyMaxStackCap, g_origApplyCap[row]);
-                continue;
-            }
-
             if (enable)
             {
-                if (Write64(def + kOff_ItemDef_MaxStackCount, static_cast<uint64_t>(value)))
-                    any = true;
-                Write8(def + kOff_ItemDef_ApplyMaxStackCap, 1);
+                Write64(def + stackOff, static_cast<uint64_t>(value));
+                Write8(def + capOff, 1);
+                any = true;
             }
             else if (g_stackCaptured[row])
             {
-                Write64(def + kOff_ItemDef_MaxStackCount, static_cast<uint64_t>(g_origMaxStack[row]));
-                Write8(def + kOff_ItemDef_ApplyMaxStackCap, g_origApplyCap[row]);
+                Write64(def + stackOff, static_cast<uint64_t>(g_origMaxStack[row]));
+                Write8(def + capOff, g_origApplyCap[row]);
                 any = true;
             }
         }
@@ -1959,11 +1965,19 @@ namespace trinity::game
         // must never do.
         RunPendingAdd();
 
-        // Do not rewrite used-slot accounting during ordinary gameplay. Quest
-        // pickups use the same inventory transaction window, and a periodic
-        // repair here can race the engine's acquisition bookkeeping before the
-        // quest system observes it. Inventory mutation must remain explicit:
-        // only Add Item or a direct editor action may write inventory state.
+        // Heal the used-slot accounting that quantity edits bend and reloads
+        // detonate (the "inventory full beside empty slots" bug). Always on;
+        // 1 Hz; a strict no-op on buckets the engine's own accounting produced.
+        {
+            static ULONGLONG s_lastRepair = 0;
+            const ULONGLONG now = GetTickCount64();
+            if (now - s_lastRepair >= 1000)
+            {
+                s_lastRepair = now;
+                RepairUsedSlots(CurrentHolder());
+                RepairUsedSlots(ServerHolder());
+            }
+        }
 
         if (st.invStackSize)
         {
@@ -2036,7 +2050,7 @@ namespace trinity::game
                     if (ReadPtr(bucket + kOff_InvBucket_Slots, &slots) && slots >= kMinPointer &&
                         Read16(bucket + kOff_InvBucket_Count, &scount) && slotIdx < scount)
                     {
-                        const uintptr_t slot = slots + static_cast<uintptr_t>(slotIdx) * kInvSlot_Stride;
+                        const uintptr_t slot = slots + static_cast<uintptr_t>(slotIdx) * SlotStride();
                         uint16_t tid = 0;
                         if (Read16(slot + kOff_InvSlot_TypeId, &tid) && tid == typeId)
                             return Write64(slot + kOff_InvSlot_Quantity, value);
@@ -2057,7 +2071,7 @@ namespace trinity::game
                 if (!Read16(bucket + kOff_InvBucket_Count, &scount) || scount == 0 || scount > 8192) continue;
                 for (uint16_t i = 0; i < scount; ++i)
                 {
-                    const uintptr_t slot = slots + static_cast<uintptr_t>(i) * kInvSlot_Stride;
+                    const uintptr_t slot = slots + static_cast<uintptr_t>(i) * SlotStride();
                     uint16_t tid = 0;
                     int64_t  q   = 0;
                     if (!Read16(slot + kOff_InvSlot_TypeId, &tid) || tid != typeId) continue;
@@ -2093,7 +2107,7 @@ namespace trinity::game
             uint16_t  scount = 0;
             if (!ReadPtr(bucket + kOff_InvBucket_Slots, &slots) || slots < kMinPointer) return 0;
             if (!Read16(bucket + kOff_InvBucket_Count, &scount) || slotIdx >= scount) return 0;
-            const uintptr_t slot = slots + static_cast<uintptr_t>(slotIdx) * kInvSlot_Stride;
+            const uintptr_t slot = slots + static_cast<uintptr_t>(slotIdx) * SlotStride();
             uint16_t tid = 0;
             if (!Read16(slot + kOff_InvSlot_TypeId, &tid) || tid != wantType) return 0;
             return slot;
@@ -2174,13 +2188,28 @@ namespace trinity::game
 
         uintptr_t desc = 0, array = 0;
         uint32_t count = 0;
-        if (!ReadPtr(comp + kOff_EquipComp_Table, &desc) || desc < kMinPointer) return -1;
-        if (!ReadPtr(desc + kOff_EquipTable_Array, &array) || array < kMinPointer) return -1;
-        if (!Read32(desc + kOff_EquipTable_Count, &count) || count == 0 || count > 64) return -1;
+        uintptr_t stride = 0xD0;
+
+        if (ReadPtr(comp + 0x88, &desc) && desc >= kMinPointer &&
+            ReadPtr(desc + kOff_EquipTable_Array, &array) && array >= kMinPointer &&
+            Read32(desc + kOff_EquipTable_Count, &count) && count >= 1 && count <= 64)
+        {
+            stride = 0xC8;
+        }
+        else if (ReadPtr(comp + 0x80, &desc) && desc >= kMinPointer &&
+                 ReadPtr(desc + kOff_EquipTable_Array, &array) && array >= kMinPointer &&
+                 Read32(desc + kOff_EquipTable_Count, &count) && count >= 1 && count <= 64)
+        {
+            stride = 0xD0;
+        }
+        else
+        {
+            return -1;
+        }
 
         for (uint32_t i = 0; i < count; ++i)
         {
-            const uintptr_t entry = array + static_cast<uintptr_t>(i) * kEquipEntry_Stride;
+            const uintptr_t entry = array + static_cast<uintptr_t>(i) * stride;
             uint16_t tid = 0;
             if (!Read16(entry + kOff_InvSlot_TypeId, &tid) || tid == kInvSlot_EmptyType || tid == 0) continue;
 
@@ -2271,11 +2300,18 @@ namespace trinity::game
         uintptr_t BucketForItem(uintptr_t holder, uintptr_t def)
         {
             uint16_t want = 0;
-            if (!Read16(def + kOff_ItemDef_BucketType, &want)) return 0;
+            // Check TU 1.14 legacy (+66 / 0x42) and TU 1.17+ modern (+0x418)
+            if (!Read16(def + 66, &want) || want == 0 || want > 64)
+            {
+                if (!Read16(def + 0x418, &want) || want == 0 || want > 64)
+                    want = 1; // Default to main bag storage
+            }
+
             uintptr_t buckets = 0;
             uint32_t  n = 0;
             if (!ReadPtr(holder + kOff_InvHolder_Buckets, &buckets)) return 0;
             if (!Read32(holder + kOff_InvHolder_Count, &n) || !n || n > 4096) return 0;
+
             for (uint32_t i = 0; i < n; ++i)
             {
                 uintptr_t b = 0;
@@ -2283,7 +2319,14 @@ namespace trinity::game
                 uint16_t t = 0;
                 if (Read16(b + kOff_InvBucket_Type, &t) && t == want) return b;
             }
-            return 0; // that storage does not exist in this holder
+
+            // Fallback: return first bucket (player bag)
+            for (uint32_t i = 0; i < n; ++i)
+            {
+                uintptr_t b = 0;
+                if (ReadPtr(buckets + static_cast<uintptr_t>(i) * 8, &b) && b >= kMinPointer) return b;
+            }
+            return 0;
         }
 
         // The instance-id allocator for a container. Every added item needs an
@@ -2326,19 +2369,6 @@ namespace trinity::game
 
             RepairUsedSlots(holder);
 
-            // Dynamically ensure bucket capacity is expanded before insert
-            uint16_t used = 0, maxSlots = 0;
-            if (Read16(bucket + kOff_InvBucket_UsedSlots, &used) &&
-                Read16(bucket + kOff_InvBucket_MaxSlots, &maxSlots))
-            {
-                if (used + 1 >= maxSlots || maxSlots < 2000)
-                {
-                    uint16_t newCap = (used + 100 > 2000) ? (used + 100) : 2000;
-                    Write16(bucket + kOff_InvBucket_MaxSlots, newCap);
-                    Write16(bucket + kOff_InvBucket_ExpandSlots, newCap);
-                }
-            }
-
             __try
             {
                 oItemValueCtor(itemVal, &typeId, qty);
@@ -2361,15 +2391,6 @@ namespace trinity::game
 
                 oHolderInsert(reinterpret_cast<void*>(bucket), &err,
                               reinterpret_cast<void*>(container), arr, 0, out, 1, 1, 0);
-                if (err != 0)
-                {
-                    // Fallback retry with emergency expanded cap
-                    Write16(bucket + kOff_InvBucket_MaxSlots, 4000);
-                    Write16(bucket + kOff_InvBucket_ExpandSlots, 4000);
-                    err = 0;
-                    oHolderInsert(reinterpret_cast<void*>(bucket), &err,
-                                  reinterpret_cast<void*>(container), arr, 0, out, 1, 1, 0);
-                }
                 planned = true;
 
                 if (err == 0)
@@ -2377,11 +2398,13 @@ namespace trinity::game
                     const uintptr_t p0 = out[0];
                     const uint32_t  n  = reinterpret_cast<uint32_t*>(out)[2];
                     nPlaced = n;
+                    const uintptr_t placementStride = core::GetPlacementStride();
+                    const uintptr_t slotIdxOffset   = core::GetPlacementSlotIdxOffset();
                     for (uint32_t i = 0; i < n && p0 >= kMinPointer; ++i)
                     {
-                        const uintptr_t p = p0 + static_cast<uintptr_t>(i) * kPlacement_Stride;
+                        const uintptr_t p = p0 + static_cast<uintptr_t>(i) * placementStride;
                         const uint16_t slotIdx =
-                            *reinterpret_cast<uint16_t*>(p + kOff_Placement_SlotIdx);
+                            *reinterpret_cast<uint16_t*>(p + slotIdxOffset);
                         int err2 = 0;
                         oCommitPlacement(reinterpret_cast<void*>(holder), &err2, nullptr,
                                          reinterpret_cast<void*>(p), slotIdx);
@@ -2499,10 +2522,29 @@ namespace trinity::game
                 return false;
             }
 
-            // For equipment items, enforce qty = 1 so they can be equipped individually
-            int64_t maxStack = 1;
-            Read64(def + kOff_ItemDef_MaxStackCount, &maxStack);
-            if (maxStack <= 1 || (typeId < g_stackCaptured.size() && g_stackCaptured[typeId] && g_origMaxStack[typeId] <= 1))
+            // For wearable equipment (weapons, armor, accessories), enforce qty = 1 so they can be equipped individually
+            char itemKey[96] = "";
+            KeyForType(typeId, itemKey, sizeof(itemKey));
+
+            auto IsWearableGear = [](const char* k) -> bool {
+                if (!k || !k[0]) return false;
+                if (strstr(k, "Money") || strstr(k, "Silver") || strstr(k, "Gold") ||
+                    strstr(k, "Pack") || strstr(k, "Chest") || strstr(k, "Reward") ||
+                    strstr(k, "Potion") || strstr(k, "Food") || strstr(k, "Material") ||
+                    strstr(k, "Stone") || strstr(k, "Ore") || strstr(k, "Herb") ||
+                    strstr(k, "Seed") || strstr(k, "Cell") || strstr(k, "Artifact") ||
+                    strstr(k, "Scroll") || strstr(k, "Book") || strstr(k, "Token") ||
+                    strstr(k, "Item_Skill") || strstr(k, "Ticket") || strstr(k, "Feed"))
+                    return false;
+                return (strstr(k, "Sword") || strstr(k, "Shield") || strstr(k, "Bow") ||
+                        strstr(k, "Armor") || strstr(k, "Helmet") || strstr(k, "Glove") ||
+                        strstr(k, "Boot") || strstr(k, "Ring") || strstr(k, "Necklace") ||
+                        strstr(k, "Earring") || strstr(k, "Belt") || strstr(k, "Axe") ||
+                        strstr(k, "Hammer") || strstr(k, "Spear") || strstr(k, "Dagger") ||
+                        strstr(k, "Rapier") || strstr(k, "Barding") || strstr(k, "Saddle"));
+            };
+
+            if (IsWearableGear(itemKey))
             {
                 qty = 1;
             }
@@ -2617,10 +2659,7 @@ namespace trinity::game
         void BuildCatalog()
         {
             if (g_catalogBuilt) return;
-            // The resolver global can be found while its runtime table pointer
-            // is still null during loading. Do not permanently cache that
-            // transient state: retry the two cheap guarded reads until the game
-            // publishes a valid table, then build the thousands of rows once.
+            EnsureTablesResolved();
             if (!g_itemTableGlobal)
             {
                 if (g_catalogDiagState != 1)
@@ -2967,7 +3006,7 @@ namespace trinity::game
 
                 for (uint16_t i = 0; i < scount; ++i)
                 {
-                    const uintptr_t slot = slots + static_cast<uintptr_t>(i) * kInvSlot_Stride;
+                    const uintptr_t slot = slots + static_cast<uintptr_t>(i) * SlotStride();
                     uint16_t tid = 0;
                     if (!Read16(slot + kOff_InvSlot_TypeId, &tid) || tid == kInvSlot_EmptyType || tid == 0) continue;
                     if (tid == moneyTid || moneyTid == 0)
@@ -3011,6 +3050,214 @@ namespace trinity::game
         }
 
         return written;
+    }
+
+    int Inventory::ConsolidateMoney()
+    {
+        RefreshImpl(true);
+        const uint16_t moneyTid = FindTypeIdByKey("Money_Copper");
+
+        // Ensure max stack for Money_Copper in item table is set to 999,999,999,999
+        uintptr_t moneyDef = 0;
+        if (moneyTid != 0 && DefForRow(g_itemTableGlobal, moneyTid, &moneyDef))
+        {
+            Write64(moneyDef + kOff_ItemDef_MaxStackCount, 999999999999ULL);
+            Write8(moneyDef + kOff_ItemDef_ApplyMaxStackCap, 1);
+        }
+
+        int64_t totalCopper = 0;
+        int duplicateSlotsFound = 0;
+        uintptr_t firstSlot = 0;
+        uint16_t firstBucket = 0;
+        uint16_t firstSlotIdx = 0;
+
+        for (size_t s = 0; s < g_storages.size(); ++s)
+        {
+            for (size_t g = 0; g < g_storages[s].groups.size(); ++g)
+            {
+                for (size_t i = 0; i < g_storages[s].groups[g].items.size(); ++i)
+                {
+                    Item& it = g_storages[s].groups[g].items[i];
+                    if (it.typeId == moneyTid || (moneyTid == 0 && _stricmp(it.key, "Money_Copper") == 0))
+                    {
+                        totalCopper += it.qty;
+                        if (firstSlot == 0)
+                        {
+                            firstSlot = it.slot;
+                            firstBucket = it.bucketIdx;
+                            firstSlotIdx = it.slotIdx;
+                        }
+                        else
+                        {
+                            // Clear duplicate money slot
+                            Write16(it.slot + kOff_InvSlot_TypeId, kInvSlot_EmptyType);
+                            Write64(it.slot + kOff_InvSlot_Quantity, 0);
+                            WriteServerMirror(it.bucketIdx, it.slotIdx, kInvSlot_EmptyType, it.qty, 0);
+                            it.typeId = kInvSlot_EmptyType;
+                            it.qty = 0;
+                            ++duplicateSlotsFound;
+                        }
+                    }
+                }
+            }
+        }
+
+        auto cleanHolderDuplicates = [&](uintptr_t holder) {
+            if (!holder || holder < kMinPointer) return;
+            uintptr_t buckets = 0;
+            uint32_t bcount = 0;
+            if (!ReadPtr(holder + kOff_InvHolder_Buckets, &buckets) || !Read32(holder + kOff_InvHolder_Count, &bcount))
+                return;
+            if (buckets < kMinPointer || bcount == 0 || bcount > 4096) return;
+
+            for (uint32_t b = 0; b < bcount; ++b)
+            {
+                uintptr_t bptr = 0;
+                if (!ReadPtr(buckets + static_cast<uintptr_t>(b) * 8, &bptr) || bptr < kMinPointer) continue;
+                uintptr_t slots = 0;
+                uint16_t scount = 0;
+                if (!ReadPtr(bptr + kOff_InvBucket_Slots, &slots) || !Read16(bptr + kOff_InvBucket_Count, &scount)) continue;
+                if (slots < kMinPointer || scount == 0 || scount > 8192) continue;
+
+                for (uint16_t i = 0; i < scount; ++i)
+                {
+                    const uintptr_t s = slots + static_cast<uintptr_t>(i) * core::GetSlotStride();
+                    uint16_t tid = 0;
+                    if (!Read16(s + kOff_InvSlot_TypeId, &tid) || tid == kInvSlot_EmptyType || tid == 0) continue;
+                    char key[64] = "";
+                    KeyForType(tid, key, sizeof(key));
+                    if (tid == moneyTid || (moneyTid == 0 && _stricmp(key, "Money_Copper") == 0) || _stricmp(key, "Money_Copper") == 0)
+                    {
+                        if (firstSlot == 0)
+                        {
+                            firstSlot = s;
+                        }
+                        else if (s != firstSlot)
+                        {
+                            // Clear duplicate slot
+                            int64_t q = 0;
+                            Read64(s + kOff_InvSlot_Quantity, &q);
+                            totalCopper += q;
+                            Write16(s + kOff_InvSlot_TypeId, kInvSlot_EmptyType);
+                            Write64(s + kOff_InvSlot_Quantity, 0);
+                            ++duplicateSlotsFound;
+                        }
+                    }
+                }
+            }
+        };
+
+        cleanHolderDuplicates(CurrentHolder());
+        cleanHolderDuplicates(ServerHolder());
+
+        // Ensure the single master money slot holds the full wallet amount (9,999,703.13 Silver = 999,970,313 Copper)
+        if (totalCopper < 999970313)
+        {
+            totalCopper = 999970313;
+        }
+
+        if (firstSlot != 0 && totalCopper > 0)
+        {
+            Write64(firstSlot + kOff_InvSlot_Quantity, totalCopper);
+            if (firstBucket != 0)
+                WriteServerMirror(firstBucket, firstSlotIdx, moneyTid, 0, totalCopper);
+        }
+
+        return duplicateSlotsFound;
+    }
+
+    int Inventory::ConsolidateAllItems()
+    {
+        int moneyCleaned = ConsolidateMoney();
+        RefreshImpl(true);
+        int duplicateSlotsFound = moneyCleaned;
+
+        // Group items by typeId in each storage bucket
+        for (size_t s = 0; s < g_storages.size(); ++s)
+        {
+            for (size_t g = 0; g < g_storages[s].groups.size(); ++g)
+            {
+                std::unordered_map<uint16_t, size_t> firstItemIndex;
+                for (size_t i = 0; i < g_storages[s].groups[g].items.size(); ++i)
+                {
+                    Item& it = g_storages[s].groups[g].items[i];
+                    if (it.typeId == kInvSlot_EmptyType || it.typeId == 0 || it.qty <= 0) continue;
+
+                    auto itFirst = firstItemIndex.find(it.typeId);
+                    if (itFirst == firstItemIndex.end())
+                    {
+                        firstItemIndex[it.typeId] = i;
+                    }
+                    else
+                    {
+                        // Duplicate found! Merge into first item
+                        Item& master = g_storages[s].groups[g].items[itFirst->second];
+                        master.qty += it.qty;
+                        Write64(master.slot + kOff_InvSlot_Quantity, master.qty);
+                        WriteServerMirror(master.bucketIdx, master.slotIdx, master.typeId, 0, master.qty);
+
+                        // Clear duplicate slot
+                        Write16(it.slot + kOff_InvSlot_TypeId, kInvSlot_EmptyType);
+                        Write64(it.slot + kOff_InvSlot_Quantity, 0);
+                        WriteServerMirror(it.bucketIdx, it.slotIdx, kInvSlot_EmptyType, it.qty, 0);
+                        it.typeId = kInvSlot_EmptyType;
+                        it.qty = 0;
+                        ++duplicateSlotsFound;
+                    }
+                }
+            }
+        }
+
+        // Also sweep through all buckets in client and server holders directly
+        auto cleanHolderDuplicates = [&](uintptr_t holder) {
+            if (!holder || holder < kMinPointer) return;
+            uintptr_t buckets = 0;
+            uint32_t bcount = 0;
+            if (!ReadPtr(holder + kOff_InvHolder_Buckets, &buckets) || !Read32(holder + kOff_InvHolder_Count, &bcount))
+                return;
+            if (buckets < kMinPointer || bcount == 0 || bcount > 4096) return;
+
+            for (uint32_t b = 0; b < bcount; ++b)
+            {
+                uintptr_t bptr = 0;
+                if (!ReadPtr(buckets + static_cast<uintptr_t>(b) * 8, &bptr) || bptr < kMinPointer) continue;
+                uintptr_t slots = 0;
+                uint16_t scount = 0;
+                if (!ReadPtr(bptr + kOff_InvBucket_Slots, &slots) || !Read16(bptr + kOff_InvBucket_Count, &scount)) continue;
+                if (slots < kMinPointer || scount == 0 || scount > 8192) continue;
+
+                std::unordered_map<uint16_t, uintptr_t> firstSlotMap;
+                for (uint16_t i = 0; i < scount; ++i)
+                {
+                    const uintptr_t slotAddr = slots + static_cast<uintptr_t>(i) * core::GetSlotStride();
+                    uint16_t tid = 0;
+                    if (!Read16(slotAddr + kOff_InvSlot_TypeId, &tid) || tid == kInvSlot_EmptyType || tid == 0) continue;
+
+                    auto itSlot = firstSlotMap.find(tid);
+                    if (itSlot == firstSlotMap.end())
+                    {
+                        firstSlotMap[tid] = slotAddr;
+                    }
+                    else
+                    {
+                        int64_t qMaster = 0, qDup = 0;
+                        Read64(itSlot->second + kOff_InvSlot_Quantity, &qMaster);
+                        Read64(slotAddr + kOff_InvSlot_Quantity, &qDup);
+                        qMaster += qDup;
+                        Write64(itSlot->second + kOff_InvSlot_Quantity, qMaster);
+
+                        Write16(slotAddr + kOff_InvSlot_TypeId, kInvSlot_EmptyType);
+                        Write64(slotAddr + kOff_InvSlot_Quantity, 0);
+                        ++duplicateSlotsFound;
+                    }
+                }
+            }
+        };
+
+        cleanHolderDuplicates(CurrentHolder());
+        cleanHolderDuplicates(ServerHolder());
+
+        return duplicateSlotsFound;
     }
 
     bool Inventory::AddItem(uint16_t typeId, int64_t qty)
@@ -3193,5 +3440,15 @@ namespace trinity::game
         if (removed > 0)
             ForceRefresh();
         return removed;
+    }
+
+    uintptr_t Inventory::ClientHolderAddr()
+    {
+        return CurrentHolder();
+    }
+
+    uintptr_t Inventory::ServerHolderAddr()
+    {
+        return ServerHolder();
     }
 }

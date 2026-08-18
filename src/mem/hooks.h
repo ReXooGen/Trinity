@@ -31,7 +31,8 @@ namespace trinity::mem
         const uintptr_t addr = FindPattern(sig);
         if (!addr)
         {
-            LOG_ERR("%s signature NOT FOUND - %s.", context, consequence);
+            if (consequence && consequence[0] != '\0')
+                LOG_ERR("%s signature NOT FOUND - %s.", context, consequence);
             return false;
         }
 

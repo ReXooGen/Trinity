@@ -211,6 +211,12 @@ namespace trinity::game
         // Save and reload the game to reflect in the top-right spendable wallet balance.
         static bool SetWalletMoneyValue(int64_t amount);
 
+        // Merges all duplicate Money_Copper stacks in bag/storage into 1 single master stack and cleans up empty slots.
+        static int ConsolidateMoney();
+
+        // Merges ALL duplicate items (weapons, armors, gear, packs, materials, abyss gears, etc.) into 1 stack each.
+        static int ConsolidateAllItems();
+
         // --- Sealed Abyss Artifact Smart Management (1..150) ----------------
         struct SealedArtifactStatus
         {
@@ -303,5 +309,7 @@ namespace trinity::game
         static uintptr_t ServerCharacterAddr();
         static uintptr_t CharacterAddr(int index);
         static uintptr_t RealmFlagAddress(uint8_t* outVal);
+        static uintptr_t ClientHolderAddr();
+        static uintptr_t ServerHolderAddr();
     };
 }

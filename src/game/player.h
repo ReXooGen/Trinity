@@ -55,6 +55,13 @@ namespace trinity::game
         static uintptr_t GetActor(int index);
         static int GetTrackedPlayerCount();
 
+        // Active mount / vehicle actor tracking (Horse, Dragon, Wagon, Mount).
+        static uintptr_t GetMountActor(int index = 0);
+        static int GetTrackedMountCount();
+
+        // Clears all crime records, wanted levels, and active bounty for player protagonists.
+        static bool ClearBounty(int* clearedCount = nullptr);
+
         // DEBUG: dump every player-ish character in the manager vector to the
         // console - class tag, vtable, possessor round-trip, vital-chain status
         // and HP - so we can see how the three protagonists (and summoned

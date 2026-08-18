@@ -167,6 +167,14 @@ namespace trinity::game
     inline constexpr const char* kSig_DamageApply =
         "48 89 5C 24 ?? 48 89 6C 24 ?? 48 89 74 24 ?? 57 48 83 EC ?? 49 8B C1 49 8B E8 0F B7 DA 48 8B F1 4D 85 C9";
 
+    // --- Just Core: Just Guard (Perfect Parry) & Just Evade (Perfect Dodge) ---
+    // Evaluates timing windows for Perfect Parry (a4 != 0) and Perfect Dodge (a4 == 0).
+    // Overriding returns true and *a5 = true, triggering native slow-mo and counters.
+    inline constexpr const char* kSig_JustCore =
+        "48 8B C4 55 41 56 48 81 EC ?? ?? 00 00 44 0F 29 40 ?? 45 32 DB";
+    inline constexpr const char* kSig_JustCore_Alt =
+        "48 8B C4 55 41 56 48 81 EC ?? ?? ?? ?? 44 0F 29";
+
     // marker+0x18 -> the character's vital/target owner: the object battle
     // damage is addressed to (the `targetOwner` argument above). Validation:
     // its first qword points back at the marker.
@@ -223,9 +231,10 @@ namespace trinity::game
         // sub_251E3B0: mov r8d,[rdx+90h] / lea rdx,[rsp+..] / mov rcx,[rax] / call.
         // rdx is the incoming arg2 at entry; 0x90 is a struct offset.
         {"48 8B 05 ?? ?? ?? ?? 44 8B 82 90 00 00 00 48 8D 54 24 ?? 48 8B 08 E8", 0},
-        // 1.17: this caller now reads +0x158 (was +0x160) before the same manager call.
-        // rcx is the incoming arg1 at entry; the literal field offset is part of the anchor.
+        // 1.17+: this caller now reads +0x158 before the same manager call.
         {"48 8B 05 ?? ?? ?? ?? 44 8B 81 58 01 00 00 48 8D 55 ?? 48 8B 08 E8", 0},
+        // 1.14-1.16 (Legacy): this caller read +0x160 before the manager call.
+        {"48 8B 05 ?? ?? ?? ?? 44 8B 81 60 01 00 00 48 8D 55 ?? 48 8B 08 E8", 0},
         // sub_2514EB0 / sub_22EBC00: mov r8d,[rdi] / lea rdx,[rsp+..] / mov rcx,[rax] / call.
         // Weakest of the set (rdi is allocator-chosen) and it matches BOTH of
         // those sites - but both resolve to the same global, so it still votes
@@ -393,6 +402,10 @@ namespace trinity::game
     inline constexpr const char* kSig_TravelToNode =
         "48 89 5C 24 18 89 54 24 10 48 89 4C 24 08 55 56 57 48 8D 6C 24 B9 "
         "48 81 EC B0 00 00 00 41 8B F8 33 DB 83 FA FF";
+
+    // Legacy (TU 1.14 - 1.15) Fast Travel trigger
+    inline constexpr const char* kSig_TravelToNode_Legacy =
+        "48 8B C4 48 89 58 18 89 50 10 48 89 48 08 57 48 81 EC 80 00 00 00";
 
     // The destinations live in the LevelGimmickSceneObjectInfo registry, a global
     // (IDB qword_6185008), read through its resolver sub_396CC0(u32* sceneId)
@@ -589,11 +602,13 @@ namespace trinity::game
     // empty). Editing a quantity in the client holder alone reverts because a
     // per-frame server reconcile overwrites it; writing the SAME slot in BOTH
     // holders makes the edit real, usable, and non-reverting (live-proven).
-    // 1.17: frame grew from 0x2F0 to 0x310; the surrounding ABI saves stayed stable.
-    // Unique byte signature in the 1.17 scan.
     inline constexpr const char* kSig_InvHolderInsert =
         "48 89 5C 24 ? 4C 89 44 24 ? 48 89 54 24 ? 48 89 4C 24 ? 55 56 57 41 54 "
         "41 55 41 56 41 57 48 8D AC 24 ? ? ? ? 48 81 EC 10 03 00 00";
+
+    inline constexpr const char* kSig_InvHolderInsert_Legacy =
+        "48 89 5C 24 ? 4C 89 44 24 ? 48 89 54 24 ? 48 89 4C 24 ? 55 56 57 41 54 "
+        "41 55 41 56 41 57 48 8D AC 24 ? ? ? ? 48 81 EC F0 02 00 00";
 
     // Inventory transaction COMMIT (IDB sub_1CE1E70), called by the transaction
     // orchestrator sub_1CC15C0 as `commit(holder, &err, CONTAINER, ...)` - its
@@ -804,7 +819,7 @@ namespace trinity::game
     // def alone. Leaves the instance id as -1 for the caller to stamp.
     inline constexpr const char* kSig_TrItemValueCtor =
         "48 89 5C 24 ? 48 89 4C 24 ? 55 56 57 41 54 41 55 41 56 41 57 48 8B EC "
-        "48 83 EC 60 4C 8B EA 48 8B F1 48 C7 01 FF FF FF FF 0F B7 02 66 89 41 08";
+        "48 83 EC 60 4C 8B EA";
     // Per-placement COMMIT (IDB sub_1CE1020):
     //     void* f(holder, int* outErr, void* unused, void* placement, u16 slotIdx)
     // Re-finds the bucket from the item's own def (+66) and calls sub_ED65670,
@@ -1129,7 +1144,7 @@ namespace trinity::game
     //   match+37: `vmovss xmm0, cs:dword_615A4F0`     (value; 8-byte instr)
     // IDB match at 0x8FC348. Unique block.
     inline constexpr const char* kSig_GameSpeed =
-        "80 3D ?? ?? ?? ?? 01 75 30 48 8B 4F 58 41 8B C7 C5 78 2F 61 64 0F 97 C0 "
+        "80 3D ?? ?? ?? ?? 01 75 30 48 8B 4F 58 41 8B C7 C5 78 2F ?? 64 0F 97 C0 "
         "85 C0 74 09 80 3D ?? ?? ?? ?? 01 75 14 C5 FA 10 05 ?? ?? ?? ?? C5 FA 11 "
         "41 64 C6 05 ?? ?? ?? ?? 00";
     inline constexpr uintptr_t kOff_GameSpeed_FlagDisp    = 2;  // disp32 of cmp cs:byte_606B9CE,1
@@ -1162,7 +1177,7 @@ namespace trinity::game
     // followed by the two `vmovups ymm0, cs:<global>` (server if TLS[498], else
     // client). The two RIP operands resolve to the server and client globals.
     inline constexpr const char* kSig_FieldTimeRealm =
-        "BA F6 01 00 00 48 8B 08 0F B6 04 0A 84 C0 74 0A "
+        "BA ?? 01 00 00 48 8B 08 0F B6 04 0A 84 C0 74 0A "
         "C5 FC 10 05 ?? ?? ?? ?? EB 08 C5 FC 10 05 ?? ?? ?? ??";
     // Within the match: server `vmovups` at +0x10, client `vmovups` at +0x1A;
     // each is 8 bytes (4-byte opcode C5 FC 10 05 + 4-byte disp at its tail).
@@ -1387,24 +1402,35 @@ namespace trinity::game
         "48 8D AC 24 ? ? ? ? B8 ? ? ? ? "
         "E8 ? ? ? ? 48 2B E0 4D 8B E0 4C 8B EA 4C 8B F1 4C 8B 79 08";
 
+    // Legacy (TU 1.14 - 1.16) EquipBatch
+    inline constexpr const char* kSig_EquipBatch_Legacy =
+        "48 89 5C 24 10 55 56 57 41 54 41 55 41 56 41 57 "
+        "48 8D AC 24 ? ? ? ? B8 ? ? ? ? "
+        "E8 ? ? ? ? 48 2B E0 4D 8B F8 4C 8B E2 4C 8B F1 4C 8B 69 08";
+
     // The client dye-ack applier (IDB sub_7D9C50):
     //     int* f(void* equipComponent, int* outErr, void* batch1960)
     // Called directly with our crafted batch. Signature = prologue + the
     // literal 0x120 frame + arg shuffle (mov r12,r8; mov rsi,rdx). If a patch
     // resizes the frame, re-find via xrefs to the dye upsert (kSig_DyeUpsert)
-    // from a ~0x550-byte function in the equip-component code region.
-    // 1.17.00 note: this render-side applier still needs a fresh signature.
-    // Dye::Install fails closed rather than calling an unverified function.
-    inline constexpr const char* kSig_DyeApplyBatch =
-        "48 89 5C 24 ? 48 89 54 24 ? 55 56 57 41 54 41 55 41 56 41 57 "
-        "48 8D 6C 24 ? 48 81 EC 20 01 00 00 4D 8B E0 48 8B F2";
+    // The per-slot equipped dye applier (sub_847D24 / 1.17+ verified):
+    //     void f(void* equipComponent, uint16_t slotTag, const uint8_t record[16], int channel)
+    // Works universally for ALL equipped components (Player characters AND Mounts/Vehicles).
+    inline constexpr const char* kSig_DyeApplySlot =
+        "48 83 EC 30 41 0F B7 D9 48 8B FA 48 8B E9 48 8B 41 08 48 8D 50 08 45 33 FF";
 
-    // 1.17 read-only candidate: same saved-register set and ABI shuffle as
-    // the prior applier, but the compiler now uses a 0x50 frameless stack.
-    // Kept separate until runtime-address logging confirms one unique hit.
-    inline constexpr const char* kSig_DyeApplyBatch117Candidate =
+    // The client dye-ack applier (sub_814BD0 / 1.17+ verified):
+    //     int* f(void* equipComponent, int* outErr, void* batch1960)
+    // Called directly with our crafted batch. Reads comp+0x80 (table descriptor)
+    // and upserts records directly into TrItemValue and triggers the GPU material update.
+    inline constexpr const char* kSig_DyeApplyBatch =
         "48 89 5C 24 18 48 89 54 24 10 55 56 57 41 54 41 55 41 56 41 57 "
         "48 83 EC 50 4D 8B E0 48 8B F2 4C 8B F1";
+
+    // Legacy (TU 1.14 - 1.16) client dye-ack applier
+    inline constexpr const char* kSig_DyeApplyBatch_Legacy =
+        "48 89 5C 24 ? 48 89 54 24 ? 55 56 57 41 54 41 55 41 56 41 57 "
+        "48 8D 6C 24 ? 48 81 EC 20 01 00 00 4D 8B E0 48 8B F2";
 
     // The dye-record upsert primitive (IDB sub_1F8CB40):
     //     void f(void* itemVal, const uint8_t record[16])
@@ -1412,9 +1438,12 @@ namespace trinity::game
     // (growing the vector in the CALLING THREAD'S REALM) while count < 12.
     // Used for the inventory-instance mirror. The `49 C1 E0 04` is the
     // 16-byte record stride (shl r8,4) - semantic, keep literal.
-    // 1.17.00 note: record upsert still needs a fresh signature.
     inline constexpr const char* kSig_DyeUpsert =
         "48 8B 41 78 4C 8B D1 44 8B 81 80 00 00 00 49 C1 E0 04";
+
+    // Legacy (TU 1.14 - 1.16) DyeUpsert
+    inline constexpr const char* kSig_DyeUpsert_Legacy =
+        "48 8B 41 ? 4C 8B D1 44 8B 41 ? 49 C1 E0 04";
 
     // Equip component layout (verified in THIS build from BatchEquip's own
     // table walk: `a1[17]` -> desc, `*(desc+8) + 200*i`, tag at +192).

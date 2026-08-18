@@ -63,6 +63,7 @@ namespace trinity::game
             int64_t  instanceId;
             int      unlockedCount; // sockets currently usable (0..5)
             int      filledCount;   // of those, how many hold a gear
+            int      maxSockets;    // natural max capacity for this equipment piece (0..5)
             int      refineLevel;   // refinement/enhancement level (0..10)
             char     slotName[24];
             char     itemName[64];
@@ -71,6 +72,7 @@ namespace trinity::game
         };
         static int  SlotCount();                 // refreshes the snapshot
         static bool GetSlot(int idx, SlotInfo* out);
+        static int  MaxSocketsForTag(uint16_t tag);
 
         // --- The abyss-gear catalog (for the picker) -------------------------
         // Every abyss gear the game defines, from Inventory's item catalog

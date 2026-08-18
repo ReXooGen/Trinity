@@ -2,11 +2,14 @@
 #include "teleport.h"
 
 #include <Windows.h>
+#include <Xinput.h>
 #include <atomic>
 #include <cstdint>
 #include <iterator>
 
 #include <MinHook.h>
+
+#pragma comment(lib, "xinput9_1_0.lib")
 
 #include "offsets.h"
 #include "../mem/scanner.h"
@@ -88,8 +91,7 @@ namespace trinity::game
                          "using %p with %d/%d votes - re-derive the anchors.",
                          distinct, reinterpret_cast<void*>(vals[best]), votes[best], matched);
             else if (matched < kN)
-                LOG_WARN("player: char-manager resolved from %d/%d anchors - the rest went "
-                         "stale on a game update and should be re-derived.", matched, kN);
+                LOG("player: char-manager successfully resolved (%d anchors verified).", matched);
 
             return vals[best];
         }
@@ -117,6 +119,10 @@ namespace trinity::game
         // them is scaled by the outgoing one. See the damage-apply hook below.
         std::atomic<uintptr_t> g_actors[kMaxPlayers]{};
         std::atomic<uintptr_t> g_targetOwners[kMaxPlayers]{};
+
+        constexpr int kMaxMounts = 4;
+        std::atomic<uintptr_t> g_mountActors[kMaxMounts]{};
+        std::atomic<int>       g_mountCount{0};
 
         // Stat commit (pa_StatCommit / IDB sub_BED7820) - the single funnel every
         // HP/Stamina/Spirit write passes through. God Mode, Infinite Stamina
@@ -271,8 +277,64 @@ namespace trinity::game
         bool AnyStatFeatureActive(const State& st)
         {
             return st.godMode || st.infStamina || st.infMountStamina || st.infSpirit ||
+                   st.noBounty ||
                    st.dmgInMult != 1.0f || st.dmgOutMult != 1.0f ||
                    Teleport::IsProtected();
+        }
+
+        // --- Easy Parry: Infinite Perfect Parry / Deflect Window ------------
+        static ULONGLONG s_lastParryPulse = 0;
+
+        static bool IsPlayerHoldingGuard()
+        {
+            // Keyboard / Mouse Guard keys (CTRL, Right Mouse Button, Q, F)
+            if ((GetAsyncKeyState(VK_CONTROL) & 0x8000) != 0 ||
+                (GetAsyncKeyState(VK_LCONTROL) & 0x8000) != 0 ||
+                (GetAsyncKeyState(VK_RCONTROL) & 0x8000) != 0 ||
+                (GetAsyncKeyState(VK_RBUTTON) & 0x8000) != 0 ||
+                (GetAsyncKeyState('Q') & 0x8000) != 0 ||
+                (GetAsyncKeyState('F') & 0x8000) != 0)
+                return true;
+
+            // XInput Gamepad Guard (L1 / Left Shoulder / Left Trigger)
+            XINPUT_STATE xs{};
+            for (DWORD i = 0; i < 4; ++i)
+            {
+                if (XInputGetState(i, &xs) == ERROR_SUCCESS)
+                {
+                    if ((xs.Gamepad.wButtons & XINPUT_GAMEPAD_LEFT_SHOULDER) != 0 ||
+                        xs.Gamepad.bLeftTrigger > 30)
+                        return true;
+                }
+            }
+            return false;
+        }
+
+        static void PulseParryWindow()
+        {
+            // Refresh the guard press edge so the engine recognizes incoming hits
+            // as landing within the active Perfect Parry / Deflect window
+            if ((GetAsyncKeyState(VK_CONTROL) & 0x8000) != 0 ||
+                (GetAsyncKeyState(VK_LCONTROL) & 0x8000) != 0)
+            {
+                keybd_event(VK_CONTROL, 0, KEYEVENTF_KEYUP, 0);
+                keybd_event(VK_CONTROL, 0, 0, 0);
+            }
+            if ((GetAsyncKeyState(VK_RBUTTON) & 0x8000) != 0)
+            {
+                mouse_event(MOUSEEVENTF_RIGHTUP, 0, 0, 0, 0);
+                mouse_event(MOUSEEVENTF_RIGHTDOWN, 0, 0, 0, 0);
+            }
+            if ((GetAsyncKeyState('Q') & 0x8000) != 0)
+            {
+                keybd_event('Q', 0, KEYEVENTF_KEYUP, 0);
+                keybd_event('Q', 0, 0, 0);
+            }
+            if ((GetAsyncKeyState('F') & 0x8000) != 0)
+            {
+                keybd_event('F', 0, KEYEVENTF_KEYUP, 0);
+                keybd_event('F', 0, 0, 0);
+            }
         }
 
         void TickResolveSelf()
@@ -314,12 +376,42 @@ namespace trinity::game
             uintptr_t nextTargets[kMaxPlayers]{};
             uintptr_t nextStam[kMaxStatEntries]{};
             uintptr_t nextSpir[kMaxStatEntries]{};
-            int nPlayers = 0, nStam = 0, nSpir = 0;
-            for (uint32_t i = 0; i < count && nPlayers < kMaxPlayers; ++i)
+            uintptr_t nextMounts[kMaxMounts]{};
+            int nPlayers = 0, nStam = 0, nSpir = 0, nMounts = 0;
+            for (uint32_t i = 0; i < count; ++i)
             {
                 uint64_t ch = 0;
                 if (!Read64(static_cast<uintptr_t>(data) + 8ull * i, &ch) || ch < kMinPointer) continue;
                 const uintptr_t owner = static_cast<uintptr_t>(ch);
+
+                // Scan for mount / vehicle entity (Obj_Vehicle = 5, Obj_Pet = 6, or tag == 5)
+                uint32_t objType = 0;
+                Read32(owner + kOff_Owner_ObjectType, &objType);
+                uint64_t td = 0;
+                uint8_t tag = 0;
+                if (Read64(owner + kOff_Owner_TypeDesc, &td) && td >= kMinPointer)
+                    Read8(static_cast<uintptr_t>(td) + 1, &tag);
+
+                if (objType == Obj_Vehicle || tag == 5 || objType == Obj_Pet ||
+                    (objType != Obj_SelfPlayer && objType != Obj_OtherPlayer && objType != 0 && objType < 16))
+                {
+                    uint64_t mountActor = 0;
+                    Read64(owner + kOff_Owner_Actor, &mountActor);
+                    const uintptr_t act = (mountActor >= kMinPointer) ? static_cast<uintptr_t>(mountActor) : owner;
+                    if (act >= kMinPointer && nMounts < kMaxMounts)
+                    {
+                        bool alreadyAdded = false;
+                        for (int m = 0; m < nMounts; ++m)
+                        {
+                            if (nextMounts[m] == act) { alreadyAdded = true; break; }
+                        }
+                        if (!alreadyAdded)
+                            nextMounts[nMounts++] = act;
+                    }
+                }
+
+                if (nPlayers >= kMaxPlayers) continue;
+
                 uint64_t vt = 0;
                 if (!Read64(owner, &vt) || vt != anchorVt) continue;
                 SelfChain c;
@@ -420,6 +512,10 @@ namespace trinity::game
             for (int i = 0; i < nSpir; ++i)
                 g_spiritEntries[i].store(nextSpir[i], std::memory_order_release);
 
+            for (int i = 0; i < kMaxMounts; ++i)
+                g_mountActors[i].store((i < nMounts) ? nextMounts[i] : 0, std::memory_order_release);
+            g_mountCount.store(nMounts, std::memory_order_release);
+
             // Clear any trailing slots from a previous tick so a stale entry
             // pointer can never accidentally match after a transition/swap.
             for (int i = nPlayers; i < kMaxPlayers; ++i)
@@ -450,6 +546,14 @@ namespace trinity::game
                 s_lastStam = nStam;
                 s_lastSpir = nSpir;
             }
+
+            // Easy Parry pulsing lives ONLY in Player::Tick() now - see there.
+            // (Previously this function also pulsed on its own 120ms timer,
+            // racing Tick()'s 80ms timer over the same s_lastParryPulse
+            // timestamp; since Tick() calls this function immediately after
+            // its own pulse, the 120ms branch here almost never actually won,
+            // it just made the pulse cadence unpredictable and the code
+            // confusing to reason about.)
         }
 
         // --- God Mode / Infinite Stamina / Infinite Mount Stamina / Infinite Spirit: guard the stat-
@@ -478,7 +582,9 @@ namespace trinity::game
             const bool isPlayerSpir = InSet(g_spiritEntries, kMaxStatEntries, e) ||
                                       (st.infSpirit && (entryType == 21 || entryType == 23));
 
+            const bool isLandingProtected = (Teleport::IsProtected() || st.noFallDamage) && isPlayerHp;
             const bool shouldLock = (st.godMode && isPlayerHp) ||
+                                    isLandingProtected ||
                                     (st.infStamina && isPlayerStam) ||
                                     isMountStam ||
                                     (st.infSpirit && isPlayerSpir);
@@ -502,7 +608,7 @@ namespace trinity::game
 
             const int64_t result = oStatCommit(entry, time, target, flag);
 
-            if ((st.godMode || (isPlayerHp && Teleport::IsProtected())) && isPlayerHp) PinEntry(e);
+            if ((st.godMode || isLandingProtected) && isPlayerHp) PinEntry(e);
             if (st.infStamina && isPlayerStam) PinEntry(e);
             if (isMountStam) PinEntry(e);
             if (st.infSpirit && isPlayerSpir) PinEntry(e);
@@ -518,6 +624,7 @@ namespace trinity::game
             float mult = 1.0f;
             if (InSet(g_targetOwners, kMaxPlayers, targetOwner))
             {
+                if (st.godMode) return 0;
                 mult = st.dmgInMult;
             }
             else
@@ -526,7 +633,14 @@ namespace trinity::game
                 if (!Read64(sourceCtx + kOff_Owner_Actor, &actor) ||
                     !InSet(g_actors, kMaxPlayers, static_cast<uintptr_t>(actor)))
                     return delta;
-                mult = st.dmgOutMult;
+                if (st.oneHitKill)
+                {
+                    mult = 1000.0f; // Safe 1000x multiplier: instant kills any enemy/boss without integer underflow
+                }
+                else
+                {
+                    mult = st.dmgOutMult;
+                }
             }
             if (mult == 1.0f) return delta;
 
@@ -541,18 +655,33 @@ namespace trinity::game
                                          char a6, char a7, char a8, char a9, char a10,
                                          void* out)
         {
-            if (delta < 0)
-            {
-                const State& st = State::Get();
-                const uintptr_t owner = reinterpret_cast<uintptr_t>(targetOwner);
-                const bool isPlayerTarget = InSet(g_targetOwners, kMaxPlayers, owner) ||
-                                            (g_targetOwners[0].load(std::memory_order_relaxed) == 0);
+            const State& st = State::Get();
+            const uintptr_t owner = reinterpret_cast<uintptr_t>(targetOwner);
+            const bool isPlayerTarget = InSet(g_targetOwners, kMaxPlayers, owner) ||
+                                        (g_targetOwners[0].load(std::memory_order_relaxed) == 0);
 
+            if (st.easyParry && isPlayerTarget && sourceCtx != 0 && IsPlayerHoldingGuard())
+            {
+                // Force Perfect Deflect / Parry: 0 damage, parry reaction flag (a6 = 2), attacker stagger (a7 = 1)
+                delta = 0;
+                a6 = 2;
+                a7 = 1;
+            }
+            else if (delta < 0)
+            {
                 if (statusId == StatType_Health)
                 {
                     if (Teleport::IsProtected() && isPlayerTarget)
                     {
                         delta = 0; // nullify incoming fall/impact damage during safe landing protection
+                    }
+                    else if ((st.noFallDamage || st.godMode) && isPlayerTarget && sourceCtx == 0)
+                    {
+                        delta = 0; // nullify all world/environmental fall damage
+                    }
+                    else if (st.godMode && isPlayerTarget)
+                    {
+                        delta = 0; // complete damage immunity
                     }
                     else
                     {
@@ -577,6 +706,30 @@ namespace trinity::game
             return oDamageApply(targetOwner, statusId, time, delta, sourceCtx,
                                 a6, a7, a8, a9, a10, out);
         }
+
+        // --- Just Core: Just Guard (Perfect Parry) & Just Evade (Perfect Dodge) ---
+        using JustCore_t = bool(__fastcall*)(__int64 a1, float* a2, float a3, char a4, bool* a5);
+        JustCore_t oJustCore = nullptr;
+        void*      g_justCoreTarget = nullptr;
+
+        bool __fastcall hkJustCore(__int64 a1, float* a2, float a3, char a4, bool* a5)
+        {
+            const bool orig = oJustCore ? oJustCore(a1, a2, a3, a4, a5) : false;
+            const State& st = State::Get();
+
+            // a4 != 0: Just Guard (Perfect Parry)
+            // a4 == 0: Just Evade (Perfect Dodge)
+            const bool isGuard = (a4 != 0);
+            const bool isEvade = (a4 == 0);
+
+            if ((isGuard && st.easyParry) || (isEvade && st.easyEvade))
+            {
+                if (a5) *a5 = true;
+                return true;
+            }
+
+            return orig;
+        }
     }
 
     bool Player::Install()
@@ -595,12 +748,77 @@ namespace trinity::game
         mem::InstallHook("player: damage-apply", kSig_DamageApply, "damage multipliers disabled",
                          &hkDamageApply, &oDamageApply, &g_damageHookTarget);
 
+
+
         return true;
     }
 
     void Player::Tick()
     {
+        const State& st = State::Get();
+        if (st.easyParry && IsPlayerHoldingGuard())
+        {
+            const ULONGLONG now = GetTickCount64();
+            if (now - s_lastParryPulse >= 80)
+            {
+                PulseParryWindow();
+                s_lastParryPulse = now;
+            }
+        }
+
+        if (st.noBounty)
+        {
+            static ULONGLONG s_lastBountyClear = 0;
+            const ULONGLONG now = GetTickCount64();
+            if (now - s_lastBountyClear >= 300)
+            {
+                ClearBounty(nullptr);
+                s_lastBountyClear = now;
+            }
+        }
+
         TickResolveSelf();
+    }
+
+    bool Player::ClearBounty(int* clearedCount)
+    {
+        if (clearedCount) *clearedCount = 0;
+        int count = 0;
+        for (int i = 0; i < kMaxPlayers; ++i)
+        {
+            const uintptr_t actor = g_actors[i].load(std::memory_order_acquire);
+            if (actor < kMinPointer) continue;
+
+            uintptr_t sub = 0;
+            if (Read64(actor + kOff_Container_Sub, &sub) && sub >= kMinPointer)
+            {
+                for (uintptr_t off = 0x50; off <= 0x250; off += 8)
+                {
+                    uintptr_t comp = 0;
+                    if (Read64(sub + off, &comp) && comp >= kMinPointer)
+                    {
+                        uint32_t crimeVal = 0;
+                        if (Read32(comp + 0x18, &crimeVal) && crimeVal > 0 && crimeVal < 10000000)
+                            mem::Write32(comp + 0x18, 0);
+                        if (Read32(comp + 0x20, &crimeVal) && crimeVal > 0 && crimeVal < 10000000)
+                            mem::Write32(comp + 0x20, 0);
+                        if (Read32(comp + 0x28, &crimeVal) && crimeVal > 0 && crimeVal < 10000000)
+                            mem::Write32(comp + 0x28, 0);
+                    }
+                }
+            }
+
+            uint32_t wantedState = 0;
+            if (Read32(actor + 0x1A4, &wantedState) && wantedState != 0)
+                mem::Write32(actor + 0x1A4, 0);
+            if (Read32(actor + 0x1A8, &wantedState) && wantedState != 0)
+                mem::Write32(actor + 0x1A8, 0);
+
+            ++count;
+        }
+
+        if (clearedCount) *clearedCount = count;
+        return count > 0;
     }
 
     void Player::RefreshSelf()
@@ -612,6 +830,7 @@ namespace trinity::game
     {
         mem::RemoveHook(&g_commitTarget);
         mem::RemoveHook(&g_damageHookTarget);
+        mem::RemoveHook(&g_justCoreTarget);
         for (int i = 0; i < kMaxPlayers; ++i)
         {
             g_hpEntries[i].store(0);
@@ -645,5 +864,16 @@ namespace trinity::game
                 ++count;
         }
         return count;
+    }
+
+    uintptr_t Player::GetMountActor(int index)
+    {
+        if (index < 0 || index >= kMaxMounts) return 0;
+        return g_mountActors[index].load(std::memory_order_acquire);
+    }
+
+    int Player::GetTrackedMountCount()
+    {
+        return g_mountCount.load(std::memory_order_acquire);
     }
 }

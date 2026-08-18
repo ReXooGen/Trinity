@@ -44,3 +44,13 @@ SECURITY.md
 THIRD_PARTY_NOTICES.md
 trinity_nexus_banner.jpg
 Build_Trinity.ps1
+
+# Reference folders & external repos
+XeTrinityz-reference/
+*XeTrinityz*
+/Archives/
+/Cheat_Engine/
+/Media/
+/Mod_Files/
+*.pabgb
+

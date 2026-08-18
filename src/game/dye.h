@@ -39,6 +39,12 @@ namespace trinity::game
         static void SetActiveCharacter(int index);
         static int  GetActiveCharacter();
 
+        // Target Mode (0 = Player Character, 1 = Mount / Horse)
+        static void SetTargetMode(int mode);
+        static int  GetTargetMode();
+        static void SetActiveMount(int index);
+        static int  GetActiveMount();
+
         // --- Equipped-slot snapshot (menu side; guarded reads only) ---------
         // Rebuilt on every call cheap enough for a menu frame: the table is
         // ~a dozen entries. Indices are positions in the snapshot, valid only
@@ -49,6 +55,7 @@ namespace trinity::game
             uint16_t typeId;     // item type
             int64_t  instanceId; // item instance (allocator id)
             uint32_t dyeCount;   // records currently on the equipped entry
+            int      maxZones;   // detected dyeable zones count (e.g. 2 for Chamfron/Barding, 8 for Chest)
             bool     dyeable;    // item's prefab is in the game's dye registry
                                  // (partprefabdyeslotinfo) - see dye_data.h
             char     slotName[24];

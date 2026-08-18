@@ -23,6 +23,7 @@
 #include "../game/dye_data.h" // the game's dye families / preset shades (generated)
 #include "../game/equipment.h"
 #include "../game/friendly.h"
+#include "../core/version_detect.h"
 
 namespace trinity::gui
 {
@@ -70,32 +71,101 @@ namespace trinity::gui
 
     // --- Tab pages -----------------------------------------------------------
 
+    // --- Mount & Horse Options -----------------------------------------------
+    // PLAYER -> Mount & Horse Options
+    // Manages stamina, gear dyeing, and options for mounts and horses.
+    static void RenderMountOptions()
+    {
+        State& st = State::Get();
+        ui::Begin();
+
+        bool changed = false;
+        changed |= ui::Toggle(LOC("Infinite Mount Stamina"), &st.infMountStamina,
+                   LOC("Mounts, horses, and dragons never run out of stamina while galloping, sprinting, or flying."));
+
+        if (ui::Submenu(LOC("Mount Equipment Dye"), "dyeslots",
+                    LOC("Recolor and customize equipment on your active horse or mount.")))
+        {
+            game::Dye::SetTargetMode(1);
+        }
+
+        if (changed && st.autoSave)
+            Settings::Save();
+        ui::End();
+    }
+
+    // --- Combat & Gameplay Options --------------------------------------------
+    // PLAYER -> Combat & Gameplay Options
+    // Manages One-Hit Kill, God Mode, Durability, Easy Parry, Easy Evade, and damage.
+    static void RenderCombatOptions()
+    {
+        State& st = State::Get();
+        ui::Begin(LOC("Combat & Gameplay Options"));
+
+        bool changed = false;
+        changed |= ui::Toggle(LOC("One-Hit Kill"), &st.oneHitKill,
+                   LOC("Instantly eliminates any enemy or boss with a single strike (1,000x damage multiplier)."));
+        changed |= ui::Toggle(LOC("God Mode"), &st.godMode,
+                   game::Player::Ready()
+                        ? LOC("Keeps your health full constantly.")
+                        : LOC("Keeps your health full. Load into the game world first."));
+        changed |= ui::Toggle(LOC("Easy Parry (Just Guard)"), &st.easyParry,
+                   LOC("Automatically triggers Perfect Parry, cinematic deflect, and attacker stagger on guard."));
+        changed |= ui::Toggle(LOC("Easy Evade (Perfect Dodge)"), &st.easyEvade,
+                   LOC("Automatically triggers Perfect Evade, slow-motion bullet time, and counter-attack opportunities on dodge."));
+        changed |= ui::Toggle(LOC("Infinite Item Durability"), &st.infDurability,
+                   LOC("Equipped weapons, shields, and armor never degrade (permanently locked at 100% max durability)."));
+        changed |= ui::Toggle(LOC("No Fall Damage"), &st.noFallDamage,
+                   LOC("Completely negates fall damage from high drops, cliffs, and Sky Arrival teleport."));
+        changed |= ui::Toggle(LOC("Infinite Stamina"), &st.infStamina,
+                   LOC("Keeps your stamina full at all times."));
+        changed |= ui::Toggle(LOC("Infinite Spirit"), &st.infSpirit,
+                   LOC("Keeps your spirit / special ability gauge full."));
+        changed |= ui::Toggle(LOC("No Bounty (Never Wanted)"), &st.noBounty,
+                   LOC("Prevents crime accumulation and disables wanted level, keeping guards and bounty hunters neutral."));
+        if (ui::Option(LOC("Clear Bounty"), LOC("Instantly removes all current crime points, bounty, and wanted status.")))
+        {
+            int cleared = 0;
+            if (game::Player::ClearBounty(&cleared))
+                ui::Toast(LOC("Bounty and crime records cleared"));
+            else
+                ui::Toast(LOC("No active bounty or character not in world"));
+        }
+        changed |= ui::FloatOption(LOC("Outgoing Damage"), &st.dmgOutMult, 0.0f, 20.0f, 0.25f, 1.0f, "%.2fx",
+                        LOC("Adjusts how much damage you deal to enemies."));
+        changed |= ui::FloatOption(LOC("Incoming Damage"), &st.dmgInMult, 0.0f, 10.0f, 0.25f, 1.0f, "%.2fx",
+                        LOC("Adjusts how much damage you take from attacks."));
+
+        if (changed && st.autoSave)
+            Settings::Save();
+        ui::End();
+    }
+
     static void RenderPlayer()
     {
         State& st = State::Get();
         ui::Begin();
 
-        ui::Submenu(LOC("Dye Equipment"), "dyeslots",
+        ui::Submenu(LOC("Combat & Gameplay Options"), "combat_options",
+                    LOC("One-Hit Kill, God Mode, Durability, Easy Parry, Easy Evade, and damage multipliers."));
+
+        if (ui::Submenu(LOC("Dye Equipment"), "dyeslots",
                     game::Dye::Ready()
                         ? LOC("Recolor your equipped gear.")
-                        : LOC("Recolor your equipped gear. Load into the world first."));
+                        : LOC("Recolor your equipped gear. Load into the world first.")))
+        {
+            game::Dye::SetTargetMode(0);
+        }
 
         ui::Submenu(LOC("Edit Equipment"), "equipslots",
                     game::Equipment::Ready()
                         ? LOC("Refine your gear and socket abyss gears into it.")
                         : LOC("Refine and socket your gear. Load into the world first."));
 
+        ui::Submenu(LOC("Mount & Horse Options"), "mount_options",
+                    LOC("Stamina, gear customization, and summon options for mounts and horses."));
+
         bool changed = false;
-        changed |= ui::Toggle(LOC("God Mode"), &st.godMode,
-                   game::Player::Ready()
-                       ? LOC("Keeps your health full.")
-                       : LOC("Keeps your health full. Load into the game world first."));
-        changed |= ui::Toggle(LOC("Infinite Stamina"), &st.infStamina,
-                   LOC("Keeps your stamina full."));
-        changed |= ui::Toggle(LOC("Infinite Mount Stamina"), &st.infMountStamina,
-                   LOC("Mounts and horses never run out of stamina while galloping or sprinting."));
-        changed |= ui::Toggle(LOC("Infinite Spirit"), &st.infSpirit,
-                   LOC("Keeps your spirit full."));
         changed |= ui::ToggleFloat(LOC("Super Run"), &st.superRun, &st.superRunMult, 1.0f, 10.0f, 0.25f, 2.0f, "%.2fx",
                         LOC("Move faster than normal."));
         changed |= ui::ToggleFloat(LOC("Super Jump"), &st.superJump, &st.superJumpMult, 1.0f, 10.0f, 0.25f, 2.0f, "%.2fx",
@@ -106,10 +176,6 @@ namespace trinity::gui
                         game::Friendly::Ready()
                             ? LOC("Gifting NPCs or feeding animals builds trust faster.")
                             : LOC("Gifting NPCs or feeding animals builds trust faster. Unavailable right now."));
-        changed |= ui::FloatOption(LOC("Outgoing Damage"), &st.dmgOutMult, 0.0f, 20.0f, 0.25f, 1.0f, "%.2fx",
-                        LOC("Adjusts how much damage you deal."));
-        changed |= ui::FloatOption(LOC("Incoming Damage"), &st.dmgInMult, 0.0f, 10.0f, 0.25f, 1.0f, "%.2fx",
-                        LOC("Adjusts how much damage you take."));
 
         if (changed && st.autoSave)
             Settings::Save();
@@ -198,21 +264,48 @@ namespace trinity::gui
     {
         ui::Begin();
 
-        static const char* const kCharNames[] = { "Kliff", "Damiane", "Oongka" };
-        int dyeChar = game::Dye::GetActiveCharacter();
-        if (ui::Combo(LOC("Character"), &dyeChar, kCharNames, 3, LOC("Select which character's armor to dye.")))
+        const bool isMount = (game::Dye::GetTargetMode() == 1);
+        if (isMount)
         {
-            game::Dye::SetActiveCharacter(dyeChar);
+            static const char* const kMountNames[] = { "Active Mount", "Mount 2", "Mount 3", "Mount 4" };
+            int mountIdx = game::Dye::GetActiveMount();
+            if (ui::Combo(LOC("Target Mount"), &mountIdx, kMountNames, 4, LOC("Select active horse or mount to dye.")))
+            {
+                game::Dye::SetActiveMount(mountIdx);
+            }
+        }
+        else
+        {
+            static const char* const kCharNames[] = { "Kliff", "Damiane", "Oongka" };
+            int dyeChar = game::Dye::GetActiveCharacter();
+            if (ui::Combo(LOC("Character"), &dyeChar, kCharNames, 3, LOC("Select which character's armor to dye.")))
+            {
+                game::Dye::SetActiveCharacter(dyeChar);
+            }
         }
 
         if (!game::Dye::Ready())
         {
-            if (dyeChar > 0)
-                ui::Option(LOC("Character not loaded"),
-                           LOC("This companion is not currently loaded in memory."));
+            if (isMount)
+            {
+                int mountIdx = game::Dye::GetActiveMount();
+                if (mountIdx > 0)
+                    ui::Option(LOC("Mount Not Detected in World"),
+                               LOC("This mount is not currently spawned or present in the game world."));
+                else
+                    ui::Option(LOC("No Active Mount Detected"),
+                               LOC("Please summon or mount a horse in the game world first."));
+            }
             else
-                ui::Option(LOC("Waiting for your equipment..."),
-                           LOC("Load into the world - if this persists, change any equipment piece once so the mod can see your gear."));
+            {
+                int dyeChar = game::Dye::GetActiveCharacter();
+                if (dyeChar > 0)
+                    ui::Option(LOC("Character not loaded"),
+                               LOC("This companion is not currently loaded in memory."));
+                else
+                    ui::Option(LOC("Waiting for your equipment..."),
+                               LOC("Load into the world - if this persists, change any equipment piece once so the mod can see your gear."));
+            }
             ui::End();
             return;
         }
@@ -240,10 +333,11 @@ namespace trinity::gui
 
             char label[160];
             if (si.dyeCount > 0)
-                snprintf(label, sizeof(label), "%s - %s  (%u dyed)",
-                         si.slotName, si.itemName, si.dyeCount);
+                snprintf(label, sizeof(label), "%s - %s  (%u/%d %s)",
+                         si.slotName, si.itemName, si.dyeCount, si.maxZones, LOC("zones dyed"));
             else
-                snprintf(label, sizeof(label), "%s - %s", si.slotName, si.itemName);
+                snprintf(label, sizeof(label), "%s - %s  (%d %s)",
+                         si.slotName, si.itemName, si.maxZones, LOC("zones"));
 
             if (ui::SubmenuItem(label, si.icon[0] ? si.icon : nullptr, "dyeedit",
                                 "Recolor this piece."))
@@ -283,10 +377,26 @@ namespace trinity::gui
     {
         ui::Begin(s_dyeItem[0] ? s_dyeItem : nullptr);
 
-        static const char* const kChanItems[] = {
+        game::Dye::SlotInfo curSlot{};
+        bool haveSlot = false;
+        const int nSlots = game::Dye::SlotCount();
+        for (int i = 0; i < nSlots; ++i)
+        {
+            if (game::Dye::GetSlot(i, &curSlot) && curSlot.tag == s_dyeTag)
+            {
+                haveSlot = true;
+                break;
+            }
+        }
+        const int maxZones = (haveSlot && curSlot.maxZones > 0) ? curSlot.maxZones : 4;
+
+        static const char* const kZoneItems[] = {
             "All zones", "Zone 1", "Zone 2", "Zone 3", "Zone 4", "Zone 5", "Zone 6",
             "Zone 7", "Zone 8", "Zone 9", "Zone 10", "Zone 11", "Zone 12"
         };
+        const int comboCount = 1 + maxZones;
+        if (s_dyeChan >= comboCount) s_dyeChan = 0;
+
         static const char* s_famItems[game::kDyeFamilyCount];
         static bool s_famInit = false;
         if (!s_famInit)
@@ -296,8 +406,8 @@ namespace trinity::gui
             s_famInit = true;
         }
 
-        ui::Combo("Dye Zone", &s_dyeChan, kChanItems, 13,
-                  "Which part of the item to color. Most gear only uses the first few.");
+        ui::Combo(LOC("Dye Zone"), &s_dyeChan, kZoneItems, comboCount,
+                  LOC("Which zone of the item to color. Automatically detected for this equipment."));
         ui::Combo("Color Family", &s_dyeFamily, s_famItems, game::kDyeFamilyCount,
                   "Pick a color family to browse its shades below.");
 
@@ -351,6 +461,12 @@ namespace trinity::gui
         }
 
         ui::Submenu("Custom Color", "dyecustom", "Mix your own color instead of a preset.");
+
+        if (ui::Option("Remove All Dye (Reset)", "Clears all dye from this piece back to its natural default color."))
+        {
+            if (game::Dye::Clear(s_dyeTag, -1))
+                ui::Toast("All dye removed");
+        }
 
         bool touched = false;
         touched |= ui::IntOption("Material", &s_dyeMat, 0, 10, 1, 0,
@@ -481,9 +597,9 @@ namespace trinity::gui
             if (!game::Equipment::GetSlot(i, &si)) continue;
 
             char label[176];
-            if (si.unlockedCount > 0)
+            if (si.maxSockets > 0)
                 snprintf(label, sizeof(label), "%s - %s  (%d/%d %s)",
-                         LOC(si.slotName), si.itemName, si.filledCount, si.unlockedCount,
+                         LOC(si.slotName), si.itemName, si.filledCount, si.maxSockets,
                          LOC("sockets used"));
             else
                 snprintf(label, sizeof(label), "%s - %s  (%s)",
@@ -518,10 +634,11 @@ namespace trinity::gui
             return;
         }
 
-        if (si.unlockedCount < game::Equipment::kMaxSockets)
+        if (si.maxSockets > 0 && si.unlockedCount < si.maxSockets)
         {
-            if (ui::Option(LOC("Unlock all sockets"),
-                           LOC("Opens every socket on this piece (up to 5), then socket gears into them.")))
+            char desc[128];
+            snprintf(desc, sizeof(desc), "%s (%d).", LOC("Opens every socket on this piece"), si.maxSockets);
+            if (ui::Option(LOC("Unlock all sockets"), desc))
             {
                 if (game::Equipment::UnlockAll(si.tag))
                     ui::Toast(LOC("All sockets unlocked"));
@@ -558,9 +675,9 @@ namespace trinity::gui
             }
         }
 
-        if (si.unlockedCount == 0)
+        if (si.maxSockets == 0)
         {
-            ui::Option(LOC("No sockets yet"), LOC("Unlock sockets above to add abyss gears."));
+            ui::Option(LOC("No sockets"), LOC("This equipment type does not support abyss sockets."));
             ui::End();
             return;
         }
@@ -569,7 +686,7 @@ namespace trinity::gui
             ui::Option(LOC("Note: not saving yet"),
                        LOC("Your save is still loading - gear edits apply visually but revert on reload until this clears."));
 
-        for (int k = 0; k < si.unlockedCount; ++k)
+        for (int k = 0; k < si.maxSockets; ++k)
         {
             const game::Equipment::Socket& so = si.sockets[k];
             char label[112];
@@ -1356,9 +1473,12 @@ namespace trinity::gui
                           1, 9999, 10, 2000,
                           LOC("Sets every storage's slot count to this number.")))
             changed = true;
-        if (ui::ToggleInt(LOC("Max Stack Size"), &st.invStackSize, &st.invStackSizeVal,
-                          1, 999999999, 1000, 999999,
-                          LOC("Sets every item's max stack size to this number.")))
+        if (ui::Toggle(LOC("Max Stack Size"), &st.invStackSize,
+                       LOC("Enables universal stack limits for all items (weapons, armors, potions, materials, etc.).")))
+            changed = true;
+        if (ui::IntOption(LOC("Set Max Stack Value"), &st.invStackSizeVal,
+                          1, 999999999, 10000, 999999,
+                          LOC("Enter custom max stack size using keyboard or arrow keys (Press ENTER to type).")))
             changed = true;
 
         if (changed && st.autoSave)
@@ -1754,6 +1874,14 @@ namespace trinity::gui
         {
             if (game::Inventory::SetWalletMoneyValue(99999999))
                 ui::Toast(LOC("Set to 99.9M! Save game & reload now."));
+        }
+
+        // MERGE & CLEAN DUPLICATE MONEY STACKS
+        if (ui::Option(LOC(">> Merge All Silver into 1 Stack <<"),
+                       LOC("Merges all 9999.99 money slots into 1 single master stack and frees up all empty bag slots!")))
+        {
+            const int cleaned = game::Inventory::ConsolidateMoney();
+            ui::Toast(LOC("Merged money! Freed %d duplicate bag slots."), cleaned);
         }
 
         // 2. POUCHES & CHESTS METHOD (Instant in-bag use)
@@ -2237,6 +2365,10 @@ namespace trinity::gui
 
         save |= ui::Toggle(LOC("Show FPS Counter"), &st.showFps, LOC("Shows your FPS in the corner of the screen.")) && st.autoSave;
 
+        // Detected Game Version Information
+        const char* verStr = core::GetGameVersionDisplay();
+        ui::Option(verStr, LOC("Game version automatically detected by Trinity engine."));
+
         if (ui::Toggle(LOC("Auto Save Features"), &st.autoSave,
                        LOC("Saves your settings automatically and restores them next time.")))
             save = true;
@@ -2323,6 +2455,8 @@ namespace trinity::gui
         else if (!strcmp(cur, "invaddcat")) RenderInventoryAddCat();
         else if (!strcmp(cur, "invmoney"))  RenderInventoryMoney();
         else if (!strcmp(cur, "invabyss"))  RenderInventoryAbyss();
+        else if (!strcmp(cur, "combat_options")) RenderCombatOptions();
+        else if (!strcmp(cur, "mount_options")) RenderMountOptions();
         else if (!strcmp(cur, "world_time_presets")) RenderTimePresets();
         else if (!strcmp(cur, "world_weather")) RenderWeatherAtmosphere();
         else                              RenderPlayer();

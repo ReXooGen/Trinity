@@ -77,10 +77,15 @@ namespace trinity
             else if (!strcmp(key, "markerFallbackHeight")) vals.markerFallbackHeight = strtof(val, nullptr);
             else if (!strcmp(key, "autoSave"))            vals.autoSave            = atoi(val) != 0;
             else if (!strcmp(key, "godMode"))             vals.godMode             = atoi(val) != 0;
+            else if (!strcmp(key, "oneHitKill"))           vals.oneHitKill           = atoi(val) != 0;
+            else if (!strcmp(key, "infDurability"))        vals.infDurability        = atoi(val) != 0;
+            else if (!strcmp(key, "noFallDamage"))        vals.noFallDamage        = atoi(val) != 0;
             else if (!strcmp(key, "infStamina"))          vals.infStamina          = atoi(val) != 0;
             else if (!strcmp(key, "infMountStamina"))     vals.infMountStamina     = atoi(val) != 0;
-            else if (!strcmp(key, "noMountCooldown"))     vals.noMountCooldown     = atoi(val) != 0;
             else if (!strcmp(key, "infSpirit"))           vals.infSpirit           = atoi(val) != 0;
+            else if (!strcmp(key, "easyParry"))           vals.easyParry           = atoi(val) != 0;
+            else if (!strcmp(key, "easyEvade"))           vals.easyEvade           = atoi(val) != 0;
+            else if (!strcmp(key, "noBounty"))            vals.noBounty            = atoi(val) != 0;
             else if (!strcmp(key, "dmgOutMult"))          vals.dmgOutMult          = strtof(val, nullptr);
             else if (!strcmp(key, "dmgInMult"))           vals.dmgInMult           = strtof(val, nullptr);
             else if (!strcmp(key, "gameSpeed"))           vals.gameSpeed           = atoi(val) != 0;
@@ -203,9 +208,13 @@ namespace trinity
         // Clamp the floats to the same ranges the menu rows enforce, in case
         // the file was hand-edited.
         st.godMode         = vals.godMode;
+        st.noFallDamage    = vals.noFallDamage;
         st.infStamina      = vals.infStamina;
         st.infMountStamina = vals.infMountStamina;
         st.infSpirit       = vals.infSpirit;
+        st.easyParry       = vals.easyParry;
+        st.easyEvade       = vals.easyEvade;
+        st.noBounty        = vals.noBounty;
         st.dmgOutMult    = ClampF(vals.dmgOutMult, 0.0f, 20.0f);
         st.dmgInMult     = ClampF(vals.dmgInMult, 0.0f, 10.0f);
         st.gameSpeed     = vals.gameSpeed;
@@ -274,10 +283,15 @@ namespace trinity
                 "markerFallbackHeight=%.3f\n"
                 "autoSave=%d\n"
                 "godMode=%d\n"
+                "oneHitKill=%d\n"
+                "infDurability=%d\n"
+                "noFallDamage=%d\n"
                 "infStamina=%d\n"
                 "infMountStamina=%d\n"
-                "noMountCooldown=%d\n"
                 "infSpirit=%d\n"
+                "easyParry=%d\n"
+                "easyEvade=%d\n"
+                "noBounty=%d\n"
                 "dmgOutMult=%.3f\n"
                 "dmgInMult=%.3f\n"
                 "gameSpeed=%d\n"
@@ -326,10 +340,15 @@ namespace trinity
                 st.markerFallbackHeight,
                 st.autoSave ? 1 : 0,
                 st.godMode ? 1 : 0,
+                st.oneHitKill ? 1 : 0,
+                st.infDurability ? 1 : 0,
+                st.noFallDamage ? 1 : 0,
                 st.infStamina ? 1 : 0,
                 st.infMountStamina ? 1 : 0,
-                st.noMountCooldown ? 1 : 0,
                 st.infSpirit ? 1 : 0,
+                st.easyParry ? 1 : 0,
+                st.easyEvade ? 1 : 0,
+                st.noBounty ? 1 : 0,
                 st.dmgOutMult,
                 st.dmgInMult,
                 st.gameSpeed ? 1 : 0,
@@ -380,9 +399,12 @@ namespace trinity
         const bool ok = fflush(f) == 0;
         fclose(f);
 
-        if (!ok || !MoveFileExA(tmp, path, MOVEFILE_REPLACE_EXISTING))
+        if (!ok || !MoveFileExA(tmp, path, MOVEFILE_REPLACE_EXISTING | MOVEFILE_WRITE_THROUGH))
         {
-            LOG_WARN("Could not update %s - feature settings not saved.", path);
+            if (!CopyFileA(tmp, path, FALSE))
+            {
+                LOG_WARN("Could not update %s - feature settings not saved.", path);
+            }
             DeleteFileA(tmp);
         }
     }
@@ -395,10 +417,15 @@ namespace trinity
         const State def;
         State&      st = State::Get();
         st.godMode              = def.godMode;
+        st.oneHitKill           = def.oneHitKill;
+        st.infDurability        = def.infDurability;
+        st.noFallDamage         = def.noFallDamage;
         st.infStamina           = def.infStamina;
         st.infMountStamina      = def.infMountStamina;
-        st.noMountCooldown      = def.noMountCooldown;
         st.infSpirit            = def.infSpirit;
+        st.easyParry            = def.easyParry;
+        st.easyEvade            = def.easyEvade;
+        st.noBounty             = def.noBounty;
         st.dmgOutMult           = def.dmgOutMult;
         st.dmgInMult            = def.dmgInMult;
         st.gameSpeed            = def.gameSpeed;

@@ -5,6 +5,7 @@
 #include "state.h"
 #include "version.h"
 #include "localization.h"
+#include "version_detect.h"
 #include "../hooks/dx12_hook.h"
 #include "../game/player.h"
 #include "../game/teleport.h"
@@ -25,6 +26,9 @@ namespace trinity
         // Console is created lazily from the render path, so only the process
         // that actually presents the game gets one. Early logs buffer until then.
         LOG("Trinity v%s initializing (built %s %s).", TRINITY_VERSION, __DATE__, __TIME__);
+
+        // Detect and log game version on startup
+        core::GetGameVersion();
 
         // Initialize localization subsystem (scans Trinity_*.ini beside Trinity.asi)
         loc::Init();

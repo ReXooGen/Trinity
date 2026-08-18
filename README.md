@@ -10,25 +10,34 @@ Trinity is an in-game DirectX 12 mod menu for **Crimson Desert**, originally cre
 
 | Player Menu | Travel & Destination Teleport |
 | :---: | :---: |
-| ![Player Menu](image.png) | ![Travel Menu](image2.png) |
+| ![Player Menu](images/image.png) | ![Travel Menu](images/image2.png) |
 
 | Inventory & Max Stack Size | World & Game Speed Control |
 | :---: | :---: |
-| ![Inventory Menu](image3.png) | ![World Menu](image4.png) |
+| ![Inventory Menu](images/image3.png) | ![World Menu](images/image4.png) |
 
 | System Settings & Themes | Equipment Enhancer & Sockets |
 | :---: | :---: |
-| ![System Menu](image5.png) | ![Edit Equipment](image6.png) |
+| ![System Menu](images/image5.png) | ![Edit Equipment](images/image6.png) |
 
 | Unlimited Custom Bookmarks | Storage Filters & Item Editor |
 | :---: | :---: |
-| ![Saved Locations](image7.png) | ![Storage Editor](image8.png) |
+| ![Saved Locations](images/image7.png) | ![Storage Editor](images/image8.png) |
+
+## What's New in v1.2.4
+
+- **Universal Backwards Compatibility (TU 1.10 – 1.18+)**: Multi-version adaptive memory layout and dynamic slot strides (`0xC0` for TU <= 1.15, `0xC8` for TU >= 1.16).
+- **Runtime Binary Fingerprinting**: Live in-memory machine code scanner to accurately identify and display active Title Updates (e.g. `TU 1.18.02 (Active)`).
+- **Combat & Crime System**: Added **No Bounty (Never Wanted)** and 1-click **Clear Bounty** features.
+- **Cross-Slot Controller Free Flight**: Polling across controller slots 0 through 3 for robust multi-controller and PS5 pad support.
+- **Dedicated Submenus**: Integrated **Money & Currency** and **Abyss Items & Artifacts** submenus.
 
 ## What's New in v1.2.3
 
 - **Infinite Mount Stamina TU 1.18+ Fix**: Restored full infinite stamina support for horses, mounts, and dragons while galloping and sprinting.
 - **Continuous Stamina & Spirit Auto-Refresh**: Refined stat commit interception so any consumed player or mount stamina and spirit instantly refreshes back to 100% full capacity in real-time.
 - **Character Spontaneous Combustion Fix**: Completely purged thermal and elemental debuff meters (types 17, 18, 28, 48) from the scanner, permanently resolving the bug where characters caught fire upon spawn.
+- **Native Weather & Environment Controls**: Built-in time of day and weather modifiers under the **WORLD** tab, providing seamless, crash-free environmental control without requiring conflicting external addons.
 - **Protagonist Scanning Stability**: Hardened `TickResolveSelf` vital chain validation to eliminate access violation crashes in crowded NPC areas.
 - **Game Compatibility**: Fully optimized and verified for **Crimson Desert TU 1.18.00 – 1.18.01+**.
 

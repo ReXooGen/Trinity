@@ -119,7 +119,7 @@ namespace trinity::mem
             {
                 const char c = *reinterpret_cast<volatile char*>(addr + i);
                 if (c == 0) break;
-                if (static_cast<unsigned char>(c) < 0x20 || static_cast<unsigned char>(c) > 0x7e)
+                if (static_cast<unsigned char>(c) < 0x20)
                     return false; // not a printable key/string - reject
                 out[i] = c;
             }

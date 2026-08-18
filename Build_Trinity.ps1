@@ -59,9 +59,10 @@ Write-Host "Copied to: $destinationAsi"
 
 # Package directory and ZIP creation for release (Nexus / GitHub)
 $pkgDir = Join-Path $releaseDir 'package'
-if (-not (Test-Path -LiteralPath $pkgDir)) {
-    New-Item -ItemType Directory -Path $pkgDir -Force | Out-Null
+if (Test-Path -LiteralPath $pkgDir) {
+    Remove-Item -LiteralPath $pkgDir -Recurse -Force
 }
+New-Item -ItemType Directory -Path $pkgDir -Force | Out-Null
 
 Copy-Item -Path $asi.FullName -Destination (Join-Path $pkgDir 'Trinity.asi') -Force
 if (Test-Path (Join-Path $source 'Trinity.ini.example')) {
@@ -105,13 +106,15 @@ if (Test-Path -LiteralPath $zipPath) {
 Compress-Archive -Path "$pkgDir\*" -DestinationPath $zipPath -Force
 Write-Host "Created Release ZIP: $zipPath"
 
-# Auto-deploy to parent directory
-if (Test-Path -LiteralPath $parentDir) {
-    Copy-Item -Path (Join-Path $pkgDir 'Trinity.asi') -Destination (Join-Path $parentDir 'Trinity.asi') -Force
-    Copy-Item -Path (Join-Path $pkgDir 'Trinity_zh.ini') -Destination (Join-Path $parentDir 'Trinity_zh.ini') -Force
-    Copy-Item -Path (Join-Path $pkgDir 'Trinity_ko.ini') -Destination (Join-Path $parentDir 'Trinity_ko.ini') -Force
-    Write-Host "Auto-deployed to: $parentDir"
+# Auto-deploy to Mod_Files directory
+$modFilesDir = Join-Path $parentDir 'Mod_Files'
+if (-not (Test-Path -LiteralPath $modFilesDir)) {
+    New-Item -ItemType Directory -Path $modFilesDir -Force | Out-Null
 }
+Copy-Item -Path (Join-Path $pkgDir 'Trinity.asi') -Destination (Join-Path $modFilesDir 'Trinity.asi') -Force
+Copy-Item -Path (Join-Path $pkgDir 'Trinity_zh.ini') -Destination (Join-Path $modFilesDir 'Trinity_zh.ini') -Force
+Copy-Item -Path (Join-Path $pkgDir 'Trinity_ko.ini') -Destination (Join-Path $modFilesDir 'Trinity_ko.ini') -Force
+Write-Host "Auto-deployed to: $modFilesDir"
 
 # Auto-deploy to Steam game installation folder
 $steamGameDir = "C:\Program Files (x86)\Steam\steamapps\common\Crimson Desert\bin64"

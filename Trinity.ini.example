@@ -23,8 +23,15 @@ autoSave=0
 
 ; Player Cheats & Multipliers
 godMode=0
+oneHitKill=0
+infDurability=0
+noFallDamage=1
 infStamina=0
+infMountStamina=0
 infSpirit=0
+easyParry=0
+easyEvade=0
+noBounty=0
 dmgOutMult=1.000
 dmgInMult=1.000
 gameSpeed=0

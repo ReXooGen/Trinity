@@ -13,6 +13,8 @@
 #include "../mem/scanner.h"
 #include "../mem/safe_memory.h"
 #include "../core/logger.h"
+#include "../core/state.h"
+#include "../core/version_detect.h"
 
 // The equipment editor. All the RE background is in offsets.h (the "Abyss Gear
 // sockets" section); this file is the plumbing:
@@ -43,18 +45,59 @@ namespace trinity::game
         EquipRefresh_t    g_refresh = nullptr; // sub_7C88A0
         std::atomic<bool> g_dirty{ false };
 
+        struct EquipTableDesc
+        {
+            uintptr_t desc = 0;
+            uintptr_t array = 0;
+            uint32_t count = 0;
+            uintptr_t stride = 0xD0;
+            uintptr_t tagOffset = 0xC8;
+            bool valid = false;
+        };
+
+        EquipTableDesc ReadEquipTableDesc(uintptr_t comp)
+        {
+            EquipTableDesc out{};
+            if (comp < kMinPointer) return out;
+
+            uintptr_t d = 0, a = 0;
+            uint32_t c = 0;
+            // Legacy TU 1.14 table (+0x88)
+            if (ReadPtr(comp + 0x88, &d) && d >= kMinPointer &&
+                ReadPtr(d + kOff_EquipTable_Array, &a) && a >= kMinPointer &&
+                Read32(d + kOff_EquipTable_Count, &c) && c >= 1 && c <= 64)
+            {
+                out.desc = d;
+                out.array = a;
+                out.count = c;
+                out.stride = 0xC8;
+                out.tagOffset = 0xC0;
+                out.valid = true;
+                return out;
+            }
+            // Modern TU 1.17+ table (+0x80)
+            if (ReadPtr(comp + 0x80, &d) && d >= kMinPointer &&
+                ReadPtr(d + kOff_EquipTable_Array, &a) && a >= kMinPointer &&
+                Read32(d + kOff_EquipTable_Count, &c) && c >= 1 && c <= 64)
+            {
+                out.desc = d;
+                out.array = a;
+                out.count = c;
+                out.stride = 0xD0;
+                out.tagOffset = 0xC8;
+                out.valid = true;
+                return out;
+            }
+            return out;
+        }
+
         // --- Each realm's equip component, by walk (mirrors dye.cpp) ----------
         bool CompValid(uintptr_t comp)
         {
             if (comp < kMinPointer) return false;
             uintptr_t owner = 0;
             if (!ReadPtr(comp + kOff_EquipComp_Owner, &owner) || owner < kMinPointer) return false;
-            uintptr_t desc = 0, array = 0;
-            uint32_t  count = 0;
-            if (!ReadPtr(comp + kOff_EquipComp_Table, &desc) || desc < kMinPointer) return false;
-            if (!ReadPtr(desc + kOff_EquipTable_Array, &array) || array < kMinPointer) return false;
-            if (!Read32(desc + kOff_EquipTable_Count, &count)) return false;
-            return count >= 1 && count <= 64;
+            return ReadEquipTableDesc(comp).valid;
         }
 
         uintptr_t CompForCharacter(uintptr_t actor)
@@ -102,17 +145,14 @@ namespace trinity::game
         // The TrItemValue copy the component keeps for the equipped slot `tag`.
         uintptr_t FindEntryByTag(uintptr_t comp, uint16_t tag)
         {
-            uintptr_t desc = 0, array = 0;
-            uint32_t  count = 0;
-            if (!ReadPtr(comp + kOff_EquipComp_Table, &desc) || desc < kMinPointer) return 0;
-            if (!ReadPtr(desc + kOff_EquipTable_Array, &array) || array < kMinPointer) return 0;
-            if (!Read32(desc + kOff_EquipTable_Count, &count) || count == 0 || count > 64) return 0;
+            const EquipTableDesc tbl = ReadEquipTableDesc(comp);
+            if (!tbl.valid) return 0;
 
-            for (uint32_t i = 0; i < count; ++i)
+            for (uint32_t i = 0; i < tbl.count; ++i)
             {
-                const uintptr_t entry = array + static_cast<uintptr_t>(i) * kEquipEntry_Stride;
+                const uintptr_t entry = tbl.array + static_cast<uintptr_t>(i) * tbl.stride;
                 uint16_t t = 0;
-                if (!Read16(entry + kOff_EquipEntry_SlotTag, &t) || t != tag) continue;
+                if (!Read16(entry + tbl.tagOffset, &t) || t != tag) continue;
                 uint16_t tid = 0;
                 if (!Read16(entry + kOff_InvSlot_TypeId, &tid) || tid == kInvSlot_EmptyType) return 0;
                 return entry;
@@ -125,34 +165,27 @@ namespace trinity::game
         uintptr_t SocketData(uintptr_t entry)
         {
             if (entry < kMinPointer) return 0;
+            const bool isLegacy = core::IsLegacyTU();
+            const uintptr_t dataOff = isLegacy ? 0x58 : 0x60;
+
             uintptr_t data = 0;
-            // TU 1.17+ offset (+0x60)
-            if (ReadPtr(entry + kOff_ItemVal_SocketData, &data) && data >= kMinPointer)
-                return data;
-            // Legacy offset (+0x58)
-            if (ReadPtr(entry + kOff_ItemVal_SocketData_Legacy, &data) && data >= kMinPointer)
-                return data;
-            return 0;
+            if (!ReadPtr(entry + dataOff, &data) || data < kMinPointer) return 0;
+            return data;
         }
 
         int UnlockedCount(uintptr_t entry)
         {
-            const uintptr_t data = SocketData(entry);
-            if (!data) return 0;
-            int n = 0;
-            for (int k = 0; k < kSocket_Max; ++k)
+            if (entry < kMinPointer) return 0;
+            const bool isLegacy = core::IsLegacyTU();
+            const uintptr_t unlockOff = isLegacy ? 0x68 : 0x70;
+
+            uint32_t n = 0;
+            if (Read32(entry + unlockOff, &n))
             {
-                const uintptr_t rec = data + static_cast<uintptr_t>(k) * kSocketRec_Stride;
-                uint8_t ix = 0xFF;
-                uint16_t mk = 0;
-                if (!Read8(rec + kOff_SockRec_Index, &ix)) break;
-                if (ix == 0xFF) break;
-                if (ix != static_cast<uint8_t>(k)) break;
-                if (!Read16(rec + kOff_SockRec_Marker, &mk)) break;
-                if (mk != 0xFFFF && mk != 0x0000) break;
-                ++n;
+                if (n <= 5)
+                    return static_cast<int>(n);
             }
-            return n;
+            return 0;
         }
 
         uint16_t GearAt(uintptr_t data, int i)
@@ -174,7 +207,7 @@ namespace trinity::game
             ok &= Write16(rec + kOff_SockRec_GearId, gear);
             ok &= Write16(rec + kOff_SockRec_Marker, filled ? 0xFFFF : 0x0000);
             ok &= Write8 (rec + kOff_SockRec_Index,  static_cast<uint8_t>(i));
-            ok &= Write8 (rec + kOff_SockRec_State,  filled ? 0x04 : 0x00);
+            ok &= Write8 (rec + kOff_SockRec_State,  filled ? 0x05 : 0x00);
             return ok;
         }
 
@@ -190,28 +223,47 @@ namespace trinity::game
             if (!Read64(entry + kOff_ItemVal_InstanceId, &id) || id != instId) return false;
             const uintptr_t data = SocketData(entry);
             if (!data) return false;
-            return WriteRecord(data, idx, gear);
+
+            bool ok = WriteRecord(data, idx, gear);
+            const bool isLegacy = core::IsLegacyTU();
+            const uintptr_t unlockOff = isLegacy ? 0x68 : 0x70;
+            const uint32_t needed = static_cast<uint32_t>(idx + 1);
+            uint32_t cur = 0;
+            if (Read32(entry + unlockOff, &cur) && needed > cur && needed <= 5)
+                Write32(entry + unlockOff, needed);
+            return ok;
         }
 
-        // Open every socket on one realm's copy of the item: give each record a
-        // real index (so the save, which counts records by their index byte -
-        // 0xFF meaning "not a socket" - counts all five), keeping any gear the
-        // record already holds, and set the live unlocked-count field to match.
-        // This is the same per-record write that makes add/remove persist,
-        // applied to all five slots; a bare +0x68 bump alone does NOT survive a
-        // reload (the save counts records, not that field).
-        void OpenAllSockets(uintptr_t entry)
+        int GetMaxSocketsForTag(uint16_t tag)
         {
+            switch (tag)
+            {
+            case 0:  return 3; // Main Hand (Wolf's Fang, Parashu Axe, swords, maces, axes)
+            case 13: return 3; // Two-Handed Weapon (Greatswords, Halberds, Greataxes)
+            case 4:  return 3; // Chest (Plate Armor, Robes, Tunics)
+            case 1:  return 2; // Off-Hand (Shields)
+            case 5:  return 2; // Gloves (Plate Gloves, Bracers)
+            case 6:  return 2; // Boots (Plate Boots, Greaves)
+            case 3:  return 1; // Helmet (Plate Helm, Hats)
+            default: return 0; // Bows, Rings, Necklaces, Earrings, Dagger, Cloak, Lantern, Bracelet, etc.
+            }
+        }
+
+        // Open every socket on one realm's copy of the item up to its natural capacity
+        void OpenAllSockets(uintptr_t entry, int maxSock)
+        {
+            if (maxSock <= 0) return;
             const uintptr_t data = SocketData(entry);
             if (!data) return;
-            for (int k = 0; k < kSocket_Max; ++k)
+            for (int k = 0; k < maxSock; ++k)
             {
                 uint16_t g = GearAt(data, k);
                 if (g == 0) g = kSock_Empty;
                 WriteRecord(data, k, g);
             }
-            Write32(entry + kOff_ItemVal_SocketUnlocked, static_cast<uint32_t>(kSocket_Max));
-            Write32(entry + 0x68, static_cast<uint32_t>(kSocket_Max));
+            const bool isLegacy = core::IsLegacyTU();
+            const uintptr_t unlockOff = isLegacy ? 0x68 : 0x70;
+            Write32(entry + unlockOff, static_cast<uint32_t>(maxSock));
         }
 
         // Remove every gear from an unlocked socket on one realm's copy, leaving
@@ -242,8 +294,8 @@ namespace trinity::game
             {
                 char low[96];
                 LowerCopy(Inventory::CatalogCategoryName(c), low, sizeof(low));
-                if (!strstr(low, "abyss")) continue;
-                if (strstr(low, "gear")) { g_gearCat = c; return c; } // prefer "Abyss Gear"
+                if (!strstr(low, "abyss") && !strstr(low, "artifact") && !strstr(low, "geer")) continue;
+                if (strstr(low, "gear") || strstr(low, "geer")) { g_gearCat = c; return c; } // prefer "Abyss Gear" / "Abyss Geer"
                 if (abyssAny < 0) abyssAny = c;                       // else any "Abyss ..."
             }
             g_gearCat = abyssAny;
@@ -290,19 +342,16 @@ namespace trinity::game
             const uintptr_t comp = ClientComp();
             if (!comp) return;
 
-            uintptr_t desc = 0, array = 0;
-            uint32_t  count = 0;
-            if (!ReadPtr(comp + kOff_EquipComp_Table, &desc)) return;
-            if (!ReadPtr(desc + kOff_EquipTable_Array, &array) || array < kMinPointer) return;
-            if (!Read32(desc + kOff_EquipTable_Count, &count) || count > 64) return;
+            const EquipTableDesc tbl = ReadEquipTableDesc(comp);
+            if (!tbl.valid) return;
 
-            for (uint32_t i = 0; i < count && g_slotCount < kMaxSlots; ++i)
+            for (uint32_t i = 0; i < tbl.count && g_slotCount < kMaxSlots; ++i)
             {
-                const uintptr_t entry = array + static_cast<uintptr_t>(i) * kEquipEntry_Stride;
+                const uintptr_t entry = tbl.array + static_cast<uintptr_t>(i) * tbl.stride;
                 uint16_t tid = 0, tag = 0;
                 int64_t  inst = 0;
                 if (!Read16(entry + kOff_InvSlot_TypeId, &tid) || tid == kInvSlot_EmptyType || tid == 0 || tid > 50000) continue;
-                if (!Read16(entry + kOff_EquipEntry_SlotTag, &tag)) continue;
+                if (!Read16(entry + tbl.tagOffset, &tag)) continue;
                 const char* nm = SlotNameForTag(tag);
                 if (!nm) continue;
                 Read64(entry + kOff_ItemVal_InstanceId, &inst);
@@ -323,12 +372,16 @@ namespace trinity::game
                 Read16(entry + kOff_ItemVal_RefineLevel, &refine);
                 s.refineLevel = (refine > kRefine_Max) ? kRefine_Max : static_cast<int>(refine);
 
-                s.unlockedCount = UnlockedCount(entry);
-                const uintptr_t data = SocketData(entry);
-                for (int k = 0; k < Equipment::kMaxSockets; ++k)
+                const int maxSock = GetMaxSocketsForTag(tag);
+                s.maxSockets = maxSock;
+                s.unlockedCount = (maxSock > 0) ? UnlockedCount(entry) : 0;
+                if (s.unlockedCount > maxSock) s.unlockedCount = maxSock;
+
+                const uintptr_t data = (maxSock > 0) ? SocketData(entry) : 0;
+                for (int k = 0; k < maxSock; ++k)
                 {
                     Equipment::Socket& so = s.sockets[k];
-                    so.unlocked = (k < s.unlockedCount);
+                    so.unlocked = true;
                     so.gearTypeId = data ? GearAt(data, k) : kSock_Empty;
                     so.filled = (so.gearTypeId != kSock_Empty);
                     if (so.filled)
@@ -351,9 +404,6 @@ namespace trinity::game
         // do not resolve, editing still works - the effect just waits for a
         // reload, exactly as it did before.
         g_refresh = reinterpret_cast<EquipRefresh_t>(mem::FindPattern(kSig_EquipEffectRefresh));
-        if (!g_refresh)
-            LOG_WARN("equipment: effect-refresh signature not found - socketed gears "
-                     "will only take effect after a reload.");
         return true;
     }
 
@@ -383,6 +433,11 @@ namespace trinity::game
     {
         RebuildSnapshot();
         return g_slotCount;
+    }
+
+    int Equipment::MaxSocketsForTag(uint16_t tag)
+    {
+        return GetMaxSocketsForTag(tag);
     }
 
     bool Equipment::GetSlot(int idx, SlotInfo* out)
@@ -426,6 +481,13 @@ namespace trinity::game
         if (!data) return false;
 
         if (!WriteRecord(data, socketIdx, gearTypeId)) return false;
+
+        const bool isLegacy = core::IsLegacyTU();
+        const uintptr_t unlockOff = isLegacy ? 0x68 : 0x70;
+        const uint32_t needed = static_cast<uint32_t>(socketIdx + 1);
+        uint32_t cur = 0;
+        if (Read32(entry + unlockOff, &cur) && needed > cur && needed <= 5)
+            Write32(entry + unlockOff, needed);
 
         const bool durable = WriteRealm(ServerComp(), tag, socketIdx, gearTypeId, instId);
         if (persisted) *persisted = durable;
@@ -489,9 +551,9 @@ namespace trinity::game
 
     bool Equipment::UnlockAll(uint16_t tag)
     {
-        // Open all five sockets on the client (renders now) and mirror the same
-        // per-record write to the server realm (so it persists) - exactly the
-        // dual-realm path add/remove uses. Existing gears are preserved.
+        const int maxSock = GetMaxSocketsForTag(tag);
+        if (maxSock <= 0) return false;
+
         const uintptr_t comp = ClientComp();
         if (!comp) return false;
         const uintptr_t entry = FindEntryByTag(comp, tag);
@@ -499,7 +561,7 @@ namespace trinity::game
         int64_t instId = 0;
         if (!Read64(entry + kOff_ItemVal_InstanceId, &instId)) return false;
 
-        OpenAllSockets(entry);
+        OpenAllSockets(entry, maxSock);
 
         const uintptr_t scomp = ServerComp();
         if (scomp)
@@ -507,7 +569,7 @@ namespace trinity::game
             const uintptr_t se = FindEntryByTag(scomp, tag);
             int64_t sid = 0;
             if (se && Read64(se + kOff_ItemVal_InstanceId, &sid) && sid == instId)
-                OpenAllSockets(se);
+                OpenAllSockets(se, maxSock);
         }
         g_dirty.store(true, std::memory_order_release);
         return true;
@@ -541,28 +603,16 @@ namespace trinity::game
         if (repairedCount) *repairedCount = 0;
         const uintptr_t comp = ClientComp();
         if (!comp) return false;
-        uintptr_t desc = 0, array = 0;
-        uint32_t count = 0;
-        if (!ReadPtr(comp + kOff_EquipComp_Table, &desc) || desc < kMinPointer) return false;
-        if (!ReadPtr(desc + kOff_EquipTable_Array, &array) || array < kMinPointer) return false;
-        if (!Read32(desc + kOff_EquipTable_Count, &count) || count == 0 || count > 64) return false;
+        const EquipTableDesc tbl = ReadEquipTableDesc(comp);
+        if (!tbl.valid) return false;
 
         const uintptr_t scomp = ServerComp();
-        uintptr_t sdesc = 0, sarray = 0;
-        uint32_t scount = 0;
-        if (scomp)
-        {
-            if (ReadPtr(scomp + kOff_EquipComp_Table, &sdesc) && sdesc >= kMinPointer)
-            {
-                ReadPtr(sdesc + kOff_EquipTable_Array, &sarray);
-                Read32(sdesc + kOff_EquipTable_Count, &scount);
-            }
-        }
+        const EquipTableDesc stbl = scomp ? ReadEquipTableDesc(scomp) : EquipTableDesc{};
 
         int repaired = 0;
-        for (uint32_t i = 0; i < count; ++i)
+        for (uint32_t i = 0; i < tbl.count; ++i)
         {
-            const uintptr_t entry = array + static_cast<uintptr_t>(i) * kEquipEntry_Stride;
+            const uintptr_t entry = tbl.array + static_cast<uintptr_t>(i) * tbl.stride;
             uint16_t tid = 0;
             if (!Read16(entry + kOff_InvSlot_TypeId, &tid) || tid == kInvSlot_EmptyType || tid == 0) continue;
             int64_t instId = 0;
@@ -571,11 +621,11 @@ namespace trinity::game
             // Restore max durability (10000)
             Write16(entry + kOff_ItemVal_Durability, 10000);
 
-            if (sarray >= kMinPointer && scount > 0)
+            if (stbl.valid)
             {
-                for (uint32_t s = 0; s < scount; ++s)
+                for (uint32_t s = 0; s < stbl.count; ++s)
                 {
-                    const uintptr_t se = sarray + static_cast<uintptr_t>(s) * kEquipEntry_Stride;
+                    const uintptr_t se = stbl.array + static_cast<uintptr_t>(s) * stbl.stride;
                     int64_t sid = 0;
                     if (Read64(se + kOff_ItemVal_InstanceId, &sid) && sid == instId)
                     {
@@ -621,8 +671,11 @@ namespace trinity::game
             SlotInfo info{};
             if (GetSlot(i, &info))
             {
-                UnlockAll(info.tag);
-                ++count;
+                if (MaxSocketsForTag(info.tag) > 0)
+                {
+                    if (UnlockAll(info.tag))
+                        ++count;
+                }
             }
         }
         if (unlockedCount) *unlockedCount = count;
@@ -635,6 +688,21 @@ namespace trinity::game
     // change; POD locals only, guarded, because it calls into engine code.
     void Equipment::Tick()
     {
+        const State& st = State::Get();
+
+        // Infinite Item Durability: keep all equipped weapons, shields, and armor
+        // pinned at 100% (10,000 max durability) on both client and server realms.
+        if (st.infDurability)
+        {
+            static ULONGLONG s_lastRepair = 0;
+            const ULONGLONG now = GetTickCount64();
+            if (now - s_lastRepair >= 500)
+            {
+                RepairAll();
+                s_lastRepair = now;
+            }
+        }
+
         if (!g_dirty.exchange(false, std::memory_order_acq_rel)) return;
         if (!g_refresh) return;
 

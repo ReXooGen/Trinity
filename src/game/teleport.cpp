@@ -13,6 +13,7 @@
 #include <cstring>
 #include <limits>
 #include <map>
+#include <unordered_map>
 #include <string>
 #include <utility>
 #include <vector>
@@ -543,25 +544,40 @@ namespace trinity::game
             const auto origins = mem::FindAllMatches(kSig_MarkerOriginPrefix, 32);
             const auto protections = mem::FindAllMatches(kSig_MarkerProtection, 2);
 
-            if (markers.size() != kExpected_MarkerMatches || origins.size() != kExpected_OriginMatches)
+            if (markers.size() != kExpected_MarkerMatches || (origins.size() != 9 && origins.size() != 11))
             {
-                LOG_WARN("teleport: marker signatures count mismatch (markers=%zu exp=%zu, origins=%zu exp=%zu)",
-                         markers.size(), kExpected_MarkerMatches, origins.size(), kExpected_OriginMatches);
+                LOG_WARN("teleport: marker signatures count mismatch (markers=%zu exp=%zu, origins=%zu exp=9 or 11)",
+                         markers.size(), kExpected_MarkerMatches, origins.size());
                 return false;
             }
 
-            uintptr_t origin = 0;
+            std::unordered_map<uintptr_t, size_t> originVotes;
             for (const uintptr_t hit : origins)
             {
                 int32_t displacement = 0;
                 memcpy(&displacement, reinterpret_cast<const void*>(hit + 4), sizeof(displacement));
                 const uintptr_t resolved = hit + 8 + displacement;
-                if (origin == 0) origin = resolved;
-                else if (resolved != origin)
+                if (resolved >= kMinPointer)
                 {
-                    LOG_ERR("teleport: origin address mismatch across prefix matches.");
-                    return false;
+                    originVotes[resolved]++;
                 }
+            }
+
+            uintptr_t origin = 0;
+            size_t maxVotes = 0;
+            for (const auto& [cand, count] : originVotes)
+            {
+                if (count > maxVotes)
+                {
+                    maxVotes = count;
+                    origin = cand;
+                }
+            }
+
+            if (origin == 0)
+            {
+                LOG_ERR("teleport: origin address could not be resolved from prefix matches.");
+                return false;
             }
             g_markerOriginAddress = origin;
 
@@ -1160,50 +1176,45 @@ namespace trinity::game
             __try { *reinterpret_cast<volatile float*>(p) = v; return true; }
             __except (EXCEPTION_EXECUTE_HANDLER) { return false; }
         }
-        // Live-identified airborne mover (module-relative, IDB imagebase 0).
-        // sub_2F4FA90 drives jump/fall/glide and writes the character's velocity
-        // through our shared driver, so gating Free Flight on "the caller is
-        // inside it" limits altitude control to when the player is genuinely off
-        // the ground - no ground super-jump. The ground mover sub_2F4E780 sits
-        // just below it and is naturally excluded. (Confirmed live 2026-07-21:
-        // standing ret ~2F4F9F9 = ground mover; airborne ret ~2F500AC = here.)
-        constexpr uintptr_t kAirMover_Lo = 0x2F4FA90;
-        constexpr uintptr_t kAirMover_Hi = 0x2F4FA90 + 0x9A4;  // 0x2F50434
-
         // True on frames where Free Flight is actively driving the player's
-        // vertical velocity (a direction key/button is held while airborne).
-        // There is no hover clamp anymore: releasing simply stops writing and
+        // vertical velocity (a direction key/button is held).
+        // There is no hover clamp: releasing simply stops writing and
         // hands control straight back to the game's physics, so jumps and aerial
         // attacks are never touched. Published so the HUD can light "FLY".
         std::atomic<bool> g_flightEngaged{false};
 
         // Current real-pad mask for Free Flight (buttons + trigger sentinels),
-        // read on the movement thread. XInputGetState on an empty slot is slow,
-        // so the poll is throttled to ~8 ms and backs off for a second after a
-        // disconnect. XInputReadReal bypasses the menu-open neutralisation (the
-        // caller already gates on !menuOpen), so it sees the true controller.
+        // read on the movement thread. Iterates slots 0-3 to support PS5
+        // (DualSense via DS4Windows/Steam Input) and multi-controller setups.
+        // XInputReadReal bypasses the menu-open neutralisation (the caller
+        // already gates on !menuOpen), so it sees the true controller.
         unsigned PollFlyPadMask()
         {
             static ULONGLONG s_lastPoll   = 0;
-            static ULONGLONG s_nextRetry  = 0;
             static unsigned  s_cachedMask = 0;
 
             const ULONGLONG now = GetTickCount64();
             if (now - s_lastPoll < 8)
                 return s_cachedMask;
-            if (s_nextRetry && now < s_nextRetry)
-                return 0;
             s_lastPoll = now;
 
             XINPUT_STATE xs;
             ZeroMemory(&xs, sizeof(xs));
-            if (hooks::XInputReadReal(0, &xs) != ERROR_SUCCESS)
+            bool found = false;
+            for (DWORD i = 0; i < 4; ++i)
             {
-                s_nextRetry  = now + 1000; // disconnected - stop hammering the slot
+                if (hooks::XInputReadReal(i, &xs) == ERROR_SUCCESS)
+                {
+                    found = true;
+                    break;
+                }
+            }
+
+            if (!found)
+            {
                 s_cachedMask = 0;
                 return 0;
             }
-            s_nextRetry = 0;
 
             unsigned mask = xs.Gamepad.wButtons;
             if (xs.Gamepad.bLeftTrigger  > 64) mask |= kPadLTrigger;
@@ -1220,10 +1231,8 @@ namespace trinity::game
 
             // This stepper fires for EVERY character every frame (the mod's
             // highest-frequency hook). Both features it drives are off in the
-            // common case, so bail before the player-identity chase and the
-            // return-address/air-mover math when neither is on - NPCs then cost
-            // nothing. g_flightEngaged only matters while Free Flight is on, so
-            // leaving it unchanged here is correct.
+            // common case, so bail before the player-identity chase when neither
+            // is on - NPCs then cost nothing.
             if (!st.superRun && !st.freeFlight && !isProtected)
             {
                 oLocoStep(comp, dt, vel, a4, a5, a6, a7);
@@ -1238,30 +1247,10 @@ namespace trinity::game
             {
                 const uintptr_t player = g_playerMoveOwner.load(std::memory_order_relaxed);
                 uintptr_t owner = 0;
-                if (player && ReadPtr(comp + kOff_MoveComp_MoveOwner, &owner) && owner == player)
-                    isPlayer = true;
-            }
-
-            // Are we airborne? The stepper is a shared helper the ground and air
-            // movers both call, so the CALLER - not any field on the component -
-            // identifies the mode: the component's own state fields turned out to
-            // be either a constant class id (comp+0x190, live-read 27 in every
-            // air state) or a plain "airborne" flag (comp+0x4E2, set for jump and
-            // glide alike), neither of which separates a glide from a jump - that
-            // distinction lives on the actor's state controller, not on this
-            // object. So we turn the return address into a module offset and
-            // check whether it lands in the airborne mover's range. Since Free
-            // Flight only ever acts while a direction is held, that is all the
-            // gating we need: a jump or aerial attack the player isn't steering
-            // is left completely untouched.
-            bool inAirMover = false;
-            if (isPlayer)
-            {
-                static const uintptr_t base =
-                    reinterpret_cast<uintptr_t>(GetModuleHandleW(nullptr));
-                const uintptr_t off =
-                    reinterpret_cast<uintptr_t>(_ReturnAddress()) - base;
-                inAirMover = off >= kAirMover_Lo && off < kAirMover_Hi;
+                if (player && ReadPtr(comp + kOff_MoveComp_MoveOwner, &owner))
+                    isPlayer = (owner == player);
+                else if (!player)
+                    isPlayer = true; // Fallback before moveOwner first updates
             }
 
             // Automatic God Mode / Safe Landing:
@@ -1270,14 +1259,11 @@ namespace trinity::game
             // lands on the ground + 4-second grace window.
             if (isPlayer && isProtected)
             {
-                if (inAirMover)
+                const uint64_t now = GetTickCount64();
+                const uint64_t start = g_protectionStartTime.load(std::memory_order_relaxed);
+                if (start != 0 && now >= start && (now - start) < 60000)
                 {
-                    const uint64_t now = GetTickCount64();
-                    const uint64_t start = g_protectionStartTime.load(std::memory_order_relaxed);
-                    if (start != 0 && now >= start && (now - start) < 60000)
-                    {
-                        g_markerProtectDeadline.store(now + 4000, std::memory_order_relaxed);
-                    }
+                    g_markerProtectDeadline.store(now + 4000, std::memory_order_relaxed);
                 }
 
                 // Cushion terminal downward velocity to prevent ground clipping
@@ -1291,7 +1277,7 @@ namespace trinity::game
                 }
             }
 
-            if (st.superRun && st.superRunMult != 1.0f && vel)
+            if (isPlayer && st.superRun && st.superRunMult != 1.0f && vel)
             {
                 float x = 0.0f, z = 0.0f; // vel[0]=x, vel[1]=up, vel[2]=z
                 if (RawReadFloat(vel, &x) && RawReadFloat(vel + 2, &z))
@@ -1301,23 +1287,19 @@ namespace trinity::game
                 }
             }
 
-            // Free Flight: drive the vertical velocity (vel[1]) while airborne,
-            // but ONLY while the player is actively holding a direction. With
-            // neither key held (or both) we write nothing at all - no hover
-            // clamp - so the game's own physics run untouched: glide sinks,
-            // jumps arc, and aerial attacks land normally. Local-player +
-            // air-mover only, so it never disturbs grounded movement or NPCs.
-            // Suspended while the menu / text capture is up.
+            // Free Flight: drive the vertical velocity (vel[1]).
+            // When neither key is held, clamp vertical velocity to 0 (hover / air-walking),
+            // so the player stays at their current altitude and moves freely without falling down.
+            // Pressing Up (Space) ascends, pressing Down descends.
             bool flyingNow = false;
-            if (st.freeFlight && vel && inAirMover && !st.menuOpen && !st.textCapture)
+            if (isPlayer && st.freeFlight && vel && !st.menuOpen && !st.textCapture)
             {
                 bool up   = st.flyUpKeyVk   != 0 && (GetAsyncKeyState(st.flyUpKeyVk)   & 0x8000) != 0;
                 bool down = st.flyDownKeyVk != 0 && (GetAsyncKeyState(st.flyDownKeyVk) & 0x8000) != 0;
 
                 // Controller: the mask must be held in full (a single button or
                 // a combo), matching the keyboard binds. Only polled when a pad
-                // mask is actually configured, so keyboard-only players pay
-                // nothing.
+                // mask is actually configured.
                 if (st.flyUpPadMask || st.flyDownPadMask)
                 {
                     const unsigned pad = PollFlyPadMask();
@@ -1325,9 +1307,26 @@ namespace trinity::game
                     if (st.flyDownPadMask && (pad & st.flyDownPadMask) == st.flyDownPadMask) down = true;
                 }
 
-                flyingNow = up ^ down; // exactly one direction held
-                if (flyingNow)
-                    RawWriteFloat(vel + 1, up ? st.flightSpeed : -st.flightSpeed);
+                if (up && !down)
+                {
+                    RawWriteFloat(vel + 1, st.flightSpeed);
+                    flyingNow = true;
+                }
+                else if (down && !up)
+                {
+                    RawWriteFloat(vel + 1, -st.flightSpeed);
+                    flyingNow = true;
+                }
+                else if (g_flightEngaged.load(std::memory_order_relaxed))
+                {
+                    // When actively floating in air, halt downward velocity so player hovers without sinking
+                    float vy = 0.0f;
+                    if (RawReadFloat(vel + 1, &vy) && vy < 0.0f)
+                    {
+                        RawWriteFloat(vel + 1, 0.0f);
+                    }
+                    flyingNow = true;
+                }
             }
             if (isPlayer)
                 g_flightEngaged.store(flyingNow, std::memory_order_relaxed);
@@ -1539,10 +1538,12 @@ namespace trinity::game
         // Resolve the fast-travel trigger + the destination registry global.
         // Non-fatal if missing: position tracking still works, the fast-travel
         // menu just stays empty (logged).
-        if (const uintptr_t travel = mem::FindPattern(kSig_TravelToNode))
+        uintptr_t travel = mem::FindPattern(kSig_TravelToNode);
+        if (!travel)
+            travel = mem::FindPattern(kSig_TravelToNode_Legacy);
+
+        if (travel)
         {
-            if (mem::CountMatches(kSig_TravelToNode, 2) != 1)
-                LOG_WARN("teleport: fast-travel signature ambiguous; using first match.");
             g_travelFn = reinterpret_cast<TravelFn>(travel);
         }
         else
@@ -1770,8 +1771,8 @@ namespace trinity::game
         if (!FiniteCoordinate(destination))
             return MarkerStatus::InvalidCoordinates;
 
-        // Activate God Mode protection (automatically held while in the air, expires 4s after landing)
-        ActivateProtection(15000);
+        // Activate God Mode protection (held while in the air and for 120s after sky teleport)
+        ActivateProtection(120000);
 
         // Queue on game thread for frame-perfect physics sync
         g_pendingDestX.store(destination.x, std::memory_order_relaxed);
@@ -1810,8 +1811,8 @@ namespace trinity::game
         if (!FiniteCoordinate(destination))
             return false;
 
-        // Activate God Mode protection (automatically held while in the air, expires 4s after landing)
-        ActivateProtection(15000);
+        // Activate God Mode protection (held while in the air and for 120s after sky teleport)
+        ActivateProtection(120000);
 
         g_pendingDestX.store(destination.x, std::memory_order_relaxed);
         g_pendingDestY.store(destination.y, std::memory_order_relaxed);

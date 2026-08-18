@@ -43,7 +43,7 @@ namespace trinity
                         strcpy_s(slash + 1, static_cast<size_t>(path + MAX_PATH - slash - 1),
                                  "Trinity.log");
                         // One complete, bounded log per game session.
-                        fopen_s(&s_logFp, path, "w");
+                        s_logFp = _fsopen(path, "w", _SH_DENYNO);
                     }
                 }
             }
