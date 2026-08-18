@@ -187,34 +187,7 @@ namespace trinity::game
 
         int MaxZonesForSlot(int targetMode, uint16_t tag, const char* itemName, const char* icon)
         {
-            const int exact = LookupExactZoneForIcon(icon);
-            if (exact > 0) return exact;
-
-            if (targetMode == 1 || targetMode == 2)
-            {
-                const HorseSlotType slotType = GetHorseSlotType(itemName, icon);
-                switch (slotType)
-                {
-                case HorseSlotType::Chamfron:   return 2; // Chamfron (2 zones)
-                case HorseSlotType::HorseArmor: return 2; // Barding (2 zones)
-                case HorseSlotType::Saddle:     return 2; // Saddle (2 zones)
-                case HorseSlotType::Stirrups:   return 2; // Stirrups (2 zones)
-                case HorseSlotType::Horseshoes: return 1; // Horseshoes (1 zone)
-                default:                        return 2;
-                }
-            }
-            else
-            {
-                switch (tag)
-                {
-                case 3:  return 4;  // Helmet (up to 4 zones)
-                case 4:  return 12; // Chest Armor / Full Outfits (up to 12 zones)
-                case 5:  return 4;  // Gloves (up to 4 zones)
-                case 6:  return 4;  // Boots (up to 4 zones)
-                case 16: return 4;  // Cloak (up to 4 zones)
-                default: return 6;
-                }
-            }
+            return 12; // Full 12 zones supported for all player and mount gear
         }
 
         // The hook's captured components
@@ -906,7 +879,7 @@ namespace trinity::game
                             const HorseSlotType slotType = GetHorseSlotType(itemName, icon);
                             const char* sName = (slotType != HorseSlotType::None) ? MountSlotName(slotType) : SlotNameForTag(tag);
 
-                            const int maxZones = MaxZonesForSlot(s_targetMode, tag, itemName, icon);
+                            const int maxZones = 12;
                             Dye::SlotInfo& s = g_slots[g_slotCount++];
                             s = Dye::SlotInfo{};
                             s.tag        = tag;
@@ -915,7 +888,7 @@ namespace trinity::game
                             s.maxZones   = maxZones;
                             uint32_t rawDye = 0;
                             Read32(entry + dyeCountOffset, &rawDye);
-                            s.dyeCount = (rawDye > static_cast<uint32_t>(maxZones)) ? static_cast<uint32_t>(maxZones) : rawDye;
+                            s.dyeCount = (rawDye <= 12) ? rawDye : 12;
 
                             snprintf(s.slotName, sizeof(s.slotName), "%s", sName ? sName : "Mount Gear");
                             snprintf(s.itemName, sizeof(s.itemName), "%s", itemName);
@@ -969,7 +942,7 @@ namespace trinity::game
                         if (!IconPrefabDyeable(icon) && hType == HorseSlotType::None)
                             continue;
 
-                        const int maxZones = MaxZonesForSlot(s_targetMode, itemIdx, itemName, icon);
+                        const int maxZones = 12;
                         Dye::SlotInfo& s = g_slots[g_slotCount++];
                         s = Dye::SlotInfo{};
                         s.tag        = itemIdx++;
@@ -978,7 +951,7 @@ namespace trinity::game
                         s.maxZones   = maxZones;
                         uint32_t rawDye = 0;
                         Read32(slot + kOff_ItemVal_DyeCount, &rawDye);
-                        s.dyeCount = (rawDye > static_cast<uint32_t>(maxZones)) ? static_cast<uint32_t>(maxZones) : rawDye;
+                        s.dyeCount = (rawDye <= 12) ? rawDye : 12;
 
                         if (hType != HorseSlotType::None)
                             snprintf(s.slotName, sizeof(s.slotName), "%s", MountSlotName(hType));
@@ -1024,7 +997,7 @@ namespace trinity::game
                     snprintf(itemName, sizeof(itemName), "Item #%u", tid);
                 Inventory::IconForTypeId(tid, icon, sizeof(icon));
 
-                const int maxZones = MaxZonesForSlot(s_targetMode, tag, itemName, icon);
+                const int maxZones = 12;
                 Dye::SlotInfo& s = g_slots[g_slotCount++];
                 s = Dye::SlotInfo{};
                 s.tag        = tag;
@@ -1033,7 +1006,7 @@ namespace trinity::game
                 s.maxZones   = maxZones;
                 uint32_t rawDye = 0;
                 Read32(entry + dyeCountOffset, &rawDye);
-                s.dyeCount = (rawDye > static_cast<uint32_t>(maxZones)) ? static_cast<uint32_t>(maxZones) : rawDye;
+                s.dyeCount = (rawDye <= 12) ? rawDye : 12;
 
                 if (const char* n = SlotNameForTag(tag))
                     snprintf(s.slotName, sizeof(s.slotName), "%s", n);
@@ -1156,7 +1129,7 @@ namespace trinity::game
                 }
 
                 const int chFirst = (req.channel < 0) ? 0 : req.channel;
-                const int chLast  = (req.channel < 0) ? (maxZones - 1) : req.channel;
+                const int chLast  = (req.channel < 0) ? 11 : req.channel;
                 bool upsertOk = false;
 
                 for (int ch = chFirst; ch <= chLast; ++ch)

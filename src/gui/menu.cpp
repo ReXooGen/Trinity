@@ -388,7 +388,7 @@ namespace trinity::gui
                 break;
             }
         }
-        const int maxZones = (haveSlot && curSlot.maxZones > 0) ? curSlot.maxZones : 4;
+        const int maxZones = 12;
 
         static const char* const kZoneItems[] = {
             "All zones", "Zone 1", "Zone 2", "Zone 3", "Zone 4", "Zone 5", "Zone 6",
@@ -407,7 +407,7 @@ namespace trinity::gui
         }
 
         ui::Combo(LOC("Dye Zone"), &s_dyeChan, kZoneItems, comboCount,
-                  LOC("Which zone of the item to color. Automatically detected for this equipment."));
+                  LOC("Which zone of the item to color (Supports Zones 1-12)."));
         ui::Combo("Color Family", &s_dyeFamily, s_famItems, game::kDyeFamilyCount,
                   "Pick a color family to browse its shades below.");
 
