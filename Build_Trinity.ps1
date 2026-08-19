@@ -96,15 +96,23 @@ if (Test-Path -LiteralPath $shaPath) {
 
 $versionHeader = Get-Content (Join-Path $source 'src\core\version.h') -Raw
 $versionMatch = [regex]::Match($versionHeader, '#define\s+TRINITY_VERSION\s+"([^"\s]+)')
-$versionStr = if ($versionMatch.Success) { $versionMatch.Groups[1].Value } else { "1.2.0" }
-$zipName = "Trinity-v$versionStr-vTweak.zip"
-$zipPath = Join-Path $releaseDir $zipName
+$versionStr = if ($versionMatch.Success) { $versionMatch.Groups[1].Value } else { "1.2.4" }
+
+$commonReleaseDir = Join-Path $parentDir "Release\$versionStr"
+if (-not (Test-Path -LiteralPath $commonReleaseDir)) {
+    New-Item -ItemType Directory -Path $commonReleaseDir -Force | Out-Null
+}
+
+$zipName = "Trinity-v$versionStr-vTweak (1.18.0.2).zip"
+$zipPath = Join-Path $commonReleaseDir $zipName
 if (Test-Path -LiteralPath $zipPath) {
     Remove-Item -LiteralPath $zipPath -Force
 }
 
 Compress-Archive -Path "$pkgDir\*" -DestinationPath $zipPath -Force
 Write-Host "Created Release ZIP: $zipPath"
+
+Copy-Item -Path $zipPath -Destination (Join-Path $releaseDir $zipName) -Force
 
 # Auto-deploy to Mod_Files directory
 $modFilesDir = Join-Path $parentDir 'Mod_Files'
@@ -140,7 +148,7 @@ try {
     Copy-Item -Path (Join-Path $pkgDir 'Trinity_ko.ini') -Destination (Join-Path $steamModsDir 'Trinity_ko.ini') -Force -ErrorAction SilentlyContinue
     Write-Host "Auto-deployed Trinity.asi and translations to Steam mods folder: $steamModsDir"
 } catch {
-    Write-Host "Note: Game may be running in mods folder, copy skipped: $_"
+    Write-Host "Note: Could not copy to mods folder: $_"
 }
-
 Write-Host "Built: $($asi.FullName)"
+

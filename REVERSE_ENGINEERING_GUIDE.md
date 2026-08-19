@@ -2,7 +2,7 @@
 > **Target Game**: Crimson Desert (BlackSpace Engine)  
 > **Mod Base**: Trinity Native ASI Mod (v1.2.4)  
 > **Cross-Version Coverage**: Title Update 1.10 – 1.18+ (Universal Backwards Compatibility)  
-> **Author / Reference**: Lian & the Antigravity DeepMind Reverse Engineering Team
+> **Author / Reference**: Lian
 
 ---
 
@@ -233,6 +233,13 @@ Writing arbitrary bytes directly into empty inventory slots bricks save files be
 2. **Execute Native Constructor**: Invokes the engine's `TrItemValue` constructor (`kSig_TrItemValueCtor`).
 3. **Run Insert Planner**: Calls the engine's placement planner to allocate or merge slots.
 4. **Dual-Realm Commit**: Dispatches transaction commits to both Client and Server holders under TLS protection.
+
+### Real-Time Differential Inventory Change Tracker & Buyback System
+To prevent displaying unobtained master database items as "missing", Trinity employs a real-time auto-diff snapshot engine:
+1. **Initial Possession Baseline**: On world load (`Player::Ready()`), captures a full snapshot of all item Type IDs and quantities across all storage buckets.
+2. **Periodic State Delta Evaluation**: Runs at 0.67 Hz (`1500ms`) on the main thread, comparing live slot arrays against the cached snapshot.
+3. **Automatic Event Classification**: When an item's aggregate quantity drops without a menu-triggered deletion, it is classified as `Sold / Discarded` with an exact lost quantity and timestamp.
+4. **Persistent Buyback Ledger**: Serializes lost records to `Trinity_LostItems.txt` using safe file streaming (`_SH_DENYNO`), allowing one-click buyback recovery across restarts.
 
 ---
 

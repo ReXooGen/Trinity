@@ -54,3 +54,9 @@ XeTrinityz-reference/
 /Mod_Files/
 *.pabgb
 
+# DLC hooks
+dlc.cpp
+dlc.h
+src/game/dlc.cpp
+src/game/dlc.h
+

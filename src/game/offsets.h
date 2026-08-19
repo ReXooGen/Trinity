@@ -816,10 +816,9 @@ namespace trinity::game
 
     // TrItemValue ctor (IDB sub_1F86FD0): void f(itemVal, u16* typeId, i64 qty).
     // Self-contained - fills subtype/durability/flags/sub-lists from the item
-    // def alone. Leaves the instance id as -1 for the caller to stamp.
     inline constexpr const char* kSig_TrItemValueCtor =
         "48 89 5C 24 ? 48 89 4C 24 ? 55 56 57 41 54 41 55 41 56 41 57 48 8B EC "
-        "48 83 EC 60 4C 8B EA";
+        "48 83 EC 60 4C 8B EA 48 8B F1 48 C7 01 FF FF FF FF 0F B7 02 66 89 41 08";
     // Per-placement COMMIT (IDB sub_1CE1020):
     //     void* f(holder, int* outErr, void* unused, void* placement, u16 slotIdx)
     // Re-finds the bucket from the item's own def (+66) and calls sub_ED65670,
@@ -1109,11 +1108,17 @@ namespace trinity::game
     // mapped Money_Copper to "Silver"; the game says "Copper").
     // Anchored on the getter itself: 0x22 bytes, unique, and its
     // `mov rax, cs:<locMgr>` sits at +0x03 (7-byte instruction).
-    // 1.17.00 note: this getter was recompiled and the old AOB does not resolve.
+    // 1.17.00/1.18.x note: this getter was recompiled across updates.
     // Localisation is optional; inventory falls back to prettified engine keys.
     inline constexpr const char* kSig_LocStringGet =
         "8B 51 10 48 8B 05 ? ? ? ? 48 8B 48 08 3B 51 08 72 08 "
         "48 8D 05 ? ? ? ? C3 48 8B C2 48 03 01 C3";
+    inline constexpr const char* kSig_LocStringGet_Alt1 =
+        "8B 51 10 48 8B 05 ?? ?? ?? ?? 48 8B 48 08";
+    inline constexpr const char* kSig_LocStringGet_Alt2 =
+        "48 8B 05 ?? ?? ?? ?? 48 8B 48 08 3B 51 08";
+    inline constexpr const char* kSig_LocStringGet_Legacy =
+        "8B 41 10 48 8B 05 ?? ?? ?? ?? 48 8B 48 08";
     inline constexpr uintptr_t kOff_LocGet_MovGlobal = 0x03; // mov rax, cs:<locMgr>
     inline constexpr uintptr_t kOff_LocProv_Offset   = 0x10; // u32 offset into blob
     inline constexpr uintptr_t kOff_LocMgr_Blob      = 0x08; // ptr -> blob

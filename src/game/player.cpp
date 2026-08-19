@@ -272,22 +272,15 @@ namespace trinity::game
         // The resolve exists solely to feed the stat pins (God Mode / Infinite
         // Stamina / Infinite Spirit) and the damage multipliers. When none of
         // those consume the sets, the whole-character-list walk it does every
-        // frame is pure waste - RefreshSelf skips it and the guarding hooks
-        // (which gate on these same flags first) simply never look at the sets.
         bool AnyStatFeatureActive(const State& st)
         {
             return st.godMode || st.infStamina || st.infMountStamina || st.infSpirit ||
-                   st.noBounty ||
                    st.dmgInMult != 1.0f || st.dmgOutMult != 1.0f ||
                    Teleport::IsProtected();
         }
 
-        // --- Easy Parry: Infinite Perfect Parry / Deflect Window ------------
-        static ULONGLONG s_lastParryPulse = 0;
-
         static bool IsPlayerHoldingGuard()
         {
-            // Keyboard / Mouse Guard keys (CTRL, Right Mouse Button, Q, F)
             if ((GetAsyncKeyState(VK_CONTROL) & 0x8000) != 0 ||
                 (GetAsyncKeyState(VK_LCONTROL) & 0x8000) != 0 ||
                 (GetAsyncKeyState(VK_RCONTROL) & 0x8000) != 0 ||
@@ -296,7 +289,6 @@ namespace trinity::game
                 (GetAsyncKeyState('F') & 0x8000) != 0)
                 return true;
 
-            // XInput Gamepad Guard (L1 / Left Shoulder / Left Trigger)
             XINPUT_STATE xs{};
             for (DWORD i = 0; i < 4; ++i)
             {
@@ -308,33 +300,6 @@ namespace trinity::game
                 }
             }
             return false;
-        }
-
-        static void PulseParryWindow()
-        {
-            // Refresh the guard press edge so the engine recognizes incoming hits
-            // as landing within the active Perfect Parry / Deflect window
-            if ((GetAsyncKeyState(VK_CONTROL) & 0x8000) != 0 ||
-                (GetAsyncKeyState(VK_LCONTROL) & 0x8000) != 0)
-            {
-                keybd_event(VK_CONTROL, 0, KEYEVENTF_KEYUP, 0);
-                keybd_event(VK_CONTROL, 0, 0, 0);
-            }
-            if ((GetAsyncKeyState(VK_RBUTTON) & 0x8000) != 0)
-            {
-                mouse_event(MOUSEEVENTF_RIGHTUP, 0, 0, 0, 0);
-                mouse_event(MOUSEEVENTF_RIGHTDOWN, 0, 0, 0, 0);
-            }
-            if ((GetAsyncKeyState('Q') & 0x8000) != 0)
-            {
-                keybd_event('Q', 0, KEYEVENTF_KEYUP, 0);
-                keybd_event('Q', 0, 0, 0);
-            }
-            if ((GetAsyncKeyState('F') & 0x8000) != 0)
-            {
-                keybd_event('F', 0, KEYEVENTF_KEYUP, 0);
-                keybd_event('F', 0, 0, 0);
-            }
         }
 
         void TickResolveSelf()
@@ -755,70 +720,7 @@ namespace trinity::game
 
     void Player::Tick()
     {
-        const State& st = State::Get();
-        if (st.easyParry && IsPlayerHoldingGuard())
-        {
-            const ULONGLONG now = GetTickCount64();
-            if (now - s_lastParryPulse >= 80)
-            {
-                PulseParryWindow();
-                s_lastParryPulse = now;
-            }
-        }
-
-        if (st.noBounty)
-        {
-            static ULONGLONG s_lastBountyClear = 0;
-            const ULONGLONG now = GetTickCount64();
-            if (now - s_lastBountyClear >= 300)
-            {
-                ClearBounty(nullptr);
-                s_lastBountyClear = now;
-            }
-        }
-
         TickResolveSelf();
-    }
-
-    bool Player::ClearBounty(int* clearedCount)
-    {
-        if (clearedCount) *clearedCount = 0;
-        int count = 0;
-        for (int i = 0; i < kMaxPlayers; ++i)
-        {
-            const uintptr_t actor = g_actors[i].load(std::memory_order_acquire);
-            if (actor < kMinPointer) continue;
-
-            uintptr_t sub = 0;
-            if (Read64(actor + kOff_Container_Sub, &sub) && sub >= kMinPointer)
-            {
-                for (uintptr_t off = 0x50; off <= 0x250; off += 8)
-                {
-                    uintptr_t comp = 0;
-                    if (Read64(sub + off, &comp) && comp >= kMinPointer)
-                    {
-                        uint32_t crimeVal = 0;
-                        if (Read32(comp + 0x18, &crimeVal) && crimeVal > 0 && crimeVal < 10000000)
-                            mem::Write32(comp + 0x18, 0);
-                        if (Read32(comp + 0x20, &crimeVal) && crimeVal > 0 && crimeVal < 10000000)
-                            mem::Write32(comp + 0x20, 0);
-                        if (Read32(comp + 0x28, &crimeVal) && crimeVal > 0 && crimeVal < 10000000)
-                            mem::Write32(comp + 0x28, 0);
-                    }
-                }
-            }
-
-            uint32_t wantedState = 0;
-            if (Read32(actor + 0x1A4, &wantedState) && wantedState != 0)
-                mem::Write32(actor + 0x1A4, 0);
-            if (Read32(actor + 0x1A8, &wantedState) && wantedState != 0)
-                mem::Write32(actor + 0x1A8, 0);
-
-            ++count;
-        }
-
-        if (clearedCount) *clearedCount = count;
-        return count > 0;
     }
 
     void Player::RefreshSelf()

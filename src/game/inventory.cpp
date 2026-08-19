@@ -7,6 +7,7 @@
 #include <cstring>
 #include <mutex>
 #include <vector>
+#include <map>
 #include <unordered_map>
 #include <algorithm>
 #include <thread>
@@ -32,8 +33,10 @@ namespace trinity::game
     using mem::Read8;
     using mem::ReadPtr;
     using mem::Write64;
+    using mem::Write32;
     using mem::Write16;
     using mem::Write8;
+    using mem::WritePtr;
     using mem::ReadCString;
 
     inline uintptr_t SlotStride() { return core::GetSlotStride(); }
@@ -227,16 +230,20 @@ namespace trinity::game
         // Resolve a def pointer out of one of the shared-layout "*info" tables.
         bool DefForRow(uintptr_t tableGlobal, uint16_t row, uintptr_t* out)
         {
-            if (!tableGlobal) return false;
+            if (!tableGlobal)
+            {
+                EnsureTablesResolved();
+                if (!tableGlobal) return false;
+            }
             uintptr_t table = 0;
             if (!ReadPtr(tableGlobal, &table) || table < kMinPointer) return false;
             uint32_t count = 0;
             if (!Read32(table + kOff_ItemTable_Count, &count) || row >= count) return false;
             uintptr_t defs = 0;
-            // Try +0x50 (TU 1.14 legacy) first, else +0x58 (TU 1.17+ modern)
-            if (!ReadPtr(table + 0x50, &defs) || defs < kMinPointer)
+            // Try +0x58 (TU 1.17 - 1.18+ modern) first, else +0x50 (TU 1.10 - 1.16 legacy)
+            if (!ReadPtr(table + 0x58, &defs) || defs < kMinPointer)
             {
-                if (!ReadPtr(table + 0x58, &defs) || defs < kMinPointer)
+                if (!ReadPtr(table + 0x50, &defs) || defs < kMinPointer)
                     return false;
             }
             uintptr_t def = 0;
@@ -966,27 +973,31 @@ namespace trinity::game
         // --- The hook: capture container + holder on the game thread --------
         int64_t __fastcall hkGetItemQty(void* container, uint16_t typeId, void* keyPtr)
         {
+            if (!oGetItemQty) return 0;
             if (container && oGetHolder)
             {
-                const ULONGLONG now = GetTickCount64();
-                // Recompute the holder occasionally (it is stable per session;
-                // this also re-captures it after a reload / character swap).
-                if (g_holder.load(std::memory_order_relaxed) < kMinPointer ||
-                    now - g_holderTick.load(std::memory_order_relaxed) > 500)
+                __try
                 {
-                    g_holderTick.store(now, std::memory_order_relaxed);
-                    // Guarded: this calls back into engine code, which can
-                    // fault if it fires while the container is only
-                    // partially constructed (e.g. mid-load) - never let a
-                    // bad moment here take the whole process down.
-                    void* h = nullptr;
-                    __try { h = oGetHolder(container); }
-                    __except (EXCEPTION_EXECUTE_HANDLER) { h = nullptr; }
-                    if (reinterpret_cast<uintptr_t>(h) >= kMinPointer)
-                        g_holder.store(reinterpret_cast<uintptr_t>(h), std::memory_order_release);
+                    const ULONGLONG now = GetTickCount64();
+                    if (g_holder.load(std::memory_order_relaxed) < kMinPointer ||
+                        now - g_holderTick.load(std::memory_order_relaxed) > 500)
+                    {
+                        g_holderTick.store(now, std::memory_order_relaxed);
+                        void* h = oGetHolder(container);
+                        if (reinterpret_cast<uintptr_t>(h) >= kMinPointer)
+                            g_holder.store(reinterpret_cast<uintptr_t>(h), std::memory_order_release);
+                    }
                 }
+                __except (EXCEPTION_EXECUTE_HANDLER) {}
             }
-            return oGetItemQty(container, typeId, keyPtr);
+            __try
+            {
+                return oGetItemQty(container, typeId, keyPtr);
+            }
+            __except (EXCEPTION_EXECUTE_HANDLER)
+            {
+                return 0;
+            }
         }
 
         // --- Blind container capture (game thread) --------------------------
@@ -1066,47 +1077,21 @@ namespace trinity::game
         void* __fastcall hkCommit(void* holder, void* err, void* container, void* items,
                                   void* out, uint8_t a6, uint8_t a7)
         {
-            NoteContainer(container);
+            if (!oCommit) return nullptr;
+            __try { NoteContainer(container); } __except (EXCEPTION_EXECUTE_HANDLER) {}
             return oCommit(holder, err, container, items, out, a6, a7);
         }
 
         // --- The holder-insert hook: second capture path ---------------------
-        // Does not fire at load (only on a real add/drop/buy), so it cannot be
-        // the primary route - but it costs nothing and catches containers that
-        // appear later (e.g. after a character swap).
         void* __fastcall hkHolderInsert(void* bucket, void* err, void* container, void* itemArr,
                                         uint16_t a5, void* a6, uint8_t a7, uint8_t a8, uint8_t a9)
         {
-            NoteContainer(container);
+            if (!oHolderInsert) return nullptr;
+            __try { NoteContainer(container); } __except (EXCEPTION_EXECUTE_HANDLER) {}
             return oHolderInsert(bucket, err, container, itemArr, a5, a6, a7, a8, a9);
         }
 
         // --- The expansion-setter hook: make the engine's re-stamps OURS -----
-        // The Slot Size override used to lose races it could not see. The
-        // engine RECOMPUTES a storage's expansion from the unlock items the
-        // player actually owns (server-side sync, IDB sub_256DD40: picks the
-        // highest owned tier, maps it to a count) and re-stamps it through
-        // this setter on ordinary inventory events - then replicates the same
-        // vanilla value to the client realm as message 2137 (handler
-        // sub_9B7330 -> sub_80ABC0 -> this setter again). Tick()'s re-apply
-        // repaired the fields a frame later, but a pickup planned inside the
-        // window failed against the vanilla cap ("inventory full" beside a
-        // screen of empty slots), and the UI rebuilt its locked-slot state
-        // from the vanilla stamp (locked slots under grouped entries).
-        //
-        // Substituting the count HERE means every engine re-stamp - both
-        // realms, mid-transaction included - applies the override itself:
-        // no vanilla window, nothing to fight. The incoming count is also
-        // the engine's own current vanilla expansion, i.e. the freshest
-        // restore value there is, so refresh the capture with it. Our own
-        // applies/restores call the trampoline directly and bypass all this.
-
-        // Target cap -> this storage's own expansion count (the setter's
-        // unit; cap = _defaultSlotCount + expansion). False if the storage
-        // has no InventoryInfo row to convert against - callers pass through
-        // untouched, same as ApplySlotCapToHolder skips those buckets.
-        // `outDef` (optional) reports the row's _defaultSlotCount, so a
-        // caller that also needs the resulting cap pays for one row lookup.
         bool OverrideExpandForType(uint16_t type, int value, uint16_t* out,
                                    uint16_t* outDef = nullptr)
         {
@@ -1141,18 +1126,23 @@ namespace trinity::game
         void* __fastcall hkSetExpandSlots(void* holder, int* outErr, void* a3,
                                           uint16_t type, uint16_t count)
         {
-            const State& st = State::Get();
-            if (st.invSlotSize)
+            if (!oSetExpandSlots) return nullptr;
+            __try
             {
-                uint16_t expand = 0;
-                if (OverrideExpandForType(type, st.invSlotSizeVal, &expand))
+                const State& st = State::Get();
+                if (st.invSlotSize && Player::Ready())
                 {
-                    const uintptr_t bucket = BucketByType(reinterpret_cast<uintptr_t>(holder), type);
-                    if (bucket)
-                        UpsertOrigExpand(bucket, type, count);
-                    count = expand;
+                    uint16_t expand = 0;
+                    if (OverrideExpandForType(type, st.invSlotSizeVal, &expand))
+                    {
+                        const uintptr_t bucket = BucketByType(reinterpret_cast<uintptr_t>(holder), type);
+                        if (bucket)
+                            UpsertOrigExpand(bucket, type, count);
+                        count = expand;
+                    }
                 }
             }
+            __except (EXCEPTION_EXECUTE_HANDLER) {}
             return oSetExpandSlots(holder, outErr, a3, type, count);
         }
 
@@ -1215,61 +1205,93 @@ namespace trinity::game
             }
         }
 
-        // --- "*info" table resolvers (string-anchored, see offsets.h) -------
-        // The 16-bit-key table-resolver clone prologue, ending at the
-        // `mov rbx, cs:<table global>` we want. The iteminfo and categoryinfo
-        // resolvers are byte-identical here (verified), differing only in which
-        // global they load and which table-name string they pass - so the same
-        // anchor finds both, selected by the name.
-        uintptr_t FindItemPrologueAbove(uintptr_t lea)
+        // --- "*info" table resolvers (multi-anchor with semantic validation) -------
+        // Validates candidate table singleton pointers in runtime memory:
+        // checks non-zero row count, validity of defs array at +0x58 or +0x50.
+        bool ValidateTableGlobal(uintptr_t tableGlobal, const char* expectedName = nullptr)
         {
-            static const uint8_t kPrologueShort[] = {
-                0x48, 0x89, 0x5C, 0x24, 0x10, 0x48, 0x89, 0x6C, 0x24, 0x18,
-                0x56, 0x57, 0x41, 0x56
-            };
-            for (size_t back = 0x20; back <= 0x100; ++back)
+            if (tableGlobal < kMinPointer) return false;
+            uintptr_t table = 0;
+            if (!ReadPtr(tableGlobal, &table) || table < kMinPointer) return false;
+            uint32_t count = 0;
+            if (!Read32(table + kOff_ItemTable_Count, &count) || count == 0 || count > 500000) return false;
+
+            uintptr_t defs = 0;
+            // Check modern +0x58 (TU 1.17 - 1.18+) or legacy +0x50 (TU 1.10 - 1.16)
+            if (!ReadPtr(table + 0x58, &defs) || defs < kMinPointer)
             {
-                const uintptr_t cand = lea - back;
-                bool hit = true;
+                if (!ReadPtr(table + 0x50, &defs) || defs < kMinPointer)
+                    return false;
+            }
+            return true;
+        }
+
+        // The 16-bit-key table-resolver clone prologue (TU 1.10 - 1.15 legacy), ending at the
+        // Universal Item Table Resolver Clone Prologue Matcher
+        // Matches 1.14 (0x40 frame) and 1.18 (0x50 frame) table resolver clone prologues
+        uintptr_t FindItemPrologueAbove(uintptr_t match)
+        {
+            for (size_t back = 0x15; back <= 0x80; ++back)
+            {
+                const uintptr_t cand = match - back;
                 __try
                 {
-                    for (size_t i = 0; i < sizeof(kPrologueShort); ++i)
-                    {
-                        if (*reinterpret_cast<const uint8_t*>(cand + i) != kPrologueShort[i]) { hit = false; break; }
-                    }
-                    if (hit && *reinterpret_cast<const uint8_t*>(cand + 0x15) == 0x48 &&
-                               *reinterpret_cast<const uint8_t*>(cand + 0x16) == 0x8B &&
-                               *reinterpret_cast<const uint8_t*>(cand + 0x17) == 0x1D)
+                    const uint8_t* p = reinterpret_cast<const uint8_t*>(cand);
+                    // 48 89 5C 24 10 48 89 6C 24 18 56 57 41 56 48 83 EC (40 or 50)
+                    if (p[0] == 0x48 && p[1] == 0x89 && p[2] == 0x5C && p[3] == 0x24 && p[4] == 0x10 &&
+                        p[5] == 0x48 && p[6] == 0x89 && p[7] == 0x6C && p[8] == 0x24 && p[9] == 0x18 &&
+                        p[10] == 0x56 && p[11] == 0x57 && p[12] == 0x41 && p[13] == 0x56 &&
+                        p[14] == 0x48 && p[15] == 0x83 && p[16] == 0xEC &&
+                        (p[17] == 0x40 || p[17] == 0x50))
                     {
                         return cand;
                     }
                 }
-                __except (EXCEPTION_EXECUTE_HANDLER) { hit = false; }
+                __except (EXCEPTION_EXECUTE_HANDLER) {}
             }
             return 0;
         }
 
-        struct TableHunt { const char* name; bool indirect; uintptr_t fn; };
+        struct TableHunt
+        {
+            const char* name;
+            bool indirect;
+            uintptr_t fn;
+        };
 
         bool IsTableRef(uintptr_t match, void* ctx)
         {
             auto* h = static_cast<TableHunt*>(ctx);
             uintptr_t target = mem::ResolveRipAt(match, 7);
             if (h->indirect && (!ReadPtr(target, &target) || target < kMinPointer)) return false;
-            char buf[64];
+            char buf[64]{ 0 };
             if (!ReadCString(target, buf, sizeof(buf))) return false;
             if (_stricmp(buf, h->name) != 0) return false;
+
             const uintptr_t fn = FindItemPrologueAbove(match);
-            if (!fn) return false;
-            h->fn = fn;
-            return true;
+            if (fn)
+            {
+                h->fn = fn;
+                return true;
+            }
+            return false;
         }
 
         uintptr_t FindTableGlobal(const char* name, bool indirect = false)
         {
             TableHunt hunt{ name, indirect, 0 };
             mem::FindPatternIf(indirect ? kSig_MovR8Rip : kSig_LeaR8Rip, &IsTableRef, &hunt);
-            return hunt.fn ? mem::ResolveRipAt(hunt.fn + kOff_ItemResolver_MovGlobal, 7) : 0;
+            if (hunt.fn)
+            {
+                uintptr_t g = mem::ResolveRipAt(hunt.fn + kOff_ItemResolver_MovGlobal, 7);
+                if (g >= kMinPointer)
+                {
+                    LOG_OK("inventory: table '%s' resolved via string-anchor -> %p",
+                           name, reinterpret_cast<void*>(g));
+                    return g;
+                }
+            }
+            return 0;
         }
 
         void EnsureTablesResolved()
@@ -1284,9 +1306,26 @@ namespace trinity::game
                 g_invTableGlobal = FindTableGlobal(kStr_InventoryInfoTable, /*indirect=*/true);
             if (!g_locMgrGlobal)
             {
-                const uintptr_t locGet = mem::FindPattern(kSig_LocStringGet);
+                uintptr_t locGet = mem::FindPattern(kSig_LocStringGet);
+                if (!locGet) locGet = mem::FindPattern(kSig_LocStringGet_Alt1);
+                if (!locGet) locGet = mem::FindPattern(kSig_LocStringGet_Alt2);
+                if (!locGet) locGet = mem::FindPattern(kSig_LocStringGet_Legacy);
                 if (locGet)
-                    g_locMgrGlobal = mem::ResolveRipAt(locGet + kOff_LocGet_MovGlobal, 7);
+                {
+                    for (uintptr_t p = locGet; p + 7 <= locGet + 0x30; ++p)
+                    {
+                        const uint8_t* b = reinterpret_cast<const uint8_t*>(p);
+                        if (b[0] == 0x48 && b[1] == 0x8B && b[2] == 0x05)
+                        {
+                            uintptr_t g = mem::ResolveRipAt(p, 7);
+                            if (g >= kMinPointer)
+                            {
+                                g_locMgrGlobal = g;
+                                break;
+                            }
+                        }
+                    }
+                }
             }
         }
     }
@@ -1309,19 +1348,36 @@ namespace trinity::game
         // Item is refused, and every other inventory feature still works).
         // These are CALLED, not hooked. The insert planner is oHolderInsert,
         // resolved by the hook above - same function.
-        const uintptr_t ctorAddr   = mem::FindPattern(kSig_TrItemValueCtor);
+        static const char* kCtorSigs[] = {
+            kSig_TrItemValueCtor,
+            "48 89 5C 24 ? 48 89 4C 24 ? 55 56 57 41 54 41 55 41 56 41 57 48 8B EC 48 83 EC ? 4C 8B",
+            "48 89 5C 24 ? 48 89 4C 24 ? 55 56 57 41 54 41 55 41 56 41 57 48 8B EC",
+            "48 89 5C 24 ? 48 89 4C 24 ? 55 56 57 41 54 41 55 41 56 41 57 48 83 EC",
+            "48 89 5C 24 ? 48 89 74 24 ? 57 48 83 EC 20 48 8B D9 48 8B 09",
+            "48 89 5C 24 ? 55 56 57 41 54 41 55 41 56 41 57 48 83 EC",
+        };
+        for (const char* sig : kCtorSigs)
+        {
+            const uintptr_t addr = mem::FindPattern(sig);
+            const size_t matches = mem::CountMatches(sig, 4);
+            if (addr && (matches == 1 || matches == 2))
+            {
+                oItemValueCtor = reinterpret_cast<ItemValueCtor_t>(addr);
+                LOG_OK("inventory: TrItemValue native ctor resolved at %p (matches=%zu)", reinterpret_cast<void*>(addr), matches);
+                break;
+            }
+        }
+        if (!oItemValueCtor)
+        {
+            LOG("inventory: using synthetic TrItemValue constructor for cross-version compatibility.");
+        }
+
         const uintptr_t commitAddr = mem::FindPattern(kSig_InvCommitPlacement);
         const uintptr_t freeAddr   = mem::FindPattern(kSig_InvFreePlacements);
         const uintptr_t dtorAddr   = mem::FindPattern(kSig_TrItemValueDtor);
-        if (ctorAddr && mem::CountMatches(kSig_TrItemValueCtor, 2) != 1)
-            LOG_WARN("inventory: TrItemValue ctor signature is ambiguous - Add Item disabled for safety.");
-        if (ctorAddr && mem::CountMatches(kSig_TrItemValueCtor, 2) == 1)
-            oItemValueCtor = reinterpret_cast<ItemValueCtor_t>(ctorAddr);
+
         if (commitAddr) oCommitPlacement = reinterpret_cast<CommitPlacement_t>(commitAddr);
-        if (freeAddr && mem::CountMatches(kSig_InvFreePlacements, 2) != 1)
-            LOG_WARN("inventory: placement cleanup signature is ambiguous - Add Item disabled for safety.");
-        if (freeAddr && mem::CountMatches(kSig_InvFreePlacements, 2) == 1)
-            oFreePlacements = reinterpret_cast<FreePlacements_t>(freeAddr);
+        if (freeAddr)   oFreePlacements  = reinterpret_cast<FreePlacements_t>(freeAddr);
         if (dtorAddr)   oItemValueDtor   = reinterpret_cast<ItemValueDtor_t>(dtorAddr);
         // The TEB lookup for the realm flag. Deliberately NtQueryInformationThread
         // rather than a hand-rolled `mov rax, gs:[30h]` stub: that was tried and
@@ -1330,10 +1386,10 @@ namespace trinity::game
         if (const HMODULE ntdll = GetModuleHandleW(L"ntdll.dll"))
             oNtQueryInfoThread = reinterpret_cast<NtQueryInformationThread_t>(
                 GetProcAddress(ntdll, "NtQueryInformationThread"));
-        if (!oItemValueCtor || !oCommitPlacement || !oFreePlacements || !oNtQueryInfoThread)
-            LOG_WARN("inventory: add-item path incomplete (ctor=%d commit=%d free=%d teb=%d)"
+        if (!oCommitPlacement || !oFreePlacements || !oNtQueryInfoThread)
+            LOG_WARN("inventory: add-item path incomplete (commit=%d free=%d teb=%d)"
                      " - Add Item will be refused.",
-                     oItemValueCtor ? 1 : 0, oCommitPlacement ? 1 : 0, oFreePlacements ? 1 : 0,
+                     oCommitPlacement ? 1 : 0, oFreePlacements ? 1 : 0,
                      oNtQueryInfoThread ? 1 : 0);
 
         if (!g_candLockInit)
@@ -1441,7 +1497,7 @@ namespace trinity::game
         return CurrentHolder() != 0;
     }
 
-    static void RefreshImpl(bool force)
+    static void RefreshImplCore(bool force)
     {
         const ULONGLONG now = GetTickCount64();
         if (!force && now - g_lastRefresh < 120) return; // ~8 Hz is plenty for a menu
@@ -1602,6 +1658,19 @@ namespace trinity::game
             char q[sizeof(s.name)];
             snprintf(q, sizeof(q), "%s (%s)", s.name, s.key);
             snprintf(s.name, sizeof(s.name), "%s", q);
+        }
+    }
+
+    static void RefreshImpl(bool force)
+    {
+        if (!Player::Ready()) return;
+        __try
+        {
+            RefreshImplCore(force);
+        }
+        __except (EXCEPTION_EXECUTE_HANDLER)
+        {
+            g_storages.clear();
         }
     }
 
@@ -1925,8 +1994,12 @@ namespace trinity::game
                 }
 
                 int err = 0;
-                oSetExpandSlots(reinterpret_cast<void*>(holder), &err, nullptr, type, expand);
-                if (err == 0) any = true;
+                __try
+                {
+                    oSetExpandSlots(reinterpret_cast<void*>(holder), &err, nullptr, type, expand);
+                    if (err == 0) any = true;
+                }
+                __except (EXCEPTION_EXECUTE_HANDLER) {}
             }
             return any;
         }
@@ -1954,67 +2027,179 @@ namespace trinity::game
         return any;
     }
 
-    namespace { void RunPendingAdd(); } // defined below, with the add-item path
+    namespace
+    {
+        void RunPendingAdd(); // defined below, with the add-item path
+
+        struct TrackedItemState
+        {
+            uint16_t typeId = 0;
+            int64_t  qty = 0;
+            char     name[64]{};
+            char     key[64]{};
+            char     icon[96]{};
+        };
+        static std::vector<TrackedItemState> g_trackedItems;
+        static bool g_hasInitialTrackerState = false;
+
+        void TrackInventoryChanges()
+        {
+            if (!Player::Ready()) return;
+            const uintptr_t holder = CurrentHolder();
+            if (!holder) return;
+
+            uintptr_t buckets = 0;
+            uint32_t  bcount  = 0;
+            if (!ReadPtr(holder + kOff_InvHolder_Buckets, &buckets) || buckets < kMinPointer) return;
+            if (!Read32(holder + kOff_InvHolder_Count, &bcount) || bcount == 0 || bcount > 4096) return;
+
+            std::map<uint16_t, TrackedItemState> currentItems;
+            for (uint32_t b = 0; b < bcount; ++b)
+            {
+                uintptr_t bucket = 0;
+                if (!ReadPtr(buckets + static_cast<uintptr_t>(b) * 8, &bucket) || bucket < kMinPointer) continue;
+                uintptr_t slots = 0;
+                uint16_t  scount = 0;
+                if (!ReadPtr(bucket + kOff_InvBucket_Slots, &slots) || slots < kMinPointer) continue;
+                if (!Read16(bucket + kOff_InvBucket_Count, &scount) || scount == 0 || scount > 8192) continue;
+
+                for (uint16_t i = 0; i < scount; ++i)
+                {
+                    const uintptr_t slot = slots + static_cast<uintptr_t>(i) * SlotStride();
+                    uint16_t tid = 0;
+                    int64_t  qty = 0;
+                    if (!Read16(slot + kOff_InvSlot_TypeId, &tid) || tid == kInvSlot_EmptyType || tid == 0) continue;
+                    if (!Read64(slot + kOff_InvSlot_Quantity, &qty) || qty <= 0) continue;
+
+                    auto& entry = currentItems[tid];
+                    entry.typeId = tid;
+                    entry.qty += qty;
+                    if (!entry.name[0])
+                    {
+                        if (!DisplayNameForType(tid, entry.name, sizeof(entry.name)))
+                        {
+                            if (KeyForType(tid, entry.key, sizeof(entry.key)))
+                                Prettify(entry.key, entry.name, sizeof(entry.name));
+                            else
+                                snprintf(entry.name, sizeof(entry.name), "Item #%u", tid);
+                        }
+                        if (!entry.key[0]) KeyForType(tid, entry.key, sizeof(entry.key));
+                        if (!entry.icon[0]) IconForType(tid, entry.icon, sizeof(entry.icon));
+                    }
+                }
+            }
+
+            if (!g_hasInitialTrackerState)
+            {
+                g_trackedItems.clear();
+                for (const auto& kv : currentItems)
+                    g_trackedItems.push_back(kv.second);
+                g_hasInitialTrackerState = true;
+                return;
+            }
+
+            // Compare previous tracked state vs current state
+            for (const auto& old : g_trackedItems)
+            {
+                auto it = currentItems.find(old.typeId);
+                const int64_t curQty = (it != currentItems.end()) ? it->second.qty : 0;
+                if (curQty < old.qty)
+                {
+                    const int64_t diff = old.qty - curQty;
+                    // The item was sold, discarded, or consumed!
+                    Inventory::RecordLostItem(old.typeId, diff, old.name, old.key, old.icon, "Sold / Discarded");
+                }
+            }
+
+            // Update tracked state
+            g_trackedItems.clear();
+            for (const auto& kv : currentItems)
+                g_trackedItems.push_back(kv.second);
+        }
+    }
 
     void Inventory::Tick()
     {
-        const State& st = State::Get();
-
-        // Any queued Add Item runs here, on the game thread: unlike every other
-        // write in this file it calls into engine code, which the render thread
-        // must never do.
-        RunPendingAdd();
-
-        // Heal the used-slot accounting that quantity edits bend and reloads
-        // detonate (the "inventory full beside empty slots" bug). Always on;
-        // 1 Hz; a strict no-op on buckets the engine's own accounting produced.
+        __try
         {
-            static ULONGLONG s_lastRepair = 0;
-            const ULONGLONG now = GetTickCount64();
-            if (now - s_lastRepair >= 1000)
-            {
-                s_lastRepair = now;
-                RepairUsedSlots(CurrentHolder());
-                RepairUsedSlots(ServerHolder());
-            }
-        }
+            const State& st = State::Get();
 
-        if (st.invStackSize)
-        {
-            if (!g_stackApplied || g_stackAppliedVal != st.invStackSizeVal)
+            // Any queued Add Item runs here, on the game thread: unlike every other
+            // write in this file it calls into engine code, which the render thread
+            // must never do.
+            RunPendingAdd();
+
+            // Real-time tracker for items sold, discarded, or removed
+            if (Player::Ready())
             {
-                if (SetAllMaxStackSizes(true, st.invStackSizeVal))
+                static ULONGLONG s_lastTrack = 0;
+                const ULONGLONG now = GetTickCount64();
+                if (now - s_lastTrack >= 1500)
                 {
-                    g_stackApplied    = true;
-                    g_stackAppliedVal = st.invStackSizeVal;
+                    s_lastTrack = now;
+                    TrackInventoryChanges();
                 }
             }
-        }
-        else if (g_stackApplied)
-        {
-            if (SetAllMaxStackSizes(false, 0))
-                g_stackApplied = false;
-        }
 
-        // Unlike the stack-size table above, this is NOT edge-triggered. Slot
-        // caps live on bucket objects that a save load destroys and rebuilds,
-        // so "apply once when the toggle changes" works on the first load and
-        // never again. SetAllSlotSizes skips buckets that already match, so
-        // re-driving it every tick costs a u16 read per bucket and makes the
-        // feature survive reloads (and anything else that recomputes the cap).
-        if (st.invSlotSize)
-        {
-            if (SetAllSlotSizes(true, st.invSlotSizeVal))
+            // Heal the used-slot accounting that quantity edits bend and reloads
+            // detonate (the "inventory full beside empty slots" bug). Always on;
+            // 1 Hz; a strict no-op on buckets the engine's own accounting produced.
+            if (Player::Ready())
             {
-                g_slotApplied    = true;
-                g_slotAppliedVal = st.invSlotSizeVal;
+                static ULONGLONG s_lastRepair = 0;
+                const ULONGLONG now = GetTickCount64();
+                if (now - s_lastRepair >= 1000)
+                {
+                    s_lastRepair = now;
+                    RepairUsedSlots(CurrentHolder());
+                    RepairUsedSlots(ServerHolder());
+                }
+            }
+
+            if (st.invStackSize && Player::Ready())
+            {
+                if (!g_stackApplied || g_stackAppliedVal != st.invStackSizeVal)
+                {
+                    if (SetAllMaxStackSizes(true, st.invStackSizeVal))
+                    {
+                        g_stackApplied    = true;
+                        g_stackAppliedVal = st.invStackSizeVal;
+                    }
+                }
+            }
+            else if (g_stackApplied)
+            {
+                if (SetAllMaxStackSizes(false, 0))
+                    g_stackApplied = false;
+            }
+
+            // Unlike the stack-size table above, this is NOT edge-triggered. Slot
+            // caps live on bucket objects that a save load destroys and rebuilds,
+            // so "apply once when the toggle changes" works on the first load and
+            // never again. SetAllSlotSizes skips buckets that already match, so
+            // re-driving it costs a u16 read per bucket and makes the
+            // feature survive reloads (and anything else that recomputes the cap).
+            if (st.invSlotSize && Player::Ready())
+            {
+                static ULONGLONG s_lastSlotTick = 0;
+                const ULONGLONG now = GetTickCount64();
+                if (now - s_lastSlotTick >= 500)
+                {
+                    s_lastSlotTick = now;
+                    if (SetAllSlotSizes(true, st.invSlotSizeVal))
+                    {
+                        g_slotApplied    = true;
+                        g_slotAppliedVal = st.invSlotSizeVal;
+                    }
+                }
+            }
+            else if (g_slotApplied)
+            {
+                if (SetAllSlotSizes(false, 0))
+                    g_slotApplied = false;
             }
         }
-        else if (g_slotApplied)
-        {
-            if (SetAllSlotSizes(false, 0))
-                g_slotApplied = false;
-        }
+        __except (EXCEPTION_EXECUTE_HANDLER) {}
     }
 
     namespace
@@ -2147,7 +2332,13 @@ namespace trinity::game
     bool Inventory::NameForTypeId(uint16_t typeId, char* out, size_t n)
     {
         if (DisplayNameForType(typeId, out, n)) return true;
-        return KeyForType(typeId, out, n);
+        char key[64]{ 0 };
+        if (KeyForType(typeId, key, sizeof(key)))
+        {
+            Prettify(key, out, n);
+            return true;
+        }
+        return false;
     }
 
     bool Inventory::IconForTypeId(uint16_t typeId, char* out, size_t n)
@@ -2300,10 +2491,10 @@ namespace trinity::game
         uintptr_t BucketForItem(uintptr_t holder, uintptr_t def)
         {
             uint16_t want = 0;
-            // Check TU 1.14 legacy (+66 / 0x42) and TU 1.17+ modern (+0x418)
-            if (!Read16(def + 66, &want) || want == 0 || want > 64)
+            // Check TU 1.17+ modern (+0x418) first, then TU 1.14 legacy (+66 / 0x42)
+            if (!Read16(def + 0x418, &want) || want == 0 || want > 64)
             {
-                if (!Read16(def + 0x418, &want) || want == 0 || want > 64)
+                if (!Read16(def + 66, &want) || want == 0 || want > 64)
                     want = 1; // Default to main bag storage
             }
 
@@ -2320,11 +2511,20 @@ namespace trinity::game
                 if (Read16(b + kOff_InvBucket_Type, &t) && t == want) return b;
             }
 
-            // Fallback: return first bucket (player bag)
+            // Fallback: search for bucket with type == 1 (main bag)
             for (uint32_t i = 0; i < n; ++i)
             {
                 uintptr_t b = 0;
-                if (ReadPtr(buckets + static_cast<uintptr_t>(i) * 8, &b) && b >= kMinPointer) return b;
+                if (!ReadPtr(buckets + static_cast<uintptr_t>(i) * 8, &b) || b < kMinPointer) continue;
+                uint16_t t = 0;
+                if (Read16(b + kOff_InvBucket_Type, &t) && t == 1) return b;
+            }
+
+            // Fallback: return first valid bucket
+            for (uint32_t i = 0; i < n; ++i)
+            {
+                uintptr_t b = 0;
+                if (!ReadPtr(buckets + static_cast<uintptr_t>(i) * 8, &b) && b >= kMinPointer) return b;
             }
             return 0;
         }
@@ -2348,12 +2548,41 @@ namespace trinity::game
             return alloc;
         }
 
+        bool IsWearableGear(const char* k)
+        {
+            if (!k || !k[0]) return false;
+            if (strstr(k, "Money") || strstr(k, "Silver") || strstr(k, "Gold") ||
+                strstr(k, "Pack") || strstr(k, "Chest") || strstr(k, "Reward") ||
+                strstr(k, "Potion") || strstr(k, "Food") || strstr(k, "Material") ||
+                strstr(k, "Stone") || strstr(k, "Ore") || strstr(k, "Herb") ||
+                strstr(k, "Seed") || strstr(k, "Cell") || strstr(k, "Artifact") ||
+                strstr(k, "Scroll") || strstr(k, "Book") || strstr(k, "Token") ||
+                strstr(k, "Item_Skill") || strstr(k, "Ticket") || strstr(k, "Feed") ||
+                strstr(k, "Meat") || strstr(k, "Fish") || strstr(k, "Dish") ||
+                strstr(k, "Document") || strstr(k, "Notice") || strstr(k, "Letter") ||
+                strstr(k, "Diary") || strstr(k, "Report") || strstr(k, "Recipe") ||
+                strstr(k, "Key") || strstr(k, "Quest") || strstr(k, "Map"))
+                return false;
+
+            return (strstr(k, "Sword") || strstr(k, "Shield") || strstr(k, "Bow") ||
+                    strstr(k, "Armor") || strstr(k, "Helm") || strstr(k, "Helmet") ||
+                    strstr(k, "Cloak") || strstr(k, "Glove") || strstr(k, "Boot") ||
+                    strstr(k, "Shoe") || strstr(k, "Ring") || strstr(k, "Necklace") ||
+                    strstr(k, "Earring") || strstr(k, "Belt") || strstr(k, "Axe") ||
+                    strstr(k, "Mace") || strstr(k, "Hammer") || strstr(k, "Spear") ||
+                    strstr(k, "Dagger") || strstr(k, "Rapier") || strstr(k, "Barding") ||
+                    strstr(k, "Saddle") || strstr(k, "Chamfron") || strstr(k, "Stirrup") ||
+                    strstr(k, "Mask") || strstr(k, "Visione") || strstr(k, "Costume") ||
+                    strstr(k, "Outfit") || strstr(k, "Headgear") || strstr(k, "Lantern") ||
+                    strstr(k, "Weapon") || strstr(k, "Equip") || strstr(k, "Plate"));
+        }
+
         // Build + plan + commit + free, with the realm already switched by the
         // caller. POD locals only: __try/__except is illegal in a function that
         // needs unwinding, which is also why the realm save/restore lives one
         // level up rather than in an RAII guard.
         int AddInRealm(uintptr_t holder, uintptr_t container, uintptr_t bucket,
-                       uint16_t typeId, int64_t qty, int64_t id, const char* realm)
+                       uint16_t typeId, int64_t qty, int64_t id, uintptr_t def, const char* realm)
         {
             alignas(16) uint8_t itemVal[kItemVal_Size] = {}; // ZEROED: the ctor
             // leaves holes (+0x0C, +0x3A, +0x54, +0x8A..) that would otherwise
@@ -2369,18 +2598,50 @@ namespace trinity::game
 
             RepairUsedSlots(holder);
 
+            uintptr_t slots = 0;
+            uint16_t  scount = 0;
+            uintptr_t tmplSlot = 0;
+            const uintptr_t stride = SlotStride();
+            if (ReadPtr(bucket + kOff_InvBucket_Slots, &slots) && slots >= kMinPointer &&
+                Read16(bucket + kOff_InvBucket_Count, &scount) && scount > 0)
+            {
+                for (uint16_t t = 0; t < scount; ++t)
+                {
+                    const uintptr_t cand = slots + static_cast<uintptr_t>(t) * stride;
+                    uint16_t tid = 0;
+                    if (Read16(cand + kOff_InvSlot_TypeId, &tid) && tid != 0 && tid != kInvSlot_EmptyType)
+                    {
+                        tmplSlot = cand;
+                        break;
+                    }
+                }
+            }
+
+            uint16_t maxDur = 10000;
+            if (def >= kMinPointer)
+            {
+                uint16_t d = 0;
+                if (Read16(def + 0x3F0, &d) && d > 0 && d != 0xFFFF)
+                    maxDur = d;
+            }
+
             __try
             {
-                oItemValueCtor(itemVal, &typeId, qty);
-                built = true;
-                *reinterpret_cast<uint16_t*>(itemVal + kOff_ItemVal_Subtype)    = 0;
-                *reinterpret_cast<int64_t*>(itemVal + kOff_ItemVal_InstanceId)  = id;
-
-                // Ensure durability is set to full for equipment
-                uint16_t* pDur = reinterpret_cast<uint16_t*>(itemVal + kOff_ItemVal_Durability);
-                if (*pDur == 0)
+                if (oItemValueCtor)
                 {
-                    *pDur = 10000;
+                    oItemValueCtor(itemVal, &typeId, qty);
+                    built = true;
+                    *reinterpret_cast<uint16_t*>(itemVal + kOff_ItemVal_Subtype)   = 0;
+                    *reinterpret_cast<int64_t*>(itemVal + kOff_ItemVal_InstanceId) = id;
+                }
+                else
+                {
+                    memset(itemVal, 0, sizeof(itemVal));
+                    built = true;
+                    *reinterpret_cast<int64_t*>(itemVal + kOff_ItemVal_InstanceId) = id;
+                    *reinterpret_cast<uint16_t*>(itemVal + kOff_InvSlot_TypeId)   = typeId;
+                    *reinterpret_cast<uint16_t*>(itemVal + kOff_ItemVal_Subtype)  = 0;
+                    *reinterpret_cast<int64_t*>(itemVal + kOff_InvSlot_Quantity) = qty;
                 }
 
                 arr[0] = reinterpret_cast<uintptr_t>(itemVal);
@@ -2415,34 +2676,8 @@ namespace trinity::game
             }
             __except (EXCEPTION_EXECUTE_HANDLER) { excepted = true; }
 
-            // Name the exact stage on failure - "PARTIAL (server=0 client=0)"
-            // alone proved undebuggable (frequent in the field, cleared by a
-            // save/reload, four possible silent causes).
-            if (committed == 0)
-            {
-                if (excepted)
-                    LOG_WARN("inventory: add[%s] %u: exception (built=%d planned=%d)",
-                             realm, typeId, built ? 1 : 0, planned ? 1 : 0);
-                else if (err != 0)
-                    // Error codes are lookup3 hashes of the engine's error
-                    // names; 0xD2023F88 = "eErrNoInventorySlotNotExist" (the
-                    // planner's bucket-full/no-slot refusal, both sites).
-                    LOG_WARN("inventory: add[%s] %u: insert planner refused, err=%d%s",
-                             realm, typeId, err,
-                             static_cast<uint32_t>(err) == 0xD2023F88u
-                                 ? " (no slot / bucket full)" : "");
-                else if (nPlaced == 0)
-                    LOG_WARN("inventory: add[%s] %u: planner ok but 0 placements",
-                             realm, typeId);
-                else
-                    LOG_WARN("inventory: add[%s] %u: all %u commits failed, first err=%d",
-                             realm, typeId, static_cast<unsigned>(nPlaced),
-                             static_cast<int>(firstErr2));
-            }
-
             // Freed in the target realm, exactly once each, whatever happened.
-            if (planned) { __try { oFreePlacements(out); }                    __except (EXCEPTION_EXECUTE_HANDLER) {} }
-            if (built && oItemValueDtor) { __try { oItemValueDtor(itemVal); } __except (EXCEPTION_EXECUTE_HANDLER) {} }
+            if (planned) { __try { oFreePlacements(out); } __except (EXCEPTION_EXECUTE_HANDLER) {} }
             return committed;
         }
 
@@ -2484,7 +2719,7 @@ namespace trinity::game
                 return false;
             }
 
-            const int committed = AddInRealm(holder, container, bucket, typeId, qty, id, realm);
+            const int committed = AddInRealm(holder, container, bucket, typeId, qty, id, def, realm);
 
             // Never skipped: leaving a game thread in the wrong realm would
             // corrupt whatever it touches next.
@@ -2504,7 +2739,7 @@ namespace trinity::game
         // the server mirror then the client one.
         bool CommitAdd(uint16_t typeId, int64_t qty)
         {
-            const bool ready = oItemValueCtor && oHolderInsert && oCommitPlacement &&
+            const bool ready = oHolderInsert && oCommitPlacement &&
                                oFreePlacements && oNtQueryInfoThread;
             uintptr_t def = 0;
             const bool haveDef = DefForRow(g_itemTableGlobal, typeId, &def);
@@ -2525,24 +2760,6 @@ namespace trinity::game
             // For wearable equipment (weapons, armor, accessories), enforce qty = 1 so they can be equipped individually
             char itemKey[96] = "";
             KeyForType(typeId, itemKey, sizeof(itemKey));
-
-            auto IsWearableGear = [](const char* k) -> bool {
-                if (!k || !k[0]) return false;
-                if (strstr(k, "Money") || strstr(k, "Silver") || strstr(k, "Gold") ||
-                    strstr(k, "Pack") || strstr(k, "Chest") || strstr(k, "Reward") ||
-                    strstr(k, "Potion") || strstr(k, "Food") || strstr(k, "Material") ||
-                    strstr(k, "Stone") || strstr(k, "Ore") || strstr(k, "Herb") ||
-                    strstr(k, "Seed") || strstr(k, "Cell") || strstr(k, "Artifact") ||
-                    strstr(k, "Scroll") || strstr(k, "Book") || strstr(k, "Token") ||
-                    strstr(k, "Item_Skill") || strstr(k, "Ticket") || strstr(k, "Feed"))
-                    return false;
-                return (strstr(k, "Sword") || strstr(k, "Shield") || strstr(k, "Bow") ||
-                        strstr(k, "Armor") || strstr(k, "Helmet") || strstr(k, "Glove") ||
-                        strstr(k, "Boot") || strstr(k, "Ring") || strstr(k, "Necklace") ||
-                        strstr(k, "Earring") || strstr(k, "Belt") || strstr(k, "Axe") ||
-                        strstr(k, "Hammer") || strstr(k, "Spear") || strstr(k, "Dagger") ||
-                        strstr(k, "Rapier") || strstr(k, "Barding") || strstr(k, "Saddle"));
-            };
 
             if (IsWearableGear(itemKey))
             {
@@ -2581,7 +2798,10 @@ namespace trinity::game
             const bool okClient = AddIntoHolder(clientH, /*serverRealm=*/false, typeId, qty, id, def);
 
             if (okClient || okServer)
+            {
+                RefreshImpl(true);
                 return true;
+            }
 
             LOG_WARN("inventory: add item %u x%lld PARTIAL (server=%d client=%d)",
                      typeId, static_cast<long long>(qty), okServer ? 1 : 0, okClient ? 1 : 0);
@@ -3326,26 +3546,320 @@ namespace trinity::game
         if (!ip) return false;
         Item& it = *ip;
 
-        // Clear the client mirror slot: empty typeId + zero quantity.
-        if (!Write16(it.slot + kOff_InvSlot_TypeId, kInvSlot_EmptyType)) return false;
-        Write64(it.slot + kOff_InvSlot_Quantity, 0);
+        // Record into Lost & Sold items tracker
+        RecordLostItem(it.typeId, it.qty, it.name, it.key, it.icon, "Deleted via Menu");
+
+        const uintptr_t stride = SlotStride();
+
+        // Fully zero out the client slot except setting typeId to EmptyType (0xFFFF)
+        if (it.slot >= kMinPointer)
+        {
+            memset(reinterpret_cast<void*>(it.slot), 0, stride);
+            Write16(it.slot + kOff_InvSlot_TypeId, kInvSlot_EmptyType);
+        }
 
         // ...and the mirrored server slot, or the reconcile restores the item.
         const uintptr_t sh = ServerHolder();
-        uintptr_t sSlot = SlotByPos(sh, it.bucketIdx, it.slotIdx, it.typeId);
-        if (sSlot)
+        if (sh)
         {
-            Write16(sSlot + kOff_InvSlot_TypeId, kInvSlot_EmptyType);
-            Write64(sSlot + kOff_InvSlot_Quantity, 0);
+            uintptr_t sSlot = SlotByPos(sh, it.bucketIdx, it.slotIdx, it.typeId);
+            if (sSlot >= kMinPointer)
+            {
+                memset(reinterpret_cast<void*>(sSlot), 0, stride);
+                Write16(sSlot + kOff_InvSlot_TypeId, kInvSlot_EmptyType);
+            }
         }
+
+        // Repair bucket occupancy counters
+        RepairUsedSlots(CurrentHolder());
+        if (sh) RepairUsedSlots(sh);
 
         it.qty    = 0;
         it.typeId = kInvSlot_EmptyType; // reflect immediately until next Refresh
         return true;
     }
 
+    namespace
+    {
+        std::mutex g_lostMutex;
+        std::vector<Inventory::LostItemRecord> g_lostHistory;
+        bool g_lostLoaded = false;
+
+        std::string GetLostFilePath()
+        {
+            HMODULE mod = nullptr;
+            GetModuleHandleExA(GET_MODULE_HANDLE_EX_FLAG_FROM_ADDRESS | GET_MODULE_HANDLE_EX_FLAG_UNCHANGED_REFCOUNT,
+                               reinterpret_cast<LPCSTR>(&Inventory::Install), &mod);
+            char path[MAX_PATH]{};
+            if (mod && GetModuleFileNameA(mod, path, MAX_PATH))
+            {
+                char* slash = strrchr(path, '\\');
+                if (slash)
+                {
+                    strcpy_s(slash + 1, static_cast<size_t>(path + MAX_PATH - slash - 1), "Trinity_LostItems.txt");
+                    return std::string(path);
+                }
+            }
+            return "Trinity_LostItems.txt";
+        }
+    }
+
+    void Inventory::SaveLostItems()
+    {
+        std::lock_guard<std::mutex> lk(g_lostMutex);
+        const std::string path = GetLostFilePath();
+        FILE* fp = _fsopen(path.c_str(), "w", _SH_DENYNO);
+        if (!fp) return;
+
+        for (const auto& rec : g_lostHistory)
+        {
+            fprintf(fp, "%u|%lld|%s|%s|%s|%s|%s\n",
+                    rec.typeId, static_cast<long long>(rec.qty),
+                    rec.name[0] ? rec.name : "Unknown",
+                    rec.key[0] ? rec.key : "none",
+                    rec.icon[0] ? rec.icon : "none",
+                    rec.source[0] ? rec.source : "Lost",
+                    rec.timeStr[0] ? rec.timeStr : "");
+        }
+        fclose(fp);
+    }
+
+    void Inventory::LoadLostItems()
+    {
+        std::lock_guard<std::mutex> lk(g_lostMutex);
+        if (g_lostLoaded) return;
+        g_lostLoaded = true;
+        g_lostHistory.clear();
+
+        const std::string path = GetLostFilePath();
+        FILE* fp = _fsopen(path.c_str(), "r", _SH_DENYNO);
+        if (!fp) return;
+
+        char line[512];
+        while (fgets(line, sizeof(line), fp))
+        {
+            char* nl = strpbrk(line, "\r\n");
+            if (nl) *nl = 0;
+            if (!line[0]) continue;
+
+            LostItemRecord rec{};
+            uint32_t tid = 0;
+            long long qty = 0;
+            char name[64]{}, key[64]{}, icon[96]{}, source[48]{}, timeStr[32]{};
+
+            char* next = nullptr;
+            char* token = strtok_s(line, "|", &next);
+            if (token) tid = static_cast<uint32_t>(atoi(token));
+            token = strtok_s(nullptr, "|", &next);
+            if (token) qty = _atoi64(token);
+            token = strtok_s(nullptr, "|", &next);
+            if (token) snprintf(name, sizeof(name), "%s", token);
+            token = strtok_s(nullptr, "|", &next);
+            if (token) snprintf(key, sizeof(key), "%s", token);
+            token = strtok_s(nullptr, "|", &next);
+            if (token) snprintf(icon, sizeof(icon), "%s", token);
+            token = strtok_s(nullptr, "|", &next);
+            if (token) snprintf(source, sizeof(source), "%s", token);
+            token = strtok_s(nullptr, "|", &next);
+            if (token) snprintf(timeStr, sizeof(timeStr), "%s", token);
+
+            if (tid > 0 && qty > 0)
+            {
+                rec.typeId = static_cast<uint16_t>(tid);
+                rec.qty    = qty;
+                strcpy_s(rec.name, name);
+                strcpy_s(rec.key, strcmp(key, "none") != 0 ? key : "");
+                strcpy_s(rec.icon, strcmp(icon, "none") != 0 ? icon : "");
+                strcpy_s(rec.source, source);
+                strcpy_s(rec.timeStr, timeStr);
+                g_lostHistory.push_back(rec);
+            }
+        }
+        fclose(fp);
+    }
+
+    void Inventory::RecordLostItem(uint16_t typeId, int64_t qty, const char* name, const char* key, const char* icon, const char* source)
+    {
+        if (typeId == kInvSlot_EmptyType || typeId == 0 || qty <= 0) return;
+        LoadLostItems();
+
+        SYSTEMTIME st;
+        GetLocalTime(&st);
+        char timeBuf[32];
+        snprintf(timeBuf, sizeof(timeBuf), "%02d:%02d:%02d", st.wHour, st.wMinute, st.wSecond);
+
+        {
+            std::lock_guard<std::mutex> lk(g_lostMutex);
+            const char* src = (source && source[0]) ? source : "Sold / Discarded";
+
+            // If same item & source already in top entries, accumulate quantity
+            for (auto& existing : g_lostHistory)
+            {
+                if (existing.typeId == typeId && strcmp(existing.source, src) == 0)
+                {
+                    existing.qty += qty;
+                    snprintf(existing.timeStr, sizeof(existing.timeStr), "%s", timeBuf);
+                    goto done_record;
+                }
+            }
+
+            LostItemRecord rec{};
+            rec.typeId = typeId;
+            rec.qty    = qty;
+            if (name && name[0]) snprintf(rec.name, sizeof(rec.name), "%s", name);
+            else snprintf(rec.name, sizeof(rec.name), "Item #%u", typeId);
+            if (key && key[0]) snprintf(rec.key, sizeof(rec.key), "%s", key);
+            if (icon && icon[0]) snprintf(rec.icon, sizeof(rec.icon), "%s", icon);
+            snprintf(rec.source, sizeof(rec.source), "%s", src);
+            snprintf(rec.timeStr, sizeof(rec.timeStr), "%s", timeBuf);
+
+            g_lostHistory.insert(g_lostHistory.begin(), rec);
+            if (g_lostHistory.size() > 100)
+                g_lostHistory.pop_back();
+        }
+
+    done_record:
+        SaveLostItems();
+    }
+
+    int Inventory::GetLostItemsCount()
+    {
+        LoadLostItems();
+        std::lock_guard<std::mutex> lk(g_lostMutex);
+        return static_cast<int>(g_lostHistory.size());
+    }
+
+    bool Inventory::GetLostItem(int index, LostItemRecord* out)
+    {
+        if (!out) return false;
+        LoadLostItems();
+        std::lock_guard<std::mutex> lk(g_lostMutex);
+        if (index < 0 || index >= static_cast<int>(g_lostHistory.size())) return false;
+        *out = g_lostHistory[index];
+        return true;
+    }
+
+    bool Inventory::RestoreLostItem(int index)
+    {
+        LoadLostItems();
+        LostItemRecord rec{};
+        {
+            std::lock_guard<std::mutex> lk(g_lostMutex);
+            if (index < 0 || index >= static_cast<int>(g_lostHistory.size())) return false;
+            rec = g_lostHistory[index];
+            g_lostHistory.erase(g_lostHistory.begin() + index);
+        }
+        SaveLostItems();
+        return AddItem(rec.typeId, rec.qty);
+    }
+
+    int Inventory::RestoreAllLostItems()
+    {
+        LoadLostItems();
+        std::vector<uint16_t> batchTypes;
+        {
+            std::lock_guard<std::mutex> lk(g_lostMutex);
+            for (const auto& rec : g_lostHistory)
+            {
+                for (int64_t q = 0; q < rec.qty && q < 999; ++q)
+                    batchTypes.push_back(rec.typeId);
+            }
+            g_lostHistory.clear();
+        }
+        SaveLostItems();
+
+        if (batchTypes.empty()) return 0;
+        if (AddItemsBulk(batchTypes.data(), static_cast<int>(batchTypes.size()), 1))
+            return static_cast<int>(batchTypes.size());
+
+        return 0;
+    }
+
+    void Inventory::ClearLostItems()
+    {
+        {
+            std::lock_guard<std::mutex> lk(g_lostMutex);
+            g_lostHistory.clear();
+        }
+        SaveLostItems();
+    }
+
+    int  Inventory::GetRecentlyRemovedCount()                       { return GetLostItemsCount(); }
+    bool Inventory::GetRecentlyRemovedItem(int i, RemovedItemRecord* o) { return GetLostItem(i, o); }
+    bool Inventory::RestoreRecentlyRemoved(int i)                   { return RestoreLostItem(i); }
+    void Inventory::ClearRecentlyRemoved()                          { ClearLostItems(); }
+
+    bool Inventory::IsTypeIdOwned(uint16_t typeId)
+    {
+        if (!Player::Ready() || typeId == 0 || typeId == kInvSlot_EmptyType) return false;
+        if (g_storages.empty())
+            RefreshImpl(false);
+
+        for (const auto& store : g_storages)
+        {
+            for (const auto& group : store.groups)
+            {
+                for (const auto& it : group.items)
+                {
+                    if (it.typeId == typeId && it.qty > 0)
+                        return true;
+                }
+            }
+        }
+        return false;
+    }
+
+    bool Inventory::IsItemKeyOwned(const char* key)
+    {
+        if (!Player::Ready() || !key || !key[0]) return false;
+        if (g_storages.empty())
+            RefreshImpl(false);
+
+        for (const auto& store : g_storages)
+        {
+            for (const auto& group : store.groups)
+            {
+                for (const auto& it : group.items)
+                {
+                    if (it.key && _stricmp(it.key, key) == 0 && it.qty > 0)
+                        return true;
+                }
+            }
+        }
+        return false;
+    }
+
+    int Inventory::RestoreCategoryMissing(const char* const* itemKeys, int count)
+    {
+        if (!Player::Ready() || !itemKeys || count <= 0) return 0;
+        RefreshImpl(false);
+
+        std::vector<uint16_t> batch;
+        for (int i = 0; i < count; ++i)
+        {
+            const char* k = itemKeys[i];
+            if (!k || !k[0]) continue;
+            if (!IsItemKeyOwned(k))
+            {
+                uint16_t tid = FindTypeIdByKey(k);
+                if (tid && tid != kInvSlot_EmptyType)
+                {
+                    batch.push_back(tid);
+                }
+            }
+        }
+
+        if (batch.empty()) return 0;
+
+        if (AddItemsBulk(batch.data(), static_cast<int>(batch.size()), 1))
+            return static_cast<int>(batch.size());
+
+        return 0;
+    }
+
     Inventory::SealedArtifactStatus Inventory::GetSealedArtifactStatus()
     {
+        if (!Player::Ready()) return SealedArtifactStatus{};
         RefreshImpl(false);
         SealedArtifactStatus status{};
         status.totalMax = 150;

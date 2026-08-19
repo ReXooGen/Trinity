@@ -26,11 +26,17 @@ Trinity is an in-game DirectX 12 mod menu for **Crimson Desert**, originally cre
 
 ## What's New in v1.2.4
 
+- **Smart Lost & Sold Items Tracker (Buyback & Recycle Bin)**:
+  - Real-time differential inventory change tracker that automatically logs every item sold to merchants, discarded, or deleted.
+  - One-click restoration per item or bulk `>> Restore All Lost & Sold Items <<`.
+  - Persistent disk storage (`Trinity_LostItems.txt`) so your buyback history persists across game sessions.
+- **Quest & Special Item Catalog Archive**:
+  - Dedicated searchable archive for 50+ Bounty Notices, Lore Documents, Recipes, Quest Keys, Relics, and Unique Gear.
 - **Universal Backwards Compatibility (TU 1.10 – 1.18+)**: Multi-version adaptive memory layout and dynamic slot strides (`0xC0` for TU <= 1.15, `0xC8` for TU >= 1.16).
 - **Runtime Binary Fingerprinting**: Live in-memory machine code scanner to accurately identify and display active Title Updates (e.g. `TU 1.18.02 (Active)`).
-- **Combat & Crime System**: Added **No Bounty (Never Wanted)** and 1-click **Clear Bounty** features.
 - **Cross-Slot Controller Free Flight**: Polling across controller slots 0 through 3 for robust multi-controller and PS5 pad support.
-- **Dedicated Submenus**: Integrated **Money & Currency** and **Abyss Items & Artifacts** submenus.
+- **Dedicated Submenus**: Integrated **Money & Currency**, **Abyss Items & Artifacts**, and **Restore Items** submenus.
+- **Engine Memory Safety Hardening**: Completely eliminated destructive memory writes and wrapped all subsystem refreshes in SEH for 100% crash-free stability.
 
 ## What's New in v1.2.3
 

@@ -1491,9 +1491,6 @@ namespace trinity::hooks
 
     bool InstallDX12Hooks()
     {
-        // Arm crash diagnostics first, before the engine's device exists.
-        EnableDredIfAvailable();
-
         void* presentAddr    = nullptr;
         void* resizeAddr     = nullptr;
         void* execAddr       = nullptr;

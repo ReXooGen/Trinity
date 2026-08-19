@@ -170,6 +170,19 @@ namespace trinity::game
 
             uintptr_t data = 0;
             if (!ReadPtr(entry + dataOff, &data) || data < kMinPointer) return 0;
+
+            // Guard against module/table memory pointers (like static ItemDef tables)
+            static uintptr_t s_modBase = 0, s_modEnd = 0;
+            if (!s_modBase)
+            {
+                HMODULE hMod = GetModuleHandleA(nullptr);
+                s_modBase = reinterpret_cast<uintptr_t>(hMod);
+                auto* dos = reinterpret_cast<IMAGE_DOS_HEADER*>(hMod);
+                auto* nt  = reinterpret_cast<IMAGE_NT_HEADERS*>(reinterpret_cast<uint8_t*>(hMod) + dos->e_lfanew);
+                s_modEnd = s_modBase + nt->OptionalHeader.SizeOfImage;
+            }
+            if (data >= s_modBase && data < s_modEnd) return 0;
+
             return data;
         }
 
@@ -191,8 +204,15 @@ namespace trinity::game
         uint16_t GearAt(uintptr_t data, int i)
         {
             if (!data || i < 0 || i >= kSocket_Max) return kSock_Empty;
+            uint8_t state = 0;
+            if (!Read8(data + static_cast<uintptr_t>(i) * kSocketRec_Stride + kOff_SockRec_State, &state))
+                return kSock_Empty;
+            if (state != 0x05) return kSock_Empty;
+
             uint16_t g = kSock_Empty;
-            Read16(data + static_cast<uintptr_t>(i) * kSocketRec_Stride + kOff_SockRec_GearId, &g);
+            if (!Read16(data + static_cast<uintptr_t>(i) * kSocketRec_Stride + kOff_SockRec_GearId, &g))
+                return kSock_Empty;
+            if (g == 0 || g == 0xFFFF) return kSock_Empty;
             return g;
         }
 
@@ -202,9 +222,9 @@ namespace trinity::game
         {
             if (!data || i < 0 || i >= kSocket_Max) return false;
             const uintptr_t rec = data + static_cast<uintptr_t>(i) * kSocketRec_Stride;
-            const bool filled = (gear != kSock_Empty);
+            const bool filled = (gear != kSock_Empty && gear != 0);
             bool ok = true;
-            ok &= Write16(rec + kOff_SockRec_GearId, gear);
+            ok &= Write16(rec + kOff_SockRec_GearId, filled ? gear : 0xFFFF);
             ok &= Write16(rec + kOff_SockRec_Marker, filled ? 0xFFFF : 0x0000);
             ok &= Write8 (rec + kOff_SockRec_Index,  static_cast<uint8_t>(i));
             ok &= Write8 (rec + kOff_SockRec_State,  filled ? 0x05 : 0x00);
@@ -381,9 +401,9 @@ namespace trinity::game
                 for (int k = 0; k < maxSock; ++k)
                 {
                     Equipment::Socket& so = s.sockets[k];
-                    so.unlocked = true;
+                    so.unlocked = (k < s.unlockedCount);
                     so.gearTypeId = data ? GearAt(data, k) : kSock_Empty;
-                    so.filled = (so.gearTypeId != kSock_Empty);
+                    so.filled = (so.unlocked && so.gearTypeId != kSock_Empty);
                     if (so.filled)
                     {
                         if (!Inventory::NameForTypeId(so.gearTypeId, so.gearName, sizeof(so.gearName)))

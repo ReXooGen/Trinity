@@ -323,8 +323,7 @@ namespace trinity::game
                 return false;
 
             ThreadSuspender suspension;
-            if (!suspension.SuspendOthersAvoiding(hook.target, hook.length))
-                return false;
+            suspension.SuspendOthersAvoiding(hook.target, hook.length); // Best-effort suspension
             if (memcmp(reinterpret_cast<const void*>(hook.target), expectedBytes, hook.length) != 0)
                 return false;
 
@@ -587,22 +586,32 @@ namespace trinity::game
                     LOG_WARN("teleport: marker player hook failed (fallback to move-owner).");
             }
 
+            size_t installedHooks = 0;
             for (size_t i = 0; i < markers.size(); ++i)
             {
-                if (!InstallMarkerHook(markers[i] + 4, g_markerCandidates[i]))
+                if (InstallMarkerHook(markers[i] + 4, g_markerCandidates[i]))
                 {
-                    LOG_ERR("teleport: failed to install marker hook index %zu.", i);
-                    RemoveMarkerHooks();
-                    return false;
+                    ++installedHooks;
                 }
+                else
+                {
+                    LOG_WARN("teleport: marker hook index %zu skipped (best-effort).", i);
+                }
+            }
+
+            if (installedHooks == 0)
+            {
+                LOG_WARN("teleport: no marker hooks could be installed.");
+                RemoveMarkerHooks();
+                return false;
             }
 
             if (protections.size() == 1)
                 g_markerProtectionReady = InstallMarkerProtectionHook(protections.front());
 
             g_markerReady = true;
-            LOG_OK("teleport: map marker teleport subsystem initialized (origin=0x%p, hooks=%zu, protection=%s).",
-                   reinterpret_cast<void*>(g_markerOriginAddress), g_markerHooks.size(),
+            LOG_OK("teleport: map marker teleport subsystem initialized (origin=0x%p, hooks=%zu/%zu, protection=%s).",
+                   reinterpret_cast<void*>(g_markerOriginAddress), installedHooks, markers.size(),
                    g_markerProtectionReady ? "yes" : "no");
             return true;
         }
@@ -666,6 +675,16 @@ namespace trinity::game
                 return true;
             }
             return false;
+        }
+
+        void ClearActiveMarker()
+        {
+            for (auto& slot : g_markerCandidates)
+            {
+                slot.valid.store(0, std::memory_order_relaxed);
+                slot.xyBits.store(0, std::memory_order_relaxed);
+                slot.zBits.store(0, std::memory_order_relaxed);
+            }
         }
 
         // Calls a data-table resolver (game thread only - it lazy-loads the
@@ -1183,44 +1202,70 @@ namespace trinity::game
         // attacks are never touched. Published so the HUD can light "FLY".
         std::atomic<bool> g_flightEngaged{false};
 
-        // Current real-pad mask for Free Flight (buttons + trigger sentinels),
-        // read on the movement thread. Iterates slots 0-3 to support PS5
-        // (DualSense via DS4Windows/Steam Input) and multi-controller setups.
-        // XInputReadReal bypasses the menu-open neutralisation (the caller
-        // already gates on !menuOpen), so it sees the true controller.
-        unsigned PollFlyPadMask()
+        struct FlyInputState
         {
-            static ULONGLONG s_lastPoll   = 0;
-            static unsigned  s_cachedMask = 0;
+            float moveX = 0.0f; // -1.0 (left) to +1.0 (right)
+            float moveZ = 0.0f; // -1.0 (backward) to +1.0 (forward)
+            bool  up    = false;
+            bool  down  = false;
+        };
 
-            const ULONGLONG now = GetTickCount64();
-            if (now - s_lastPoll < 8)
-                return s_cachedMask;
-            s_lastPoll = now;
+        static std::atomic<float> g_flightHeadingX{0.0f};
+        static std::atomic<float> g_flightHeadingZ{1.0f};
 
-            XINPUT_STATE xs;
-            ZeroMemory(&xs, sizeof(xs));
-            bool found = false;
+        FlyInputState PollFlyInputs(const State& st)
+        {
+            FlyInputState in{};
+
+            // Keyboard movement: WASD / Arrow keys
+            if ((GetAsyncKeyState('W') & 0x8000) != 0 || (GetAsyncKeyState(VK_UP) & 0x8000) != 0)
+                in.moveZ += 1.0f;
+            if ((GetAsyncKeyState('S') & 0x8000) != 0 || (GetAsyncKeyState(VK_DOWN) & 0x8000) != 0)
+                in.moveZ -= 1.0f;
+            if ((GetAsyncKeyState('A') & 0x8000) != 0 || (GetAsyncKeyState(VK_LEFT) & 0x8000) != 0)
+                in.moveX -= 1.0f;
+            if ((GetAsyncKeyState('D') & 0x8000) != 0 || (GetAsyncKeyState(VK_RIGHT) & 0x8000) != 0)
+                in.moveX += 1.0f;
+
+            if (st.flyUpKeyVk != 0 && (GetAsyncKeyState(st.flyUpKeyVk) & 0x8000) != 0)
+                in.up = true;
+            if (st.flyDownKeyVk != 0 && (GetAsyncKeyState(st.flyDownKeyVk) & 0x8000) != 0)
+                in.down = true;
+
+            // Controller polling (Iterate slots 0-3 for all gamepads)
+            XINPUT_STATE xs{};
             for (DWORD i = 0; i < 4; ++i)
             {
                 if (hooks::XInputReadReal(i, &xs) == ERROR_SUCCESS)
                 {
-                    found = true;
+                    unsigned mask = xs.Gamepad.wButtons;
+                    if (xs.Gamepad.bLeftTrigger  > 64) mask |= kPadLTrigger;
+                    if (xs.Gamepad.bRightTrigger > 64) mask |= kPadRTrigger;
+
+                    if (st.flyUpPadMask && (mask & st.flyUpPadMask) == st.flyUpPadMask)
+                        in.up = true;
+                    if (st.flyDownPadMask && (mask & st.flyDownPadMask) == st.flyDownPadMask)
+                        in.down = true;
+
+                    // Left Stick analog movement
+                    constexpr SHORT kDeadzone = 7849;
+                    const SHORT sx = xs.Gamepad.sThumbLX;
+                    const SHORT sy = xs.Gamepad.sThumbLY;
+                    if (std::abs(sx) > kDeadzone)
+                        in.moveX += static_cast<float>(sx) / 32767.0f;
+                    if (std::abs(sy) > kDeadzone)
+                        in.moveZ += static_cast<float>(sy) / 32767.0f;
+
                     break;
                 }
             }
 
-            if (!found)
-            {
-                s_cachedMask = 0;
-                return 0;
-            }
+            if (in.moveX > 1.0f) in.moveX = 1.0f;
+            if (in.moveX < -1.0f) in.moveX = -1.0f;
+            if (in.moveZ > 1.0f) in.moveZ = 1.0f;
+            if (in.moveZ < -1.0f) in.moveZ = -1.0f;
 
-            unsigned mask = xs.Gamepad.wButtons;
-            if (xs.Gamepad.bLeftTrigger  > 64) mask |= kPadLTrigger;
-            if (xs.Gamepad.bRightTrigger > 64) mask |= kPadRTrigger;
-            s_cachedMask = mask;
-            return mask;
+            return in;
         }
 
         void __fastcall hkLocoStep(uintptr_t comp, float dt, float* vel,
@@ -1277,7 +1322,7 @@ namespace trinity::game
                 }
             }
 
-            if (isPlayer && st.superRun && st.superRunMult != 1.0f && vel)
+            if (isPlayer && st.superRun && !st.freeFlight && st.superRunMult != 1.0f && vel)
             {
                 float x = 0.0f, z = 0.0f; // vel[0]=x, vel[1]=up, vel[2]=z
                 if (RawReadFloat(vel, &x) && RawReadFloat(vel + 2, &z))
@@ -1287,45 +1332,73 @@ namespace trinity::game
                 }
             }
 
-            // Free Flight: drive the vertical velocity (vel[1]).
-            // When neither key is held, clamp vertical velocity to 0 (hover / air-walking),
-            // so the player stays at their current altitude and moves freely without falling down.
-            // Pressing Up (Space) ascends, pressing Down descends.
+            // --- Free Flight: Full 3D directional propulsion & hover suspension ---
             bool flyingNow = false;
-            if (isPlayer && st.freeFlight && vel && !st.menuOpen && !st.textCapture)
+            if (isPlayer && st.freeFlight && vel)
             {
-                bool up   = st.flyUpKeyVk   != 0 && (GetAsyncKeyState(st.flyUpKeyVk)   & 0x8000) != 0;
-                bool down = st.flyDownKeyVk != 0 && (GetAsyncKeyState(st.flyDownKeyVk) & 0x8000) != 0;
+                // Continuously refresh protection while flying to prevent fall-damage / out-of-bounds watchdog
+                Teleport::ActivateProtection(15000);
 
-                // Controller: the mask must be held in full (a single button or
-                // a combo), matching the keyboard binds. Only polled when a pad
-                // mask is actually configured.
-                if (st.flyUpPadMask || st.flyDownPadMask)
-                {
-                    const unsigned pad = PollFlyPadMask();
-                    if (st.flyUpPadMask   && (pad & st.flyUpPadMask)   == st.flyUpPadMask)   up   = true;
-                    if (st.flyDownPadMask && (pad & st.flyDownPadMask) == st.flyDownPadMask) down = true;
-                }
+                // Buoyant micro-oscillation: keeps the Havok character velocity active so the engine
+                // fall-watchdog timer (void recovery / infinite fall reset) never triggers when hovering.
+                static uint64_t s_hoverCounter = 0;
+                ++s_hoverCounter;
+                const float hoverMicroLift = ((s_hoverCounter % 2) == 0) ? 0.004f : -0.004f;
 
-                if (up && !down)
+                // When mod menu is open or text is being captured, DO NOT DROP!
+                // Freeze/hover in mid-air at current position without sinking.
+                if (st.menuOpen || st.textCapture)
                 {
-                    RawWriteFloat(vel + 1, st.flightSpeed);
+                    RawWriteFloat(vel,     0.0f);
+                    RawWriteFloat(vel + 1, hoverMicroLift);
+                    RawWriteFloat(vel + 2, 0.0f);
                     flyingNow = true;
                 }
-                else if (down && !up)
+                else
                 {
-                    RawWriteFloat(vel + 1, -st.flightSpeed);
-                    flyingNow = true;
-                }
-                else if (g_flightEngaged.load(std::memory_order_relaxed))
-                {
-                    // When actively floating in air, halt downward velocity so player hovers without sinking
-                    float vy = 0.0f;
-                    if (RawReadFloat(vel + 1, &vy) && vy < 0.0f)
+                    const FlyInputState in = PollFlyInputs(st);
+
+                    // Vertical flight: Up (ascend), Down (descend), or Hover (stay aloft)
+                    if (in.up && !in.down)
                     {
-                        RawWriteFloat(vel + 1, 0.0f);
+                        RawWriteFloat(vel + 1, st.flightSpeed);
+                        flyingNow = true;
                     }
-                    flyingNow = true;
+                    else if (in.down && !in.up)
+                    {
+                        RawWriteFloat(vel + 1, -st.flightSpeed);
+                        flyingNow = true;
+                    }
+                    else
+                    {
+                        // Hover in air: buoyant lift prevents engine fall-watchdog reset while holding altitude
+                        RawWriteFloat(vel + 1, hoverMicroLift);
+                        flyingNow = true;
+                    }
+
+                    // Horizontal Flight: Scale native camera-relative movement smoothly without circular steering feedback
+                    float vx = 0.0f, vz = 0.0f;
+                    RawReadFloat(vel, &vx);
+                    RawReadFloat(vel + 2, &vz);
+                    const float curSpeedSq = vx * vx + vz * vz;
+
+                    const bool hasHorizInput = (std::abs(in.moveX) > 0.05f || std::abs(in.moveZ) > 0.05f);
+
+                    if (curSpeedSq > 0.001f)
+                    {
+                        // Player is moving using camera-relative controls: apply flight boost cleanly
+                        const float horizMult = (st.flightSpeed >= 1.0f) ? (st.flightSpeed * 0.75f + 1.0f) : 1.0f;
+                        const float speedMult = (st.superRun && st.superRunMult > 1.0f) ? st.superRunMult : 1.0f;
+                        RawWriteFloat(vel,     vx * horizMult * speedMult);
+                        RawWriteFloat(vel + 2, vz * horizMult * speedMult);
+                        flyingNow = true;
+                    }
+                    else if (!hasHorizInput)
+                    {
+                        // No movement input: dampen horizontal momentum to hover cleanly in place
+                        RawWriteFloat(vel,     0.0f);
+                        RawWriteFloat(vel + 2, 0.0f);
+                    }
                 }
             }
             if (isPlayer)
@@ -1522,9 +1595,37 @@ namespace trinity::game
             TableScan scan{ tableName, key16, 0 };
             mem::FindPatternIf(kSig_LeaR8Rip, &LeaIsResolverTableRef, &scan);
             if (!scan.fn) return false;
+            *fnOut = reinterpret_cast<TableResolve_t>(scan.fn);
+            *globalOut = 0;
+
             const uintptr_t movOff = key16 ? kOff_ItemResolver_MovGlobal : kOff_TableResolver_MovGlobal;
-            *fnOut     = reinterpret_cast<TableResolve_t>(scan.fn);
-            *globalOut = mem::ResolveRipAt(scan.fn + movOff, kLen_MovGlobalInstr);
+            uintptr_t candGlobal = mem::ResolveRipAt(scan.fn + movOff, kLen_MovGlobalInstr);
+            if (candGlobal >= kMinPointer)
+            {
+                *globalOut = candGlobal;
+                return true;
+            }
+
+            // Dynamic scan forward from fn entry for any mov reg64, [rip+disp32]
+            for (uintptr_t p = scan.fn; p + 7 <= scan.fn + 0x40; ++p)
+            {
+                const uint8_t* b = reinterpret_cast<const uint8_t*>(p);
+                if ((b[0] == 0x48 || b[0] == 0x4C) && b[1] == 0x8B &&
+                    (b[2] == 0x05 || b[2] == 0x0D || b[2] == 0x15 || b[2] == 0x1D ||
+                     b[2] == 0x25 || b[2] == 0x2D || b[2] == 0x35 || b[2] == 0x3D))
+                {
+                    uintptr_t g = mem::ResolveRipAt(p, 7);
+                    if (g >= kMinPointer)
+                    {
+                        uintptr_t tbl = 0;
+                        if (ReadPtr(g, &tbl) && tbl >= kMinPointer)
+                        {
+                            *globalOut = g;
+                            return true;
+                        }
+                    }
+                }
+            }
             return *globalOut != 0;
         }
     }
@@ -1709,6 +1810,11 @@ namespace trinity::game
         return true;
     }
 
+    void Teleport::ClearMarker()
+    {
+        ClearActiveMarker();
+    }
+
     bool Teleport::IsProtected()
     {
         const uint64_t deadline = g_markerProtectDeadline.load(std::memory_order_relaxed);
@@ -1797,6 +1903,7 @@ namespace trinity::game
         }
         __except (EXCEPTION_EXECUTE_HANDLER) {}
 
+        ClearActiveMarker();
         return MarkerStatus::Success;
     }
 

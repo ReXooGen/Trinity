@@ -229,6 +229,45 @@ namespace trinity::game
         static int AddMissingSealedArtifacts(int targetTotal = 150);
         static int CleanDuplicateSealedArtifacts();
 
+        // --- Restore & Ownership Management ---------------------------------
+        // Checks if an item is currently owned in ANY inventory storage/bucket (bag, quest, warehouse, collector chest, etc.)
+        static bool IsItemKeyOwned(const char* key);
+        static bool IsTypeIdOwned(uint16_t typeId);
+
+        // Restores missing items from a list of engine keys. Returns count of items added.
+        static int RestoreCategoryMissing(const char* const* itemKeys, int count);
+
+        // --- Lost & Sold Items Tracker (Buyback & Recycle Bin) ---------------
+        struct LostItemRecord
+        {
+            uint16_t typeId;
+            int64_t  qty;
+            char     name[64];
+            char     key[64];
+            char     icon[96];
+            char     source[48]; // e.g. "Sold to Shop", "Deleted via Menu", "Discarded"
+            char     timeStr[32]; // e.g. "10:45 AM"
+        };
+        static void RecordLostItem(uint16_t typeId, int64_t qty, const char* name, const char* key, const char* icon, const char* source);
+        static int  GetLostItemsCount();
+        static bool GetLostItem(int index, LostItemRecord* out);
+        static bool RestoreLostItem(int index);
+        static int  RestoreAllLostItems();
+        static void ClearLostItems();
+        static void LoadLostItems();
+        static void SaveLostItems();
+
+        // Backward compatibility aliases
+        using RemovedItemRecord = LostItemRecord;
+        static void PushRecentlyRemoved(uint16_t typeId, int64_t qty, const char* name, const char* key, const char* icon)
+        {
+            RecordLostItem(typeId, qty, name, key, icon, "Deleted via Menu");
+        }
+        static int  GetRecentlyRemovedCount();
+        static bool GetRecentlyRemovedItem(int index, RemovedItemRecord* out);
+        static bool RestoreRecentlyRemoved(int index);
+        static void ClearRecentlyRemoved();
+
         // True once the server-authority holder is known. Normally true within
         // a second of loading a save, with no player action: loading commits
         // the server containers (before the client one even exists), and the

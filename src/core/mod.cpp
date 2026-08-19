@@ -14,6 +14,7 @@
 #include "../game/dye.h"
 #include "../game/equipment.h"
 #include "../game/friendly.h"
+#include "../game/dlc.h"
 
 namespace trinity
 {
@@ -23,8 +24,6 @@ namespace trinity
             return;
 
         m_module = module;
-        // Console is created lazily from the render path, so only the process
-        // that actually presents the game gets one. Early logs buffer until then.
         LOG("Trinity v%s initializing (built %s %s).", TRINITY_VERSION, __DATE__, __TIME__);
 
         // Detect and log game version on startup
@@ -59,6 +58,7 @@ namespace trinity
         game::Dye::Install();       // Armor dye / material / repair look
         game::Equipment::Install(); // Abyss-gear socket editor
         game::Friendly::Install();  // Trust Multiplier (gift/feed/tame)
+        game::DLC::Install();       // Steamworks DLC entitlement & ownership bypass
 
         m_initialized = true;
         LOG_OK("Ready - INSERT (or LB + DOWN on controller) toggles the menu in-game.");
@@ -82,6 +82,7 @@ namespace trinity
         game::Dye::Remove();
         game::Equipment::Remove();
         game::Friendly::Remove();
+        game::DLC::Remove();
         hooks::RemoveDX12Hooks();
         MH_Uninitialize();
         Logger::Shutdown();

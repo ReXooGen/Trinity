@@ -85,6 +85,9 @@ namespace trinity::game
         // Returns false if no valid marker exists.
         static bool GetMarkerPosition(float* x, float* y, float* z);
 
+        // Clears the active marker cache so stale coordinates are not reused.
+        static void ClearMarker();
+
         // Teleports the active player to arbitrary world coordinates (x, y, z).
         static bool TeleportToCoordinates(float x, float y, float z);
 

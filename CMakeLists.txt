@@ -61,6 +61,7 @@ add_library(Trinity SHARED
     src/game/dye.cpp
     src/game/equipment.cpp
     src/game/friendly.cpp
+    src/game/dlc.cpp
     src/game/item_names.cpp
     src/game/pak.cpp
     src/hooks/dx12_hook.cpp

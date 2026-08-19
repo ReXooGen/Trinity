@@ -15,27 +15,34 @@ namespace trinity::mem
     // instead of crashing the process. Locals must stay POD (no C++ objects
     // with destructors) for __try/__except to be legal in the same function.
 
+    inline constexpr uintptr_t kMaxPointer = 0x00007FFFFFFFFFFFULL;
+
+    inline bool IsValidUserPtr(uintptr_t addr)
+    {
+        return addr >= game::kMinPointer && addr <= kMaxPointer;
+    }
+
     inline bool Read8(uintptr_t addr, uint8_t* out)
     {
-        if (addr < game::kMinPointer) return false;
+        if (!IsValidUserPtr(addr)) return false;
         __try { *out = *reinterpret_cast<volatile uint8_t*>(addr); return true; }
         __except (EXCEPTION_EXECUTE_HANDLER) { return false; }
     }
     inline bool Read16(uintptr_t addr, uint16_t* out)
     {
-        if (addr < game::kMinPointer) return false;
+        if (!IsValidUserPtr(addr)) return false;
         __try { *out = *reinterpret_cast<volatile uint16_t*>(addr); return true; }
         __except (EXCEPTION_EXECUTE_HANDLER) { return false; }
     }
     inline bool Read32(uintptr_t addr, uint32_t* out)
     {
-        if (addr < game::kMinPointer) return false;
+        if (!IsValidUserPtr(addr)) return false;
         __try { *out = *reinterpret_cast<volatile uint32_t*>(addr); return true; }
         __except (EXCEPTION_EXECUTE_HANDLER) { return false; }
     }
     inline bool Read64(uintptr_t addr, uint64_t* out)
     {
-        if (addr < game::kMinPointer) return false;
+        if (!IsValidUserPtr(addr)) return false;
         __try { *out = *reinterpret_cast<volatile uint64_t*>(addr); return true; }
         __except (EXCEPTION_EXECUTE_HANDLER) { return false; }
     }
@@ -47,26 +54,26 @@ namespace trinity::mem
     }
     inline bool ReadPtr(uintptr_t addr, uintptr_t* out)
     {
-        if (addr < game::kMinPointer) return false;
+        if (!IsValidUserPtr(addr)) return false;
         __try { *out = *reinterpret_cast<volatile uintptr_t*>(addr); return true; }
         __except (EXCEPTION_EXECUTE_HANDLER) { return false; }
     }
 
     inline bool Write8(uintptr_t addr, uint8_t val)
     {
-        if (addr < game::kMinPointer) return false;
+        if (!IsValidUserPtr(addr)) return false;
         __try { *reinterpret_cast<volatile uint8_t*>(addr) = val; return true; }
         __except (EXCEPTION_EXECUTE_HANDLER) { return false; }
     }
     inline bool Write16(uintptr_t addr, uint16_t val)
     {
-        if (addr < game::kMinPointer) return false;
+        if (!IsValidUserPtr(addr)) return false;
         __try { *reinterpret_cast<volatile uint16_t*>(addr) = val; return true; }
         __except (EXCEPTION_EXECUTE_HANDLER) { return false; }
     }
     inline bool Write32(uintptr_t addr, uint32_t val)
     {
-        if (addr < game::kMinPointer) return false;
+        if (!IsValidUserPtr(addr)) return false;
         __try { *reinterpret_cast<volatile uint32_t*>(addr) = val; return true; }
         __except (EXCEPTION_EXECUTE_HANDLER) { return false; }
     }
@@ -75,27 +82,34 @@ namespace trinity::mem
     // argument (e.g. `0`) an ambiguous call.
     inline bool Write64(uintptr_t addr, uint64_t val)
     {
-        if (addr < game::kMinPointer) return false;
+        if (!IsValidUserPtr(addr)) return false;
         __try { *reinterpret_cast<volatile uint64_t*>(addr) = val; return true; }
         __except (EXCEPTION_EXECUTE_HANDLER) { return false; }
     }
+    inline bool WritePtr(uintptr_t addr, uintptr_t val)
+    {
+        if (!IsValidUserPtr(addr)) return false;
+        __try { *reinterpret_cast<volatile uintptr_t*>(addr) = val; return true; }
+        __except (EXCEPTION_EXECUTE_HANDLER) { return false; }
+    }
+
     inline bool ReadFloat(uintptr_t addr, float* out)
     {
-        if (addr < game::kMinPointer) return false;
+        if (!IsValidUserPtr(addr)) return false;
         __try { *out = *reinterpret_cast<volatile float*>(addr); return true; }
         __except (EXCEPTION_EXECUTE_HANDLER) { return false; }
     }
     inline bool WriteFloat(uintptr_t addr, float val)
     {
-        if (addr < game::kMinPointer) return false;
+        if (!IsValidUserPtr(addr)) return false;
         __try { *reinterpret_cast<volatile float*>(addr) = val; return true; }
         __except (EXCEPTION_EXECUTE_HANDLER) { return false; }
     }
 
     // Three packed floats (a Vec3) at addr+0/4/8.
-    inline bool ReadVec3(uintptr_t addr, float* out)
+    inline bool ReadFloat3(uintptr_t addr, float out[3])
     {
-        if (addr < game::kMinPointer) return false;
+        if (!IsValidUserPtr(addr) || !IsValidUserPtr(addr + 8)) return false;
         __try
         {
             out[0] = *reinterpret_cast<volatile float*>(addr + 0);
@@ -106,17 +120,23 @@ namespace trinity::mem
         __except (EXCEPTION_EXECUTE_HANDLER) { return false; }
     }
 
+    inline bool ReadVec3(uintptr_t addr, float* out)
+    {
+        return ReadFloat3(addr, out);
+    }
+
     // Copies an ASCII C-string out of game memory, byte by byte and guarded.
     // Rejects non-printable bytes outright - callers use this to test "is
     // this actually a string" as much as to read one.
     inline bool ReadCString(uintptr_t addr, char* out, size_t n)
     {
-        if (addr < game::kMinPointer || n == 0) return false;
+        if (!IsValidUserPtr(addr) || n == 0) return false;
         __try
         {
             size_t i = 0;
             for (; i < n - 1; ++i)
             {
+                if (!IsValidUserPtr(addr + i)) break;
                 const char c = *reinterpret_cast<volatile char*>(addr + i);
                 if (c == 0) break;
                 if (static_cast<unsigned char>(c) < 0x20)

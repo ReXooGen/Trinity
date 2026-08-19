@@ -23,6 +23,7 @@
 #include "../game/dye_data.h" // the game's dye families / preset shades (generated)
 #include "../game/equipment.h"
 #include "../game/friendly.h"
+#include "../game/item_names.h"
 #include "../core/version_detect.h"
 
 namespace trinity::gui
@@ -30,8 +31,8 @@ namespace trinity::gui
     // Top-level sections. Always visible as the tab strip; Q/E/Tab or LB/RB
     // jump between them from anywhere, so nothing is ever more than a press
     // or two away.
-    static const char* const kTabs[] = { "PLAYER", "TRAVEL", "INVENTORY", "WORLD", "SYSTEM" };
-    enum Tab { TabPlayer, TabTravel, TabInventory, TabWorld, TabSystem, TabCount };
+    static const char* const kTabs[] = { "PLAYER", "INVENTORY", "TRAVEL", "WORLD", "SYSTEM" };
+    enum Tab { TabPlayer, TabInventory, TabTravel, TabWorld, TabSystem, TabCount };
 
     static const char* KeyName(int vk);
 
@@ -96,7 +97,7 @@ namespace trinity::gui
 
     // --- Combat & Gameplay Options --------------------------------------------
     // PLAYER -> Combat & Gameplay Options
-    // Manages One-Hit Kill, God Mode, Durability, Easy Parry, Easy Evade, and damage.
+    // Manages One-Hit Kill, God Mode, Durability, and damage multipliers.
     static void RenderCombatOptions()
     {
         State& st = State::Get();
@@ -109,10 +110,6 @@ namespace trinity::gui
                    game::Player::Ready()
                         ? LOC("Keeps your health full constantly.")
                         : LOC("Keeps your health full. Load into the game world first."));
-        changed |= ui::Toggle(LOC("Easy Parry (Just Guard)"), &st.easyParry,
-                   LOC("Automatically triggers Perfect Parry, cinematic deflect, and attacker stagger on guard."));
-        changed |= ui::Toggle(LOC("Easy Evade (Perfect Dodge)"), &st.easyEvade,
-                   LOC("Automatically triggers Perfect Evade, slow-motion bullet time, and counter-attack opportunities on dodge."));
         changed |= ui::Toggle(LOC("Infinite Item Durability"), &st.infDurability,
                    LOC("Equipped weapons, shields, and armor never degrade (permanently locked at 100% max durability)."));
         changed |= ui::Toggle(LOC("No Fall Damage"), &st.noFallDamage,
@@ -121,16 +118,6 @@ namespace trinity::gui
                    LOC("Keeps your stamina full at all times."));
         changed |= ui::Toggle(LOC("Infinite Spirit"), &st.infSpirit,
                    LOC("Keeps your spirit / special ability gauge full."));
-        changed |= ui::Toggle(LOC("No Bounty (Never Wanted)"), &st.noBounty,
-                   LOC("Prevents crime accumulation and disables wanted level, keeping guards and bounty hunters neutral."));
-        if (ui::Option(LOC("Clear Bounty"), LOC("Instantly removes all current crime points, bounty, and wanted status.")))
-        {
-            int cleared = 0;
-            if (game::Player::ClearBounty(&cleared))
-                ui::Toast(LOC("Bounty and crime records cleared"));
-            else
-                ui::Toast(LOC("No active bounty or character not in world"));
-        }
         changed |= ui::FloatOption(LOC("Outgoing Damage"), &st.dmgOutMult, 0.0f, 20.0f, 0.25f, 1.0f, "%.2fx",
                         LOC("Adjusts how much damage you deal to enemies."));
         changed |= ui::FloatOption(LOC("Incoming Damage"), &st.dmgInMult, 0.0f, 10.0f, 0.25f, 1.0f, "%.2fx",
@@ -147,7 +134,7 @@ namespace trinity::gui
         ui::Begin();
 
         ui::Submenu(LOC("Combat & Gameplay Options"), "combat_options",
-                    LOC("One-Hit Kill, God Mode, Durability, Easy Parry, Easy Evade, and damage multipliers."));
+                    LOC("One-Hit Kill, God Mode, Durability, and damage multipliers."));
 
         if (ui::Submenu(LOC("Dye Equipment"), "dyeslots",
                     game::Dye::Ready()
@@ -690,16 +677,28 @@ namespace trinity::gui
         {
             const game::Equipment::Socket& so = si.sockets[k];
             char label[112];
-            snprintf(label, sizeof(label), "%s %d: %s", LOC("Socket"), k + 1,
-                     so.filled ? so.gearName : LOC("Empty"));
-            if (ui::SubmenuItem(label, (so.filled && so.gearIcon[0]) ? so.gearIcon : nullptr,
-                                "equipgear",
-                                so.filled ? LOC("Change or remove this abyss gear.")
-                                          : LOC("Add an abyss gear to this socket.")))
+            if (!so.unlocked)
             {
-                s_eqSocket = k;
-                s_eqFind[0] = 0;
-                ui::ResetMenu("equipgear");
+                snprintf(label, sizeof(label), "%s %d: %s", LOC("Socket"), k + 1, LOC("Locked"));
+                if (ui::Option(label, LOC("This socket is locked. Click to unlock all sockets on this piece.")))
+                {
+                    if (game::Equipment::UnlockAll(si.tag))
+                        ui::Toast(LOC("Sockets unlocked!"));
+                }
+            }
+            else
+            {
+                snprintf(label, sizeof(label), "%s %d: %s", LOC("Socket"), k + 1,
+                         so.filled ? so.gearName : LOC("Empty"));
+                if (ui::SubmenuItem(label, (so.filled && so.gearIcon[0]) ? so.gearIcon : nullptr,
+                                    "equipgear",
+                                    so.filled ? LOC("Change or remove this abyss gear.")
+                                              : LOC("Add an abyss gear to this socket.")))
+                {
+                    s_eqSocket = k;
+                    s_eqFind[0] = 0;
+                    ui::ResetMenu("equipgear");
+                }
             }
         }
 
@@ -1466,6 +1465,7 @@ namespace trinity::gui
         ui::Submenu(LOC("Money & Currency"), "invmoney", LOC("Directly add money, pouches, chests, or custom currency."));
         ui::Submenu(LOC("Abyss Items & Artifacts"), "invabyss", LOC("Quickly spawn Abyss Artifacts, Sealed Artifacts, Seeds, and Cells."));
         ui::Submenu(LOC("Add Item"), "invadd", LOC("Add any item in the game to your inventory."));
+        ui::Submenu(LOC("Restore Items"), "invrestore", LOC("Recover sold, discarded, or missing documents, wanted notices, collectibles & unique quest items."));
         ui::Submenu(LOC("Item Editor"), "invedit", LOC("Browse and edit what you're carrying."));
 
         bool changed = false;
@@ -2053,6 +2053,353 @@ namespace trinity::gui
         ui::End();
     }
 
+    // --- Restore Items Hub & Categories ---------------------------------------
+    static char s_restoreSearch[48] = "";
+
+    static const char* const kRestoreBountyKeys[] = {
+        "Quest_WantedPaper_0001", "Quest_WantedPaper_0002", "Quest_WantedPaper_0003", "Quest_WantedPaper_0004",
+        "Quest_WantedPaper_0005", "Quest_WantedPaper_0006", "Quest_WantedPaper_0007", "Quest_WantedPaper_0008",
+        "Quest_WantedPaper_0009", "Quest_WantedPaper_0011", "Quest_WantedPaper_0012", "Quest_WantedPaper_0013",
+        "Quest_WantedPaper_0014", "Quest_WantedPaper_0015", "Quest_WantedPaper_0016", "Quest_WantedPaper_0017",
+        "Quest_WantedPaper_0019", "Quest_WantedPaper_0020", "Quest_WantedPaper_0021", "Quest_WantedPaper_0022",
+        "Quest_WantedPaper_0023", "Quest_WantedPaper_0024", "Quest_WantedPaper_0025", "Quest_WantedPaper_0026",
+        "Quest_WantedPaper_0027", "Quest_WantedPaper_0028", "Quest_WantedPaper_0029", "Quest_WantedPaper_0031",
+        "Quest_WantedPaper_0032", "Quest_WantedPaper_0033", "Quest_WantedPaper_0034", "Quest_WantedPaper_0035",
+        "Quest_WantedPaper_0036", "Quest_WantedPaper_0037", "Quest_WantedPaper_0038", "Quest_WantedPaper_0039",
+        "Quest_WantedPaper_0040", "Quest_WantedPaper_0041", "Quest_WantedPaper_0042", "Quest_WantedPaper_0043",
+        "Quest_WantedPaper_0044", "Quest_WantedPaper_0045", "Quest_WantedPaper_0047", "Quest_WantedPaper_0048",
+        "Quest_WantedPaper_0049", "Quest_WantedPaper_0050", "Quest_WantedPaper_0052", "Quest_WantedPaper_0059",
+        "Quest_WantedPaper_0101", "Quest_WantedPaper_0102", "Quest_WantedPaper_0103", "Quest_WantedPaper_0104",
+        "Quest_WantedPaper_0105", "Quest_WantedPaper_0106", "Quest_WantedPaper_0107", "Quest_WantedPaper_0108",
+    };
+    static constexpr int kRestoreBountyCount = static_cast<int>(sizeof(kRestoreBountyKeys) / sizeof(kRestoreBountyKeys[0]));
+
+    static const char* const kRestoreLoreKeys[] = {
+        "BoneCollectorWagon_Book", "Visione_Chip_BoneCollectorWagon",
+        "Alustin_Journal_Book_I", "Alustin_Journal_Book_II", "Alustin_Journal_Book_III",
+        "Alustin_Journal_Book_IV", "Alustin_Journal_Book_V", "Alustin_Journal_Book_VI",
+        "Anamorphic_Book", "BloodyFarmhouse_Book", "CabinDeathMystery_Book", "Criminal_Urga_Book",
+        "EngineerWorkLog_Book", "Friendly_Legendary_Animal_Book", "GiantBallista_Book",
+        "IceStrandedShip_Book", "JijeongTempleShipLog_Book", "PororinChildrenForest_Book",
+        "Quest_Book_Mansion_I", "Blank_Book",
+    };
+    static constexpr int kRestoreLoreCount = static_cast<int>(sizeof(kRestoreLoreKeys) / sizeof(kRestoreLoreKeys[0]));
+
+    static const char* const kRestoreRecipeKeys[] = {
+        "SkillPoint_Book_01", "SkillPoint_Book_02",
+        "CraftingRecipe_Kuku_Pot_Book", "CraftingRecipe_Kuku_Pot_Arms_Book",
+        "CraftingRecipe_Kuku_Pot_Backpack_Book", "CraftingRecipe_Kuku_Pot_Machine_Book", "CraftingRecipe_Kuku_Pot_Spear_Book",
+        "Recipe_Book_Accessory_I", "Recipe_Book_Accessory_II", "Recipe_Book_Accessory_III", "Recipe_Book_Accessory_IV",
+        "Recipe_Book_FabricArmor_I", "Recipe_Book_FabricArmor_II", "Recipe_Book_FabricArmor_III", "Recipe_Book_FabricArmor_IV",
+        "Recipe_Book_LeatherArmor_I", "Recipe_Book_LeatherArmor_II", "Recipe_Book_LeatherArmor_III", "Recipe_Book_LeatherArmor_IV",
+        "Recipe_Book_PlateArmor_I", "Recipe_Book_PlateArmor_II", "Recipe_Book_PlateArmor_III", "Recipe_Book_PlateArmor_IV",
+        "Recipe_Book_Weapon_OneHandSword_I", "Recipe_Book_Weapon_Shield_I", "Recipe_Book_Weapon_TwoHandSword_I",
+        "Recipe_Book_Equip_Felling_Axe_I", "Recipe_Book_Equip_Felling_Axe_II",
+        "Recipe_Book_Equip_Pickaxe_I", "Recipe_Book_Equip_Pickaxe_II",
+        "Recipe_Book_FishingRod_II", "Recipe_Book_Beekeeping", "Recipe_Book_Ent",
+        "Item_AbyssGear_Recipe_Box_I", "Item_AbyssGear_Recipe_Box_II", "Item_AbyssGear_Recipe_Box_III",
+        "Item_AbyssGear_Recipe_Box_IV", "Item_AbyssGear_Recipe_Box_V", "Item_AbyssGear_Recipe_Box_VI",
+    };
+    static constexpr int kRestoreRecipeCount = static_cast<int>(sizeof(kRestoreRecipeKeys) / sizeof(kRestoreRecipeKeys[0]));
+
+    static const char* const kRestoreKeyKeys[] = {
+        "Alchemist_Key", "Alchemist_Key_Proto", "Del_Prison_Room_Key", "FortMoru_Key",
+        "GantryCrane_Big_Key", "Goblin_Director_House_Key", "GraceMansion_MetalDoor_Key",
+        "GraceMansion_RoomDoor_Key", "Hernand_Winery_Key", "Home_Key",
+        "Installation_01_key", "Installation_02_key", "Installation_03_key",
+        "MarniTower_Key", "Master_Key", "Metal_Gate_Key", "Neut_Delpheon_EMP_key",
+        "Prison_Key", "Quest_GoldenStar_key", "Quest_HernandCastle_Underground_Key",
+        "Quest_Hostages_House_Key", "Quest_TrolluniversityTower_Key",
+        "Tower_Key", "WellsDungeon_Key", "WestDemenissChurch_Key",
+    };
+    static constexpr int kRestoreKeyCount = static_cast<int>(sizeof(kRestoreKeyKeys) / sizeof(kRestoreKeyKeys[0]));
+
+    static const char* const kRestoreCollectKeys[] = {
+        "Item_gimmick_collectionstorage_0001", "Item_gimmick_basecamp_warehouse_box_0002",
+        "Item_gimmick_collection_prop_Ceramic_0021", "Item_gimmick_collection_prop_Ceramic_0023",
+        "Item_gimmick_collection_prop_Ceramic_0033", "Item_gimmick_collection_prop_Ceramic_0034",
+        "Item_gimmick_collection_prop_Ceramic_0036", "Item_gimmick_collection_prop_Ceramic_0040",
+        "Item_gimmick_collection_prop_Ceramic_0042", "Item_gimmick_collection_prop_Ceramic_0043",
+        "Item_gimmick_collection_prop_Ceramic_0044", "Item_gimmick_collection_prop_Ceramic_0048",
+        "Item_gimmick_collection_prop_Ceramic_0049",
+        "Collection_Prop_Chest_0001", "Collection_Prop_Chest_0002", "Collection_Prop_Chest_0003",
+        "Collection_Prop_Chest_0004", "Collection_Prop_Chest_0005", "Collection_Prop_Chest_0006",
+        "Collection_Prop_Chest_0007", "Collection_Prop_Chest_0008", "Collection_Prop_Chest_0009",
+        "Collection_Prop_Chest_0010",
+    };
+    static constexpr int kRestoreCollectCount = static_cast<int>(sizeof(kRestoreCollectKeys) / sizeof(kRestoreCollectKeys[0]));
+
+    static const char* const kRestoreGearKeys[] = {
+        "Bayur_Fabric_Armor", "Bayur_Fabric_Gloves", "Bayur_Fabric_Boots",
+        "BountyHunter_Fabric_Armor_I", "BountyHunter_Fabric_Armor_II", "BountyHunter_Fabric_Armor_III",
+        "BountyHunter_Fabric_Armor_IV", "BountyHunter_Fabric_Armor_V", "BountyHunter_Fabric_Armor_VI",
+        "BountyHunter_Fabric_Gloves_I", "BountyHunter_Fabric_Boots_I", "BountyHunter_Fabric_Cloak_I",
+        "BountyHunter_Fabric_Helmet_I", "Quest_Crowman_Key_I",
+        "Item_AbyssGear_Special_Box", "Item_AbyssGear_SKill_Lv1_Box", "Item_AbyssGear_SKill_Lv2_Box",
+        "Item_AbyssGear_SKill_Lv3_Box", "Item_AbyssGear_Stat_Lv1_Box", "Item_AbyssGear_Stat_Lv2_Box",
+        "Item_AbyssGear_Stat_Lv3_Box",
+    };
+    static constexpr int kRestoreGearCount = static_cast<int>(sizeof(kRestoreGearKeys) / sizeof(kRestoreGearKeys[0]));
+
+    static const char* const kRestoreMountKeys[] = {
+        "Item_gimmick_birdfeeder_0001",
+        "Item_gimmick_attach_marni_machinetank_backpack_01", "Item_gimmick_attach_marni_machinetank_backpack_02",
+        "Item_gimmick_attach_marni_machinetank_backpack_03", "Item_gimmick_attach_marni_machinetank_backpack_04",
+        "Item_gimmick_attach_marni_machinetank_backpack_05", "Item_gimmick_attach_marni_machinetank_backpack_06",
+        "Item_gimmick_attach_marni_machinetank_backpack_07",
+        "Item_gimmick_attach_nuclear_fusion_core_01", "Item_gimmick_attach_mechanical_powerplant_0001",
+    };
+    static constexpr int kRestoreMountCount = static_cast<int>(sizeof(kRestoreMountKeys) / sizeof(kRestoreMountKeys[0]));
+
+    static const char* const kRestoreMedalKeys[] = {
+        "Item_Beighen_Enchant_Coin", "Boss_Reward_BigMoney", "Boss_Reward_SuperSkill", "Boss_Reward_BountyReduction",
+        "Item_gimmick_attach_abyss_core_03", "Item_gimmick_attach_abyss_core_04",
+        "Item_gimmick_attach_abyss_core_05", "Item_gimmick_attach_abyss_core_06",
+        "Abyss_InfiniteStat_Hp30", "Abyss_InfiniteStat_Mp2", "Abyss_InfiniteStat_Sp3",
+        "AbyssStone_Seed", "AbyssRuinsCreatureCore",
+    };
+    static constexpr int kRestoreMedalCount = static_cast<int>(sizeof(kRestoreMedalKeys) / sizeof(kRestoreMedalKeys[0]));
+
+    static void RenderRestoreCategoryPage(const char* title, const char* const* keys, int count)
+    {
+        ui::Begin(title);
+        ReportPendingAdd();
+        ReportBulkAdd();
+
+        int ownedCount = 0;
+        for (int i = 0; i < count; ++i)
+        {
+            if (game::Inventory::IsItemKeyOwned(keys[i]))
+                ++ownedCount;
+        }
+        const int missingCount = count - ownedCount;
+
+        char statusLabel[128];
+        snprintf(statusLabel, sizeof(statusLabel), "%s: %d / %d (%d %s)",
+                 LOC("Collection Status"), ownedCount, count, missingCount, LOC("Missing"));
+        ui::Option(statusLabel, LOC("Current ownership status across your inventory, bags, and storages."));
+
+        char bulkDesc[256];
+        snprintf(bulkDesc, sizeof(bulkDesc), "%s (%d %s).",
+                 LOC("Automatically adds all missing items in this category to your inventory"),
+                 missingCount, LOC("items"));
+
+        if (ui::Option(LOC(">> Restore All Missing in Category <<"), bulkDesc))
+        {
+            if (missingCount <= 0)
+            {
+                ui::Toast(LOC("All items in this category are already owned!"));
+            }
+            else
+            {
+                const int restored = game::Inventory::RestoreCategoryMissing(keys, count);
+                if (restored > 0)
+                    ui::Toast(LOC("Restoring %d missing items..."), restored);
+                else
+                    ui::Toast(LOC("Failed to restore items or bulk add busy"));
+            }
+        }
+
+        ui::Search(s_restoreSearch, sizeof(s_restoreSearch),
+                   LOC("Search items in this category by name or internal key."));
+
+        int shown = 0;
+        for (int i = 0; i < count; ++i)
+        {
+            const char* key = keys[i];
+            if (!key || !key[0]) continue;
+
+            const char* resolved = game::ResolveItemDisplayName(key);
+            char displayName[96]{};
+            if (resolved && resolved[0])
+            {
+                snprintf(displayName, sizeof(displayName), "%s", resolved);
+            }
+            else
+            {
+                uint16_t tid = game::Inventory::FindTypeIdByKey(key);
+                if (!tid || !game::Inventory::NameForTypeId(tid, displayName, sizeof(displayName)))
+                    snprintf(displayName, sizeof(displayName), "%s", key);
+            }
+
+            if (s_restoreSearch[0] &&
+                !SearchMatches(displayName, s_restoreSearch) &&
+                !SearchMatches(key, s_restoreSearch))
+                continue;
+
+            const bool owned = game::Inventory::IsItemKeyOwned(key);
+            char rowLabel[160];
+            snprintf(rowLabel, sizeof(rowLabel), "[%s]  %s",
+                     owned ? LOC("IN BAG") : LOC("CATALOG"), displayName);
+
+            char desc[224];
+            snprintf(desc, sizeof(desc), "%s: %s | %s: %s. %s",
+                     LOC("Key"), key,
+                     LOC("Status"), owned ? LOC("In Inventory") : LOC("Not in Bag"),
+                     LOC("Press to add 1 copy to inventory."));
+
+            if (ui::Option(rowLabel, desc))
+            {
+                if (game::Inventory::AddItemByKey(key, 1))
+                    ui::Toast(LOC("Added 1x %s"), displayName);
+                else
+                    ui::Toast(LOC("Could not add %s"), displayName);
+            }
+            ++shown;
+        }
+
+        if (shown == 0)
+            ui::Option(LOC("No matches"), LOC("Nothing in this category matches your search."));
+
+        ui::End();
+    }
+
+    static void RenderRestoreBounty()
+    {
+        RenderRestoreCategoryPage(LOC("Bounty Notices (Wanted Posters)"), kRestoreBountyKeys, kRestoreBountyCount);
+    }
+
+    static void RenderRestoreLore()
+    {
+        RenderRestoreCategoryPage(LOC("Documents & Lore Books"), kRestoreLoreKeys, kRestoreLoreCount);
+    }
+
+    static void RenderRestoreRecipes()
+    {
+        RenderRestoreCategoryPage(LOC("Recipes & Crafting Manuals"), kRestoreRecipeKeys, kRestoreRecipeCount);
+    }
+
+    static void RenderRestoreKeys()
+    {
+        RenderRestoreCategoryPage(LOC("Quest Keys, Passes & Memories"), kRestoreKeyKeys, kRestoreKeyCount);
+    }
+
+    static void RenderRestoreCollectibles()
+    {
+        RenderRestoreCategoryPage(LOC("Collectibles & Collector's Chest"), kRestoreCollectKeys, kRestoreCollectCount);
+    }
+
+    static void RenderRestoreGear()
+    {
+        RenderRestoreCategoryPage(LOC("Unique Quest Weapons & Boss Gear"), kRestoreGearKeys, kRestoreGearCount);
+    }
+
+    static void RenderRestoreMount()
+    {
+        RenderRestoreCategoryPage(LOC("Mount, Mecha & Vehicle Gear"), kRestoreMountKeys, kRestoreMountCount);
+    }
+
+    static void RenderRestoreMedals()
+    {
+        RenderRestoreCategoryPage(LOC("Rare Medals, Tokens & Artifacts"), kRestoreMedalKeys, kRestoreMedalCount);
+    }
+
+    static void RenderRestoreCatalogArchive()
+    {
+        ui::Begin(LOC("Quest & Special Item Catalog Archive"));
+        ReportPendingAdd();
+        ReportBulkAdd();
+
+        ui::Submenu(LOC("1. Bounty Notices (Wanted Posters)"), "invrestore_bounty",
+                   LOC("Browse all 50+ Bounty Notices and Wanted Posters (Simon, Ulzok, Haldin, etc.)."));
+        ui::Submenu(LOC("2. Documents & Lore Books"), "invrestore_lore",
+                   LOC("Browse Skull Collector's Journal, archive records, voyager logs & historical notes."));
+        ui::Submenu(LOC("3. Recipes & Crafting Manuals"), "invrestore_recipes",
+                   LOC("Browse cooking recipe books, armor/weapon blueprints, and skill manuals."));
+        ui::Submenu(LOC("4. Quest Keys, Passes & Memories"), "invrestore_keys",
+                   LOC("Browse quest dungeon keys, gate keys, vault keys, and quest memories."));
+        ui::Submenu(LOC("5. Collectibles & Collector's Chest"), "invrestore_collect",
+                   LOC("Browse Collectibles Chest, private storage items, and ceramic relics."));
+        ui::Submenu(LOC("6. Unique Quest Weapons & Boss Gear"), "invrestore_gear",
+                   LOC("Browse one-time quest reward armor sets, faceless cloth gear, and boss drops."));
+        ui::Submenu(LOC("7. Mount, Mecha & Vehicle Gear"), "invrestore_mount",
+                   LOC("Browse Sotdae of Bond, Marni's Mecha power packs, cores, and specialized mount gear."));
+        ui::Submenu(LOC("8. Rare Medals, Tokens & Artifacts"), "invrestore_medals",
+                   LOC("Browse Beighen refinement tokens, shadow contracts, super skill blessings & power cores."));
+
+        ui::End();
+    }
+
+    static void RenderInventoryRestore()
+    {
+        ui::Begin(LOC("Restore Lost & Sold Items (Buyback)"));
+        ReportPendingAdd();
+        ReportBulkAdd();
+
+        const int count = game::Inventory::GetLostItemsCount();
+
+        if (count == 0)
+        {
+            ui::Option(LOC("No Lost / Sold Items Recorded"),
+                       LOC("Items you sell to merchants, discard, or delete will automatically appear here for instant recovery."));
+        }
+        else
+        {
+            char sumLabel[128];
+            snprintf(sumLabel, sizeof(sumLabel), "%s: %d %s",
+                     LOC("Lost & Sold Items"), count, LOC("recorded in history"));
+            ui::Option(sumLabel, LOC("Items you sold, discarded, or deleted. Select any item to buyback and restore."));
+
+            if (ui::Option(LOC(">> Restore All Lost & Sold Items <<"),
+                           LOC("Restores every single lost, sold, or deleted item listed below back into your inventory.")))
+            {
+                const int restored = game::Inventory::RestoreAllLostItems();
+                ui::Toast(LOC("Restored %d lost items!"), restored);
+            }
+
+            if (ui::Option(LOC("Clear Lost & Sold History"), LOC("Clears the history log without adding items.")))
+            {
+                game::Inventory::ClearLostItems();
+                ui::Toast(LOC("Lost items history cleared"));
+            }
+
+            static char s_lostSearch[48] = "";
+            ui::Search(s_lostSearch, sizeof(s_lostSearch), LOC("Filter lost items by name or key..."));
+
+            int shown = 0;
+            for (int i = 0; i < count; ++i)
+            {
+                game::Inventory::LostItemRecord rec{};
+                if (!game::Inventory::GetLostItem(i, &rec)) continue;
+
+                if (s_lostSearch[0] &&
+                    !SearchMatches(rec.name, s_lostSearch) &&
+                    !SearchMatches(rec.key, s_lostSearch) &&
+                    !SearchMatches(rec.source, s_lostSearch))
+                    continue;
+
+                char rowLabel[160];
+                snprintf(rowLabel, sizeof(rowLabel), "[%s]  %lldx  %s",
+                         LOC("RESTORE"), static_cast<long long>(rec.qty), rec.name);
+
+                char desc[224];
+                snprintf(desc, sizeof(desc), "%s: %s | %s: %s | %s: %s. %s",
+                         LOC("Source"), rec.source,
+                         LOC("Time"), rec.timeStr[0] ? rec.timeStr : "--:--",
+                         LOC("Key"), rec.key[0] ? rec.key : "none",
+                         LOC("Press to restore into inventory."));
+
+                if (ui::Option(rowLabel, desc))
+                {
+                    if (game::Inventory::RestoreLostItem(i))
+                        ui::Toast(LOC("Restored %lldx %s"), static_cast<long long>(rec.qty), rec.name);
+                    else
+                        ui::Toast(LOC("Failed to restore item"));
+                    break;
+                }
+                ++shown;
+            }
+
+            if (shown == 0 && s_lostSearch[0])
+                ui::Option(LOC("No matches"), LOC("No lost items match your search filter."));
+        }
+
+        ui::Submenu(LOC("Quest & Special Item Catalog Archive"), "invrestore_catalog",
+                   LOC("Browse the full database of quest items, wanted notices, recipes, and rare relics."));
+
+        ui::End();
+    }
+
     // Human-readable name for a Win32 virtual-key code (rebind row display).
     // The named cases cover keys GetKeyNameText renders poorly (or needs the
     // extended-key bit for); the fallback handles letters/digits/F-keys.
@@ -2392,7 +2739,7 @@ namespace trinity::gui
         ImGuiIO& io = ImGui::GetIO();
 
         const char* const localizedTabs[] = {
-            LOC("PLAYER"), LOC("TRAVEL"), LOC("INVENTORY"), LOC("WORLD"), LOC("SYSTEM")
+            LOC("PLAYER"), LOC("INVENTORY"), LOC("TRAVEL"), LOC("WORLD"), LOC("SYSTEM")
         };
         ui::SetTabs(localizedTabs, TabCount);
 
@@ -2429,12 +2776,12 @@ namespace trinity::gui
         {
             switch (ui::CurrentTab())
             {
-            case TabPlayer: RenderPlayer(); break;
-            case TabTravel: RenderTravel(); break;
+            case TabPlayer:    RenderPlayer(); break;
             case TabInventory: RenderInventoryHome(); break;
-            case TabWorld:  RenderWorld();  break;
-            case TabSystem: RenderSystem(); break;
-            default:        RenderPlayer(); break;
+            case TabTravel:    RenderTravel(); break;
+            case TabWorld:     RenderWorld();  break;
+            case TabSystem:    RenderSystem(); break;
+            default:           RenderPlayer(); break;
             }
         }
         else if (!strcmp(cur, "keybinds")) RenderKeybinds();
@@ -2453,6 +2800,16 @@ namespace trinity::gui
         else if (!strcmp(cur, "invcat"))   RenderInventoryCat();
         else if (!strcmp(cur, "invadd"))    RenderInventoryAdd();
         else if (!strcmp(cur, "invaddcat")) RenderInventoryAddCat();
+        else if (!strcmp(cur, "invrestore")) RenderInventoryRestore();
+        else if (!strcmp(cur, "invrestore_catalog")) RenderRestoreCatalogArchive();
+        else if (!strcmp(cur, "invrestore_bounty")) RenderRestoreBounty();
+        else if (!strcmp(cur, "invrestore_lore")) RenderRestoreLore();
+        else if (!strcmp(cur, "invrestore_recipes")) RenderRestoreRecipes();
+        else if (!strcmp(cur, "invrestore_keys")) RenderRestoreKeys();
+        else if (!strcmp(cur, "invrestore_collect")) RenderRestoreCollectibles();
+        else if (!strcmp(cur, "invrestore_gear")) RenderRestoreGear();
+        else if (!strcmp(cur, "invrestore_mount")) RenderRestoreMount();
+        else if (!strcmp(cur, "invrestore_medals")) RenderRestoreMedals();
         else if (!strcmp(cur, "invmoney"))  RenderInventoryMoney();
         else if (!strcmp(cur, "invabyss"))  RenderInventoryAbyss();
         else if (!strcmp(cur, "combat_options")) RenderCombatOptions();
