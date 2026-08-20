@@ -111,6 +111,7 @@ namespace trinity::game
 
         std::atomic<uintptr_t> g_hpEntries[kMaxPlayers]{};
         std::atomic<uintptr_t> g_stamEntries[kMaxStatEntries]{};
+        std::atomic<uintptr_t> g_mountStamEntries[kMaxStatEntries]{};
         std::atomic<uintptr_t> g_spiritEntries[kMaxStatEntries]{};
         // Battle-damage identities, one per tracked player. A player's actor is
         // the attacker side of an outgoing hit; its vital/target owner (the
@@ -265,6 +266,7 @@ namespace trinity::game
             for (int i = 0; i < kMaxStatEntries; ++i)
             {
                 g_stamEntries[i].store(0, std::memory_order_release);
+                g_mountStamEntries[i].store(0, std::memory_order_release);
                 g_spiritEntries[i].store(0, std::memory_order_release);
             }
         }
@@ -276,7 +278,7 @@ namespace trinity::game
         {
             return st.godMode || st.infStamina || st.infMountStamina || st.infSpirit ||
                    st.dmgInMult != 1.0f || st.dmgOutMult != 1.0f ||
-                   Teleport::IsProtected();
+                   Teleport::IsProtected() || Teleport::GetFlightEngaged();
         }
 
         static bool IsPlayerHoldingGuard()
@@ -340,9 +342,10 @@ namespace trinity::game
             uintptr_t nextActors[kMaxPlayers]{};
             uintptr_t nextTargets[kMaxPlayers]{};
             uintptr_t nextStam[kMaxStatEntries]{};
+            uintptr_t nextMountStam[kMaxStatEntries]{};
             uintptr_t nextSpir[kMaxStatEntries]{};
             uintptr_t nextMounts[kMaxMounts]{};
-            int nPlayers = 0, nStam = 0, nSpir = 0, nMounts = 0;
+            int nPlayers = 0, nStam = 0, nMountStam = 0, nSpir = 0, nMounts = 0;
             for (uint32_t i = 0; i < count; ++i)
             {
                 uint64_t ch = 0;
@@ -373,6 +376,23 @@ namespace trinity::game
                         if (!alreadyAdded)
                             nextMounts[nMounts++] = act;
                     }
+
+                    // Also scan mount vital chain for dedicated horse sprint/gallop gauges (type 19)
+                    SelfChain mc;
+                    if (WalkSelfChain(owner, &mc))
+                    {
+                        for (int k = 0; k < kStatArray_ScanEntries; ++k)
+                        {
+                            const uintptr_t e = mc.statArray + k * kSizeof_StatEntry;
+                            int32_t stt = 0;
+                            if (!StatEntryType(e, &stt)) continue;
+                            if (stt == StatType_MountSprint || stt == 19)
+                            {
+                                if (nMountStam < kMaxStatEntries)
+                                    nextMountStam[nMountStam++] = e;
+                            }
+                        }
+                    }
                 }
 
                 if (nPlayers >= kMaxPlayers) continue;
@@ -387,14 +407,20 @@ namespace trinity::game
                 nextTargets[nPlayers] = c.targetOwner;
                 ++nPlayers;
 
-                // Scan protagonist stat array for stamina and spirit gauges
+                // Scan protagonist stat array for stamina (20/22) and spirit (21/23) gauges ONLY
                 for (int k = 1; k < kStatArray_ScanEntries; ++k)
                 {
                     const uintptr_t e = c.statArray + k * kSizeof_StatEntry;
                     int32_t stt = 0;
                     if (!StatEntryType(e, &stt)) continue;
-                    if (IsStaminaType(stt))     { if (nStam < kMaxStatEntries) nextStam[nStam++] = e; }
-                    else if (IsSpiritType(stt)) { if (nSpir < kMaxStatEntries) nextSpir[nSpir++] = e; }
+                    if (stt == StatType_SprintSt || stt == StatType_StaminaPool117 || stt == 20 || stt == 22)
+                    {
+                        if (nStam < kMaxStatEntries) nextStam[nStam++] = e;
+                    }
+                    else if (IsSpiritType(stt))
+                    {
+                        if (nSpir < kMaxStatEntries) nextSpir[nSpir++] = e;
+                    }
                 }
             }
 
@@ -421,7 +447,7 @@ namespace trinity::game
                         const uintptr_t e = statArray + k * kSizeof_StatEntry;
                         int32_t stt = 0;
                         if (!StatEntryType(e, &stt)) continue;
-                        if (IsStaminaType(stt))
+                        if (stt == StatType_SprintSt || stt == StatType_StaminaPool117 || stt == 20 || stt == 22)
                         {
                             if (nStam < kMaxStatEntries) nextStam[nStam++] = e;
                         }
@@ -474,6 +500,8 @@ namespace trinity::game
             }
             for (int i = 0; i < nStam; ++i)
                 g_stamEntries[i].store(nextStam[i], std::memory_order_release);
+            for (int i = 0; i < nMountStam; ++i)
+                g_mountStamEntries[i].store(nextMountStam[i], std::memory_order_release);
             for (int i = 0; i < nSpir; ++i)
                 g_spiritEntries[i].store(nextSpir[i], std::memory_order_release);
 
@@ -490,25 +518,30 @@ namespace trinity::game
                 g_targetOwners[i].store(0, std::memory_order_release);
             }
             for (int i = nStam; i < kMaxStatEntries; ++i) g_stamEntries[i].store(0, std::memory_order_release);
+            for (int i = nMountStam; i < kMaxStatEntries; ++i) g_mountStamEntries[i].store(0, std::memory_order_release);
             for (int i = nSpir; i < kMaxStatEntries; ++i) g_spiritEntries[i].store(0, std::memory_order_release);
 
             const State& st = State::Get();
             if (st.infStamina)
                 for (int i = 0; i < nStam; ++i)
                     PinEntry(g_stamEntries[i].load(std::memory_order_relaxed));
+            if (st.infMountStamina)
+                for (int i = 0; i < nMountStam; ++i)
+                    PinEntry(g_mountStamEntries[i].load(std::memory_order_relaxed));
             if (st.infSpirit)
                 for (int i = 0; i < nSpir; ++i)
                     PinEntry(g_spiritEntries[i].load(std::memory_order_relaxed));
 
             // Log only when discovery changes, so the console shows whether
             // the player chain and gauge typing are healthy without frame spam.
-            static int s_lastPlayers = -1, s_lastStam = -1, s_lastSpir = -1;
-            if (nPlayers != s_lastPlayers || nStam != s_lastStam || nSpir != s_lastSpir)
+            static int s_lastPlayers = -1, s_lastStam = -1, s_lastMountStam = -1, s_lastSpir = -1;
+            if (nPlayers != s_lastPlayers || nStam != s_lastStam || nMountStam != s_lastMountStam || nSpir != s_lastSpir)
             {
-                LOG("player: stat discovery - players=%d stamina=%d spirit=%d flags(stamina=%d mount=%d spirit=%d).",
-                    nPlayers, nStam, nSpir, st.infStamina ? 1 : 0, st.infMountStamina ? 1 : 0, st.infSpirit ? 1 : 0);
+                LOG("player: stat discovery - players=%d stamina=%d mountStamina=%d spirit=%d flags(stamina=%d mount=%d spirit=%d).",
+                    nPlayers, nStam, nMountStam, nSpir, st.infStamina ? 1 : 0, st.infMountStamina ? 1 : 0, st.infSpirit ? 1 : 0);
                 s_lastPlayers = nPlayers;
                 s_lastStam = nStam;
+                s_lastMountStam = nMountStam;
                 s_lastSpir = nSpir;
             }
 
@@ -538,21 +571,23 @@ namespace trinity::game
             int32_t entryType = -1;
             StatEntryType(e, &entryType);
 
-            const bool isPlayerStam = InSet(g_stamEntries, kMaxStatEntries, e) ||
-                                      (st.infStamina && (entryType == 20 || entryType == 22));
+            // God Mode strictly locks player HP only when godMode toggle is ON
+            const bool isGodModeHp = st.godMode && isPlayerHp;
 
-            const bool isMountStam = (st.infMountStamina || st.infStamina) &&
-                                     (entryType == StatType_MountSprint || entryType == 19);
+            // Strictly lock only player/companion stamina - never touch enemy/shielded soldier stamina
+            const bool isPlayerStam = st.infStamina && InSet(g_stamEntries, kMaxStatEntries, e);
 
-            const bool isPlayerSpir = InSet(g_spiritEntries, kMaxStatEntries, e) ||
-                                      (st.infSpirit && (entryType == 21 || entryType == 23));
+            // Horse and mount stamina
+            const bool isMountStam = st.infMountStamina &&
+                                     (InSet(g_mountStamEntries, kMaxStatEntries, e) ||
+                                      entryType == StatType_MountSprint || entryType == 19);
 
-            const bool isLandingProtected = (Teleport::IsProtected() || st.noFallDamage) && isPlayerHp;
-            const bool shouldLock = (st.godMode && isPlayerHp) ||
-                                    isLandingProtected ||
-                                    (st.infStamina && isPlayerStam) ||
+            const bool isPlayerSpir = st.infSpirit && InSet(g_spiritEntries, kMaxStatEntries, e);
+
+            const bool shouldLock = isGodModeHp ||
+                                    isPlayerStam ||
                                     isMountStam ||
-                                    (st.infSpirit && isPlayerSpir);
+                                    isPlayerSpir;
 
             // Zero-Drop Pre-Commit Interception:
             // Overwrite target to 100% full capacity BEFORE the engine executes the write
@@ -573,10 +608,10 @@ namespace trinity::game
 
             const int64_t result = oStatCommit(entry, time, target, flag);
 
-            if ((st.godMode || isLandingProtected) && isPlayerHp) PinEntry(e);
-            if (st.infStamina && isPlayerStam) PinEntry(e);
+            if (isGodModeHp) PinEntry(e);
+            if (isPlayerStam) PinEntry(e);
             if (isMountStam) PinEntry(e);
-            if (st.infSpirit && isPlayerSpir) PinEntry(e);
+            if (isPlayerSpir) PinEntry(e);
 
             return result;
         }
@@ -636,17 +671,13 @@ namespace trinity::game
             {
                 if (statusId == StatType_Health)
                 {
-                    if (Teleport::IsProtected() && isPlayerTarget)
-                    {
-                        delta = 0; // nullify incoming fall/impact damage during safe landing protection
-                    }
-                    else if ((st.noFallDamage || st.godMode) && isPlayerTarget && sourceCtx == 0)
-                    {
-                        delta = 0; // nullify all world/environmental fall damage
-                    }
-                    else if (st.godMode && isPlayerTarget)
+                    if (st.godMode && isPlayerTarget)
                     {
                         delta = 0; // complete damage immunity
+                    }
+                    else if ((st.noFallDamage || Teleport::IsProtected() || Teleport::GetFlightEngaged()) && isPlayerTarget && sourceCtx == 0)
+                    {
+                        delta = 0; // nullify world/environmental fall and landing impact damage ONLY (sourceCtx == 0)
                     }
                     else
                     {
@@ -657,7 +688,7 @@ namespace trinity::game
                 {
                     delta = 0; // zero-out stamina drain instantly so the bar NEVER drops even a pixel
                 }
-                else if ((st.infMountStamina || st.infStamina) &&
+                else if (st.infMountStamina &&
                          (statusId == StatType_MountSprint || statusId == 19))
                 {
                     delta = 0; // zero-out mount/wyvern/dragon stamina drain instantly

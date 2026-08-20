@@ -204,10 +204,6 @@ namespace trinity::game
         uint16_t GearAt(uintptr_t data, int i)
         {
             if (!data || i < 0 || i >= kSocket_Max) return kSock_Empty;
-            uint8_t state = 0;
-            if (!Read8(data + static_cast<uintptr_t>(i) * kSocketRec_Stride + kOff_SockRec_State, &state))
-                return kSock_Empty;
-            if (state != 0x05) return kSock_Empty;
 
             uint16_t g = kSock_Empty;
             if (!Read16(data + static_cast<uintptr_t>(i) * kSocketRec_Stride + kOff_SockRec_GearId, &g))
@@ -254,19 +250,10 @@ namespace trinity::game
             return ok;
         }
 
-        int GetMaxSocketsForTag(uint16_t tag)
+        int GetMaxSocketsForTag(uint16_t /*tag*/)
         {
-            switch (tag)
-            {
-            case 0:  return 3; // Main Hand (Wolf's Fang, Parashu Axe, swords, maces, axes)
-            case 13: return 3; // Two-Handed Weapon (Greatswords, Halberds, Greataxes)
-            case 4:  return 3; // Chest (Plate Armor, Robes, Tunics)
-            case 1:  return 2; // Off-Hand (Shields)
-            case 5:  return 2; // Gloves (Plate Gloves, Bracers)
-            case 6:  return 2; // Boots (Plate Boots, Greaves)
-            case 3:  return 1; // Helmet (Plate Helm, Hats)
-            default: return 0; // Bows, Rings, Necklaces, Earrings, Dagger, Cloak, Lantern, Bracelet, etc.
-            }
+            // All equipped gear pieces support up to 5 full abyss sockets
+            return kSocket_Max;
         }
 
         // Open every socket on one realm's copy of the item up to its natural capacity
@@ -398,6 +385,18 @@ namespace trinity::game
                 if (s.unlockedCount > maxSock) s.unlockedCount = maxSock;
 
                 const uintptr_t data = (maxSock > 0) ? SocketData(entry) : 0;
+                if (data && maxSock > 0)
+                {
+                    for (int k = 0; k < maxSock; ++k)
+                    {
+                        const uint16_t gear = GearAt(data, k);
+                        if (gear != kSock_Empty && s.unlockedCount <= k)
+                        {
+                            s.unlockedCount = k + 1;
+                        }
+                    }
+                }
+
                 for (int k = 0; k < maxSock; ++k)
                 {
                     Equipment::Socket& so = s.sockets[k];

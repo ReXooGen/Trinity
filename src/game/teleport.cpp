@@ -1298,19 +1298,9 @@ namespace trinity::game
                     isPlayer = true; // Fallback before moveOwner first updates
             }
 
-            // Automatic God Mode / Safe Landing:
-            // While the player is airborne after teleporting, continuously extend
-            // the protection deadline so God Mode stays active until the player
-            // lands on the ground + 4-second grace window.
+            // Automatic Safe Landing cushion after teleport
             if (isPlayer && isProtected)
             {
-                const uint64_t now = GetTickCount64();
-                const uint64_t start = g_protectionStartTime.load(std::memory_order_relaxed);
-                if (start != 0 && now >= start && (now - start) < 60000)
-                {
-                    g_markerProtectDeadline.store(now + 4000, std::memory_order_relaxed);
-                }
-
                 // Cushion terminal downward velocity to prevent ground clipping
                 if (vel)
                 {
@@ -1322,22 +1312,43 @@ namespace trinity::game
                 }
             }
 
-            if (isPlayer && st.superRun && !st.freeFlight && st.superRunMult != 1.0f && vel)
-            {
-                float x = 0.0f, z = 0.0f; // vel[0]=x, vel[1]=up, vel[2]=z
-                if (RawReadFloat(vel, &x) && RawReadFloat(vel + 2, &z))
-                {
-                    RawWriteFloat(vel,     x * st.superRunMult);
-                    RawWriteFloat(vel + 2, z * st.superRunMult);
-                }
-            }
-
             // --- Free Flight: Full 3D directional propulsion & hover suspension ---
+            static bool s_flightAscended = false;
+            static float s_lastFlightY = 0.0f;
+            static int s_groundedFrames = 0;
+
             bool flyingNow = false;
+
             if (isPlayer && st.freeFlight && vel)
             {
-                // Continuously refresh protection while flying to prevent fall-damage / out-of-bounds watchdog
-                Teleport::ActivateProtection(15000);
+                const FlyInputState in = PollFlyInputs(st);
+                const bool hasHorizInput = (std::abs(in.moveX) > 0.05f || std::abs(in.moveZ) > 0.05f);
+
+                // Ascend input activates airborne flight mode
+                if (in.up)
+                {
+                    s_flightAscended = true;
+                    s_groundedFrames = 0;
+                }
+
+                // If user is holding down to descend, detect ground contact and return to walking
+                if (s_flightAscended && in.down)
+                {
+                    const float curY = g_posY.load(std::memory_order_relaxed);
+                    if (std::abs(curY - s_lastFlightY) < 0.05f)
+                    {
+                        if (++s_groundedFrames > 10)
+                        {
+                            s_flightAscended = false;
+                            s_groundedFrames = 0;
+                        }
+                    }
+                    else
+                    {
+                        s_groundedFrames = 0;
+                    }
+                    s_lastFlightY = curY;
+                }
 
                 // Buoyant micro-oscillation: keeps the Havok character velocity active so the engine
                 // fall-watchdog timer (void recovery / infinite fall reset) never triggers when hovering.
@@ -1345,66 +1356,114 @@ namespace trinity::game
                 ++s_hoverCounter;
                 const float hoverMicroLift = ((s_hoverCounter % 2) == 0) ? 0.004f : -0.004f;
 
-                // When mod menu is open or text is being captured, DO NOT DROP!
-                // Freeze/hover in mid-air at current position without sinking.
-                if (st.menuOpen || st.textCapture)
+                if (s_flightAscended)
                 {
-                    RawWriteFloat(vel,     0.0f);
-                    RawWriteFloat(vel + 1, hoverMicroLift);
-                    RawWriteFloat(vel + 2, 0.0f);
-                    flyingNow = true;
-                }
-                else
-                {
-                    const FlyInputState in = PollFlyInputs(st);
-
-                    // Vertical flight: Up (ascend), Down (descend), or Hover (stay aloft)
-                    if (in.up && !in.down)
+                    // When mod menu is open or text is being captured while airborne, hover in place
+                    if (st.menuOpen || st.textCapture)
                     {
-                        RawWriteFloat(vel + 1, st.flightSpeed);
-                        flyingNow = true;
-                    }
-                    else if (in.down && !in.up)
-                    {
-                        RawWriteFloat(vel + 1, -st.flightSpeed);
+                        RawWriteFloat(vel,     0.0f);
+                        RawWriteFloat(vel + 1, hoverMicroLift);
+                        RawWriteFloat(vel + 2, 0.0f);
                         flyingNow = true;
                     }
                     else
                     {
-                        // Hover in air: buoyant lift prevents engine fall-watchdog reset while holding altitude
-                        RawWriteFloat(vel + 1, hoverMicroLift);
-                        flyingNow = true;
-                    }
+                        // Vertical flight: Up (ascend), Down (descend), or Hover (stay aloft)
+                        constexpr float kMaxSafeVerticalSpeed = 35.0f;
+                        const float safeFlightSpeed = (st.flightSpeed > kMaxSafeVerticalSpeed) ? kMaxSafeVerticalSpeed : st.flightSpeed;
 
-                    // Horizontal Flight: Scale native camera-relative movement smoothly without circular steering feedback
-                    float vx = 0.0f, vz = 0.0f;
-                    RawReadFloat(vel, &vx);
-                    RawReadFloat(vel + 2, &vz);
-                    const float curSpeedSq = vx * vx + vz * vz;
+                        if (in.up && !in.down)
+                        {
+                            RawWriteFloat(vel + 1, safeFlightSpeed);
+                            flyingNow = true;
+                        }
+                        else if (in.down && !in.up)
+                        {
+                            RawWriteFloat(vel + 1, -safeFlightSpeed);
+                            flyingNow = true;
+                        }
+                        else
+                        {
+                            // Hover in air: buoyant lift holds altitude
+                            RawWriteFloat(vel + 1, hoverMicroLift);
+                            flyingNow = true;
+                        }
 
-                    const bool hasHorizInput = (std::abs(in.moveX) > 0.05f || std::abs(in.moveZ) > 0.05f);
+                        // Horizontal Flight: Scale native camera-relative movement smoothly with hard safety ceiling
+                        float vx = 0.0f, vz = 0.0f;
+                        RawReadFloat(vel, &vx);
+                        RawReadFloat(vel + 2, &vz);
+                        const float curSpeedSq = vx * vx + vz * vz;
 
-                    if (curSpeedSq > 0.001f)
-                    {
-                        // Player is moving using camera-relative controls: apply flight boost cleanly
-                        const float horizMult = (st.flightSpeed >= 1.0f) ? (st.flightSpeed * 0.75f + 1.0f) : 1.0f;
-                        const float speedMult = (st.superRun && st.superRunMult > 1.0f) ? st.superRunMult : 1.0f;
-                        RawWriteFloat(vel,     vx * horizMult * speedMult);
-                        RawWriteFloat(vel + 2, vz * horizMult * speedMult);
-                        flyingNow = true;
-                    }
-                    else if (!hasHorizInput)
-                    {
-                        // No movement input: dampen horizontal momentum to hover cleanly in place
-                        RawWriteFloat(vel,     0.0f);
-                        RawWriteFloat(vel + 2, 0.0f);
+                        if (curSpeedSq > 0.0001f && hasHorizInput)
+                        {
+                            const float horizMult = (st.flightSpeed >= 1.0f) ? (st.flightSpeed * 0.75f + 1.0f) : 1.0f;
+                            const float speedMult = (st.superRun && st.superRunMult > 1.0f) ? st.superRunMult : 1.0f;
+                            float targetVx = vx * horizMult * speedMult;
+                            float targetVz = vz * horizMult * speedMult;
+
+                            // BlackSpace Engine Havok character controller safe maximum speed limit (50.0f m/s)
+                            // Speeds beyond ~55.0f cause physics broadphase overflow, wing glider stall, and CTD.
+                            constexpr float kMaxSafeFlightSpeed = 50.0f;
+                            const float targetSpeed = std::sqrt(targetVx * targetVx + targetVz * targetVz);
+                            if (targetSpeed > kMaxSafeFlightSpeed)
+                            {
+                                const float scale = kMaxSafeFlightSpeed / targetSpeed;
+                                targetVx *= scale;
+                                targetVz *= scale;
+                            }
+
+                            RawWriteFloat(vel,     targetVx);
+                            RawWriteFloat(vel + 2, targetVz);
+                            flyingNow = true;
+                        }
+                        else if (!hasHorizInput)
+                        {
+                            // No movement input: dampen horizontal momentum to hover cleanly in place
+                            RawWriteFloat(vel,     0.0f);
+                            RawWriteFloat(vel + 2, 0.0f);
+                        }
                     }
                 }
             }
+            else
+            {
+                s_flightAscended = false;
+                s_groundedFrames = 0;
+            }
+
             if (isPlayer)
                 g_flightEngaged.store(flyingNow, std::memory_order_relaxed);
 
-            oLocoStep(comp, dt, vel, a4, a5, a6, a7);
+            // Ground locomotion: Super Run applies when player is on ground / not airborne flight
+            if (isPlayer && st.superRun && !flyingNow && st.superRunMult != 1.0f && vel)
+            {
+                float x = 0.0f, z = 0.0f; // vel[0]=x, vel[1]=up, vel[2]=z
+                if (RawReadFloat(vel, &x) && RawReadFloat(vel + 2, &z))
+                {
+                    float targetX = x * st.superRunMult;
+                    float targetZ = z * st.superRunMult;
+                    constexpr float kMaxSafeGroundSpeed = 50.0f;
+                    const float groundSpeed = std::sqrt(targetX * targetX + targetZ * targetZ);
+                    if (groundSpeed > kMaxSafeGroundSpeed)
+                    {
+                        const float scale = kMaxSafeGroundSpeed / groundSpeed;
+                        targetX *= scale;
+                        targetZ *= scale;
+                    }
+                    RawWriteFloat(vel,     targetX);
+                    RawWriteFloat(vel + 2, targetZ);
+                }
+            }
+
+            __try
+            {
+                oLocoStep(comp, dt, vel, a4, a5, a6, a7);
+            }
+            __except (EXCEPTION_EXECUTE_HANDLER)
+            {
+                // Catch potential Havok physics engine exceptions at extreme coordinates/speeds
+            }
         }
 
         uint64_t __fastcall hkMoveUpdate(uint64_t moveOwner, uint64_t a2, uint64_t a3, uint64_t a4,

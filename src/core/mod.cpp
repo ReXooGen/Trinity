@@ -14,7 +14,9 @@
 #include "../game/dye.h"
 #include "../game/equipment.h"
 #include "../game/friendly.h"
+#if defined(TRINITY_EXTENDED)
 #include "../game/dlc.h"
+#endif
 
 namespace trinity
 {
@@ -58,7 +60,9 @@ namespace trinity
         game::Dye::Install();       // Armor dye / material / repair look
         game::Equipment::Install(); // Abyss-gear socket editor
         game::Friendly::Install();  // Trust Multiplier (gift/feed/tame)
-        game::DLC::Install();       // Steamworks DLC entitlement & ownership bypass
+#if defined(TRINITY_EXTENDED)
+        game::DLC::Install();
+#endif
 
         m_initialized = true;
         LOG_OK("Ready - INSERT (or LB + DOWN on controller) toggles the menu in-game.");
@@ -82,7 +86,9 @@ namespace trinity
         game::Dye::Remove();
         game::Equipment::Remove();
         game::Friendly::Remove();
+#if defined(TRINITY_EXTENDED)
         game::DLC::Remove();
+#endif
         hooks::RemoveDX12Hooks();
         MH_Uninitialize();
         Logger::Shutdown();

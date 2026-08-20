@@ -46,6 +46,14 @@ FetchContent_Declare(
 )
 FetchContent_MakeAvailable(minhook)
 
+option(ENABLE_EXTENDED_HOOKS "Enable extended engine hooks" OFF)
+
+set(EXTENDED_SOURCES "")
+if(ENABLE_EXTENDED_HOOKS)
+    add_compile_definitions(TRINITY_EXTENDED)
+    set(EXTENDED_SOURCES src/game/dlc.cpp)
+endif()
+
 # --- Trinity ASI -----------------------------------------------------------
 add_library(Trinity SHARED
     src/dllmain.cpp
@@ -61,7 +69,7 @@ add_library(Trinity SHARED
     src/game/dye.cpp
     src/game/equipment.cpp
     src/game/friendly.cpp
-    src/game/dlc.cpp
+    ${EXTENDED_SOURCES}
     src/game/item_names.cpp
     src/game/pak.cpp
     src/hooks/dx12_hook.cpp

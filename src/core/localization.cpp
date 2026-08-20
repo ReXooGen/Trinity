@@ -173,29 +173,43 @@ namespace trinity::loc
         const std::string dir = GetModuleDir();
         if (!dir.empty())
         {
-            const std::string searchPattern = dir + "Trinity_*.ini";
-            WIN32_FIND_DATAA fd{};
-            HANDLE hFind = FindFirstFileA(searchPattern.c_str(), &fd);
-            if (hFind != INVALID_HANDLE_VALUE)
-            {
-                do
+            auto ScanPattern = [&](const std::string& pattern, const std::string& baseDir) {
+                WIN32_FIND_DATAA fd{};
+                HANDLE hFind = FindFirstFileA(pattern.c_str(), &fd);
+                if (hFind != INVALID_HANDLE_VALUE)
                 {
-                    if (!(fd.dwFileAttributes & FILE_ATTRIBUTE_DIRECTORY))
+                    do
                     {
-                        const std::string fullPath = dir + fd.cFileName;
-                        std::string name, code;
-                        if (ReadLanguageHeader(fullPath, name, code))
+                        if (!(fd.dwFileAttributes & FILE_ATTRIBUTE_DIRECTORY))
                         {
-                            LanguageInfo lang;
-                            lang.name = name;
-                            lang.code = code;
-                            lang.filePath = fullPath;
-                            s_languages.push_back(lang);
+                            const std::string fullPath = baseDir + fd.cFileName;
+                            std::string name, code;
+                            if (ReadLanguageHeader(fullPath, name, code))
+                            {
+                                // Prevent duplicates by code
+                                bool exists = false;
+                                for (const auto& existing : s_languages)
+                                {
+                                    if (existing.code == code) { exists = true; break; }
+                                }
+                                if (!exists)
+                                {
+                                    LanguageInfo lang;
+                                    lang.name = name;
+                                    lang.code = code;
+                                    lang.filePath = fullPath;
+                                    s_languages.push_back(lang);
+                                }
+                            }
                         }
-                    }
-                } while (FindNextFileA(hFind, &fd));
-                FindClose(hFind);
-            }
+                    } while (FindNextFileA(hFind, &fd));
+                    FindClose(hFind);
+                }
+            };
+
+            ScanPattern(dir + "Trinity_*.ini", dir);
+            ScanPattern(dir + "Languages\\Trinity_*.ini", dir + "Languages\\");
+            ScanPattern(dir + "languages\\Trinity_*.ini", dir + "languages\\");
         }
 
         LOG_OK("localization: discovered %zu language(s)", s_languages.size());
