@@ -344,11 +344,23 @@ namespace trinity::game
         // server-authority one. See the add-item notes for the rules (write
         // both, switch the realm around the server write, always restore the
         // flag).
+        struct CandidateHolder
+        {
+            uintptr_t container = 0;
+            uintptr_t holder    = 0;
+        };
+
+        static int       SnapshotCandidateHolders(CandidateHolder* out, int maxCount);
         static uintptr_t ClientCharacterAddr();
         static uintptr_t ServerCharacterAddr();
         static uintptr_t CharacterAddr(int index);
+        static int       ActivePlayerCharacterIdx();
         static uintptr_t RealmFlagAddress(uint8_t* outVal);
         static uintptr_t ClientHolderAddr();
         static uintptr_t ServerHolderAddr();
+        static uintptr_t FindSlotByInstance(uintptr_t holder, int64_t targetInstId);
+
+        using SlotApplyFn = void(*)(uintptr_t slotEntry, void* userData);
+        static int FindAndApplyAllHolders(int64_t targetInstId, SlotApplyFn fn, void* userData);
     };
 }

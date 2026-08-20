@@ -46,8 +46,15 @@ namespace trinity::game
 
         int64_t ScaleGain(int64_t oldVal, int64_t newVal, float mult)
         {
-            const double scaled = static_cast<double>(oldVal) +
-                                  static_cast<double>(newVal - oldVal) * static_cast<double>(mult);
+            int64_t delta = newVal - oldVal;
+            if (delta <= 0) return newVal;
+
+            // Safe delta scaling: clamp the MAXIMUM single-transaction increase to +120 points.
+            // Pearl Abyss local server rejects any single NPC trust jump > +150 points with Error 298648703 (0x11CD047F).
+            double gain = static_cast<double>(delta) * static_cast<double>(mult);
+            if (gain > 120.0) gain = 120.0;
+
+            const double scaled = static_cast<double>(oldVal) + gain;
             if (scaled >= static_cast<double>(kFriendly_Max)) return kFriendly_Max;
             if (scaled <= 0.0) return 0;
             return static_cast<int64_t>(scaled + 0.5);
@@ -56,6 +63,9 @@ namespace trinity::game
         // mapId keeps the NPC (0) and pet (1) key spaces apart in the cache.
         void ScaleRecord(void* record, uint32_t mapId)
         {
+            const State& st = State::Get();
+            if (!st.trustMult || st.trustMultVal <= 1.0f) return;
+
             const uintptr_t r = reinterpret_cast<uintptr_t>(record);
             if (r < kMinPointer) return;
 
@@ -75,7 +85,8 @@ namespace trinity::game
             const uint64_t ckBase = base;        // key == 0: the persisted baseline
             const uint64_t ckLive = base | key;  // this live relationship
 
-            std::lock_guard<std::mutex> lk(g_cacheMx);
+            std::unique_lock<std::mutex> lk(g_cacheMx, std::try_to_lock);
+            if (!lk.owns_lock()) return;
 
             // key == 0 is the save-loader's persistent write - every NPC's stored
             // trust arrives this way at login, one record per group, before any
@@ -88,10 +99,7 @@ namespace trinity::game
             }
 
             // Gameplay write. Old value = this relationship's last value if we've
-            // seen it; else the group's persisted baseline (so the FIRST
-            // interaction with an NPC - e.g. a greet, which may be the only one
-            // it ever gets - still scales instead of being swallowed as a seed);
-            // else 0 for a wholly new relationship.
+            // seen it; else the group's persisted baseline
             int64_t oldVal;
             auto itLive = g_lastVal.find(ckLive);
             if (itLive != g_lastVal.end())
@@ -104,13 +112,9 @@ namespace trinity::game
                 oldVal = (itBase != g_lastVal.end()) ? itBase->second : 0;
             }
 
-            const State& st = State::Get();
-            const float mult = st.trustMultVal;
-            const bool  on   = st.trustMult && mult > 1.0f;
-
-            if (on && newVal > oldVal && oldVal < kFriendly_Max)
+            if (newVal > oldVal && oldVal < kFriendly_Max)
             {
-                const int64_t s = ScaleGain(oldVal, newVal, mult);
+                const int64_t s = ScaleGain(oldVal, newVal, st.trustMultVal);
                 if (s != newVal && Write64(r + kOff_FriendlyRec_Value, s))
                 {
                     g_lastVal[ckLive] = s;
@@ -122,13 +126,29 @@ namespace trinity::game
 
         void* __fastcall hkSetNpc(void* mapOwner, void* record)
         {
-            ScaleRecord(record, 0);
+            const State& st = State::Get();
+            if (st.trustMult && st.trustMultVal > 1.0f)
+            {
+                __try
+                {
+                    ScaleRecord(record, 0);
+                }
+                __except (EXCEPTION_EXECUTE_HANDLER) {}
+            }
             return oSetNpc(mapOwner, record);
         }
 
         void* __fastcall hkSetPet(void* mapOwner, void* record)
         {
-            ScaleRecord(record, 1);
+            const State& st = State::Get();
+            if (st.trustMult && st.trustMultVal > 1.0f)
+            {
+                __try
+                {
+                    ScaleRecord(record, 1);
+                }
+                __except (EXCEPTION_EXECUTE_HANDLER) {}
+            }
             return oSetPet(mapOwner, record);
         }
     }

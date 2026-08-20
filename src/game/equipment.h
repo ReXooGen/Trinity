@@ -41,8 +41,12 @@ namespace trinity::game
         static bool EditsPersist();
 
         // Character selection (0 = Kliff, 1 = Damiane, 2 = Oongka)
-        static void SetActiveCharacter(int index);
-        static int  GetActiveCharacter();
+        static void        SetActiveCharacter(int index);
+        static int         GetActiveCharacter();
+        static const char* CharacterName(int index);
+        static bool        IsItemForCharacter(int charIdx, uint16_t typeId, const char* name = nullptr, const char* key = nullptr);
+        static bool        IsItemForSlot(uint16_t slotTag, uint16_t typeId, const char* name = nullptr, const char* key = nullptr);
+        static const char* SlotNameForTag(uint16_t tag);
 
         static constexpr int kMaxSockets = 5;
         static constexpr int kRefineMax  = 10; // refinement caps at level 10
@@ -119,8 +123,18 @@ namespace trinity::game
         // Refine all equipped gear to level (default 10)
         static bool RefineAll(int level = 10, int* refinedCount = nullptr);
 
+        // Equip any weapon, shield, or armor directly to slot, bypassing quest progression locks
+        static bool EquipItemToSlot(uint16_t tag, uint16_t typeId, int64_t instId = 0);
+
         // Force unlock all sockets (all 5 sockets) on every equipped gear
         static bool UnlockAllGears(int* unlockedCount = nullptr);
+
+        // --- Persistent Disk Profiles (Auto-Saved & Auto-Restored) ----------
+        static void SaveEquipProfilesToDisk();
+        static void LoadEquipProfilesFromDisk();
+        static void SavePlayerEquipSlot(int charIdx, uint16_t tag, uint16_t refineLvl, int maxSock, const uint16_t* gems);
+        static void ClearPlayerEquipSlot(int charIdx, uint16_t tag);
+        static bool HasCustomProfile(int charIdx, uint16_t tag);
 
         // Game-thread upkeep: after a socket edit, re-aggregates the equipped
         // items' effects (the same pass BatchEquip runs on a gear change) so a

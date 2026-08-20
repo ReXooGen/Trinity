@@ -297,6 +297,15 @@ namespace trinity::gui
             return;
         }
 
+        if (ui::Option(LOC("Inject All Dyes to Save Data"),
+                       LOC("Persist all current dye colors directly into the active save data so they remain intact even without mods.")))
+        {
+            if (game::Dye::InjectAllToSave())
+                ui::Toast(LOC("All dyes injected into save data"));
+            else
+                ui::Toast(LOC("Dye save injection completed"));
+        }
+
         const int n = game::Dye::SlotCount();
         int shown = 0, hidden = 0;
         char hiddenList[200] = "";
@@ -517,6 +526,8 @@ namespace trinity::gui
     static int      s_eqSocket = 0;   // socket index the picker is editing
     static char     s_eqFind[48] = "";// gear picker search
     static int      s_eqRefine = 0;   // refinement stepper value (seeded on select)
+    static int      s_eqCharFilter = 1; // 0 = All Characters, 1 = Current Character Only, 2 = Kliff, 3 = Damiane, 4 = Oongka
+    static int      s_eqCategoryFilter = 1; // 0 = All Categories, 1 = Matching Slot Only, 2 = Weapons, 3 = Shields & Off-Hand, 4 = Armor, 5 = Accessories
 
     // Locate the live snapshot slot for a tag (SlotCount() rebuilds it first).
     static bool EqSlotForTag(uint16_t tag, game::Equipment::SlotInfo* out)
@@ -662,6 +673,14 @@ namespace trinity::gui
             }
         }
 
+        // Force Equip / Change Piece option (bypasses class, level, and quest story progression locks)
+        if (ui::SubmenuItem(LOC("Change Equipment (Bypass Story / Quest Lock)"), nullptr, "equipswap",
+                            LOC("Directly replace and equip any weapon, shield, or armor to this slot.")))
+        {
+            s_eqFind[0] = 0;
+            ui::ResetMenu("equipswap");
+        }
+
         if (si.maxSockets == 0)
         {
             ui::Option(LOC("No sockets"), LOC("This equipment type does not support abyss sockets."));
@@ -701,6 +720,129 @@ namespace trinity::gui
                 }
             }
         }
+
+        ui::End();
+    }
+
+    static void RenderEquipSwap()
+    {
+        char title[112];
+        const char* slotName = game::Equipment::SlotNameForTag(s_eqTag);
+        snprintf(title, sizeof(title), "%s - %s [%s]", LOC("Equip Item"), s_eqItem, slotName ? LOC(slotName) : "");
+        ui::Begin(title);
+
+        // 1. Character Filter
+        static const char* const kCharFilters[] = {
+            "All Characters",
+            "Current Character Only",
+            "Kliff Only",
+            "Damiane Only",
+            "Oongka Only"
+        };
+        ui::Combo(LOC("Character Filter"), &s_eqCharFilter, kCharFilters, 5,
+                  LOC("Filter equipment suitable for this character or show all items."));
+
+        // 2. Category / Slot Filter
+        static const char* const kCategoryFilters[] = {
+            "All Categories",
+            "Matching Slot Only",
+            "Weapons",
+            "Shields & Off-Hand",
+            "Armor",
+            "Accessories"
+        };
+        ui::Combo(LOC("Category Filter"), &s_eqCategoryFilter, kCategoryFilters, 6,
+                  LOC("Filter items by weapon, armor, shield, or slot compatibility."));
+
+        ui::Search(s_eqFind, sizeof(s_eqFind), LOC("Find any weapon, shield, or armor to equip."));
+
+        const int activeChar = game::Equipment::GetActiveCharacter();
+        int filterChar = -1;
+        if (s_eqCharFilter == 1) filterChar = activeChar;
+        else if (s_eqCharFilter == 2) filterChar = 0;
+        else if (s_eqCharFilter == 3) filterChar = 1;
+        else if (s_eqCharFilter == 4) filterChar = 2;
+
+        const int nCats = game::Inventory::CatalogCategoryCount();
+        int shown = 0;
+        for (int c = 0; c < nCats && shown < 200; ++c)
+        {
+            const int nItems = game::Inventory::CatalogItemCount(c);
+            for (int i = 0; i < nItems && shown < 200; ++i)
+            {
+                game::Inventory::ItemInfo it{};
+                if (!game::Inventory::GetCatalogItem(c, i, &it)) continue;
+                if (it.typeId == 0 || it.typeId == 0xFFFF) continue;
+
+                // Character Filter
+                if (filterChar >= 0 && !game::Equipment::IsItemForCharacter(filterChar, it.typeId, it.name, it.key))
+                    continue;
+
+                // Category & Slot Filter
+                if (s_eqCategoryFilter == 1) // Matching Slot Only
+                {
+                    if (!game::Equipment::IsItemForSlot(s_eqTag, it.typeId, it.name, it.key))
+                        continue;
+                }
+                else if (s_eqCategoryFilter == 2) // Weapons
+                {
+                    if (!game::Equipment::IsItemForSlot(0, it.typeId, it.name, it.key) &&
+                        !game::Equipment::IsItemForSlot(2, it.typeId, it.name, it.key))
+                        continue;
+                }
+                else if (s_eqCategoryFilter == 3) // Shields & Off-Hand
+                {
+                    if (!game::Equipment::IsItemForSlot(1, it.typeId, it.name, it.key))
+                        continue;
+                }
+                else if (s_eqCategoryFilter == 4) // Armor
+                {
+                    if (!game::Equipment::IsItemForSlot(3, it.typeId, it.name, it.key) &&
+                        !game::Equipment::IsItemForSlot(4, it.typeId, it.name, it.key) &&
+                        !game::Equipment::IsItemForSlot(5, it.typeId, it.name, it.key) &&
+                        !game::Equipment::IsItemForSlot(6, it.typeId, it.name, it.key))
+                        continue;
+                }
+                else if (s_eqCategoryFilter == 5) // Accessories
+                {
+                    if (!game::Equipment::IsItemForSlot(7, it.typeId, it.name, it.key))
+                        continue;
+                }
+
+                // Search Filter
+                if (s_eqFind[0] && !ContainsNoCase(it.name, s_eqFind) && !ContainsNoCase(it.key, s_eqFind))
+                    continue;
+
+                ++shown;
+
+                char desc[192];
+                const char* catName = game::Inventory::CatalogCategoryName(c);
+                snprintf(desc, sizeof(desc), "%s [%s]",
+                         LOC("Equip to active slot - bypasses quest & class lock"),
+                         catName ? LOC(catName) : "");
+
+                if (ui::OptionItem(it.name, it.icon[0] ? it.icon : nullptr, desc))
+                {
+                    if (game::Equipment::EquipItemToSlot(s_eqTag, it.typeId))
+                    {
+                        ui::Toast(LOC("Equipped %s!"), it.name);
+                        snprintf(s_eqItem, sizeof(s_eqItem), "%s", it.name);
+                        ui::PopMenu();
+                    }
+                    else
+                    {
+                        ui::Toast(LOC("Could not equip item"));
+                    }
+                    ui::End();
+                    return;
+                }
+            }
+        }
+
+        if (shown == 0)
+            ui::Option(LOC("No matches"), LOC("No equipment found with current character/category filter."));
+        else if (shown >= 200)
+            ui::Option(LOC("More matches..."), LOC("Showing first 200 items - use Search to narrow down."));
 
         ui::End();
     }
@@ -2795,6 +2937,7 @@ namespace trinity::gui
         else if (!strcmp(cur, "equipslots")) RenderEquipSlots();
         else if (!strcmp(cur, "equipedit"))  RenderEquipEdit();
         else if (!strcmp(cur, "equipgear"))  RenderEquipGear();
+        else if (!strcmp(cur, "equipswap"))  RenderEquipSwap();
         else if (!strcmp(cur, "invedit"))  RenderInventoryEditor();
         else if (!strcmp(cur, "invstore")) RenderInventoryStorage();
         else if (!strcmp(cur, "invcat"))   RenderInventoryCat();

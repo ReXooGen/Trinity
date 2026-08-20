@@ -659,6 +659,9 @@ namespace trinity::game
             return StringField(def + kOff_InvDef_Key, out, n);
         }
 
+        // Always read DIRECTLY from the live table - never from a cache.
+        // The table must NOT be mutated by the slot-size feature (see
+        // ApplySlotCapToHolder / XeTrinityz-reference/src/game/inventory.cpp).
         bool StorageSlotsForType(uint16_t type, uint16_t* def_, uint16_t* max_)
         {
             uintptr_t def = 0;
@@ -976,19 +979,27 @@ namespace trinity::game
             if (!oGetItemQty) return 0;
             if (container && oGetHolder)
             {
-                __try
+                const uintptr_t c = reinterpret_cast<uintptr_t>(container);
+                if (c >= kMinPointer)
                 {
-                    const ULONGLONG now = GetTickCount64();
-                    if (g_holder.load(std::memory_order_relaxed) < kMinPointer ||
-                        now - g_holderTick.load(std::memory_order_relaxed) > 500)
+                    uintptr_t typeDesc = 0;
+                    if (ReadPtr(c + 0x88, &typeDesc) && typeDesc >= kMinPointer)
                     {
-                        g_holderTick.store(now, std::memory_order_relaxed);
-                        void* h = oGetHolder(container);
-                        if (reinterpret_cast<uintptr_t>(h) >= kMinPointer)
-                            g_holder.store(reinterpret_cast<uintptr_t>(h), std::memory_order_release);
+                        __try
+                        {
+                            const ULONGLONG now = GetTickCount64();
+                            if (g_holder.load(std::memory_order_relaxed) < kMinPointer ||
+                                now - g_holderTick.load(std::memory_order_relaxed) > 500)
+                            {
+                                g_holderTick.store(now, std::memory_order_relaxed);
+                                void* h = oGetHolder(container);
+                                if (reinterpret_cast<uintptr_t>(h) >= kMinPointer)
+                                    g_holder.store(reinterpret_cast<uintptr_t>(h), std::memory_order_release);
+                            }
+                        }
+                        __except (EXCEPTION_EXECUTE_HANDLER) {}
                     }
                 }
-                __except (EXCEPTION_EXECUTE_HANDLER) {}
             }
             __try
             {
@@ -1007,10 +1018,6 @@ namespace trinity::game
         // this the list fills with corpses after a few reloads and the capture
         // that would have unlocked the editor has nowhere to go. Call with
         // g_candLock held; touches nothing but guarded reads.
-        //
-        // Only entries past kCandGraceMs are judged: a container is committed
-        // before it is possessed, so a fresh one reads as dead for a moment and
-        // pruning it would lose the very capture we are here for.
         void PruneDeadCandidates()
         {
             const ULONGLONG now = GetTickCount64();
@@ -1026,23 +1033,14 @@ namespace trinity::game
             g_candCount.store(keep, std::memory_order_release);
         }
 
-        // Records a (container, holder) pair, refreshing it if this container is
-        // already known. Deliberately applies NO filtering: at load the server
-        // containers are committed before the client one exists, so any filter
-        // that needs the client side drops them. Resolving the holder here (on
-        // the game thread, guarded) keeps every engine call off the render
-        // thread - readers only ever touch plain memory.
-        //
-        // A repeat sighting REPLACES the pair rather than being ignored, because
-        // the addresses come back: the server containers live at fixed offsets
-        // into their arena, so the container this hook sees after a reload is
-        // usually the same address as the one from the save before it, wearing a
-        // brand new holder. Skipping it as a duplicate would pin the entry to the
-        // previous save's freed holder for the rest of the session.
         void NoteContainer(void* container)
         {
             const uintptr_t c = reinterpret_cast<uintptr_t>(container);
             if (c < kMinPointer || !oGetHolder || !g_candLockInit) return;
+
+            // Only inspect if container looks like a valid actor object
+            uintptr_t typeDesc = 0;
+            if (!ReadPtr(c + 0x88, &typeDesc) || typeDesc < kMinPointer) return;
 
             // Resolving a container mid-construction can fault - never let that
             // take the process down (this runs during load, by definition).
@@ -1098,7 +1096,8 @@ namespace trinity::game
             uint16_t defSlots = 0, maxSlots = 0;
             if (!StorageSlotsForType(type, &defSlots, &maxSlots)) return false;
             if (value < 1) value = 1;
-            if (value > 0xFFFF) value = 0xFFFF;
+            if (maxSlots > 0 && value > maxSlots) value = maxSlots;
+            else if (value > 300) value = 300;
             *out = (value > defSlots) ? static_cast<uint16_t>(value - defSlots) : 0;
             if (outDef) *outDef = defSlots;
             return true;
@@ -1941,6 +1940,13 @@ namespace trinity::game
         // self-heals both cases for one u16 read per bucket per frame.
         //
         // Must run on the game thread (Tick() does).
+        // NOTE: We do NOT mutate the InventoryInfo table (_defaultSlotCount /
+        // _maxSlotCount). The slot-size feature works purely by driving the
+        // engine's OWN expansion setter (kSig_InvSetExpandSlots). Mutating the
+        // table was what made OverrideExpandForType compute expand=0 (defSlots
+        // was already set to targetSlots, so targetSlots-defSlots==0), which
+        // locked every row past row 2 behind padlocks and caused the server
+        // Free-Space Gate to reject all vendor purchases. See XeTrinityz-reference.
         bool ApplySlotCapToHolder(uintptr_t holder, bool enable, uint16_t value)
         {
             if (!oSetExpandSlots) return false;
@@ -1967,13 +1973,25 @@ namespace trinity::game
                     // `value` is a target CAP but the setter takes an EXPANSION,
                     // and the resulting cap is _defaultSlotCount + expansion.
                     // Each storage has its own default, so convert per bucket.
-                    // A cap below the storage's default is not expressible -
-                    // expansion 0 (the vanilla floor) is the closest we can get.
                     uint16_t defSlots = 0;
-                    if (!OverrideExpandForType(type, value, &expand, &defSlots)) continue;
+                    if (!OverrideExpandForType(type, value, &expand, &defSlots))
+                    {
+                        // No InventoryInfo row for this bucket type (e.g. Materials,
+                        // Provisions, or other category-specific buckets). Compute
+                        // defSlots directly from the bucket's CURRENT live state:
+                        //   defSlots = cap - currentExpand
+                        // In vanilla: currentExpand = 0 so defSlots = cap (correct).
+                        // After our first apply: currentExpand = value - defSlots,
+                        // so this stays self-consistent across ticks.
+                        uint16_t curCap = 0, curExpand = 0;
+                        if (!Read16(bucket + kOff_InvBucket_MaxSlots, &curCap)) continue;
+                        Read16(bucket + kOff_InvBucket_ExpandSlots, &curExpand);
+                        defSlots = (curCap >= curExpand) ? static_cast<uint16_t>(curCap - curExpand) : 0;
+                        expand   = (static_cast<int>(value) > defSlots)
+                                   ? static_cast<uint16_t>(value - defSlots) : 0;
+                    }
 
-                    // Already where we want it - nothing to do. This is the
-                    // steady state, and what keeps the per-tick re-apply cheap.
+                    // Already where we want it - skip, this is the steady state.
                     uint16_t cap = 0;
                     if (Read16(bucket + kOff_InvBucket_MaxSlots, &cap) &&
                         cap == static_cast<uint16_t>(defSlots + expand))
@@ -1982,10 +2000,10 @@ namespace trinity::game
                         continue;
                     }
 
-                    // Capture BEFORE the first write to this bucket. On a
-                    // rebuild the fresh bucket carries the save's true
-                    // expansion again, and hkSetExpandSlots refreshes the
-                    // entry whenever the engine re-stamps its own value.
+                    // Capture BEFORE the first write. On a rebuild the fresh
+                    // bucket carries the save's true expansion again, and
+                    // hkSetExpandSlots refreshes the entry whenever the engine
+                    // re-stamps its own value.
                     CaptureOrigExpandOnce(bucket, type);
                 }
                 else if (!FindOrigBucketCap(bucket, type, &expand))
@@ -1994,15 +2012,12 @@ namespace trinity::game
                 }
 
                 int err = 0;
-                __try
-                {
-                    oSetExpandSlots(reinterpret_cast<void*>(holder), &err, nullptr, type, expand);
-                    if (err == 0) any = true;
-                }
-                __except (EXCEPTION_EXECUTE_HANDLER) {}
+                oSetExpandSlots(reinterpret_cast<void*>(holder), &err, nullptr, type, expand);
+                if (err == 0) any = true;
             }
             return any;
         }
+
     }
 
     bool Inventory::SetAllSlotSizes(bool enable, int value)
@@ -2014,6 +2029,19 @@ namespace trinity::game
         bool any = false;
         if (ApplySlotCapToHolder(CurrentHolder(), enable, v)) any = true;
         if (ApplySlotCapToHolder(ServerHolder(), enable, v))  any = true;
+
+        Candidate snap[kMaxCandidates] = {};
+        const int n = SnapshotCandidates(snap);
+        for (int i = 0; i < n; ++i)
+        {
+            if (snap[i].holder)
+                if (ApplySlotCapToHolder(snap[i].holder, enable, v)) any = true;
+            if (snap[i].container)
+            {
+                uintptr_t h = HolderForContainer(snap[i].container);
+                if (h && ApplySlotCapToHolder(h, enable, v)) any = true;
+            }
+        }
 
         // Restores are one-shot: once every live bucket has been put back,
         // the captures have served their purpose, and holding them would only
@@ -2153,6 +2181,19 @@ namespace trinity::game
                     s_lastRepair = now;
                     RepairUsedSlots(CurrentHolder());
                     RepairUsedSlots(ServerHolder());
+
+                    Candidate snap[kMaxCandidates] = {};
+                    const int n = SnapshotCandidates(snap);
+                    for (int i = 0; i < n; ++i)
+                    {
+                        if (snap[i].holder)
+                            RepairUsedSlots(snap[i].holder);
+                        if (snap[i].container)
+                        {
+                            uintptr_t h = HolderForContainer(snap[i].container);
+                            if (h) RepairUsedSlots(h);
+                        }
+                    }
                 }
             }
 
@@ -2404,14 +2445,31 @@ namespace trinity::game
             uint16_t tid = 0;
             if (!Read16(entry + kOff_InvSlot_TypeId, &tid) || tid == kInvSlot_EmptyType || tid == 0) continue;
 
+            // Direct TypeID recognition
+            // Damiane (1)
+            if (tid == 53935 || tid == 6324 || tid == 6041 || tid == 5306 || tid == 5300 ||
+                tid == 5297 || tid == 5277 || tid == 3463 || (tid >= 5450 && tid <= 5468) ||
+                (tid >= 5270 && tid <= 5310) || (tid >= 6320 && tid <= 6330))
+                return 1;
+            // Oongka (2)
+            if (tid == 6560 || tid == 6042 || tid == 6305 || (tid >= 6550 && tid <= 6570))
+                return 2;
+            // Kliff (0)
+            if (tid == 6303 || tid == 6040 || (tid >= 5330 && tid <= 5350))
+                return 0;
+
             char key[96] = "";
             if (KeyForType(tid, key, sizeof(key)))
             {
-                if (strstr(key, "Damian") || strstr(key, "Demian") || strstr(key, "Demeniss") || strstr(key, "Rapier"))
+                if (strstr(key, "Damian") || strstr(key, "Demian") || strstr(key, "Demeniss") ||
+                    strstr(key, "Rapier") || strstr(key, "Spencer") || strstr(key, "Dewhaven") ||
+                    strstr(key, "White Wind") || strstr(key, "Hwando") || strstr(key, "hwando"))
                     return 1; // Damiane
-                if (strstr(key, "Oongka") || strstr(key, "Giant") || strstr(key, "Tynion"))
+                if (strstr(key, "Oongka") || strstr(key, "Giant") || strstr(key, "Tynion") ||
+                    strstr(key, "Rocket") || strstr(key, "Cannon") || strstr(key, "Club"))
                     return 2; // Oongka
-                if (strstr(key, "Kliff") || strstr(key, "DarknessKing"))
+                if (strstr(key, "Kliff") || strstr(key, "DarknessKing") || strstr(key, "Balgran") ||
+                    strstr(key, "Aeserion") || strstr(key, "Greatsword"))
                     return 0; // Kliff
             }
         }
@@ -2422,6 +2480,10 @@ namespace trinity::game
     {
         const uintptr_t clientC = ResolveClientContainer();
         if (index == 0) return IsLiveCharacter(clientC) ? clientC : 0;
+
+        // Direct check: if client container belongs to this character
+        if (clientC && IdentifyCharacterFromEquip(clientC) == index)
+            return clientC;
 
         // Collect all candidate containers
         uintptr_t candidates[64] = {};
@@ -2477,7 +2539,25 @@ namespace trinity::game
                 return c;
         }
 
+        // Fallback: if player actor index is available directly
+        if (index > 0 && index < 3)
+        {
+            const uintptr_t partyAct = Player::GetActor(index);
+            if (partyAct >= kMinPointer) return partyAct;
+        }
+
         return 0;
+    }
+
+    int Inventory::ActivePlayerCharacterIdx()
+    {
+        const uintptr_t clientC = ResolveClientContainer();
+        if (clientC)
+        {
+            int ident = IdentifyCharacterFromEquip(clientC);
+            if (ident >= 0) return ident;
+        }
+        return 0; // Default to Kliff (0)
     }
 
     uintptr_t Inventory::RealmFlagAddress(uint8_t* outVal) { return RealmFlagAddr(outVal); }
@@ -2598,33 +2678,6 @@ namespace trinity::game
 
             RepairUsedSlots(holder);
 
-            uintptr_t slots = 0;
-            uint16_t  scount = 0;
-            uintptr_t tmplSlot = 0;
-            const uintptr_t stride = SlotStride();
-            if (ReadPtr(bucket + kOff_InvBucket_Slots, &slots) && slots >= kMinPointer &&
-                Read16(bucket + kOff_InvBucket_Count, &scount) && scount > 0)
-            {
-                for (uint16_t t = 0; t < scount; ++t)
-                {
-                    const uintptr_t cand = slots + static_cast<uintptr_t>(t) * stride;
-                    uint16_t tid = 0;
-                    if (Read16(cand + kOff_InvSlot_TypeId, &tid) && tid != 0 && tid != kInvSlot_EmptyType)
-                    {
-                        tmplSlot = cand;
-                        break;
-                    }
-                }
-            }
-
-            uint16_t maxDur = 10000;
-            if (def >= kMinPointer)
-            {
-                uint16_t d = 0;
-                if (Read16(def + 0x3F0, &d) && d > 0 && d != 0xFFFF)
-                    maxDur = d;
-            }
-
             __try
             {
                 if (oItemValueCtor)
@@ -2678,6 +2731,7 @@ namespace trinity::game
 
             // Freed in the target realm, exactly once each, whatever happened.
             if (planned) { __try { oFreePlacements(out); } __except (EXCEPTION_EXECUTE_HANDLER) {} }
+            if (built && oItemValueDtor) { __try { oItemValueDtor(itemVal); } __except (EXCEPTION_EXECUTE_HANDLER) {} }
             return committed;
         }
 
@@ -2727,6 +2781,39 @@ namespace trinity::game
             return committed > 0;
         }
 
+        int64_t FindMaxInstanceId(uintptr_t holder)
+        {
+            if (holder < kMinPointer) return 0;
+            uintptr_t buckets = 0;
+            uint32_t  bcount  = 0;
+            if (!ReadPtr(holder + kOff_InvHolder_Buckets, &buckets)) return 0;
+            if (!Read32(holder + kOff_InvHolder_Count, &bcount) || bcount > 4096) return 0;
+
+            int64_t maxId = 0;
+            const uintptr_t stride = SlotStride();
+            for (uint32_t b = 0; b < bcount; ++b)
+            {
+                uintptr_t bucket = 0;
+                if (!ReadPtr(buckets + static_cast<uintptr_t>(b) * 8, &bucket) || bucket < kMinPointer) continue;
+
+                uintptr_t slots = 0;
+                uint16_t  scount = 0;
+                if (!ReadPtr(bucket + kOff_InvBucket_Slots, &slots) || slots < kMinPointer) continue;
+                if (!Read16(bucket + kOff_InvBucket_Count, &scount) || scount == 0 || scount > 8192) continue;
+
+                for (uint16_t i = 0; i < scount; ++i)
+                {
+                    const uintptr_t slot = slots + static_cast<uintptr_t>(i) * stride;
+                    uint16_t tid = 0;
+                    if (!Read16(slot + kOff_InvSlot_TypeId, &tid) || tid == 0 || tid == kInvSlot_EmptyType) continue;
+                    int64_t inst = 0;
+                    if (Read64(slot + kOff_ItemVal_InstanceId, &inst) && inst > maxId && inst < 0x7FFFFFFFLL)
+                        maxId = inst;
+                }
+            }
+            return maxId;
+        }
+
         // Pending request: the UI runs on the render thread, but this path calls
         // into engine code and must run on the game thread (Tick).
         struct AddRequest { uint16_t typeId; int64_t qty; };
@@ -2773,20 +2860,37 @@ namespace trinity::game
             {
                 serverC = ResolveClientContainer();
             }
-            const uintptr_t alloc = IdAllocator(serverC);
+            uintptr_t alloc = IdAllocator(serverC);
+            if (!alloc)
+            {
+                for (int c = 0; c < 3; ++c)
+                {
+                    const uintptr_t candChar = Inventory::CharacterAddr(c);
+                    if (candChar)
+                    {
+                        alloc = IdAllocator(candChar);
+                        if (alloc) break;
+                    }
+                }
+            }
+            int64_t maxClient = FindMaxInstanceId(clientH);
+            int64_t maxServer = FindMaxInstanceId(serverH);
+            int64_t maxExisting = (maxServer > maxClient) ? maxServer : maxClient;
+
             int64_t id = 0;
             if (alloc)
             {
                 id = _InterlockedIncrement64(
                     reinterpret_cast<volatile int64_t*>(alloc + kOff_IdAlloc_Counter));
             }
-            if (id <= 0)
+            if (id <= maxExisting || id < 1000000)
             {
-                static std::atomic<uint32_t> s_seqId{1000};
-                const uint64_t nowTicks = static_cast<uint64_t>(GetTickCount64());
-                const uint64_t seq = static_cast<uint64_t>(s_seqId.fetch_add(1));
-                id = static_cast<int64_t>(((nowTicks & 0xFFFFFFFF) << 32) | (seq & 0xFFFFFFFF));
-                if (id <= 0) id = 1000000 + seq;
+                static std::atomic<int64_t> s_seqId{0};
+                int64_t cur = s_seqId.load();
+                int64_t base = (cur > maxExisting) ? cur : maxExisting;
+                if (base < 1000000) base = 1000000;
+                id = base + 1;
+                s_seqId.store(id);
             }
 
             // Server first if available and distinct, then client mirror
@@ -2799,6 +2903,12 @@ namespace trinity::game
 
             if (okClient || okServer)
             {
+                char itemName[64] = "";
+                if (!DisplayNameForType(typeId, itemName, sizeof(itemName)))
+                    Prettify(itemKey, itemName, sizeof(itemName));
+                LOG("inventory: Added %lldx '%s' (TypeID %u, InstID 0x%llX) [server=%d client=%d].",
+                    static_cast<long long>(qty), itemName[0] ? itemName : itemKey, typeId,
+                    static_cast<unsigned long long>(id), okServer ? 1 : 0, okClient ? 1 : 0);
                 RefreshImpl(true);
                 return true;
             }
@@ -2806,6 +2916,36 @@ namespace trinity::game
             LOG_WARN("inventory: add item %u x%lld PARTIAL (server=%d client=%d)",
                      typeId, static_cast<long long>(qty), okServer ? 1 : 0, okClient ? 1 : 0);
             return false;
+        }
+
+        uintptr_t FindSlotByInstanceHelper(uintptr_t holder, int64_t targetInstId)
+        {
+            if (holder < kMinPointer || targetInstId <= 0) return 0;
+            uintptr_t buckets = 0;
+            uint32_t  bcount  = 0;
+            if (!ReadPtr(holder + kOff_InvHolder_Buckets, &buckets)) return 0;
+            if (!Read32(holder + kOff_InvHolder_Count, &bcount) || bcount > 4096) return 0;
+
+            const uintptr_t stride = SlotStride();
+            for (uint32_t b = 0; b < bcount; ++b)
+            {
+                uintptr_t bucket = 0;
+                if (!ReadPtr(buckets + static_cast<uintptr_t>(b) * 8, &bucket) || bucket < kMinPointer) continue;
+
+                uintptr_t slots = 0;
+                uint16_t  scount = 0;
+                if (!ReadPtr(bucket + kOff_InvBucket_Slots, &slots) || slots < kMinPointer) continue;
+                if (!Read16(bucket + kOff_InvBucket_Count, &scount) || scount == 0 || scount > 8192) continue;
+
+                for (uint16_t i = 0; i < scount; ++i)
+                {
+                    const uintptr_t slot = slots + static_cast<uintptr_t>(i) * stride;
+                    int64_t inst = 0;
+                    if (Read64(slot + kOff_ItemVal_InstanceId, &inst) && inst == targetInstId)
+                        return slot;
+                }
+            }
+            return 0;
         }
 
         // Bulk add ("add X of every item in a category"): the render thread queues
@@ -3964,5 +4104,84 @@ namespace trinity::game
     uintptr_t Inventory::ServerHolderAddr()
     {
         return ServerHolder();
+    }
+
+    uintptr_t Inventory::FindSlotByInstance(uintptr_t holder, int64_t targetInstId)
+    {
+        return FindSlotByInstanceHelper(holder, targetInstId);
+    }
+
+    int Inventory::FindAndApplyAllHolders(int64_t targetInstId, SlotApplyFn fn, void* userData)
+    {
+        if (targetInstId <= 0 || !fn) return 0;
+
+        uintptr_t visitedHolders[128] = {};
+        int visitedCount = 0;
+
+        auto applyHolder = [&](uintptr_t h) -> int {
+            if (h < kMinPointer || !HolderLooksValid(h)) return 0;
+            for (int v = 0; v < visitedCount; ++v)
+                if (visitedHolders[v] == h) return 0;
+            if (visitedCount < 128) visitedHolders[visitedCount++] = h;
+
+            const uintptr_t slot = FindSlotByInstanceHelper(h, targetInstId);
+            if (slot >= kMinPointer)
+            {
+                fn(slot, userData);
+                return 1;
+            }
+            return 0;
+        };
+
+        int matched = 0;
+
+        // 1. Current Client Holder & Server Holder
+        matched += applyHolder(CurrentHolder());
+        matched += applyHolder(ServerHolder());
+
+        // 2. All 3 Player Characters' Containers (Kliff = 0, Damiane = 1, Oongka = 2)
+        for (int c = 0; c < 3; ++c)
+        {
+            const uintptr_t candChar = CharacterAddr(c);
+            if (candChar >= kMinPointer)
+            {
+                uintptr_t h = HolderForContainer(candChar);
+                if (h) matched += applyHolder(h);
+
+                uintptr_t sub = 0;
+                if (ReadPtr(candChar + kOff_Container_Sub, &sub) && sub >= kMinPointer)
+                {
+                    uintptr_t subH = 0;
+                    if (ReadPtr(sub + kOff_Sub_Holder, &subH) && subH >= kMinPointer)
+                        matched += applyHolder(subH);
+                }
+
+                uintptr_t compRoot = 0;
+                if (ReadPtr(candChar + 0x68, &compRoot) && compRoot >= kMinPointer)
+                {
+                    uintptr_t actContainer = 0;
+                    if (ReadPtr(compRoot + 0xB8, &actContainer) && actContainer >= kMinPointer)
+                    {
+                        uintptr_t actH = HolderForContainer(actContainer);
+                        if (actH) matched += applyHolder(actH);
+                    }
+                }
+            }
+        }
+
+        // 3. Snapshot Candidates (All captured engine holders from commits)
+        Candidate snap[kMaxCandidates] = {};
+        const int n = SnapshotCandidates(snap);
+        for (int i = 0; i < n; ++i)
+        {
+            if (snap[i].holder) matched += applyHolder(snap[i].holder);
+            if (snap[i].container)
+            {
+                uintptr_t h = HolderForContainer(snap[i].container);
+                if (h) matched += applyHolder(h);
+            }
+        }
+
+        return matched;
     }
 }

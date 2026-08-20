@@ -1,5 +1,6 @@
 #include "player.h"
 #include "teleport.h"
+#include "inventory.h"
 
 #include <Windows.h>
 #include <Xinput.h>
@@ -20,6 +21,7 @@
 
 namespace trinity::game
 {
+    using mem::ReadPtr;
     using mem::Read64;
     using mem::Read32;
     using mem::Read8;
@@ -180,9 +182,11 @@ namespace trinity::game
         // holds the max), writing both representations the game reads.
         void PinEntry(uintptr_t e)
         {
+            if (e < kMinPointer) return;
             uint64_t base = 0, cap = 0;
             if (!Read64(e + kOff_StatEntry_Base, &base)) return;
-            Read64(e + kOff_StatEntry_Cap, &cap);
+            if (!Read64(e + kOff_StatEntry_Cap, &cap)) return;
+            if (base > 1000000000ULL || cap > 1000000000ULL) return;
             const uint64_t full = (cap > base) ? cap : base;
             if (!full) return;
             Write64(e + kOff_StatEntry_Current, full);
@@ -231,6 +235,22 @@ namespace trinity::game
             out->actor       = static_cast<uintptr_t>(actor);
             out->targetOwner = static_cast<uintptr_t>(root);
             out->statArray   = static_cast<uintptr_t>(arr);
+            return true;
+        }
+
+        // Dedicated mount vital chain walker: does not require humanoid Health entry at index 0
+        bool WalkMountVitalChain(uintptr_t owner, uintptr_t* outStatArray)
+        {
+            uint64_t actor = 0, marker = 0, root = 0, arr = 0;
+            if (!Read64(owner + kOff_Owner_Actor, &actor) || actor < kMinPointer)
+                actor = owner;
+            if (!Read64(static_cast<uintptr_t>(actor) + kOff_Actor_StatusMarker, &marker) ||
+                marker < kMinPointer) return false;
+            if (!Read64(static_cast<uintptr_t>(marker) + kOff_Marker_TargetOwner, &root) ||
+                root < kMinPointer) return false;
+            if (!Read64(static_cast<uintptr_t>(root) + kOff_Root_StatArray, &arr) ||
+                arr < kMinPointer) return false;
+            if (outStatArray) *outStatArray = static_cast<uintptr_t>(arr);
             return true;
         }
 
@@ -360,8 +380,7 @@ namespace trinity::game
                 if (Read64(owner + kOff_Owner_TypeDesc, &td) && td >= kMinPointer)
                     Read8(static_cast<uintptr_t>(td) + 1, &tag);
 
-                if (objType == Obj_Vehicle || tag == 5 || objType == Obj_Pet ||
-                    (objType != Obj_SelfPlayer && objType != Obj_OtherPlayer && objType != 0 && objType < 16))
+                if (objType == Obj_Vehicle || tag == 5 || objType == Obj_Pet)
                 {
                     uint64_t mountActor = 0;
                     Read64(owner + kOff_Owner_Actor, &mountActor);
@@ -377,13 +396,13 @@ namespace trinity::game
                             nextMounts[nMounts++] = act;
                     }
 
-                    // Also scan mount vital chain for dedicated horse sprint/gallop gauges (type 19)
-                    SelfChain mc;
-                    if (WalkSelfChain(owner, &mc))
+                    // Scan mount vital chain for dedicated horse sprint/gallop gauges
+                    uintptr_t mountStatArray = 0;
+                    if (WalkMountVitalChain(owner, &mountStatArray))
                     {
                         for (int k = 0; k < kStatArray_ScanEntries; ++k)
                         {
-                            const uintptr_t e = mc.statArray + k * kSizeof_StatEntry;
+                            const uintptr_t e = mountStatArray + k * kSizeof_StatEntry;
                             int32_t stt = 0;
                             if (!StatEntryType(e, &stt)) continue;
                             if (stt == StatType_MountSprint || stt == 19)
@@ -562,11 +581,6 @@ namespace trinity::game
             const State& st = State::Get();
 
             bool isPlayerHp = InSet(g_hpEntries, kMaxPlayers, e);
-            if (!isPlayerHp && g_hpEntries[0].load(std::memory_order_relaxed) == 0)
-            {
-                int32_t t = 0;
-                if (StatEntryType(e, &t) && IsHealthType(t)) isPlayerHp = true;
-            }
 
             int32_t entryType = -1;
             StatEntryType(e, &entryType);
@@ -578,9 +592,7 @@ namespace trinity::game
             const bool isPlayerStam = st.infStamina && InSet(g_stamEntries, kMaxStatEntries, e);
 
             // Horse and mount stamina
-            const bool isMountStam = st.infMountStamina &&
-                                     (InSet(g_mountStamEntries, kMaxStatEntries, e) ||
-                                      entryType == StatType_MountSprint || entryType == 19);
+            const bool isMountStam = st.infMountStamina && InSet(g_mountStamEntries, kMaxStatEntries, e);
 
             const bool isPlayerSpir = st.infSpirit && InSet(g_spiritEntries, kMaxStatEntries, e);
 
@@ -616,38 +628,73 @@ namespace trinity::game
             return result;
         }
 
+        bool IsPlayerEntity(uintptr_t target)
+        {
+            if (target < kMinPointer) return false;
+            if (InSet(g_targetOwners, kMaxPlayers, target)) return true;
+            if (InSet(g_actors, kMaxPlayers, target)) return true;
+            if (InSet(g_hpEntries, kMaxPlayers, target)) return true;
+            for (int i = 0; i < kMaxPartyPlayers; ++i)
+            {
+                const uintptr_t act = Player::GetActor(i);
+                if (act && act == target) return true;
+                const uintptr_t cAct = Inventory::CharacterAddr(i);
+                if (cAct && cAct == target) return true;
+            }
+            return false;
+        }
+
         // --- Damage multipliers: scale the hit at the apply dispatcher -----
         int64_t ScaleDamage(uintptr_t targetOwner, uintptr_t sourceCtx, int64_t delta)
         {
             const State& st = State::Get();
 
-            float mult = 1.0f;
-            if (InSet(g_targetOwners, kMaxPlayers, targetOwner))
+            // Victim is Player (Incoming Hit)
+            if (IsPlayerEntity(targetOwner))
             {
                 if (st.godMode) return 0;
-                mult = st.dmgInMult;
-            }
-            else
-            {
-                uint64_t actor = 0;
-                if (!Read64(sourceCtx + kOff_Owner_Actor, &actor) ||
-                    !InSet(g_actors, kMaxPlayers, static_cast<uintptr_t>(actor)))
-                    return delta;
-                if (st.oneHitKill)
+                if (st.dmgInMult != 1.0f)
                 {
-                    mult = 1000.0f; // Safe 1000x multiplier: instant kills any enemy/boss without integer underflow
+                    const double scaled = static_cast<double>(delta) * static_cast<double>(st.dmgInMult);
+                    if (scaled <= static_cast<double>(INT64_MIN)) return INT64_MIN;
+                    if (scaled >= 0.0) return 0;
+                    return static_cast<int64_t>(scaled);
+                }
+                return delta;
+            }
+
+            // Victim is Non-Player / Enemy (Outgoing Hit dealt by Player)
+            bool isPlayerAttacker = false;
+            if (sourceCtx >= kMinPointer)
+            {
+                if (IsPlayerEntity(sourceCtx))
+                {
+                    isPlayerAttacker = true;
                 }
                 else
                 {
-                    mult = st.dmgOutMult;
+                    uint64_t actor = 0;
+                    if (Read64(sourceCtx + kOff_Owner_Actor, &actor) && actor >= kMinPointer)
+                    {
+                        if (IsPlayerEntity(static_cast<uintptr_t>(actor)))
+                            isPlayerAttacker = true;
+                    }
                 }
             }
-            if (mult == 1.0f) return delta;
 
-            const double scaled = static_cast<double>(delta) * static_cast<double>(mult);
-            if (scaled <= static_cast<double>(INT64_MIN)) return INT64_MIN;
-            if (scaled >= 0.0) return 0;
-            return static_cast<int64_t>(scaled);
+            if (isPlayerAttacker)
+            {
+                float mult = st.oneHitKill ? 1000.0f : st.dmgOutMult;
+                if (mult != 1.0f)
+                {
+                    const double scaled = static_cast<double>(delta) * static_cast<double>(mult);
+                    if (scaled <= static_cast<double>(INT64_MIN)) return INT64_MIN;
+                    if (scaled >= 0.0) return 0;
+                    return static_cast<int64_t>(scaled);
+                }
+            }
+
+            return delta;
         }
 
         int64_t __fastcall hkDamageApply(void* targetOwner, uint16_t statusId,
@@ -657,10 +704,27 @@ namespace trinity::game
         {
             const State& st = State::Get();
             const uintptr_t owner = reinterpret_cast<uintptr_t>(targetOwner);
-            const bool isPlayerTarget = InSet(g_targetOwners, kMaxPlayers, owner) ||
-                                        (g_targetOwners[0].load(std::memory_order_relaxed) == 0);
+            const bool isPlayerTarget = IsPlayerEntity(owner);
 
-            if (st.easyParry && isPlayerTarget && sourceCtx != 0 && IsPlayerHoldingGuard())
+            // Determine if damage source is an active hostile enemy vs environmental/fall impact
+            bool isEnemyAttacker = false;
+            if (sourceCtx >= kMinPointer && !IsPlayerEntity(sourceCtx))
+            {
+                uint64_t sourceActor = 0;
+                if (Read64(sourceCtx + kOff_Owner_Actor, &sourceActor) && sourceActor >= kMinPointer)
+                {
+                    if (!IsPlayerEntity(static_cast<uintptr_t>(sourceActor)))
+                        isEnemyAttacker = true;
+                }
+                else
+                {
+                    uintptr_t sub = 0;
+                    if (ReadPtr(sourceCtx + kOff_Container_Sub, &sub) && sub >= kMinPointer)
+                        isEnemyAttacker = true;
+                }
+            }
+
+            if (st.easyParry && isPlayerTarget && isEnemyAttacker && IsPlayerHoldingGuard())
             {
                 // Force Perfect Deflect / Parry: 0 damage, parry reaction flag (a6 = 2), attacker stagger (a7 = 1)
                 delta = 0;
@@ -675,9 +739,11 @@ namespace trinity::game
                     {
                         delta = 0; // complete damage immunity
                     }
-                    else if ((st.noFallDamage || Teleport::IsProtected() || Teleport::GetFlightEngaged()) && isPlayerTarget && sourceCtx == 0)
+                    else if ((st.noFallDamage || Teleport::IsProtected() || Teleport::GetFlightEngaged()) &&
+                             isPlayerTarget && !isEnemyAttacker)
                     {
-                        delta = 0; // nullify world/environmental fall and landing impact damage ONLY (sourceCtx == 0)
+                        // 100% Nullify ALL fall damage, cliff drops, gravity impacts & landing shock
+                        delta = 0;
                     }
                     else
                     {
@@ -686,10 +752,10 @@ namespace trinity::game
                 }
                 else if (isPlayerTarget && IsStaminaType(statusId) && st.infStamina)
                 {
-                    delta = 0; // zero-out stamina drain instantly so the bar NEVER drops even a pixel
+                    delta = 0; // zero-out player stamina drain instantly
                 }
-                else if (st.infMountStamina &&
-                         (statusId == StatType_MountSprint || statusId == 19))
+                else if (st.infMountStamina && (statusId == StatType_MountSprint || statusId == 19) &&
+                         (InSet(g_mountActors, kMaxMounts, owner) || InSet(g_mountStamEntries, kMaxStatEntries, owner)))
                 {
                     delta = 0; // zero-out mount/wyvern/dragon stamina drain instantly
                 }
@@ -779,7 +845,8 @@ namespace trinity::game
 
     bool Player::Ready()
     {
-        return g_hpEntries[0].load(std::memory_order_relaxed) >= kMinPointer;
+        return g_hpEntries[0].load(std::memory_order_relaxed) >= kMinPointer &&
+               g_actors[0].load(std::memory_order_relaxed) >= kMinPointer;
     }
 
     uintptr_t Player::GetActor(int index)

@@ -82,6 +82,7 @@ namespace trinity::game
         // frame - same pattern as Inventory::AddItem.
         static bool Apply(uint16_t tag, int channel, const Channel& c);
         static bool Clear(uint16_t tag, int channel);
+        static bool InjectAllToSave();
 
         // Outcome of the most recent request, for a toast. Read-and-clear: a
         // Done/Failed is reported once, then the state returns to Idle.

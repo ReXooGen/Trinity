@@ -157,4 +157,25 @@ namespace trinity::mem
         if (!ReadPtr(obj, &cstr) || cstr < game::kMinPointer) return false;
         return ReadCString(cstr, out, n);
     }
+
+    // Safely unprotects, modifies, reprotects, and flushes instructions for a memory region
+    inline bool PatchMemory(uintptr_t addr, const void* data, size_t size)
+    {
+        if (!IsValidUserPtr(addr) || !data || size == 0) return false;
+        DWORD oldProtect = 0;
+        if (!VirtualProtect(reinterpret_cast<void*>(addr), size, PAGE_EXECUTE_READWRITE, &oldProtect))
+            return false;
+        __try
+        {
+            memcpy(reinterpret_cast<void*>(addr), data, size);
+        }
+        __except (EXCEPTION_EXECUTE_HANDLER)
+        {
+            VirtualProtect(reinterpret_cast<void*>(addr), size, oldProtect, &oldProtect);
+            return false;
+        }
+        VirtualProtect(reinterpret_cast<void*>(addr), size, oldProtect, &oldProtect);
+        FlushInstructionCache(GetCurrentProcess(), reinterpret_cast<void*>(addr), size);
+        return true;
+    }
 }

@@ -11,6 +11,7 @@
 #include "dye_data.h"
 #include "dye_slots_table.h"
 #include "inventory.h"
+#include "equipment.h"
 #include "../core/logger.h"
 #include "../mem/hooks.h"
 #include "../mem/safe_memory.h"
@@ -44,16 +45,12 @@ namespace trinity::game
         // --- Resolved engine entry points --------------------------------
         using EquipBatch_t    = void* (__fastcall*)(void*, void*, void*, void*);
         using DyeApplyBatch_t = int*  (__fastcall*)(void*, int*, void*);
-        using DyeApplySlot_t  = void* (__fastcall*)(void*, uint16_t, const void*, int);
         using DyeUpsert_t     = void* (__fastcall*)(void*, const void*);
-        using EquipRefresh_t  = void* (__fastcall*)(void*, int*);
 
         EquipBatch_t    oEquipBatch   = nullptr;
         void*           g_equipTarget = nullptr;
         DyeApplyBatch_t g_dyeApply    = nullptr;
-        DyeApplySlot_t  g_dyeApplySlot = nullptr;
         DyeUpsert_t     g_dyeUpsert   = nullptr;
-        EquipRefresh_t  g_refresh     = nullptr;
 
         void DyeWatchFile(const char* fmt, ...)
         {
@@ -333,15 +330,20 @@ namespace trinity::game
         uintptr_t CompForCharacter(uintptr_t actor)
         {
             if (actor < kMinPointer) return 0;
-            uintptr_t sub = 0, comp = 0, owner = 0;
-            if (!ReadPtr(actor + kOff_Container_Sub, &sub) || sub < kMinPointer) return 0;
-            if (!ReadPtr(sub + kOff_Sub_EquipComp, &comp) || comp < kMinPointer) return 0;
-            if (!ReadPtr(comp + kOff_EquipComp_Owner, &owner) || owner != actor) return 0;
-            return CompValid(comp) ? comp : 0;
+            uintptr_t sub = 0, comp = 0;
+            if (ReadPtr(actor + kOff_Container_Sub, &sub) && sub >= kMinPointer)
+            {
+                if (ReadPtr(sub + kOff_Sub_EquipComp, &comp) && CompValid(comp))
+                    return comp;
+            }
+            comp = FindEquipCompFromActor(actor);
+            if (comp && CompValid(comp))
+                return comp;
+            return 0;
         }
 
-        static int s_activeCharIdx = 0;
-        static int s_targetMode = 0; // 0 = Player Character, 1 = Mount / Horse
+        static int s_activeCharIdx = -1; // -1 = auto-detect active player character
+        static int s_targetMode = 0;     // 0 = Player Character, 1 = Mount / Horse
         static int s_activeMountIdx = 0;
 
         uintptr_t FindMountComp(int index)
@@ -392,22 +394,66 @@ namespace trinity::game
                 return 0;
             }
 
-            const uintptr_t actor = Inventory::CharacterAddr(s_activeCharIdx);
-            if (actor)
+            const int liveIdx = Inventory::ActivePlayerCharacterIdx();
+            const int targetIdx = (s_activeCharIdx < 0) ? liveIdx : s_activeCharIdx;
+
+            // 1. If companion is explicitly selected (Damiane = 1, Oongka = 2), query companion actor
+            if (targetIdx > 0)
             {
-                const uintptr_t comp = CompForCharacter(actor);
+                if (targetIdx == liveIdx)
+                {
+                    const uintptr_t liveChar = Inventory::ClientCharacterAddr();
+                    if (liveChar)
+                    {
+                        const uintptr_t comp = CompForCharacter(liveChar);
+                        if (comp) return comp;
+                    }
+                    const uintptr_t hooked = g_comp.load(std::memory_order_acquire);
+                    if (CompValid(hooked)) return hooked;
+                }
+
+                const uintptr_t actor = Inventory::CharacterAddr(targetIdx);
+                if (actor)
+                {
+                    const uintptr_t comp = CompForCharacter(actor);
+                    if (comp) return comp;
+                }
+                const uintptr_t directActor = Player::GetActor(targetIdx);
+                if (directActor)
+                {
+                    const uintptr_t comp = CompForCharacter(directActor);
+                    if (comp) return comp;
+                }
+                return 0;
+            }
+
+            // 2. Kliff (0) / Active player character
+            const uintptr_t liveChar = Inventory::ClientCharacterAddr();
+            if (liveChar)
+            {
+                const uintptr_t comp = CompForCharacter(liveChar);
                 if (comp) return comp;
             }
-            if (s_activeCharIdx == 0)
+            const uintptr_t actor0 = Inventory::CharacterAddr(0);
+            if (actor0)
             {
-                const uintptr_t hooked = g_comp.load(std::memory_order_acquire);
-                if (CompValid(hooked)) return hooked;
+                const uintptr_t comp = CompForCharacter(actor0);
+                if (comp) return comp;
             }
+            const uintptr_t direct0 = Player::GetActor(0);
+            if (direct0)
+            {
+                const uintptr_t comp = CompForCharacter(direct0);
+                if (comp) return comp;
+            }
+
+            const uintptr_t hooked = g_comp.load(std::memory_order_acquire);
+            if (CompValid(hooked)) return hooked;
+
             return 0;
         }
 
-        // The server-authority component: what a save reload will show. No
-        // fallback - a wrong guess here writes another actor's wardrobe.
+        // The server-authority component: what a save reload will show.
         uintptr_t ServerComp()
         {
             if (s_targetMode == 1)
@@ -417,13 +463,37 @@ namespace trinity::game
                 return 0;
             }
 
-            if (s_activeCharIdx == 0)
-                return CompForCharacter(Inventory::ServerCharacterAddr());
+            const int targetIdx = (s_activeCharIdx < 0) ? Inventory::ActivePlayerCharacterIdx() : s_activeCharIdx;
 
-            const uintptr_t actor = Inventory::CharacterAddr(s_activeCharIdx);
-            if (actor)
+            // 1. If companion is explicitly selected (Damiane = 1, Oongka = 2), query companion server actor
+            if (targetIdx > 0)
             {
-                const uintptr_t comp = CompForCharacter(actor);
+                const uintptr_t actor = Inventory::CharacterAddr(targetIdx);
+                if (actor)
+                {
+                    const uintptr_t comp = CompForCharacter(actor);
+                    if (comp) return comp;
+                }
+                const uintptr_t directActor = Player::GetActor(targetIdx);
+                if (directActor)
+                {
+                    const uintptr_t comp = CompForCharacter(directActor);
+                    if (comp) return comp;
+                }
+                return 0;
+            }
+
+            // 2. Kliff (0) / Server character container
+            const uintptr_t serverChar = Inventory::ServerCharacterAddr();
+            if (serverChar)
+            {
+                const uintptr_t comp = CompForCharacter(serverChar);
+                if (comp) return comp;
+            }
+            const uintptr_t actor0 = Inventory::CharacterAddr(0);
+            if (actor0)
+            {
+                const uintptr_t comp = CompForCharacter(actor0);
                 if (comp) return comp;
             }
             return 0;
@@ -571,7 +641,8 @@ namespace trinity::game
         {
             memset(out, 0, 16);
             memcpy(out + 0, &c.groupKey, 4);
-            memcpy(out + 4, &c.materialId, 2);
+            const uint16_t mat = (c.materialId == 0xFFFF) ? 0x0001 : c.materialId;
+            memcpy(out + 4, &mat, 2);
             out[6]  = static_cast<uint8_t>(channel);
             out[7]  = c.r;
             out[8]  = c.g;
@@ -637,6 +708,148 @@ namespace trinity::game
         // growing - realm-correctly - only if the item never had this many
         // records). The realm flip is for that growth, exactly as in the
         // add-item path, and is always restored.
+        // Player dye auto-restore profile across save/load, death, and fast-travel
+        struct SavedPlayerSlot
+        {
+            bool     active = false;
+            uint16_t tag = 0;
+            uint16_t typeId = 0;          // Specific item TypeID (e.g. Shield A vs Shield B)
+            int64_t  instanceId = 0;      // Specific item InstanceID
+            uint32_t dyeCount = 0;
+            uint8_t  records[kDye_MaxChannels][16] = {};
+            uint32_t mask = 0;
+        };
+        static SavedPlayerSlot s_savedPlayerSlots[3][32];
+
+        // Mount dye auto-restore profile across save/load & summon
+        struct SavedMountSlot
+        {
+            bool     active = false;
+            uint16_t tag = 0;
+            uint16_t typeId = 0;          // Specific mount gear TypeID
+            int64_t  instanceId = 0;      // Specific mount gear InstanceID
+            uint32_t dyeCount = 0;
+            uint8_t  records[kDye_MaxChannels][16] = {};
+            uint32_t mask = 0;
+        };
+        static SavedMountSlot s_savedMountSlots[32];
+
+        // Distinct Per-Item Dye Map: ensures each weapon, shield, and armor piece
+        // remembers its OWN custom dye colors independently, so switching items
+        // does not bleed or overwrite colors from previously equipped gear.
+        struct SavedItemDyeRecord
+        {
+            uint16_t typeId = 0;
+            uint32_t mask = 0;
+            uint8_t  records[kDye_MaxChannels][16] = {};
+            uint32_t dyeCount = 0;
+        };
+        static constexpr int kMaxSavedItemDyes = 512;
+        static SavedItemDyeRecord s_itemDyeMap[kMaxSavedItemDyes];
+        static int s_itemDyeCount = 0;
+
+        static SavedItemDyeRecord* FindSavedItemDye(uint16_t typeId)
+        {
+            if (typeId == 0 || typeId == kInvSlot_EmptyType) return nullptr;
+            for (int i = 0; i < s_itemDyeCount; ++i)
+                if (s_itemDyeMap[i].typeId == typeId) return &s_itemDyeMap[i];
+            return nullptr;
+        }
+
+        static void UpsertSavedItemDye(uint16_t typeId, uint32_t mask, const uint8_t recs[kDye_MaxChannels][16], uint32_t count)
+        {
+            if (typeId == 0 || typeId == kInvSlot_EmptyType) return;
+            SavedItemDyeRecord* rec = FindSavedItemDye(typeId);
+            if (!rec)
+            {
+                if (s_itemDyeCount < kMaxSavedItemDyes)
+                    rec = &s_itemDyeMap[s_itemDyeCount++];
+            }
+            if (rec)
+            {
+                rec->typeId = typeId;
+                rec->mask = mask;
+                memcpy(rec->records, recs, sizeof(rec->records));
+                rec->dyeCount = count;
+            }
+        }
+
+        static void ClearSavedItemDye(uint16_t typeId)
+        {
+            for (int i = 0; i < s_itemDyeCount; ++i)
+            {
+                if (s_itemDyeMap[i].typeId == typeId)
+                {
+                    s_itemDyeMap[i] = s_itemDyeMap[--s_itemDyeCount];
+                    break;
+                }
+            }
+        }
+
+        static const char* GetDyeCachePath()
+        {
+            static char path[MAX_PATH] = "";
+            if (path[0] == 0)
+            {
+                GetModuleFileNameA(GetModuleHandleA("Trinity.asi"), path, MAX_PATH);
+                char* lastSlash = strrchr(path, '\\');
+                if (!lastSlash) lastSlash = strrchr(path, '/');
+                if (lastSlash) *(lastSlash + 1) = 0;
+                strcat_s(path, "Trinity_DyeCache.dat");
+            }
+            return path;
+        }
+
+        struct DyeCacheHeader
+        {
+            char     magic[8] = "TRDYE02";
+            uint32_t version  = 2;
+            uint32_t count    = 0;
+        };
+
+        static void SaveDyeCacheToFile()
+        {
+            const char* path = GetDyeCachePath();
+            FILE* f = nullptr;
+            if (fopen_s(&f, path, "wb") == 0 && f)
+            {
+                DyeCacheHeader hdr;
+                hdr.count = static_cast<uint32_t>(s_itemDyeCount);
+                fwrite(&hdr, sizeof(hdr), 1, f);
+                fwrite(s_savedPlayerSlots, sizeof(s_savedPlayerSlots), 1, f);
+                fwrite(s_savedMountSlots, sizeof(s_savedMountSlots), 1, f);
+                if (s_itemDyeCount > 0)
+                    fwrite(s_itemDyeMap, sizeof(SavedItemDyeRecord), s_itemDyeCount, f);
+                fclose(f);
+            }
+        }
+
+        static void LoadDyeCacheFromFile()
+        {
+            const char* path = GetDyeCachePath();
+            FILE* f = nullptr;
+            if (fopen_s(&f, path, "rb") == 0 && f)
+            {
+                DyeCacheHeader hdr{};
+                if (fread(&hdr, sizeof(hdr), 1, f) == 1 && strcmp(hdr.magic, "TRDYE02") == 0)
+                {
+                    fread(s_savedPlayerSlots, sizeof(s_savedPlayerSlots), 1, f);
+                    fread(s_savedMountSlots, sizeof(s_savedMountSlots), 1, f);
+                    s_itemDyeCount = static_cast<int>(hdr.count);
+                    if (s_itemDyeCount > kMaxSavedItemDyes) s_itemDyeCount = kMaxSavedItemDyes;
+                    if (s_itemDyeCount > 0)
+                        fread(s_itemDyeMap, sizeof(SavedItemDyeRecord), s_itemDyeCount, f);
+                }
+                else
+                {
+                    fseek(f, 0, SEEK_SET);
+                    fread(s_savedPlayerSlots, sizeof(s_savedPlayerSlots), 1, f);
+                    fread(s_savedMountSlots, sizeof(s_savedMountSlots), 1, f);
+                }
+                fclose(f);
+            }
+        }
+
         bool MirrorToServer(uint16_t tag, int64_t instId,
                             const uint8_t recs[kDye_MaxChannels][16], uint32_t mask)
         {
@@ -657,34 +870,98 @@ namespace trinity::game
 
             bool ok = false;
 
-            // 1. Write to server-authority equip component
+            // 1. Write to server-authority equip component for active selection
             const uintptr_t comp = ServerComp();
             if (comp)
             {
                 const uintptr_t entry = FindEntryByTag(comp, tag);
                 if (entry)
                 {
-                    int64_t serverId = 0;
-                    if (Read64(entry + kOff_ItemVal_InstanceId, &serverId) && serverId == instId)
+                    Write32(entry + kOff_ItemVal_DyeCount, 0);
+                    for (int ch = 0; ch < static_cast<int>(kDye_MaxChannels); ++ch)
+                        if (mask & (1u << ch))
+                            ok |= CallDyeUpsert(entry, recs[ch]);
+                }
+            }
+
+            // 2. Multi-Actor Character Sync (Kliff, Damiane, Oongka) - write to EVERY copy in CharMgr
+            for (int c = 0; c < 3; ++c)
+            {
+                const uintptr_t act = Inventory::CharacterAddr(c);
+                if (act)
+                {
+                    const uintptr_t cComp = CompForCharacter(act);
+                    if (cComp && cComp != comp)
                     {
-                        Write32(entry + kOff_ItemVal_DyeCount, 0);
-                        for (int ch = 0; ch < static_cast<int>(kDye_MaxChannels); ++ch)
-                            if (mask & (1u << ch))
-                                ok |= CallDyeUpsert(entry, recs[ch]);
+                        const uintptr_t cEntry = FindEntryByTag(cComp, tag);
+                        if (cEntry)
+                        {
+                            Write32(cEntry + kOff_ItemVal_DyeCount, 0);
+                            for (int ch = 0; ch < static_cast<int>(kDye_MaxChannels); ++ch)
+                                if (mask & (1u << ch))
+                                    ok |= CallDyeUpsert(cEntry, recs[ch]);
+                        }
+                    }
+                }
+                const uintptr_t directAct = Player::GetActor(c);
+                if (directAct)
+                {
+                    const uintptr_t dComp = CompForCharacter(directAct);
+                    if (dComp && dComp != comp)
+                    {
+                        const uintptr_t dEntry = FindEntryByTag(dComp, tag);
+                        if (dEntry)
+                        {
+                            Write32(dEntry + kOff_ItemVal_DyeCount, 0);
+                            for (int ch = 0; ch < static_cast<int>(kDye_MaxChannels); ++ch)
+                                if (mask & (1u << ch))
+                                    ok |= CallDyeUpsert(dEntry, recs[ch]);
+                        }
                     }
                 }
             }
 
-            // 2. Also write to server inventory holder if slot exists there
+            // 3. Also write to server character root container
+            const uintptr_t sChar = Inventory::ServerCharacterAddr();
+            if (sChar)
+            {
+                const uintptr_t sComp = CompForCharacter(sChar);
+                if (sComp && sComp != comp)
+                {
+                    const uintptr_t sEntry = FindEntryByTag(sComp, tag);
+                    if (sEntry)
+                    {
+                        Write32(sEntry + kOff_ItemVal_DyeCount, 0);
+                        for (int ch = 0; ch < static_cast<int>(kDye_MaxChannels); ++ch)
+                            if (mask & (1u << ch))
+                                ok |= CallDyeUpsert(sEntry, recs[ch]);
+                    }
+                }
+            }
+
+            // 4. Also write to server inventory holder if slot exists there
             if (instId > 0)
             {
-                const uintptr_t serverSlot = FindSlotByInstance(Inventory::ServerHolderAddr(), instId);
+                const uintptr_t serverSlot = Inventory::FindSlotByInstance(Inventory::ServerHolderAddr(), instId);
                 if (serverSlot)
                 {
                     Write32(serverSlot + kOff_ItemVal_DyeCount, 0);
                     for (int ch = 0; ch < static_cast<int>(kDye_MaxChannels); ++ch)
                         if (mask & (1u << ch))
                             ok |= CallDyeUpsert(serverSlot, recs[ch]);
+                }
+            }
+
+            // 5. Also write to client inventory holder
+            if (instId > 0)
+            {
+                const uintptr_t clientSlot = Inventory::FindSlotByInstance(Inventory::ClientHolderAddr(), instId);
+                if (clientSlot)
+                {
+                    Write32(clientSlot + kOff_ItemVal_DyeCount, 0);
+                    for (int ch = 0; ch < static_cast<int>(kDye_MaxChannels); ++ch)
+                        if (mask & (1u << ch))
+                            CallDyeUpsert(clientSlot, recs[ch]);
                 }
             }
 
@@ -702,17 +979,6 @@ namespace trinity::game
         };
         Request          g_req;
         std::atomic<int> g_state{ static_cast<int>(Dye::OpState::Idle) };
-
-        // Mount dye auto-restore profile across save/load & summon
-        struct SavedMountSlot
-        {
-            bool     active = false;
-            uint16_t tag = 0;
-            uint32_t dyeCount = 0;
-            uint8_t  records[kDye_MaxChannels][16] = {};
-            uint32_t mask = 0;
-        };
-        static SavedMountSlot s_savedMountSlots[32];
 
         // The full 22-tag slot taxonomy (read out of the engine's own slot
         // dispatch; tags 3/4/5/6/16 re-confirmed live in this
@@ -982,10 +1248,9 @@ namespace trinity::game
             {
                 const uintptr_t entry = array + static_cast<uintptr_t>(i) * stride;
                 uint16_t tid = 0, tag = 0;
-                int64_t  qty = 0, inst = 0;
-                if (!Read16(entry + kOff_InvSlot_TypeId, &tid) || tid == kInvSlot_EmptyType) continue;
-                if (!Read64(entry + kOff_InvSlot_Quantity, &qty) || qty <= 0) continue;
-                if (!Read16(entry + tagOffset, &tag)) continue;
+                int64_t  inst = 0;
+                if (!Read16(entry + kOff_InvSlot_TypeId, &tid) || tid == kInvSlot_EmptyType || tid == 0) continue;
+                Read16(entry + tagOffset, &tag);
                 Read64(entry + kOff_ItemVal_InstanceId, &inst);
 
                 if (tag == 14 || tag == 22 || tag == 23 || tag == 24 || tag == 25)
@@ -1015,7 +1280,7 @@ namespace trinity::game
 
                 snprintf(s.itemName, sizeof(s.itemName), "%s", itemName);
                 snprintf(s.icon, sizeof(s.icon), "%s", icon);
-                s.dyeable = IconPrefabDyeable(s.icon);
+                s.dyeable = true;
             }
         }
 
@@ -1178,25 +1443,33 @@ namespace trinity::game
                 }
 
                 // Cache for auto-restore across save/load and summon
+                uint16_t mountItemTypeId = 0;
+                Read16(entry + kOff_InvSlot_TypeId, &mountItemTypeId);
                 if (req.tag < 32)
                 {
                     if (req.clear)
                     {
                         s_savedMountSlots[req.tag].active = false;
+                        s_savedMountSlots[req.tag].typeId = 0;
+                        s_savedMountSlots[req.tag].instanceId = 0;
+                        s_savedMountSlots[req.tag].mask = 0;
+                        ClearSavedItemDye(mountItemTypeId);
                     }
                     else
                     {
                         s_savedMountSlots[req.tag].active = true;
                         s_savedMountSlots[req.tag].tag = req.tag;
+                        s_savedMountSlots[req.tag].typeId = mountItemTypeId;
+                        s_savedMountSlots[req.tag].instanceId = instId;
                         s_savedMountSlots[req.tag].mask = ReadRecords(entry, s_savedMountSlots[req.tag].records);
                         Read32(entry + kOff_ItemVal_DyeCount, &s_savedMountSlots[req.tag].dyeCount);
+
+                        UpsertSavedItemDye(mountItemTypeId, s_savedMountSlots[req.tag].mask, s_savedMountSlots[req.tag].records, s_savedMountSlots[req.tag].dyeCount);
                     }
+                    SaveDyeCacheToFile();
                 }
 
-                bool slotApplyOk = false;
                 bool batchApplyOk = false;
-                bool refreshOk = false;
-
                 // 2. Batch applier
                 if (comp && g_dyeApply)
                 {
@@ -1217,37 +1490,24 @@ namespace trinity::game
                         else           BuildSetRecord(rec, ch, req.value);
                     }
                     int mountErr = 0;
-                    __try {
-                        g_dyeApply(reinterpret_cast<void*>(comp), &mountErr, mountBatch);
-                        batchApplyOk = (mountErr == 0);
-                    } __except (EXCEPTION_EXECUTE_HANDLER) {}
+                    batchApplyOk = CallDyeApply(comp, mountBatch, &mountErr) && (mountErr == 0);
                 }
 
-                // 3. Force mesh/material refresh
-                if (comp && g_refresh)
-                {
-                    __try {
-                        int refreshErr = 0;
-                        g_refresh(reinterpret_cast<void*>(comp), &refreshErr);
-                        refreshOk = true;
-                    } __except (EXCEPTION_EXECUTE_HANDLER) {}
-                }
-
-                DyeWatchFile("ProcessRequest: mount tag=%u comp=%p entry=%p instId=%lld upsertOk=%d durableOk=%d slotApply=%d batchApply=%d refresh=%d",
+                DyeWatchFile("ProcessRequest: mount tag=%u comp=%p entry=%p instId=%lld upsertOk=%d durableOk=%d batchApply=%d",
                     req.tag, reinterpret_cast<void*>(comp), reinterpret_cast<void*>(entry),
                     static_cast<long long>(instId), upsertOk ? 1 : 0, durableOk ? 1 : 0,
-                    slotApplyOk ? 1 : 0, batchApplyOk ? 1 : 0, refreshOk ? 1 : 0);
+                    batchApplyOk ? 1 : 0);
 
-                g_state.store(static_cast<int>((upsertOk || durableOk || slotApplyOk || batchApplyOk) ? Dye::OpState::Done : Dye::OpState::Failed),
+                g_state.store(static_cast<int>((upsertOk || durableOk || batchApplyOk) ? Dye::OpState::Done : Dye::OpState::Failed),
                               std::memory_order_release);
                 return;
             }
 
             // ===== PLAYER CHARACTER MODE: original proven approach ===========
             const uintptr_t comp = ClientComp();
-            if (!comp || !g_dyeApply)
+            if (!comp)
             {
-                LOG_WARN("dye: apply refused - equip component not resolved / applier unresolved.");
+                LOG_WARN("dye: apply refused - equip component not resolved.");
                 g_state.store(static_cast<int>(Dye::OpState::Failed), std::memory_order_release);
                 return;
             }
@@ -1284,16 +1544,45 @@ namespace trinity::game
                 else           BuildSetRecord(rec, ch, req.value);
             }
 
+            bool hasLocalController = false;
+            uintptr_t ownerActor = 0;
+            if (ReadPtr(comp + kOff_EquipComp_Owner, &ownerActor) && ownerActor >= kMinPointer)
+            {
+                uintptr_t possessor = 0;
+                if (ReadPtr(ownerActor + kOff_Owner_Possessor, &possessor) && possessor >= kMinPointer)
+                {
+                    uintptr_t pawn = 0;
+                    if (ReadPtr(possessor + kOff_Possessor_Pawn, &pawn) && pawn >= kMinPointer)
+                        hasLocalController = true;
+                }
+            }
+
             int err = 0;
-            if (!CallDyeApply(comp, batch, &err) || err != 0)
+            bool applyOk = false;
+            if (g_dyeApply && hasLocalController)
+            {
+                applyOk = CallDyeApply(comp, batch, &err) && (err == 0);
+            }
+
+            // Always upsert records directly into client TrItemValue for universal compatibility across all characters
+            bool upsertOk = false;
+            for (int ch = chFirst; ch <= chLast; ++ch)
+            {
+                uint8_t rec[16] = {};
+                if (req.clear) BuildClearRecord(rec, ch);
+                else           BuildSetRecord(rec, ch, req.value);
+                if (g_dyeUpsert) upsertOk |= CallDyeUpsert(entry, rec);
+            }
+
+            if (!applyOk && !upsertOk)
             {
                 LOG_WARN("dye: applier refused (err=%d, slot tag %u).", err, req.tag);
                 g_state.store(static_cast<int>(Dye::OpState::Failed), std::memory_order_release);
                 return;
             }
 
-            DyeWatchFile("ProcessRequest: player tag=%u comp=%p err=%d applyOk=1",
-                req.tag, reinterpret_cast<void*>(comp), err);
+            DyeWatchFile("ProcessRequest: player tag=%u comp=%p err=%d applyOk=%d upsertOk=%d",
+                req.tag, reinterpret_cast<void*>(comp), err, applyOk ? 1 : 0, upsertOk ? 1 : 0);
 
             // Mirror the post-apply state (the client entry is the source of
             // truth now - the applier upserted/removed our channels there)
@@ -1307,6 +1596,100 @@ namespace trinity::game
                 uint8_t recs[kDye_MaxChannels][16];
                 const uint32_t mask = ReadRecords(entry, recs);
                 MirrorToServer(req.tag, instId, recs, mask);
+
+                // Multi-Actor Character Server Sync: write to all tracked player actors with RealmFlag = 1
+                uint8_t oldFlag = 0;
+                const uintptr_t flagAddr = Inventory::RealmFlagAddress(&oldFlag);
+                if (flagAddr && RawWrite8(flagAddr, 1))
+                {
+                    for (int c = 0; c < 3; ++c)
+                    {
+                        const uintptr_t act = Inventory::CharacterAddr(c);
+                        if (act)
+                        {
+                            const uintptr_t pComp = CompForCharacter(act);
+                            if (pComp && pComp != comp)
+                            {
+                                const uintptr_t pEntry = FindEntryByTag(pComp, req.tag);
+                                if (pEntry)
+                                {
+                                    Write32(pEntry + kOff_ItemVal_DyeCount, 0);
+                                    for (int ch = chFirst; ch <= chLast; ++ch)
+                                    {
+                                        uint8_t rec[16] = {};
+                                        if (req.clear) BuildClearRecord(rec, ch);
+                                        else           BuildSetRecord(rec, ch, req.value);
+                                        CallDyeUpsert(pEntry, rec);
+                                    }
+                                }
+                            }
+                        }
+                        const uintptr_t directAct = Player::GetActor(c);
+                        if (directAct)
+                        {
+                            const uintptr_t pComp = CompForCharacter(directAct);
+                            if (pComp && pComp != comp)
+                            {
+                                const uintptr_t pEntry = FindEntryByTag(pComp, req.tag);
+                                if (pEntry)
+                                {
+                                    Write32(pEntry + kOff_ItemVal_DyeCount, 0);
+                                    for (int ch = chFirst; ch <= chLast; ++ch)
+                                    {
+                                        uint8_t rec[16] = {};
+                                        if (req.clear) BuildClearRecord(rec, ch);
+                                        else           BuildSetRecord(rec, ch, req.value);
+                                        CallDyeUpsert(pEntry, rec);
+                                    }
+                                }
+                            }
+                        }
+                    }
+                    RawWrite8(flagAddr, oldFlag);
+                }
+
+                uint16_t itemTypeId = 0;
+                Read16(entry + kOff_InvSlot_TypeId, &itemTypeId);
+
+                const int curCharIdx = (s_activeCharIdx < 0) ? Inventory::ActivePlayerCharacterIdx() : s_activeCharIdx;
+                if (curCharIdx >= 0 && curCharIdx < 3 && req.tag < 32)
+                {
+                    if (req.clear)
+                    {
+                        s_savedPlayerSlots[curCharIdx][req.tag].active = false;
+                        s_savedPlayerSlots[curCharIdx][req.tag].typeId = 0;
+                        s_savedPlayerSlots[curCharIdx][req.tag].instanceId = 0;
+                        s_savedPlayerSlots[curCharIdx][req.tag].mask = 0;
+                        ClearSavedItemDye(itemTypeId);
+                    }
+                    else
+                    {
+                        s_savedPlayerSlots[curCharIdx][req.tag].active = true;
+                        s_savedPlayerSlots[curCharIdx][req.tag].tag = req.tag;
+                        s_savedPlayerSlots[curCharIdx][req.tag].typeId = itemTypeId;
+                        s_savedPlayerSlots[curCharIdx][req.tag].instanceId = instId;
+                        s_savedPlayerSlots[curCharIdx][req.tag].mask = mask;
+                        memcpy(s_savedPlayerSlots[curCharIdx][req.tag].records, recs, sizeof(recs));
+                        Read32(entry + kOff_ItemVal_DyeCount, &s_savedPlayerSlots[curCharIdx][req.tag].dyeCount);
+
+                        UpsertSavedItemDye(itemTypeId, mask, recs, s_savedPlayerSlots[curCharIdx][req.tag].dyeCount);
+                    }
+                    SaveDyeCacheToFile();
+                }
+
+                const char* charName = Equipment::CharacterName(curCharIdx);
+                const char* slotName = Equipment::SlotNameForTag(req.tag);
+                if (req.clear)
+                {
+                    LOG("dye: [%s] Slot [%s (Tag %u)] -> Cleared dye color.",
+                        charName, slotName ? slotName : "Unknown", req.tag);
+                }
+                else
+                {
+                    LOG("dye: [%s] Slot [%s (Tag %u)] Channel %d -> Applied RGB=(%u,%u,%u) Material=0x%04X.",
+                        charName, slotName ? slotName : "Unknown", req.tag, req.channel,
+                        req.value.r, req.value.g, req.value.b, req.value.materialId);
+                }
             }
 
             g_state.store(static_cast<int>(Dye::OpState::Done), std::memory_order_release);
@@ -1315,6 +1698,8 @@ namespace trinity::game
 
     bool Dye::Install()
     {
+        LoadDyeCacheFromFile();
+
         // Optional gear-change listener (dye apply/upsert works directly regardless)
         if (!mem::InstallHook("dye: equip-batch", kSig_EquipBatch, nullptr,
                               &hkEquipBatch, &oEquipBatch, &g_equipTarget))
@@ -1329,10 +1714,6 @@ namespace trinity::game
         if (apply)
             g_dyeApply = reinterpret_cast<DyeApplyBatch_t>(apply);
 
-        const uintptr_t slotApply = mem::FindPattern(kSig_DyeApplySlot);
-        if (slotApply)
-            g_dyeApplySlot = reinterpret_cast<DyeApplySlot_t>(slotApply);
-
         uintptr_t upsert = mem::FindPattern(kSig_DyeUpsert);
         if (!upsert)
             upsert = mem::FindPattern(kSig_DyeUpsert_Legacy);
@@ -1341,14 +1722,10 @@ namespace trinity::game
             LOG_WARN("dye: upsert signature not found - dye will apply but not persist.");
         else
         {
-            LOG("dye: batch apply @ %p, slot apply @ %p, durable upsert @ %p.",
-                reinterpret_cast<void*>(apply), reinterpret_cast<void*>(slotApply), reinterpret_cast<void*>(upsert));
+            LOG("dye: batch apply @ %p, durable upsert @ %p.",
+                reinterpret_cast<void*>(apply), reinterpret_cast<void*>(upsert));
         }
         g_dyeUpsert = reinterpret_cast<DyeUpsert_t>(upsert);
-
-        const uintptr_t refresh = mem::FindPattern(kSig_EquipEffectRefresh);
-        if (refresh)
-            g_refresh = reinterpret_cast<EquipRefresh_t>(refresh);
 
         return true;
     }
@@ -1424,6 +1801,7 @@ namespace trinity::game
 
     bool Dye::GetChannel(uint16_t tag, int channel, Channel* out)
     {
+        if (!out) return false;
         if (channel < 0 || channel >= static_cast<int>(kDye_MaxChannels)) return false;
 
         uintptr_t entry = 0;
@@ -1491,140 +1869,338 @@ namespace trinity::game
 
     void Dye::Tick()
     {
-        // One-time raw field map for entries that claim existing dye records.
-        // This locates the 1.17 vector pointer without interpreting or writing.
-        static bool vectorDumped = true; // diagnostic completed in 0.13.39
-        if (!vectorDumped)
-        {
-            const uintptr_t dumpComp = ClientComp();
-            uintptr_t dumpDesc = 0, dumpArray = 0;
-            uint32_t dumpCount = 0;
-            if (dumpComp && ReadPtr(dumpComp + kOff_EquipComp_Table, &dumpDesc) &&
-                ReadPtr(dumpDesc + kOff_EquipTable_Array, &dumpArray) &&
-                Read32(dumpDesc + kOff_EquipTable_Count, &dumpCount) && dumpCount <= 64)
-            {
-                for (uint32_t i = 0; i < dumpCount; ++i)
-                {
-                    const uintptr_t e = dumpArray + static_cast<uintptr_t>(i) * kEquipEntry_Stride;
-                    uint16_t tag = 0, type = 0;
-                    Read16(e + kOff_EquipEntry_SlotTag, &tag);
-                    if (tag != 16) continue;
-                    uint32_t oldCount = 0;
-                    Read32(e + kOff_ItemVal_DyeCount, &oldCount);
-                    Read16(e + kOff_InvSlot_TypeId, &type);
-                    DyeWatchFile("vector-map begin entry=%p index=%u tag=%u type=%u oldCount=%u",
-                        reinterpret_cast<void*>(e), i, tag, type, oldCount);
-                    for (uintptr_t off = 0x40; off <= 0xC8; off += 8)
-                    {
-                        uintptr_t q = 0;
-                        uint32_t lo = 0, hi = 0;
-                        ReadPtr(e + off, &q); Read32(e + off, &lo); Read32(e + off + 4, &hi);
-                        DyeWatchFile("vector-map off=0x%02llX q=%p lo=%u hi=%u",
-                            static_cast<unsigned long long>(off), reinterpret_cast<void*>(q), lo, hi);
-                    }
-                    vectorDumped = true;
-                    break;
-                }
-            }
-        }
+        if (!Player::Ready()) return;
 
-        static ULONGLONG lastChain = 0;
-        const ULONGLONG chainNow = GetTickCount64();
-        if (false && chainNow - lastChain >= 2000)
-        {
-            lastChain = chainNow;
-            ReportComponentChain("client", Inventory::ClientCharacterAddr());
-            ReportComponentChain("server", Inventory::ServerCharacterAddr());
-        }
+        if (g_state.load(std::memory_order_acquire) == static_cast<int>(OpState::Pending))
+            ProcessRequest();
 
-        // Read-only dye watch. Log equipped entry/vector addresses and any
-        // record-vector change made by the game's normal dye interface.
-        static ULONGLONG last = 0;
-        static uintptr_t oldData[64]{};
-        static uint32_t oldCount[64]{};
-        static uint64_t oldHash[64]{};
-        static bool seen[64]{};
+        // Continuous Auto-Restore: re-applies custom saved dye profile across fast travels, save loads & area transitions
+        // Validates Item TypeID to ensure dye colors do not bleed onto different items equipped in the same slot.
+        static ULONGLONG s_lastRestore = 0;
         const ULONGLONG now = GetTickCount64();
-        if (false && now - last >= 500)
+        if (now - s_lastRestore > 1200)
         {
-            last = now;
-            const uintptr_t comp = ClientComp();
-            uintptr_t desc = 0, array = 0;
-            uint32_t count = 0;
-            if (comp && ReadPtr(comp + kOff_EquipComp_Table, &desc) &&
-                ReadPtr(desc + kOff_EquipTable_Array, &array) &&
-                Read32(desc + kOff_EquipTable_Count, &count) && count <= 64)
+            s_lastRestore = now;
+
+            // 1. Player Characters Auto-Restore (Kliff = 0, Damiane = 1, Oongka = 2)
+            for (int c = 0; c < 3; ++c)
             {
-                for (uint32_t i = 0; i < count; ++i)
+                uintptr_t comp = 0;
+                if (c == Inventory::ActivePlayerCharacterIdx())
+                    comp = ClientComp();
+                if (!comp)
                 {
-                    const uintptr_t entry = array + static_cast<uintptr_t>(i) * kEquipEntry_Stride;
-                    uint16_t tag = 0, tid = 0;
-                    uintptr_t data = 0;
-                    uint32_t dyeCount = 0;
-                    Read16(entry + kOff_EquipEntry_SlotTag, &tag);
-                    Read16(entry + kOff_InvSlot_TypeId, &tid);
-                    ReadPtr(entry + kOff_ItemVal_DyeData, &data);
-                    Read32(entry + kOff_ItemVal_DyeCount, &dyeCount);
-                    if (dyeCount > kDye_MaxChannels) dyeCount = kDye_MaxChannels;
-                    uint64_t hash = 1469598103934665603ull;
-                    if (data >= kMinPointer)
-                        for (uint32_t b = 0; b < dyeCount * 16; ++b)
-                        {
-                            uint8_t v = 0;
-                            if (!Read8(data + b, &v)) break;
-                            hash = (hash ^ v) * 1099511628211ull;
-                        }
-                    if (!seen[i] || oldData[i] != data || oldCount[i] != dyeCount || oldHash[i] != hash)
-                    {
-                        LOG("dye-watch: comp=%p entry=%p index=%u tag=%u type=%u data=%p count=%u hash=%016llX countAddr=%p.",
-                            reinterpret_cast<void*>(comp), reinterpret_cast<void*>(entry), i,
-                            tag, tid, reinterpret_cast<void*>(data), dyeCount,
-                            static_cast<unsigned long long>(hash),
-                            reinterpret_cast<void*>(entry + kOff_ItemVal_DyeCount));
-                        DyeWatchFile("comp=%p entry=%p index=%u tag=%u type=%u data=%p count=%u hash=%016llX countAddr=%p",
-                            reinterpret_cast<void*>(comp), reinterpret_cast<void*>(entry), i,
-                            tag, tid, reinterpret_cast<void*>(data), dyeCount,
-                            static_cast<unsigned long long>(hash),
-                            reinterpret_cast<void*>(entry + kOff_ItemVal_DyeCount));
-                        seen[i] = true;
-                        oldData[i] = data;
-                        oldCount[i] = dyeCount;
-                        oldHash[i] = hash;
-                    }
+                    const uintptr_t act = Inventory::CharacterAddr(c);
+                    if (act) comp = CompForCharacter(act);
                 }
-            }
-        }
-        // Auto-restore saved mount dye across save/load and summon
-        static ULONGLONG s_lastMountRestore = 0;
-        const ULONGLONG nowRestore = GetTickCount64();
-        if (nowRestore - s_lastMountRestore >= 1000)
-        {
-            s_lastMountRestore = nowRestore;
-            const uintptr_t mComp = FindMountComp(0);
-            if (mComp && g_dyeUpsert)
-            {
+                if (!comp)
+                {
+                    const uintptr_t direct = Player::GetActor(c);
+                    if (direct) comp = CompForCharacter(direct);
+                }
+                if (!comp) continue;
+
                 for (uint16_t tag = 0; tag < 32; ++tag)
                 {
-                    if (!s_savedMountSlots[tag].active) continue;
-                    const uintptr_t mEntry = FindEntryByTag(mComp, tag);
-                    if (!mEntry) continue;
-                    uint32_t liveCount = 0;
-                    Read32(mEntry + kOff_ItemVal_DyeCount, &liveCount);
-                    if (liveCount == 0) // needs auto-restore!
+                    const uintptr_t entry = FindEntryByTag(comp, tag);
+                    if (!entry) continue;
+
+                    uint16_t liveTypeId = 0;
+                    Read16(entry + kOff_InvSlot_TypeId, &liveTypeId);
+                    if (liveTypeId == 0 || liveTypeId == kInvSlot_EmptyType) continue;
+
+                    uint32_t liveDyeCount = 0;
+                    Read32(entry + kOff_ItemVal_DyeCount, &liveDyeCount);
+
+                    // If slot has a saved dye for a DIFFERENT item, handle item swapping
+                    if (s_savedPlayerSlots[c][tag].active && s_savedPlayerSlots[c][tag].typeId != 0 &&
+                        s_savedPlayerSlots[c][tag].typeId != liveTypeId)
                     {
-                        for (int ch = 0; ch < static_cast<int>(kDye_MaxChannels); ++ch)
+                        // Item in this slot changed (e.g. Shield A -> Shield B)
+                        // Check if the newly equipped item has its own distinct dye in s_itemDyeMap
+                        SavedItemDyeRecord* customDye = FindSavedItemDye(liveTypeId);
+                        if (customDye && customDye->mask > 0)
                         {
-                            if (s_savedMountSlots[tag].mask & (1u << ch))
+                            s_savedPlayerSlots[c][tag].active = true;
+                            s_savedPlayerSlots[c][tag].tag = tag;
+                            s_savedPlayerSlots[c][tag].typeId = liveTypeId;
+                            Read64(entry + kOff_ItemVal_InstanceId, &s_savedPlayerSlots[c][tag].instanceId);
+                            s_savedPlayerSlots[c][tag].mask = customDye->mask;
+                            s_savedPlayerSlots[c][tag].dyeCount = customDye->dyeCount;
+                            memcpy(s_savedPlayerSlots[c][tag].records, customDye->records, sizeof(customDye->records));
+                        }
+                        else
+                        {
+                            // Newly equipped item has no custom dye: deactivate this slot so it keeps its natural vanilla color!
+                            s_savedPlayerSlots[c][tag].active = false;
+                            s_savedPlayerSlots[c][tag].typeId = liveTypeId;
+                            s_savedPlayerSlots[c][tag].mask = 0;
+                            continue;
+                        }
+                    }
+                    else if (!s_savedPlayerSlots[c][tag].active)
+                    {
+                        // If inactive, check if currently equipped item has a saved dye profile
+                        SavedItemDyeRecord* customDye = FindSavedItemDye(liveTypeId);
+                        if (customDye && customDye->mask > 0)
+                        {
+                            s_savedPlayerSlots[c][tag].active = true;
+                            s_savedPlayerSlots[c][tag].tag = tag;
+                            s_savedPlayerSlots[c][tag].typeId = liveTypeId;
+                            Read64(entry + kOff_ItemVal_InstanceId, &s_savedPlayerSlots[c][tag].instanceId);
+                            s_savedPlayerSlots[c][tag].mask = customDye->mask;
+                            s_savedPlayerSlots[c][tag].dyeCount = customDye->dyeCount;
+                            memcpy(s_savedPlayerSlots[c][tag].records, customDye->records, sizeof(customDye->records));
+                        }
+                    }
+
+                    // Restore custom dye when undyed (e.g. after save reload, fast travel, or area transition)
+                    if (s_savedPlayerSlots[c][tag].active && s_savedPlayerSlots[c][tag].mask > 0 &&
+                        (s_savedPlayerSlots[c][tag].typeId == 0 || s_savedPlayerSlots[c][tag].typeId == liveTypeId))
+                    {
+                        if (liveDyeCount == 0)
+                        {
+                            // 1. Data Upsert
+                            if (g_dyeUpsert)
                             {
-                                CallDyeUpsert(mEntry, s_savedMountSlots[tag].records[ch]);
+                                for (int ch = 0; ch < static_cast<int>(kDye_MaxChannels); ++ch)
+                                {
+                                    if (s_savedPlayerSlots[c][tag].mask & (1u << ch))
+                                    {
+                                        CallDyeUpsert(entry, s_savedPlayerSlots[c][tag].records[ch]);
+                                    }
+                                }
+                            }
+
+                            // 2. 3D Visual Shader Batch Apply (instantly forces DX12 mesh to render the dyed material on world load)
+                            if (g_dyeApply)
+                            {
+                                static uint8_t restoreBatch[kDyeBatch_Size];
+                                memset(restoreBatch, 0, sizeof(restoreBatch));
+                                for (size_t blk = 0; blk < kDyeBatch_Blocks; ++blk)
+                                {
+                                    uint8_t* block = restoreBatch + blk * kDyeBatch_BlockSize;
+                                    const uint16_t blkTag = (blk == 0) ? tag : 0xFFFF;
+                                    memcpy(block, &blkTag, 2);
+                                    for (uint32_t r = 0; r < kDye_MaxChannels; ++r)
+                                        block[kDyeBatch_RecordsOff + r * 16 + 6] = 0xFF;
+                                }
+                                for (int ch = 0; ch < static_cast<int>(kDye_MaxChannels); ++ch)
+                                {
+                                    if (s_savedPlayerSlots[c][tag].mask & (1u << ch))
+                                    {
+                                        uint8_t* rec = restoreBatch + kDyeBatch_RecordsOff + static_cast<size_t>(ch) * 16;
+                                        memcpy(rec, s_savedPlayerSlots[c][tag].records[ch], 16);
+                                    }
+                                }
+                                int restoreErr = 0;
+                                CallDyeApply(comp, restoreBatch, &restoreErr);
+                            }
+                        }
+                    }
+                }
+            }
+
+            // 2. Tracked Mounts Auto-Restore
+            const int mountCount = Player::GetTrackedMountCount();
+            for (int m = 0; m < mountCount; ++m)
+            {
+                const uintptr_t mAct = Player::GetMountActor(m);
+                if (!mAct) continue;
+                const uintptr_t mComp = FindEquipCompFromActor(mAct);
+                if (!mComp) continue;
+
+                for (uint16_t tag = 0; tag < 32; ++tag)
+                {
+                    const uintptr_t entry = FindEntryByTag(mComp, tag);
+                    if (!entry) continue;
+
+                    uint16_t liveTypeId = 0;
+                    Read16(entry + kOff_InvSlot_TypeId, &liveTypeId);
+                    if (liveTypeId == 0 || liveTypeId == kInvSlot_EmptyType) continue;
+
+                    uint32_t liveDyeCount = 0;
+                    Read32(entry + kOff_ItemVal_DyeCount, &liveDyeCount);
+
+                    if (s_savedMountSlots[tag].active && s_savedMountSlots[tag].typeId != 0 &&
+                        s_savedMountSlots[tag].typeId != liveTypeId)
+                    {
+                        SavedItemDyeRecord* customDye = FindSavedItemDye(liveTypeId);
+                        if (customDye && customDye->mask > 0)
+                        {
+                            s_savedMountSlots[tag].active = true;
+                            s_savedMountSlots[tag].tag = tag;
+                            s_savedMountSlots[tag].typeId = liveTypeId;
+                            Read64(entry + kOff_ItemVal_InstanceId, &s_savedMountSlots[tag].instanceId);
+                            s_savedMountSlots[tag].mask = customDye->mask;
+                            s_savedMountSlots[tag].dyeCount = customDye->dyeCount;
+                            memcpy(s_savedMountSlots[tag].records, customDye->records, sizeof(customDye->records));
+                        }
+                        else
+                        {
+                            s_savedMountSlots[tag].active = false;
+                            s_savedMountSlots[tag].typeId = liveTypeId;
+                            s_savedMountSlots[tag].mask = 0;
+                            continue;
+                        }
+                    }
+                    else if (!s_savedMountSlots[tag].active)
+                    {
+                        SavedItemDyeRecord* customDye = FindSavedItemDye(liveTypeId);
+                        if (customDye && customDye->mask > 0)
+                        {
+                            s_savedMountSlots[tag].active = true;
+                            s_savedMountSlots[tag].tag = tag;
+                            s_savedMountSlots[tag].typeId = liveTypeId;
+                            Read64(entry + kOff_ItemVal_InstanceId, &s_savedMountSlots[tag].instanceId);
+                            s_savedMountSlots[tag].mask = customDye->mask;
+                            s_savedMountSlots[tag].dyeCount = customDye->dyeCount;
+                            memcpy(s_savedMountSlots[tag].records, customDye->records, sizeof(customDye->records));
+                        }
+                    }
+
+                    if (s_savedMountSlots[tag].active && s_savedMountSlots[tag].mask > 0 &&
+                        (s_savedMountSlots[tag].typeId == 0 || s_savedMountSlots[tag].typeId == liveTypeId))
+                    {
+                        if (liveDyeCount == 0)
+                        {
+                            if (g_dyeUpsert)
+                            {
+                                for (int ch = 0; ch < static_cast<int>(kDye_MaxChannels); ++ch)
+                                {
+                                    if (s_savedMountSlots[tag].mask & (1u << ch))
+                                        CallDyeUpsert(entry, s_savedMountSlots[tag].records[ch]);
+                                }
+                            }
+                            if (g_dyeApply)
+                            {
+                                static uint8_t restoreBatch[kDyeBatch_Size];
+                                memset(restoreBatch, 0, sizeof(restoreBatch));
+                                for (size_t blk = 0; blk < kDyeBatch_Blocks; ++blk)
+                                {
+                                    uint8_t* block = restoreBatch + blk * kDyeBatch_BlockSize;
+                                    const uint16_t blkTag = (blk == 0) ? tag : 0xFFFF;
+                                    memcpy(block, &blkTag, 2);
+                                    for (uint32_t r = 0; r < kDye_MaxChannels; ++r)
+                                        block[kDyeBatch_RecordsOff + r * 16 + 6] = 0xFF;
+                                }
+                                for (int ch = 0; ch < static_cast<int>(kDye_MaxChannels); ++ch)
+                                {
+                                    if (s_savedMountSlots[tag].mask & (1u << ch))
+                                    {
+                                        uint8_t* rec = restoreBatch + kDyeBatch_RecordsOff + static_cast<size_t>(ch) * 16;
+                                        memcpy(rec, s_savedMountSlots[tag].records[ch], 16);
+                                    }
+                                }
+                                int restoreErr = 0;
+                                CallDyeApply(mComp, restoreBatch, &restoreErr);
                             }
                         }
                     }
                 }
             }
         }
+    }
 
-        if (g_state.load(std::memory_order_acquire) == static_cast<int>(OpState::Pending))
-            ProcessRequest();
+    bool Dye::InjectAllToSave()
+    {
+        uint8_t oldFlag = 0;
+        const uintptr_t flagAddr = Inventory::RealmFlagAddress(&oldFlag);
+        if (!flagAddr) return false;
+        if (!RawWrite8(flagAddr, 1)) return false;
+
+        bool ok = false;
+
+        // 1. Iterate all 3 player characters (0=Kliff, 1=Damiane, 2=Oongka)
+        for (int c = 0; c < 3; ++c)
+        {
+            uintptr_t clientComp = 0;
+            uintptr_t serverComp = 0;
+
+            const uintptr_t clientAct = Inventory::CharacterAddr(c);
+            if (clientAct) clientComp = CompForCharacter(clientAct);
+            if (!clientComp && c == 0) clientComp = ActiveClientComp();
+
+            if (c == 0) serverComp = CompForCharacter(Inventory::ServerCharacterAddr());
+            if (!serverComp)
+            {
+                const uintptr_t directAct = Player::GetActor(c);
+                if (directAct) serverComp = CompForCharacter(directAct);
+            }
+
+            if (clientComp)
+            {
+                uintptr_t array = 0;
+                uint32_t  count = 0;
+                uintptr_t stride = 0xD0, tagOffset = 0xC8, dyeDataOffset = 0x78, dyeCountOffset = 0x80;
+                if (ReadEquipTable(clientComp, array, count, &stride, &tagOffset, &dyeDataOffset, &dyeCountOffset))
+                {
+                    for (uint32_t i = 0; i < count; ++i)
+                    {
+                        const uintptr_t cEntry = array + static_cast<uintptr_t>(i) * stride;
+                        uint16_t tid = 0, tag = 0;
+                        int64_t instId = 0;
+                        if (!Read16(cEntry + kOff_InvSlot_TypeId, &tid) || tid == kInvSlot_EmptyType || tid == 0) continue;
+                        Read16(cEntry + tagOffset, &tag);
+                        Read64(cEntry + kOff_ItemVal_InstanceId, &instId);
+
+                        uint8_t recs[kDye_MaxChannels][16];
+                        const uint32_t mask = ReadRecords(cEntry, recs);
+                        if (mask > 0 && instId > 0)
+                        {
+                            ok |= MirrorToServer(tag, instId, recs, mask);
+                        }
+                    }
+                }
+            }
+
+            // Also mirror from memory cache if active
+            for (uint16_t tag = 0; tag < 32; ++tag)
+            {
+                if (s_savedPlayerSlots[c][tag].active && s_savedPlayerSlots[c][tag].mask > 0)
+                {
+                    const uintptr_t entry = clientComp ? FindEntryByTag(clientComp, tag) : 0;
+                    int64_t instId = 0;
+                    if (entry) Read64(entry + kOff_ItemVal_InstanceId, &instId);
+                    ok |= MirrorToServer(tag, instId, s_savedPlayerSlots[c][tag].records, s_savedPlayerSlots[c][tag].mask);
+                }
+            }
+        }
+
+        // 2. Iterate all tracked mounts
+        const int mountCount = Player::GetTrackedMountCount();
+        for (int m = 0; m < mountCount; ++m)
+        {
+            const uintptr_t mAct = Player::GetMountActor(m);
+            if (!mAct) continue;
+            const uintptr_t mComp = FindEquipCompFromActor(mAct);
+            if (!mComp) continue;
+
+            uintptr_t array = 0;
+            uint32_t  count = 0;
+            uintptr_t stride = 0xD0, tagOffset = 0xC8, dyeDataOffset = 0x78, dyeCountOffset = 0x80;
+            if (ReadEquipTable(mComp, array, count, &stride, &tagOffset, &dyeDataOffset, &dyeCountOffset))
+            {
+                for (uint32_t i = 0; i < count; ++i)
+                {
+                    const uintptr_t mEntry = array + static_cast<uintptr_t>(i) * stride;
+                    uint16_t tid = 0, tag = 0;
+                    int64_t instId = 0;
+                    if (!Read16(mEntry + kOff_InvSlot_TypeId, &tid) || tid == kInvSlot_EmptyType || tid == 0) continue;
+                    Read16(mEntry + tagOffset, &tag);
+                    Read64(mEntry + kOff_ItemVal_InstanceId, &instId);
+
+                    uint8_t recs[kDye_MaxChannels][16];
+                    const uint32_t mask = ReadRecords(mEntry, recs);
+                    if (mask > 0 && instId > 0)
+                    {
+                        ok |= MirrorToServer(tag, instId, recs, mask);
+                    }
+                }
+            }
+        }
+
+        RawWrite8(flagAddr, oldFlag);
+        return ok;
     }
 }

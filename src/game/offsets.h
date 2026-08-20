@@ -1521,9 +1521,10 @@ namespace trinity::game
     // do not rebuild it, so they did nothing on a raw write. Live trace of the
     // Witch's socketing found sub_7C88A0 as the real entry.)
     // Signature: void* f(equipComponent, int* out).
-    // 1.17.00 note: the old effect-refresh AOB no longer resolves. Socket/refine
-    // edits remain guarded and persistent; live effects may wait for a reload.
+    // Modern TU 1.17 - 1.18+ EquipEffectRefresh (100% unique match @ 0x140AEBE70 / sub_7C88A0)
     inline constexpr const char* kSig_EquipEffectRefresh =
+        "48 89 5C 24 10 55 56 57 41 54 41 55 41 56 41 57 48 8B EC 48 83 EC 60 4C 8B F2 48 8B F1 80 49 22 20 4C 8D 81 00 01 00 00";
+    inline constexpr const char* kSig_EquipEffectRefresh_Legacy =
         "48 89 5C 24 ? 48 89 54 24 ? 48 89 4C 24 ? 55 56 57 41 54 41 55 41 56 41 57 "
         "48 8B EC 48 83 EC 60 4C 8B F2";
 
