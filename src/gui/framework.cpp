@@ -160,7 +160,7 @@ namespace trinity::ui
             ImFontGlyphRangesBuilder builder;
             builder.AddRanges(io.Fonts->GetGlyphRangesChineseSimplifiedCommon());
             // Add all extra Chinese characters used in Trinity UI (including 辑, 镶, 嵌, 渊, 斗, 昼, 耀, etc.)
-            builder.AddText("编辑装备精炼深渊符文镶嵌斗气落日耀橙矩阵翡翠赛博青蓝快捷键昼夜时间重置孔位个人仓库营地衣柜推进锁定加快减慢运行速度单手双手武器盾牌远程匕首头盔防具披风手套靴子项链戒指眼镜面具骑乘载具料理药水食材药材杂物书籍配方地图通缉令工具货币记忆钥匙封印文物机关控制库库罐诱饵贸易品未分类搜索输入");
+            builder.AddText("霓炫帧编辑装备精炼深渊符文镶嵌斗气落日耀橙矩阵翡翠赛博青蓝快捷键昼夜时间重置孔位个人仓库营地衣柜推进锁定加快减慢运行速度单手双手武器盾牌远程匕首头盔防具披风手套靴子项链戒指眼镜面具骑乘载具料理药水食材药材杂物书籍配方地图通缉令工具货币记忆钥匙封印文物机关控制库库罐诱饵贸易品未分类搜索输入");
             builder.BuildRanges(&s_zhRanges);
         }
 
@@ -182,6 +182,16 @@ namespace trinity::ui
             builder.BuildRanges(&s_jaRanges);
         }
 
+        // Build base glyph range (Default ASCII/Latin + Cyrillic for Russian)
+        static ImVector<ImWchar> s_baseRanges;
+        if (s_baseRanges.empty())
+        {
+            ImFontGlyphRangesBuilder builder;
+            builder.AddRanges(io.Fonts->GetGlyphRangesDefault());
+            builder.AddRanges(io.Fonts->GetGlyphRangesCyrillic());
+            builder.BuildRanges(&s_baseRanges);
+        }
+
         auto LoadFontWithFallbacks = [&](const char* primaryPath, const char* zhPath, const char* koPath, const char* jaPath, float size) -> ImFont*
         {
             ImFontConfig cfg;
@@ -191,7 +201,7 @@ namespace trinity::ui
 
             ImFont* font = nullptr;
             if (GetFileAttributesA(primaryPath) != INVALID_FILE_ATTRIBUTES)
-                font = io.Fonts->AddFontFromFileTTF(primaryPath, size, &cfg, io.Fonts->GetGlyphRangesDefault());
+                font = io.Fonts->AddFontFromFileTTF(primaryPath, size, &cfg, s_baseRanges.Data);
 
             if (!font)
                 font = io.Fonts->AddFontDefault(&cfg);
@@ -232,7 +242,7 @@ namespace trinity::ui
         cfgTitle.OversampleV = 1;
         cfgTitle.PixelSnapH = true;
         if (GetFileAttributesA(segoeuibPath) != INVALID_FILE_ATTRIBUTES)
-            g_fontTitle = io.Fonts->AddFontFromFileTTF(segoeuibPath, 30.0f * g_scale, &cfgTitle, io.Fonts->GetGlyphRangesDefault());
+            g_fontTitle = io.Fonts->AddFontFromFileTTF(segoeuibPath, 30.0f * g_scale, &cfgTitle, s_baseRanges.Data);
         else
             g_fontTitle = io.Fonts->AddFontDefault(&cfgTitle);
 
