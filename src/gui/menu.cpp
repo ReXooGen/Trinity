@@ -1605,7 +1605,7 @@ namespace trinity::gui
 
         bool changed = false;
         if (ui::ToggleInt(LOC("Slot Size"), &st.invSlotSize, &st.invSlotSizeVal,
-                          1, 700, 10, 240,
+                          1, 700, 10, 700,
                           LOC("Sets every storage's slot count up to 700 safely directly in RAM.")))
             changed = true;
         if (ui::Toggle(LOC("Max Stack Size"), &st.invStackSize,

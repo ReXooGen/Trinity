@@ -145,7 +145,7 @@ namespace trinity
         // and turning the toggle back off restores each row's own original
         // value.
         bool invSlotSize     = false;
-        int  invSlotSizeVal  = 240; // 240 is the engine's hard safe limit (prevents Error 298648703)
+        int  invSlotSizeVal  = 700; // 700 is the engine's safe limit (prevents Error 298648703)
         bool invStackSize    = false;
         int  invStackSizeVal = 999999;
 

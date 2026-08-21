@@ -1088,7 +1088,6 @@ namespace trinity::game
             return ret;
         }
 
-        // --- The expansion-setter hook: make the engine's re-stamps OURS -----
         bool OverrideExpandForType(uint16_t type, int value, uint16_t* out,
                                    uint16_t* outDef = nullptr)
         {
@@ -1101,7 +1100,7 @@ namespace trinity::game
             // (Error 298648703 / 0x11CD047F).
             // - On vanilla: maxSlots in table is 240.
             // Dynamically clamp value to live table maxSlots (hard ceiling 700).
-            const uint16_t safeMax = (maxSlots > 0 && maxSlots <= 700) ? maxSlots : 240;
+            const uint16_t safeMax = (maxSlots > 0 && maxSlots <= 700) ? maxSlots : 700;
             if (value > safeMax)
                 value = safeMax;
 
