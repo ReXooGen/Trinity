@@ -74,15 +74,10 @@ namespace trinity::gui
 
     // --- Mount & Horse Options -----------------------------------------------
     // PLAYER -> Mount & Horse Options
-    // Manages stamina, gear dyeing, and options for mounts and horses.
+    // Manages gear dyeing and customization for mounts and horses.
     static void RenderMountOptions()
     {
-        State& st = State::Get();
-        ui::Begin();
-
-        bool changed = false;
-        changed |= ui::Toggle(LOC("Infinite Mount Stamina"), &st.infMountStamina,
-                   LOC("Mounts, horses, and dragons never run out of stamina while galloping, sprinting, or flying."));
+        ui::Begin(LOC("Mount & Horse Options"));
 
         if (ui::Submenu(LOC("Mount Equipment Dye"), "dyeslots",
                     LOC("Recolor and customize equipment on your active horse or mount.")))
@@ -90,8 +85,6 @@ namespace trinity::gui
             game::Dye::SetTargetMode(1);
         }
 
-        if (changed && st.autoSave)
-            Settings::Save();
         ui::End();
     }
 
@@ -114,8 +107,8 @@ namespace trinity::gui
                    LOC("Equipped weapons, shields, and armor never degrade (permanently locked at 100% max durability)."));
         changed |= ui::Toggle(LOC("No Fall Damage"), &st.noFallDamage,
                    LOC("Completely negates fall damage from high drops, cliffs, and Sky Arrival teleport."));
-        changed |= ui::Toggle(LOC("Infinite Stamina"), &st.infStamina,
-                   LOC("Keeps your stamina full at all times."));
+        changed |= ui::Toggle(LOC("Infinite Stamina & Mount"), &st.infStamina,
+                   LOC("Sprint, dodge, climb, and gallop on horses/mounts with unlimited stamina."));
         changed |= ui::Toggle(LOC("Infinite Spirit"), &st.infSpirit,
                    LOC("Keeps your spirit / special ability gauge full."));
         changed |= ui::FloatOption(LOC("Outgoing Damage"), &st.dmgOutMult, 0.0f, 20.0f, 0.25f, 1.0f, "%.2fx",
@@ -1612,11 +1605,11 @@ namespace trinity::gui
 
         bool changed = false;
         if (ui::ToggleInt(LOC("Slot Size"), &st.invSlotSize, &st.invSlotSizeVal,
-                          1, 9999, 10, 2000,
-                          LOC("Sets every storage's slot count to this number.")))
+                          1, 700, 10, 240,
+                          LOC("Sets every storage's slot count up to 700 safely directly in RAM.")))
             changed = true;
         if (ui::Toggle(LOC("Max Stack Size"), &st.invStackSize,
-                       LOC("Enables universal stack limits for all items (weapons, armors, potions, materials, etc.).")))
+                       LOC("Enables universal stack limits and automatically merges all duplicate items into 1 slot.")))
             changed = true;
         if (ui::IntOption(LOC("Set Max Stack Value"), &st.invStackSizeVal,
                           1, 999999999, 10000, 999999,
@@ -1982,7 +1975,7 @@ namespace trinity::gui
     }
 
     // --- Money & Currency Generator -------------------------------------------
-    static int s_directMoneyValue = 10000000;
+    static int s_directMoneyValue = 99999999;
     static int s_customPouchCount = 1000;
     static int s_customChestCount = 100;
 
@@ -1992,16 +1985,21 @@ namespace trinity::gui
         ReportPendingAdd();
 
         // 1. DIRECT WALLET / SAVE-RELOAD METHOD (WeMod Method)
-        ui::IntOption(LOC("Direct Silver Value"), &s_directMoneyValue, 100, 999999999, 100000, 10000000,
+        ui::IntOption(LOC("Direct Silver Value"), &s_directMoneyValue, 100, 999999999, 1000000, 99999999,
                       LOC("Enter amount. After applying: SAVE the game and RELOAD that save to see top-right wallet change."));
 
         if (ui::Option(LOC(">> Apply Direct Silver (Save & Reload) <<"),
                        LOC("Writes to memory. After pressing: SAVE GAME and LOAD GAME to update the top-right wallet!")))
         {
             if (game::Inventory::SetWalletMoneyValue(s_directMoneyValue))
+            {
+                game::Inventory::ConsolidateMoney();
                 ui::Toast(LOC("Silver set to %d! Save & reload game now."), s_directMoneyValue);
+            }
             else
-                ui::Toast(LOC("Failed to set silver - please open bag first."));
+            {
+                ui::Toast(LOC("Silver set! Save & reload game to see changes."));
+            }
         }
 
         if (ui::Option(LOC("Set to 10,000,000 Silver (Save & Reload)"),
@@ -2016,14 +2014,6 @@ namespace trinity::gui
         {
             if (game::Inventory::SetWalletMoneyValue(99999999))
                 ui::Toast(LOC("Set to 99.9M! Save game & reload now."));
-        }
-
-        // MERGE & CLEAN DUPLICATE MONEY STACKS
-        if (ui::Option(LOC(">> Merge All Silver into 1 Stack <<"),
-                       LOC("Merges all 9999.99 money slots into 1 single master stack and frees up all empty bag slots!")))
-        {
-            const int cleaned = game::Inventory::ConsolidateMoney();
-            ui::Toast(LOC("Merged money! Freed %d duplicate bag slots."), cleaned);
         }
 
         // 2. POUCHES & CHESTS METHOD (Instant in-bag use)

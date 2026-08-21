@@ -225,6 +225,12 @@ namespace trinity::game
         bool    g_slotApplied     = false;
         int     g_slotAppliedVal  = 0;
 
+        // Transaction guard: set while the engine's commit function is active.
+        // All periodic container writes (RepairUsedSlots, SetAllSlotSizes, etc.)
+        // must check this flag and SKIP to avoid racing with quest/trade/reward
+        // transactions that read container metadata for packet validation.
+        std::atomic<bool> g_commitActive{false};
+
         void EnsureTablesResolved();
 
         // Resolve a def pointer out of one of the shared-layout "*info" tables.
@@ -1064,7 +1070,10 @@ namespace trinity::game
         {
             if (!oCommit) return nullptr;
             __try { NoteContainer(container); } __except (EXCEPTION_EXECUTE_HANDLER) {}
-            return oCommit(holder, err, container, items, out, a6, a7);
+            g_commitActive.store(true, std::memory_order_release);
+            void* ret = oCommit(holder, err, container, items, out, a6, a7);
+            g_commitActive.store(false, std::memory_order_release);
+            return ret;
         }
 
         // --- The holder-insert hook: second capture path ---------------------
@@ -1073,7 +1082,10 @@ namespace trinity::game
         {
             if (!oHolderInsert) return nullptr;
             __try { NoteContainer(container); } __except (EXCEPTION_EXECUTE_HANDLER) {}
-            return oHolderInsert(bucket, err, container, itemArr, a5, a6, a7, a8, a9);
+            g_commitActive.store(true, std::memory_order_release);
+            void* ret = oHolderInsert(bucket, err, container, itemArr, a5, a6, a7, a8, a9);
+            g_commitActive.store(false, std::memory_order_release);
+            return ret;
         }
 
         // --- The expansion-setter hook: make the engine's re-stamps OURS -----
@@ -1083,7 +1095,16 @@ namespace trinity::game
             uint16_t defSlots = 0, maxSlots = 0;
             if (!StorageSlotsForType(type, &defSlots, &maxSlots)) return false;
             if (value < 1) value = 1;
-            if (value > 0xFFFF) value = 0xFFFF;
+            
+            // In Pearl Abyss engine, if expansion exceeds (maxSlots - defSlots),
+            // the transaction validator rejects the transaction with eErrNoTryOverExpandInventorySlot
+            // (Error 298648703 / 0x11CD047F).
+            // - On vanilla: maxSlots in table is 240.
+            // Dynamically clamp value to live table maxSlots (hard ceiling 700).
+            const uint16_t safeMax = (maxSlots > 0 && maxSlots <= 700) ? maxSlots : 240;
+            if (value > safeMax)
+                value = safeMax;
+
             *out = (value > defSlots) ? static_cast<uint16_t>(value - defSlots) : 0;
             if (outDef) *outDef = defSlots;
             return true;
@@ -1116,7 +1137,7 @@ namespace trinity::game
             __try
             {
                 const State& st = State::Get();
-                if (st.invSlotSize && Player::Ready())
+                if (st.invSlotSize && Player::Ready() && !g_commitActive.load(std::memory_order_acquire))
                 {
                     uint16_t expand = 0;
                     uint16_t defSlots = 0;
@@ -1140,8 +1161,10 @@ namespace trinity::game
                             {
                                 Read16(bucket + kOff_InvBucket_ExpandSlots, &curExpand);
                                 defSlots = (curCap >= curExpand) ? static_cast<uint16_t>(curCap - curExpand) : 0;
-                                expand   = (static_cast<int>(st.invSlotSizeVal) > defSlots)
-                                           ? static_cast<uint16_t>(st.invSlotSizeVal - defSlots) : 0;
+                                uint16_t targetCap = static_cast<uint16_t>(st.invSlotSizeVal);
+                                if (targetCap > 700) targetCap = 700;
+                                expand   = (static_cast<int>(targetCap) > defSlots)
+                                           ? static_cast<uint16_t>(targetCap - defSlots) : 0;
                                 UpsertOrigExpand(bucket, type, count);
                                 Write16(bucket + kOff_InvBucket_ExpandSlots, expand);
                                 Write16(bucket + kOff_InvBucket_MaxSlots, static_cast<uint16_t>(defSlots + expand));
@@ -1179,23 +1202,24 @@ namespace trinity::game
         void RepairUsedSlots(uintptr_t holder)
         {
             if (!HolderLooksValid(holder)) return;
+            // NEVER touch container metadata while a transaction is in flight.
+            // Quest/trade/buy commits validate their own metadata checksums;
+            // if we write used/cap mid-commit the validator sees a mismatch
+            // and throws Error 298648703.
+            if (g_commitActive.load(std::memory_order_acquire)) return;
+
             uintptr_t buckets = 0;
             uint32_t  bcount  = 0;
             if (!ReadPtr(holder + kOff_InvHolder_Buckets, &buckets)) return;
             if (!Read32(holder + kOff_InvHolder_Count, &bcount) || bcount == 0 || bcount > 4096) return;
 
-            const State& st = State::Get();
-            const uint16_t targetCap = (st.invSlotSize && st.invSlotSizeVal > 0)
-                                       ? static_cast<uint16_t>(st.invSlotSizeVal) : 0;
-
             for (uint32_t b = 0; b < bcount; ++b)
             {
                 uintptr_t bucket = 0;
                 if (!ReadPtr(buckets + static_cast<uintptr_t>(b) * 8, &bucket) || bucket < kMinPointer) continue;
-                uint16_t type = 0, used = 0, cap = 0;
+                uint16_t type = 0, used = 0;
                 if (!Read16(bucket + kOff_InvBucket_Type, &type) || type == kInvSlot_EmptyType) continue;
-                Read16(bucket + kOff_InvBucket_UsedSlots, &used);
-                Read16(bucket + kOff_InvBucket_MaxSlots, &cap);
+                if (!Read16(bucket + kOff_InvBucket_UsedSlots, &used) || used == 0) continue;
 
                 uintptr_t slots  = 0;
                 uint16_t  scount = 0;
@@ -1213,21 +1237,8 @@ namespace trinity::game
                     ++occ;
                 }
 
-                // 1. Always sync physical occupancy with used counter
-                if (used != occ)
+                if (occ < used)
                     Write16(bucket + kOff_InvBucket_UsedSlots, occ);
-
-                // 2. Guarantee free space headroom for quest reward transactions
-                if (targetCap > 0 && cap < targetCap)
-                {
-                    Write16(bucket + kOff_InvBucket_MaxSlots, targetCap);
-                }
-                else if (cap <= occ + 5)
-                {
-                    // Provide automatic 20-slot headroom to prevent server reward transaction failure
-                    const uint16_t safeCap = (occ + 20 < 4000) ? static_cast<uint16_t>(occ + 20) : 4000;
-                    Write16(bucket + kOff_InvBucket_MaxSlots, safeCap);
-                }
             }
         }
 
@@ -1826,6 +1837,13 @@ namespace trinity::game
                 g_stackCaptured[row] = true;
             }
 
+            // Only scale genuinely stackable items (materials, consumables, arrows, pouches).
+            // NEVER alter non-stackable items (Weapons, Shields, Armor, Accessories, Quest Flyers/Docs)
+            // because forcing applyMaxStackCap=1 on unique items breaks engine item creation and
+            // triggers server validation Error 298648703 when receiving quest rewards.
+            const bool isStackable = (g_origMaxStack[row] > 1) || (g_origApplyCap[row] == 1);
+            if (!isStackable) continue;
+
             if (enable)
             {
                 Write64(def + stackOff, static_cast<uint64_t>(value));
@@ -1839,7 +1857,28 @@ namespace trinity::game
                 any = true;
             }
         }
+
+        // Automatically consolidate and merge all duplicate stacks into 1 master slot
+        if (enable && any)
+        {
+            ConsolidateAllItems();
+        }
+
         return any;
+    }
+
+    bool IsTypeStackable(uint16_t typeId)
+    {
+        if (typeId < g_origMaxStack.size() && g_stackCaptured[typeId])
+            return (g_origMaxStack[typeId] > 1) || (g_origApplyCap[typeId] == 1);
+
+        uintptr_t def = 0;
+        if (!DefForRow(g_itemTableGlobal, typeId, &def)) return false;
+        int64_t maxS = 0;
+        uint8_t cap = 0;
+        Read64(def + kOff_ItemDef_MaxStackCount, &maxS);
+        Read8(def + kOff_ItemDef_ApplyMaxStackCap, &cap);
+        return (maxS > 1) || (cap == 1);
     }
 
     namespace
@@ -2013,8 +2052,10 @@ namespace trinity::game
                         if (!Read16(bucket + kOff_InvBucket_MaxSlots, &curCap)) continue;
                         Read16(bucket + kOff_InvBucket_ExpandSlots, &curExpand);
                         defSlots = (curCap >= curExpand) ? static_cast<uint16_t>(curCap - curExpand) : 0;
-                        expand   = (static_cast<int>(value) > defSlots)
-                                   ? static_cast<uint16_t>(value - defSlots) : 0;
+                        uint16_t targetCap = static_cast<uint16_t>(value);
+                        if (targetCap > 700) targetCap = 700;
+                        expand   = (static_cast<int>(targetCap) > defSlots)
+                                   ? static_cast<uint16_t>(targetCap - defSlots) : 0;
                     }
 
                     // Already where we want it - skip, this is the steady state.
@@ -2062,13 +2103,53 @@ namespace trinity::game
             return any;
         }
 
+        bool SetAllTableMaxSlots(bool enable, uint16_t value)
+        {
+            if (!g_invTableGlobal) return false;
+            uintptr_t table = 0;
+            if (!ReadPtr(g_invTableGlobal, &table) || table < kMinPointer) return false;
+            uint32_t count = 0;
+            if (!Read32(table + kOff_ItemTable_Count, &count) || count == 0 || count > 4096) return false;
+
+            static std::vector<uint16_t> s_origTableMax;
+            static bool s_tableMaxCaptured = false;
+
+            if (!s_tableMaxCaptured || s_origTableMax.size() != count)
+            {
+                s_origTableMax.assign(count, 0);
+                for (uint32_t row = 0; row < count; ++row)
+                {
+                    uintptr_t def = 0;
+                    if (!DefForRow(g_invTableGlobal, static_cast<uint16_t>(row), &def)) continue;
+                    uint16_t m = 0;
+                    Read16(def + kOff_InvDef_MaxSlots, &m);
+                    s_origTableMax[row] = m;
+                }
+                s_tableMaxCaptured = true;
+            }
+
+            const uint16_t targetM = enable ? ((value > 700) ? 700 : value) : 0;
+            bool any = false;
+            for (uint32_t row = 0; row < count; ++row)
+            {
+                uintptr_t def = 0;
+                if (!DefForRow(g_invTableGlobal, static_cast<uint16_t>(row), &def)) continue;
+                const uint16_t finalM = enable ? ((targetM > s_origTableMax[row]) ? targetM : s_origTableMax[row]) : s_origTableMax[row];
+                if (Write16(def + kOff_InvDef_MaxSlots, finalM))
+                    any = true;
+            }
+            return any;
+        }
     }
 
     bool Inventory::SetAllSlotSizes(bool enable, int value)
     {
         if (value < 1) value = 1;
-        if (value > 0xFFFF) value = 0xFFFF;
+        if (value > 700) value = 700;
         const uint16_t v = static_cast<uint16_t>(value);
+
+        // Update in-memory InventoryInfo table so the engine and in-game UI natively recognize the 700-slot cap
+        SetAllTableMaxSlots(enable, v);
 
         bool any = false;
         if (ApplySlotCapToHolder(CurrentHolder(), enable, v)) any = true;
@@ -2217,7 +2298,7 @@ namespace trinity::game
             {
                 static ULONGLONG s_lastRepair = 0;
                 const ULONGLONG now = GetTickCount64();
-                if (now - s_lastRepair >= 200)
+                if (now - s_lastRepair >= 1000)
                 {
                     s_lastRepair = now;
                     RepairUsedSlots(CurrentHolder());
@@ -2255,7 +2336,7 @@ namespace trinity::game
             // never again. SetAllSlotSizes skips buckets that already match, so
             // re-driving it costs a u16 read per bucket and makes the
             // feature survive reloads (and anything else that recomputes the cap).
-            if (st.invSlotSize && Player::Ready())
+            if (st.invSlotSize && Player::Ready() && !g_commitActive.load(std::memory_order_acquire))
             {
                 static ULONGLONG s_lastSlotTick = 0;
                 const ULONGLONG now = GetTickCount64();
@@ -2278,6 +2359,10 @@ namespace trinity::game
         __except (EXCEPTION_EXECUTE_HANDLER) {}
     }
 
+    bool Inventory::IsTransactionActive()
+    {
+        return g_commitActive.load(std::memory_order_acquire);
+    }
     namespace
     {
         // Write the quantity of the slot in the SERVER-authority holder that
@@ -3283,81 +3368,24 @@ namespace trinity::game
         return AddItem(tid, count);
     }
 
-    // Background thread scan for wallet money
-    static void BackgroundCurrencyScan(int64_t origCopper, int64_t copperAmount)
-    {
-        uintptr_t modBase = 0, modEnd = 0;
-        __try {
-            HMODULE hMod = GetModuleHandleA(nullptr);
-            modBase = reinterpret_cast<uintptr_t>(hMod);
-            auto* dos = reinterpret_cast<IMAGE_DOS_HEADER*>(hMod);
-            auto* nt  = reinterpret_cast<IMAGE_NT_HEADERS*>(
-                reinterpret_cast<uint8_t*>(hMod) + dos->e_lfanew);
-            modEnd = modBase + nt->OptionalHeader.SizeOfImage;
-        } __except (EXCEPTION_EXECUTE_HANDLER) {
-            modEnd = modBase + 0x10000000;
-        }
-
-        MEMORY_BASIC_INFORMATION mbi{};
-        uintptr_t addr = 0x10000;
-        while (VirtualQuery(reinterpret_cast<void*>(addr), &mbi, sizeof(mbi)) > 0)
-        {
-            const uintptr_t base = reinterpret_cast<uintptr_t>(mbi.BaseAddress);
-            const size_t    size = mbi.RegionSize;
-
-            const bool writable = (mbi.Protect == PAGE_READWRITE);
-            const bool safe =
-                mbi.State == MEM_COMMIT && size >= 8 && writable &&
-                !(mbi.Protect & (PAGE_GUARD | PAGE_NOACCESS)) &&
-                !(modEnd > modBase && base >= modBase && base < modEnd);
-
-            if (safe)
-            {
-                __try
-                {
-                    const uint8_t* p   = reinterpret_cast<const uint8_t*>(base);
-                    const size_t   lim = size - 8;
-
-                    for (size_t off = 0; off <= lim; off += 4)
-                    {
-                        if (*reinterpret_cast<const int64_t*>(p + off) == origCopper)
-                        {
-                            *reinterpret_cast<volatile int64_t*>(
-                                const_cast<uint8_t*>(p + off)) = copperAmount;
-                        }
-                    }
-                }
-                __except (EXCEPTION_EXECUTE_HANDLER)
-                {
-                }
-            }
-
-            addr = base + size;
-            if (addr >= 0x7FFFFFFFFFFF || addr <= base) break;
-        }
-    }
-
     bool Inventory::SetWalletMoneyValue(int64_t amount)
     {
         if (amount < 0) amount = 0;
-        // In Crimson Desert, 1 Silver = 100 Copper internally
+        // In Crimson Desert, 1 Silver = 100 Copper internally (e.g. 99,999,999 Silver = 9,999,999,900 Copper)
         const int64_t copperAmount = amount * 100;
         RefreshImpl(true);
 
         const uint16_t moneyTid = FindTypeIdByKey("Money_Copper");
-        bool written = false;
 
-        // ---- Capture original copper BEFORE any writes ----
-        int64_t origCopper = 0;
-        for (size_t s = 0; s < g_storages.size(); ++s)
-            for (size_t g = 0; g < g_storages[s].groups.size(); ++g)
-                for (size_t i = 0; i < g_storages[s].groups[g].items.size(); ++i)
-                {
-                    const Item& it = g_storages[s].groups[g].items[i];
-                    if (it.typeId == moneyTid || (moneyTid == 0 && _stricmp(it.key, "Money_Copper") == 0))
-                    { origCopper = it.qty; goto origCaptured; }
-                }
-        origCaptured:;
+        // Ensure max stack for Money_Copper in item table is set to 999,999,999,999
+        uintptr_t moneyDef = 0;
+        if (moneyTid != 0 && DefForRow(g_itemTableGlobal, moneyTid, &moneyDef))
+        {
+            Write64(moneyDef + kOff_ItemDef_MaxStackCount, 999999999999ULL);
+            Write8(moneyDef + kOff_ItemDef_ApplyMaxStackCap, 1);
+        }
+
+        bool written = false;
 
         // 1. Write to cached g_storages (visible item slots)
         for (size_t s = 0; s < g_storages.size(); ++s)
@@ -3437,11 +3465,11 @@ namespace trinity::game
             }
         }
 
-        // 3. Background process-wide currency scan
-        if (origCopper > 100 && origCopper != copperAmount)
+        // 3. If no existing slot was modified, inject/update Money_Copper
+        if (!written && moneyTid != 0)
         {
-            std::thread(BackgroundCurrencyScan, origCopper, copperAmount).detach();
-            written = true; // Handled in background
+            AddItemByKey("Money_Copper", amount > 999999999 ? 999999999 : amount);
+            written = true;
         }
 
         return written;
@@ -3475,16 +3503,17 @@ namespace trinity::game
                     Item& it = g_storages[s].groups[g].items[i];
                     if (it.typeId == moneyTid || (moneyTid == 0 && _stricmp(it.key, "Money_Copper") == 0))
                     {
-                        totalCopper += it.qty;
                         if (firstSlot == 0)
                         {
                             firstSlot = it.slot;
                             firstBucket = it.bucketIdx;
                             firstSlotIdx = it.slotIdx;
+                            totalCopper += it.qty;
                         }
                         else
                         {
-                            // Clear duplicate money slot
+                            // Merge and clear duplicate money slot
+                            totalCopper += it.qty;
                             Write16(it.slot + kOff_InvSlot_TypeId, kInvSlot_EmptyType);
                             Write64(it.slot + kOff_InvSlot_Quantity, 0);
                             WriteServerMirror(it.bucketIdx, it.slotIdx, kInvSlot_EmptyType, it.qty, 0);
@@ -3577,6 +3606,7 @@ namespace trinity::game
                 {
                     Item& it = g_storages[s].groups[g].items[i];
                     if (it.typeId == kInvSlot_EmptyType || it.typeId == 0 || it.qty <= 0) continue;
+                    if (!IsTypeStackable(it.typeId)) continue;
 
                     auto itFirst = firstItemIndex.find(it.typeId);
                     if (itFirst == firstItemIndex.end())
@@ -3627,6 +3657,7 @@ namespace trinity::game
                     const uintptr_t slotAddr = slots + static_cast<uintptr_t>(i) * core::GetSlotStride();
                     uint16_t tid = 0;
                     if (!Read16(slotAddr + kOff_InvSlot_TypeId, &tid) || tid == kInvSlot_EmptyType || tid == 0) continue;
+                    if (!IsTypeStackable(tid)) continue;
 
                     auto itSlot = firstSlotMap.find(tid);
                     if (itSlot == firstSlotMap.end())

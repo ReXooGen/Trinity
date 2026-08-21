@@ -26,6 +26,7 @@
 #include "inventory.h"
 #include "dye.h"
 #include "equipment.h"
+#include "friendly.h"
 #include "../mem/scanner.h"
 #include "../mem/safe_memory.h"
 #include "../mem/hooks.h"
@@ -1530,6 +1531,9 @@ namespace trinity::game
             // Re-apply equipped effects after an abyss-gear socket edit (same
             // engine pass, same game-thread requirement as the dye apply).
             Equipment::Tick();
+
+            // Upkeep Trust Multiplier hook state (only engaged when toggle is on)
+            Friendly::Tick();
 
             // Expire marker teleport temporary fall protection
             ServiceProtectionExpiry();

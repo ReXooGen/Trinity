@@ -331,6 +331,11 @@ namespace trinity::game
         // thread.
         static void Tick();
 
+        // True while a commit or holder-insert transaction is in flight inside
+        // the game engine. Other subsystems (Equipment auto-restore, etc.)
+        // must NEVER write to game containers while this returns true.
+        static bool IsTransactionActive();
+
         // --- Bridges for the dye editor (dye.cpp) -----------------------------
         // Item display name (localised, falling back to the engine key) and
         // icon sprite name for an arbitrary typeId - the same lookups the

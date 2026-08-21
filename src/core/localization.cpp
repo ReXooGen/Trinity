@@ -102,12 +102,28 @@ namespace trinity::loc
 
         bool ReadLanguageHeader(const std::string& filePath, std::string& outName, std::string& outCode)
         {
+            const size_t slash = filePath.find_last_of("\\/");
+            std::string fname = (slash != std::string::npos) ? filePath.substr(slash + 1) : filePath;
+
+            // Strict blacklist for known non-language configuration files
+            if (fname == "Trinity.ini" || fname == "Trinity.ini.example" ||
+                fname.find("Profile") != std::string::npos ||
+                fname.find("Dye") != std::string::npos ||
+                fname.find("Equipment") != std::string::npos ||
+                fname.find("Preset") != std::string::npos ||
+                fname.find("Setting") != std::string::npos ||
+                fname.find("Config") != std::string::npos)
+            {
+                return false;
+            }
+
             std::ifstream file(filePath);
             if (!file.is_open())
                 return false;
 
             std::string line;
             std::string currentSection = "";
+            bool hasLanguageSection = false;
             while (std::getline(file, line))
             {
                 std::string trimmed = Trim(line);
@@ -117,6 +133,8 @@ namespace trinity::loc
                 if (trimmed.front() == '[' && trimmed.back() == ']')
                 {
                     currentSection = Trim(trimmed.substr(1, trimmed.length() - 2));
+                    if (currentSection == "Language")
+                        hasLanguageSection = true;
                     continue;
                 }
 
@@ -133,22 +151,41 @@ namespace trinity::loc
                 }
             }
 
-            if (outName.empty())
-            {
-                // Derive name from filename if not explicitly provided
-                const size_t slash = filePath.find_last_of("\\/");
-                std::string fname = (slash != std::string::npos) ? filePath.substr(slash + 1) : filePath;
-                outName = fname;
-            }
+            // Derive code from filename (e.g. Trinity_zh.ini -> zh) if not set
             if (outCode.empty())
             {
-                const size_t under = filePath.rfind('_');
-                const size_t dot = filePath.rfind('.');
+                const size_t under = fname.rfind('_');
+                const size_t dot = fname.rfind('.');
                 if (under != std::string::npos && dot != std::string::npos && dot > under)
-                    outCode = filePath.substr(under + 1, dot - under - 1);
-                else
-                    outCode = "custom";
+                    outCode = fname.substr(under + 1, dot - under - 1);
             }
+
+            // Only accept if explicit [Language] section exists OR filename has a recognized language suffix
+            if (!hasLanguageSection)
+            {
+                if (outCode != "zh" && outCode != "ko" && outCode != "ja" &&
+                    outCode != "es" && outCode != "ru" && outCode != "ptbr" &&
+                    outCode != "pt" && outCode != "id" && outCode != "de" &&
+                    outCode != "fr")
+                {
+                    return false;
+                }
+            }
+
+            if (outName.empty())
+            {
+                if (outCode == "ko") outName = "한국어 (Korean)";
+                else if (outCode == "zh") outName = "简体中文 (Chinese)";
+                else if (outCode == "ja") outName = "日本語 (Japanese)";
+                else if (outCode == "es") outName = "Español (Spanish)";
+                else if (outCode == "ru") outName = "Русский (Russian)";
+                else if (outCode == "ptbr" || outCode == "pt") outName = "Português (Portuguese)";
+                else if (outCode == "id") outName = "Bahasa Indonesia";
+                else if (outCode == "de") outName = "Deutsch (German)";
+                else if (outCode == "fr") outName = "Français (French)";
+                else outName = fname;
+            }
+
             return true;
         }
     }

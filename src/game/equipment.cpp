@@ -1193,18 +1193,7 @@ namespace trinity::game
         if (g_resizeSocket)
             LOG("equipment: native ResizeSocketVector resolved @ %p.", reinterpret_cast<void*>(g_resizeSocket));
 
-        // 1. Refinement Badge Gate Patch: Removes the ItemDef max refine clamp on UI tooltip
-        // Pattern: "8B 80 50 02 00 00 85 C0 74 05 66 FF C8 EB 04 41 0F B7 C4 66 39 47 0A 7F"
-        const uintptr_t gateSig = mem::FindPattern("8B 80 50 02 00 00 85 C0 74 05 66 FF C8 EB 04 41 0F B7 C4 66 39 47 0A 7F");
-        if (gateSig)
-        {
-            const uintptr_t jgAddr = gateSig + 23;
-            uint8_t nop2[2] = { 0x90, 0x90 };
-            if (mem::PatchMemory(jgAddr, nop2, 2))
-                LOG("equipment: un-clamped refinement badge gate @ %p (all weapons render full refine bars).", reinterpret_cast<void*>(jgAddr));
-        }
-
-        // 2. Load Persistent Equipment Profiles from Disk (Trinity_EquipmentProfile.ini)
+        // 1. Load Persistent Equipment Profiles from Disk (Trinity_EquipmentProfile.ini)
         LoadEquipProfilesFromDisk();
 
         return true;
@@ -1612,7 +1601,7 @@ namespace trinity::game
 
         // Infinite Item Durability: keep all equipped weapons, shields, and armor
         // pinned at 100% (10,000 max durability) on both client and server realms.
-        if (st.infDurability)
+        if (st.infDurability && !Inventory::IsTransactionActive())
         {
             static ULONGLONG s_lastRepair = 0;
             const ULONGLONG now = GetTickCount64();
@@ -1624,10 +1613,12 @@ namespace trinity::game
         }
 
         // Auto-restore saved equipment profiles (Refine +10, 5 Unlocked Sockets, Abyss Gems)
-        // across save/load, death, fast travel, and character swap
+        // across save/load, death, fast travel, and character swap.
+        // SKIP while an inventory transaction is in flight (quest rewards, trades, etc.)
+        // to avoid corrupting container metadata and triggering Error 298648703.
         static ULONGLONG s_lastEquipRestore = 0;
         const ULONGLONG nowEquipRestore = GetTickCount64();
-        if (nowEquipRestore - s_lastEquipRestore >= 500)
+        if (nowEquipRestore - s_lastEquipRestore >= 500 && !Inventory::IsTransactionActive())
         {
             s_lastEquipRestore = nowEquipRestore;
 

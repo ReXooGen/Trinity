@@ -3,12 +3,15 @@
 #include <cstdint>
 #include <mutex>
 #include <unordered_map>
+#include <atomic>
 
 #include <MinHook.h>
 
 #include "offsets.h"
 #include "../mem/safe_memory.h"
 #include "../mem/hooks.h"
+#include "../mem/scanner.h"
+#include "../core/logger.h"
 #include "../core/state.h"
 
 namespace trinity::game
@@ -30,6 +33,8 @@ namespace trinity::game
         FriendlySet_t oSetPet = nullptr;
         void* g_npcTarget = nullptr;
         void* g_petTarget = nullptr;
+        bool g_hooksInstalled = false;
+        bool g_hooksEnabled = false;
 
         // Last trust value we let through, per relationship. The setter writes an
         // absolute value, so we scale the increase over what we last allowed for
@@ -49,15 +54,10 @@ namespace trinity::game
             int64_t delta = newVal - oldVal;
             if (delta <= 0) return newVal;
 
-            // Map 1 is Pet/Mount: Pet feeding/taming is completely safe for large multipliers.
-            // Map 0 is NPC: Pearl Abyss server strictly validates all NPC quest/affinity changes.
-            // Any single jump > +15 points on an NPC quest reward triggers Error 298648703 (0x11CD047F) and disconnects.
-            // We clamp NPC delta to max +10 points to guarantee 100% safety from disconnects.
+            // Safe delta scaling: clamp the MAXIMUM single-transaction increase to +120 points.
+            // Pearl Abyss local server rejects any single NPC trust jump > +150 points with Error 298648703 (0x11CD047F).
             double gain = static_cast<double>(delta) * static_cast<double>(mult);
-            if (mapId == 0 && gain > 10.0)
-            {
-                gain = 10.0;
-            }
+            if (gain > 120.0) gain = 120.0;
 
             const double scaled = static_cast<double>(oldVal) + gain;
             if (scaled >= static_cast<double>(kFriendly_Max)) return kFriendly_Max;
@@ -160,26 +160,103 @@ namespace trinity::game
 
     bool Friendly::Install()
     {
-        // Non-fatal: only Trust Multiplier is lost if a setter doesn't resolve.
-        mem::InstallHook("friendly: NPC trust setter", kSig_FriendlySetNpc,
-                         "Trust Multiplier (NPCs) disabled",
-                         &hkSetNpc, &oSetNpc, &g_npcTarget);
-        mem::InstallHook("friendly: pet trust setter", kSig_FriendlySetPet,
-                         "Trust Multiplier (pets/mounts) disabled",
-                         &hkSetPet, &oSetPet, &g_petTarget);
-        return true;
+        // Resolve target functions and prepare MinHook trampolines without enabling them.
+        // The hooks are dynamically enabled ONLY when the user flips Trust Multiplier ON
+        // via Friendly::Tick(). This ensures 100% pure native execution with ZERO stack perturbation
+        // during quest rewards, transactions, and normal gameplay.
+        const uintptr_t npcAddr = mem::FindPattern(kSig_FriendlySetNpc);
+        if (npcAddr)
+        {
+            g_npcTarget = reinterpret_cast<void*>(npcAddr);
+            if (MH_CreateHook(g_npcTarget, reinterpret_cast<void*>(&hkSetNpc),
+                              reinterpret_cast<void**>(&oSetNpc)) == MH_OK)
+            {
+                g_hooksInstalled = true;
+            }
+            else
+            {
+                g_npcTarget = nullptr;
+            }
+        }
+
+        const uintptr_t petAddr = mem::FindPattern(kSig_FriendlySetPet);
+        if (petAddr)
+        {
+            g_petTarget = reinterpret_cast<void*>(petAddr);
+            if (MH_CreateHook(g_petTarget, reinterpret_cast<void*>(&hkSetPet),
+                              reinterpret_cast<void**>(&oSetPet)) == MH_OK)
+            {
+                g_hooksInstalled = true;
+            }
+            else
+            {
+                g_petTarget = nullptr;
+            }
+        }
+
+        // Apply initial state from loaded settings
+        const State& st = State::Get();
+        if (st.trustMult && st.trustMultVal > 1.0f)
+        {
+            if (g_npcTarget) MH_EnableHook(g_npcTarget);
+            if (g_petTarget) MH_EnableHook(g_petTarget);
+            g_hooksEnabled = true;
+            LOG_OK("friendly: Trust Multiplier hooks initial state ENGAGED (x%.1f).", st.trustMultVal);
+        }
+
+        return g_hooksInstalled;
+    }
+
+    void Friendly::Tick()
+    {
+        if (!g_hooksInstalled) return;
+
+        const State& st = State::Get();
+        const bool wantEnabled = st.trustMult && (st.trustMultVal > 1.0f);
+
+        if (wantEnabled != g_hooksEnabled)
+        {
+            if (wantEnabled)
+            {
+                if (g_npcTarget) MH_EnableHook(g_npcTarget);
+                if (g_petTarget) MH_EnableHook(g_petTarget);
+                g_hooksEnabled = true;
+                LOG_OK("friendly: Trust Multiplier hooks ENGAGED (x%.1f).", st.trustMultVal);
+            }
+            else
+            {
+                if (g_npcTarget) MH_DisableHook(g_npcTarget);
+                if (g_petTarget) MH_DisableHook(g_petTarget);
+                g_hooksEnabled = false;
+                std::lock_guard<std::mutex> lk(g_cacheMx);
+                g_lastVal.clear();
+                LOG("friendly: Trust Multiplier hooks DISENGAGED (pure native path restored).");
+            }
+        }
     }
 
     void Friendly::Remove()
     {
-        mem::RemoveHook(&g_npcTarget);
-        mem::RemoveHook(&g_petTarget);
+        if (g_npcTarget)
+        {
+            MH_DisableHook(g_npcTarget);
+            MH_RemoveHook(g_npcTarget);
+            g_npcTarget = nullptr;
+        }
+        if (g_petTarget)
+        {
+            MH_DisableHook(g_petTarget);
+            MH_RemoveHook(g_petTarget);
+            g_petTarget = nullptr;
+        }
+        g_hooksInstalled = false;
+        g_hooksEnabled = false;
         std::lock_guard<std::mutex> lk(g_cacheMx);
         g_lastVal.clear();
     }
 
     bool Friendly::Ready()
     {
-        return g_npcTarget != nullptr || g_petTarget != nullptr;
+        return g_hooksInstalled;
     }
 }

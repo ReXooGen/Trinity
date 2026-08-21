@@ -126,6 +126,8 @@ namespace trinity::game
         constexpr int kMaxMounts = 4;
         std::atomic<uintptr_t> g_mountActors[kMaxMounts]{};
         std::atomic<int>       g_mountCount{0};
+        std::atomic<bool>      g_isRidingMount{false};
+        std::atomic<uintptr_t> g_playerPossessor{0};
 
         // Stat commit (pa_StatCommit / IDB sub_BED7820) - the single funnel every
         // HP/Stamina/Spirit write passes through. God Mode, Infinite Stamina
@@ -183,11 +185,13 @@ namespace trinity::game
         void PinEntry(uintptr_t e)
         {
             if (e < kMinPointer) return;
-            uint64_t base = 0, cap = 0;
-            if (!Read64(e + kOff_StatEntry_Base, &base)) return;
-            if (!Read64(e + kOff_StatEntry_Cap, &cap)) return;
+            uint64_t base = 0, cap = 0, cur = 0;
+            Read64(e + kOff_StatEntry_Base, &base);
+            Read64(e + kOff_StatEntry_Cap, &cap);
+            Read64(e + kOff_StatEntry_Current, &cur);
             if (base > 1000000000ULL || cap > 1000000000ULL) return;
-            const uint64_t full = (cap > base) ? cap : base;
+            uint64_t full = (cap > base) ? cap : base;
+            if (!full && cur > 0 && cur < 1000000000ULL) full = cur;
             if (!full) return;
             Write64(e + kOff_StatEntry_Current, full);
             Write64(e + kOff_StatEntry_Norm,    full - base);
@@ -338,26 +342,43 @@ namespace trinity::game
                 count == 0 || count > kCharList_MaxCount)
                 return;
 
-            // (A) The protagonist class vtable = the vtable of any player-class
-            // character (the SelfPlayer/OtherPlayer pool all share it). Nothing
-            // is hardcoded, so it survives game updates and rebasing.
+            // Derive the current protagonist vtable and possessor from the SelfPlayer slot.
             uint64_t anchorVt = 0;
+            uint64_t playerOwner = 0;
+            uint64_t playerPoss = 0;
             for (uint32_t i = 0; i < count; ++i)
             {
                 uint64_t ch = 0;
                 if (!Read64(static_cast<uintptr_t>(data) + 8ull * i, &ch) || ch < kMinPointer) continue;
                 if (!IsPlayerClass(static_cast<uintptr_t>(ch))) continue;
-                if (Read64(static_cast<uintptr_t>(ch), &anchorVt) && anchorVt >= kMinPointer) break;
+                if (Read64(static_cast<uintptr_t>(ch), &anchorVt) && anchorVt >= kMinPointer)
+                {
+                    playerOwner = ch;
+                    Read64(static_cast<uintptr_t>(ch) + kOff_Owner_Possessor, &playerPoss);
+                    break;
+                }
                 anchorVt = 0;
             }
-            if (!anchorVt)  // not in world / no protagonist resolvable
+            if (!anchorVt)
             {
                 ClearPlayerSets();
                 return;
             }
+            g_playerPossessor.store(static_cast<uintptr_t>(playerPoss), std::memory_order_release);
 
-            // (B) Track every active instance of that class: same vtable AND a
-            // resolvable vital chain (skips the pool's empty slots).
+            // Active Pawn Riding Check: when riding a mount, the player controller's active pawn (possessor+0xD0)
+            // switches to the mount actor (activePawn != playerOwner).
+            bool ridingActive = false;
+            if (playerPoss >= kMinPointer)
+            {
+                uint64_t activePawn = 0;
+                if (Read64(static_cast<uintptr_t>(playerPoss) + kOff_Possessor_Pawn, &activePawn) &&
+                    activePawn >= kMinPointer && activePawn != playerOwner)
+                {
+                    ridingActive = true;
+                }
+            }
+
             uintptr_t nextHp[kMaxPlayers]{};
             uintptr_t nextActors[kMaxPlayers]{};
             uintptr_t nextTargets[kMaxPlayers]{};
@@ -366,13 +387,13 @@ namespace trinity::game
             uintptr_t nextSpir[kMaxStatEntries]{};
             uintptr_t nextMounts[kMaxMounts]{};
             int nPlayers = 0, nStam = 0, nMountStam = 0, nSpir = 0, nMounts = 0;
+
             for (uint32_t i = 0; i < count; ++i)
             {
                 uint64_t ch = 0;
                 if (!Read64(static_cast<uintptr_t>(data) + 8ull * i, &ch) || ch < kMinPointer) continue;
                 const uintptr_t owner = static_cast<uintptr_t>(ch);
 
-                // Scan for mount / vehicle entity (Obj_Vehicle = 5, Obj_Pet = 6, or tag == 5)
                 uint32_t objType = 0;
                 Read32(owner + kOff_Owner_ObjectType, &objType);
                 uint64_t td = 0;
@@ -380,44 +401,58 @@ namespace trinity::game
                 if (Read64(owner + kOff_Owner_TypeDesc, &td) && td >= kMinPointer)
                     Read8(static_cast<uintptr_t>(td) + 1, &tag);
 
-                if (objType == Obj_Vehicle || tag == 5 || objType == Obj_Pet)
+                uint64_t vt = 0;
+                Read64(owner, &vt);
+                const bool isHumanoid = (anchorVt != 0 && vt == anchorVt);
+
+                // Mount discovery: ONLY inspect entities that are genuine mounts / vehicles / pets
+                if (!isHumanoid && (objType == Obj_Vehicle || tag == 5 || objType == Obj_Pet ||
+                    (objType != Obj_SelfPlayer && objType != Obj_OtherPlayer && objType != 0 && objType < 16)))
                 {
                     uint64_t mountActor = 0;
                     Read64(owner + kOff_Owner_Actor, &mountActor);
                     const uintptr_t act = (mountActor >= kMinPointer) ? static_cast<uintptr_t>(mountActor) : owner;
-                    if (act >= kMinPointer && nMounts < kMaxMounts)
+
+                    // Fallback check: check if mount possessor matches player
+                    uint64_t mountPoss = 0;
+                    if (playerPoss >= kMinPointer)
                     {
-                        bool alreadyAdded = false;
-                        for (int m = 0; m < nMounts; ++m)
+                        if ((Read64(owner + kOff_Owner_Possessor, &mountPoss) && mountPoss == playerPoss) ||
+                            (Read64(act + kOff_Owner_Possessor, &mountPoss) && mountPoss == playerPoss))
                         {
-                            if (nextMounts[m] == act) { alreadyAdded = true; break; }
+                            // ridingActive remains detected by pawn check
                         }
-                        if (!alreadyAdded)
-                            nextMounts[nMounts++] = act;
                     }
 
-                    // Scan mount vital chain for dedicated horse sprint/gallop gauges
                     uintptr_t mountStatArray = 0;
-                    if (WalkMountVitalChain(owner, &mountStatArray))
+                    if (WalkMountVitalChain(owner, &mountStatArray) && mountStatArray >= kMinPointer)
                     {
                         for (int k = 0; k < kStatArray_ScanEntries; ++k)
                         {
                             const uintptr_t e = mountStatArray + k * kSizeof_StatEntry;
                             int32_t stt = 0;
                             if (!StatEntryType(e, &stt)) continue;
-                            if (stt == StatType_MountSprint || stt == 19)
+                            if (stt == StatType_MountSprint || stt == 19 || stt == StatType_SprintSt || stt == 20 || stt == StatType_StaminaPool117 || stt == 22)
                             {
                                 if (nMountStam < kMaxStatEntries)
                                     nextMountStam[nMountStam++] = e;
+                                if (act >= kMinPointer && nMounts < kMaxMounts)
+                                {
+                                    bool alreadyAdded = false;
+                                    for (int m = 0; m < nMounts; ++m)
+                                    {
+                                        if (nextMounts[m] == act) { alreadyAdded = true; break; }
+                                    }
+                                    if (!alreadyAdded)
+                                        nextMounts[nMounts++] = act;
+                                }
                             }
                         }
                     }
                 }
 
                 if (nPlayers >= kMaxPlayers) continue;
-
-                uint64_t vt = 0;
-                if (!Read64(owner, &vt) || vt != anchorVt) continue;
+                if (!isHumanoid || vt != anchorVt) continue;
                 SelfChain c;
                 if (!WalkSelfChain(owner, &c)) continue;
 
@@ -426,13 +461,17 @@ namespace trinity::game
                 nextTargets[nPlayers] = c.targetOwner;
                 ++nPlayers;
 
-                // Scan protagonist stat array for stamina (20/22) and spirit (21/23) gauges ONLY
+                // Scan protagonist stat array for mount sprint (19), player stamina (20/22), and spirit (21/23)
                 for (int k = 1; k < kStatArray_ScanEntries; ++k)
                 {
                     const uintptr_t e = c.statArray + k * kSizeof_StatEntry;
                     int32_t stt = 0;
                     if (!StatEntryType(e, &stt)) continue;
-                    if (stt == StatType_SprintSt || stt == StatType_StaminaPool117 || stt == 20 || stt == 22)
+                    if (stt == StatType_MountSprint || stt == 19)
+                    {
+                        if (nMountStam < kMaxStatEntries) nextMountStam[nMountStam++] = e;
+                    }
+                    else if (stt == StatType_SprintSt || stt == StatType_StaminaPool117 || stt == 20 || stt == 22)
                     {
                         if (nStam < kMaxStatEntries) nextStam[nStam++] = e;
                     }
@@ -443,18 +482,8 @@ namespace trinity::game
                 }
             }
 
-            // Opening the game's character/equipment screen creates a fourth
-            // same-class preview body. The old resolver published it and then
-            // PinEntry wrote into its temporary stat array, causing the CTD.
-            // Clear first and stay inert for this tick; never publish preview
-            // pointers, even briefly.
             if (nPlayers > kMaxPartyPlayers)
             {
-                // Menus and some populated scenes can expose extra instances
-                // of the protagonist class. Do not disable all stat features:
-                // keep only the first three live party bodies, which are the
-                // same stable set published during normal gameplay, and drop
-                // every gauge collected from later preview/duplicate bodies.
                 nPlayers = kMaxPartyPlayers;
                 nStam = 0;
                 nSpir = 0;
@@ -541,12 +570,13 @@ namespace trinity::game
             for (int i = nSpir; i < kMaxStatEntries; ++i) g_spiritEntries[i].store(0, std::memory_order_release);
 
             const State& st = State::Get();
-            if (st.infStamina)
+            if (st.infStamina || st.infMountStamina)
+            {
                 for (int i = 0; i < nStam; ++i)
                     PinEntry(g_stamEntries[i].load(std::memory_order_relaxed));
-            if (st.infMountStamina)
                 for (int i = 0; i < nMountStam; ++i)
                     PinEntry(g_mountStamEntries[i].load(std::memory_order_relaxed));
+            }
             if (st.infSpirit)
                 for (int i = 0; i < nSpir; ++i)
                     PinEntry(g_spiritEntries[i].load(std::memory_order_relaxed));
@@ -588,44 +618,44 @@ namespace trinity::game
             // God Mode strictly locks player HP only when godMode toggle is ON
             const bool isGodModeHp = st.godMode && isPlayerHp;
 
-            // Strictly lock only player/companion stamina - never touch enemy/shielded soldier stamina
-            const bool isPlayerStam = st.infStamina && InSet(g_stamEntries, kMaxStatEntries, e);
+            // Stamina lock (Player on-foot sprint, stamina pool, and horse/mount gallop):
+            const bool isStaminaEntry = InSet(g_stamEntries, kMaxStatEntries, e) ||
+                                        InSet(g_mountStamEntries, kMaxStatEntries, e) ||
+                                        entryType == StatType_MountSprint || entryType == 19 ||
+                                        entryType == StatType_SprintSt || entryType == 20 ||
+                                        entryType == StatType_StaminaPool117 || entryType == 22;
 
-            // Horse and mount stamina
-            const bool isMountStam = st.infMountStamina && InSet(g_mountStamEntries, kMaxStatEntries, e);
+            const bool isStamLocked = (st.infStamina || st.infMountStamina) && isStaminaEntry;
 
             const bool isPlayerSpir = st.infSpirit && InSet(g_spiritEntries, kMaxStatEntries, e);
 
             const bool shouldLock = isGodModeHp ||
-                                    isPlayerStam ||
-                                    isMountStam ||
+                                    isStamLocked ||
                                     isPlayerSpir;
 
-            // Zero-Drop Pre-Commit Interception:
-            // Overwrite target to 100% full capacity BEFORE the engine executes the write
-            // so the engine never writes a reduced number or broadcasts a drop.
+            int64_t fullTarget = target;
             if (shouldLock)
             {
-                uint64_t base = 0, cap = 0;
-                if (Read64(e + kOff_StatEntry_Base, &base))
+                uint64_t base = 0, cap = 0, cur = 0;
+                Read64(e + kOff_StatEntry_Base, &base);
+                Read64(e + kOff_StatEntry_Cap, &cap);
+                Read64(e + kOff_StatEntry_Current, &cur);
+                uint64_t full = (cap > base) ? cap : base;
+                if (!full && cur > 0 && cur < 1000000000ULL) full = cur;
+                if (full > 0)
                 {
-                    Read64(e + kOff_StatEntry_Cap, &cap);
-                    const uint64_t full = (cap > base) ? cap : base;
-                    if (full > 0)
-                    {
-                        target = static_cast<int64_t>(full);
-                    }
+                    target = static_cast<int64_t>(full);
+                    fullTarget = target;
                 }
             }
 
             const int64_t result = oStatCommit(entry, time, target, flag);
 
             if (isGodModeHp) PinEntry(e);
-            if (isPlayerStam) PinEntry(e);
-            if (isMountStam) PinEntry(e);
+            if (isStamLocked) PinEntry(e);
             if (isPlayerSpir) PinEntry(e);
 
-            return result;
+            return shouldLock ? fullTarget : result;
         }
 
         bool IsPlayerEntity(uintptr_t target)
@@ -750,14 +780,12 @@ namespace trinity::game
                         delta = ScaleDamage(owner, sourceCtx, delta);
                     }
                 }
-                else if (isPlayerTarget && IsStaminaType(statusId) && st.infStamina)
+                else if ((st.infStamina || st.infMountStamina) &&
+                         (isPlayerTarget || InSet(g_mountActors, kMaxMounts, owner) || InSet(g_mountStamEntries, kMaxStatEntries, owner)) &&
+                         (IsStaminaType(statusId) || statusId == StatType_MountSprint || statusId == 19 ||
+                          statusId == StatType_SprintSt || statusId == 20 || statusId == StatType_StaminaPool117 || statusId == 22))
                 {
-                    delta = 0; // zero-out player stamina drain instantly
-                }
-                else if (st.infMountStamina && (statusId == StatType_MountSprint || statusId == 19) &&
-                         (InSet(g_mountActors, kMaxMounts, owner) || InSet(g_mountStamEntries, kMaxStatEntries, owner)))
-                {
-                    delta = 0; // zero-out mount/wyvern/dragon stamina drain instantly
+                    delta = 0; // zero-out stamina drain instantly
                 }
                 else if (isPlayerTarget && IsSpiritType(statusId) && st.infSpirit)
                 {
@@ -789,6 +817,18 @@ namespace trinity::game
                 if (a5) *a5 = true;
                 return true;
             }
+
+            if (st.infStamina || st.infMountStamina)
+            {
+                for (int i = 0; i < kMaxStatEntries; ++i)
+                {
+                    PinEntry(g_stamEntries[i].load(std::memory_order_relaxed));
+                    PinEntry(g_mountStamEntries[i].load(std::memory_order_relaxed));
+                }
+            }
+            if (st.infSpirit)
+                for (int i = 0; i < kMaxStatEntries; ++i)
+                    PinEntry(g_spiritEntries[i].load(std::memory_order_relaxed));
 
             return orig;
         }

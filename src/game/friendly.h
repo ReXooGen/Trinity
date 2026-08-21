@@ -34,6 +34,11 @@ namespace trinity::game
         static bool Install();
         static void Remove();
 
+        // Game-thread tick: dynamically enables/disables the underlying hook
+        // ONLY when Trust Multiplier is actively enabled by the user, ensuring
+        // 100% native execution during quest completion and normal gameplay.
+        static void Tick();
+
         // True once the funnel hook is installed (the feature is available).
         static bool Ready();
     };
