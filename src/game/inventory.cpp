@@ -760,6 +760,7 @@ namespace trinity::game
         }
 
         uintptr_t CurrentHolder(); // defined below; used by ServerHolder()
+        bool ApplySlotCapToHolder(uintptr_t holder, bool enable, uint16_t value);
 
         // Bucket count of a holder, or 0 if it does not read back sanely. Used
         // to tell our own server mirror apart from some other container that
@@ -1053,6 +1054,13 @@ namespace trinity::game
                 g_cand[at].holder    = reinterpret_cast<uintptr_t>(h);
                 g_cand[at].tick      = now;
                 if (at >= cnt) g_candCount.store(at + 1, std::memory_order_release); // publish last
+
+                // If Slot Size is active, immediately apply expansion to this newly noted holder
+                const State& st = State::Get();
+                if (st.invSlotSize && Player::Ready())
+                {
+                    ApplySlotCapToHolder(reinterpret_cast<uintptr_t>(h), true, static_cast<uint16_t>(st.invSlotSizeVal));
+                }
             }
             LeaveCriticalSection(&g_candLock);
         }
@@ -1117,12 +1125,36 @@ namespace trinity::game
                 if (st.invSlotSize && Player::Ready())
                 {
                     uint16_t expand = 0;
-                    if (OverrideExpandForType(type, st.invSlotSizeVal, &expand))
+                    uint16_t defSlots = 0;
+                    if (OverrideExpandForType(type, st.invSlotSizeVal, &expand, &defSlots))
                     {
                         const uintptr_t bucket = BucketByType(reinterpret_cast<uintptr_t>(holder), type);
                         if (bucket)
+                        {
                             UpsertOrigExpand(bucket, type, count);
+                            Write16(bucket + kOff_InvBucket_ExpandSlots, expand);
+                            Write16(bucket + kOff_InvBucket_MaxSlots, static_cast<uint16_t>(defSlots + expand));
+                        }
                         count = expand;
+                    }
+                    else
+                    {
+                        const uintptr_t bucket = BucketByType(reinterpret_cast<uintptr_t>(holder), type);
+                        if (bucket)
+                        {
+                            uint16_t curCap = 0, curExpand = 0;
+                            if (Read16(bucket + kOff_InvBucket_MaxSlots, &curCap))
+                            {
+                                Read16(bucket + kOff_InvBucket_ExpandSlots, &curExpand);
+                                defSlots = (curCap >= curExpand) ? static_cast<uint16_t>(curCap - curExpand) : 0;
+                                expand   = (static_cast<int>(st.invSlotSizeVal) > defSlots)
+                                           ? static_cast<uint16_t>(st.invSlotSizeVal - defSlots) : 0;
+                                UpsertOrigExpand(bucket, type, count);
+                                Write16(bucket + kOff_InvBucket_ExpandSlots, expand);
+                                Write16(bucket + kOff_InvBucket_MaxSlots, static_cast<uint16_t>(defSlots + expand));
+                                count = expand;
+                            }
+                        }
                     }
                 }
             }
@@ -2013,6 +2045,8 @@ namespace trinity::game
                 // Guarantee maxSlots and expandSlots are updated on ALL buckets
                 // (including Food/Provisions, Materials, Crafting which have no InventoryInfo row)
                 Write16(bucket + kOff_InvBucket_ExpandSlots, expand);
+                Write16(bucket + kOff_InvBucket_DeltaRaw, expand);
+                Write16(bucket + kOff_InvBucket_DeltaClamped, expand);
                 Write16(bucket + kOff_InvBucket_MaxSlots, static_cast<uint16_t>(defSlots + expand));
                 any = true;
             }
@@ -2030,6 +2064,16 @@ namespace trinity::game
         bool any = false;
         if (ApplySlotCapToHolder(CurrentHolder(), enable, v)) any = true;
         if (ApplySlotCapToHolder(ServerHolder(), enable, v))  any = true;
+
+        Candidate snap[kMaxCandidates] = {};
+        const int n = SnapshotCandidates(snap);
+        for (int i = 0; i < n; ++i)
+        {
+            if (snap[i].holder && HolderLooksValid(snap[i].holder))
+            {
+                if (ApplySlotCapToHolder(snap[i].holder, enable, v)) any = true;
+            }
+        }
 
         // Restores are one-shot: once every live bucket has been put back,
         // the captures have served their purpose, and holding them would only
@@ -2169,6 +2213,13 @@ namespace trinity::game
                     s_lastRepair = now;
                     RepairUsedSlots(CurrentHolder());
                     RepairUsedSlots(ServerHolder());
+                    Candidate snap[kMaxCandidates] = {};
+                    const int n = SnapshotCandidates(snap);
+                    for (int i = 0; i < n; ++i)
+                    {
+                        if (snap[i].holder && HolderLooksValid(snap[i].holder))
+                            RepairUsedSlots(snap[i].holder);
+                    }
                 }
             }
 
