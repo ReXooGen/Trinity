@@ -1112,6 +1112,7 @@ namespace trinity::game
                                           uint16_t type, uint16_t count)
         {
             if (!oSetExpandSlots) return nullptr;
+            void* ret = oSetExpandSlots(holder, outErr, a3, type, count);
             __try
             {
                 const State& st = State::Get();
@@ -1128,7 +1129,6 @@ namespace trinity::game
                             Write16(bucket + kOff_InvBucket_ExpandSlots, expand);
                             Write16(bucket + kOff_InvBucket_MaxSlots, static_cast<uint16_t>(defSlots + expand));
                         }
-                        count = expand;
                     }
                     else
                     {
@@ -1145,14 +1145,13 @@ namespace trinity::game
                                 UpsertOrigExpand(bucket, type, count);
                                 Write16(bucket + kOff_InvBucket_ExpandSlots, expand);
                                 Write16(bucket + kOff_InvBucket_MaxSlots, static_cast<uint16_t>(defSlots + expand));
-                                count = expand;
                             }
                         }
                     }
                 }
             }
             __except (EXCEPTION_EXECUTE_HANDLER) {}
-            return oSetExpandSlots(holder, outErr, a3, type, count);
+            return ret;
         }
 
         // --- Used-count repair ------------------------------------------------
