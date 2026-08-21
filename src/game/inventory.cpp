@@ -1788,9 +1788,8 @@ namespace trinity::game
         uint32_t count = 0;
         if (!Read32(table + kOff_ItemTable_Count, &count) || count == 0 || count > 65536) return false;
 
-        const bool isLegacy = core::IsLegacyTU();
-        const uintptr_t stackOff = isLegacy ? 0x18 : 0x420;
-        const uintptr_t capOff   = isLegacy ? 0x111 : 0x428;
+        const uintptr_t stackOff = kOff_ItemDef_MaxStackCount;    // 0x18 (i64)
+        const uintptr_t capOff   = kOff_ItemDef_ApplyMaxStackCap; // 0x111 (u8 bool)
 
         if (g_stackCaptured.size() != count)
         {
