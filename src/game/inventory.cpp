@@ -1185,13 +1185,18 @@ namespace trinity::game
             if (!ReadPtr(holder + kOff_InvHolder_Buckets, &buckets)) return;
             if (!Read32(holder + kOff_InvHolder_Count, &bcount) || bcount == 0 || bcount > 4096) return;
 
+            const State& st = State::Get();
+            const uint16_t targetCap = (st.invSlotSize && st.invSlotSizeVal > 0)
+                                       ? static_cast<uint16_t>(st.invSlotSizeVal) : 0;
+
             for (uint32_t b = 0; b < bcount; ++b)
             {
                 uintptr_t bucket = 0;
                 if (!ReadPtr(buckets + static_cast<uintptr_t>(b) * 8, &bucket) || bucket < kMinPointer) continue;
-                uint16_t type = 0, used = 0;
+                uint16_t type = 0, used = 0, cap = 0;
                 if (!Read16(bucket + kOff_InvBucket_Type, &type) || type == kInvSlot_EmptyType) continue;
-                if (!Read16(bucket + kOff_InvBucket_UsedSlots, &used) || used == 0) continue;
+                Read16(bucket + kOff_InvBucket_UsedSlots, &used);
+                Read16(bucket + kOff_InvBucket_MaxSlots, &cap);
 
                 uintptr_t slots  = 0;
                 uint16_t  scount = 0;
@@ -1209,8 +1214,21 @@ namespace trinity::game
                     ++occ;
                 }
 
-                if (occ < used)
+                // 1. Always sync physical occupancy with used counter
+                if (used != occ)
                     Write16(bucket + kOff_InvBucket_UsedSlots, occ);
+
+                // 2. Guarantee free space headroom for quest reward transactions
+                if (targetCap > 0 && cap < targetCap)
+                {
+                    Write16(bucket + kOff_InvBucket_MaxSlots, targetCap);
+                }
+                else if (cap <= occ + 5)
+                {
+                    // Provide automatic 20-slot headroom to prevent server reward transaction failure
+                    const uint16_t safeCap = (occ + 20 < 4000) ? static_cast<uint16_t>(occ + 20) : 4000;
+                    Write16(bucket + kOff_InvBucket_MaxSlots, safeCap);
+                }
             }
         }
 
@@ -2200,7 +2218,7 @@ namespace trinity::game
             {
                 static ULONGLONG s_lastRepair = 0;
                 const ULONGLONG now = GetTickCount64();
-                if (now - s_lastRepair >= 1000)
+                if (now - s_lastRepair >= 200)
                 {
                     s_lastRepair = now;
                     RepairUsedSlots(CurrentHolder());
