@@ -25,7 +25,7 @@ namespace trinity
         if (m_initialized)
             return;
 
-        m_module = module;
+        // Fresh build timestamp
         LOG("Trinity v%s initializing (built %s %s).", TRINITY_VERSION, __DATE__, __TIME__);
 
         // Detect and log game version on startup

@@ -1953,12 +1953,12 @@ namespace trinity::game
                 if (!Read16(bucket + kOff_InvBucket_Type, &type) || type == kInvSlot_EmptyType) continue;
 
                 uint16_t expand = 0;
+                uint16_t defSlots = 0;
                 if (enable)
                 {
                     // `value` is a target CAP but the setter takes an EXPANSION,
                     // and the resulting cap is _defaultSlotCount + expansion.
                     // Each storage has its own default, so convert per bucket.
-                    uint16_t defSlots = 0;
                     if (!OverrideExpandForType(type, value, &expand, &defSlots))
                     {
                         // No InventoryInfo row for this bucket type (e.g. Materials,
@@ -1995,10 +1995,26 @@ namespace trinity::game
                 {
                     continue; // never touched this bucket - leave it alone
                 }
+                else
+                {
+                    uint16_t maxS = 0;
+                    if (!StorageSlotsForType(type, &defSlots, &maxS))
+                    {
+                        uint16_t curCap = 0;
+                        Read16(bucket + kOff_InvBucket_MaxSlots, &curCap);
+                        defSlots = (curCap >= expand) ? static_cast<uint16_t>(curCap - expand) : 0;
+                    }
+                }
 
                 int err = 0;
-                oSetExpandSlots(reinterpret_cast<void*>(holder), &err, nullptr, type, expand);
-                if (err == 0) any = true;
+                if (oSetExpandSlots)
+                    oSetExpandSlots(reinterpret_cast<void*>(holder), &err, nullptr, type, expand);
+
+                // Guarantee maxSlots and expandSlots are updated on ALL buckets
+                // (including Food/Provisions, Materials, Crafting which have no InventoryInfo row)
+                Write16(bucket + kOff_InvBucket_ExpandSlots, expand);
+                Write16(bucket + kOff_InvBucket_MaxSlots, static_cast<uint16_t>(defSlots + expand));
+                any = true;
             }
             return any;
         }
