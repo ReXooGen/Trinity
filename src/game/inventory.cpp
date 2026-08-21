@@ -1054,13 +1054,6 @@ namespace trinity::game
                 g_cand[at].holder    = reinterpret_cast<uintptr_t>(h);
                 g_cand[at].tick      = now;
                 if (at >= cnt) g_candCount.store(at + 1, std::memory_order_release); // publish last
-
-                // If Slot Size is active, immediately apply expansion to this newly noted holder
-                const State& st = State::Get();
-                if (st.invSlotSize && Player::Ready())
-                {
-                    ApplySlotCapToHolder(reinterpret_cast<uintptr_t>(h), true, static_cast<uint16_t>(st.invSlotSizeVal));
-                }
             }
             LeaveCriticalSection(&g_candLock);
         }
