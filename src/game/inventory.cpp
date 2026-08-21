@@ -979,26 +979,16 @@ namespace trinity::game
             if (!oGetItemQty) return 0;
             if (container && oGetHolder)
             {
-                const uintptr_t c = reinterpret_cast<uintptr_t>(container);
-                if (c >= kMinPointer)
+                const ULONGLONG now = GetTickCount64();
+                if (g_holder.load(std::memory_order_relaxed) < kMinPointer ||
+                    now - g_holderTick.load(std::memory_order_relaxed) > 500)
                 {
-                    uintptr_t typeDesc = 0;
-                    if (ReadPtr(c + 0x88, &typeDesc) && typeDesc >= kMinPointer)
-                    {
-                        __try
-                        {
-                            const ULONGLONG now = GetTickCount64();
-                            if (g_holder.load(std::memory_order_relaxed) < kMinPointer ||
-                                now - g_holderTick.load(std::memory_order_relaxed) > 500)
-                            {
-                                g_holderTick.store(now, std::memory_order_relaxed);
-                                void* h = oGetHolder(container);
-                                if (reinterpret_cast<uintptr_t>(h) >= kMinPointer)
-                                    g_holder.store(reinterpret_cast<uintptr_t>(h), std::memory_order_release);
-                            }
-                        }
-                        __except (EXCEPTION_EXECUTE_HANDLER) {}
-                    }
+                    g_holderTick.store(now, std::memory_order_relaxed);
+                    void* h = nullptr;
+                    __try { h = oGetHolder(container); }
+                    __except (EXCEPTION_EXECUTE_HANDLER) { h = nullptr; }
+                    if (reinterpret_cast<uintptr_t>(h) >= kMinPointer)
+                        g_holder.store(reinterpret_cast<uintptr_t>(h), std::memory_order_release);
                 }
             }
             __try
@@ -1037,10 +1027,6 @@ namespace trinity::game
         {
             const uintptr_t c = reinterpret_cast<uintptr_t>(container);
             if (c < kMinPointer || !oGetHolder || !g_candLockInit) return;
-
-            // Only inspect if container looks like a valid actor object
-            uintptr_t typeDesc = 0;
-            if (!ReadPtr(c + 0x88, &typeDesc) || typeDesc < kMinPointer) return;
 
             // Resolving a container mid-construction can fault - never let that
             // take the process down (this runs during load, by definition).
@@ -1096,8 +1082,7 @@ namespace trinity::game
             uint16_t defSlots = 0, maxSlots = 0;
             if (!StorageSlotsForType(type, &defSlots, &maxSlots)) return false;
             if (value < 1) value = 1;
-            if (maxSlots > 0 && value > maxSlots) value = maxSlots;
-            else if (value > 300) value = 300;
+            if (value > 0xFFFF) value = 0xFFFF;
             *out = (value > defSlots) ? static_cast<uint16_t>(value - defSlots) : 0;
             if (outDef) *outDef = defSlots;
             return true;
@@ -2030,19 +2015,6 @@ namespace trinity::game
         if (ApplySlotCapToHolder(CurrentHolder(), enable, v)) any = true;
         if (ApplySlotCapToHolder(ServerHolder(), enable, v))  any = true;
 
-        Candidate snap[kMaxCandidates] = {};
-        const int n = SnapshotCandidates(snap);
-        for (int i = 0; i < n; ++i)
-        {
-            if (snap[i].holder)
-                if (ApplySlotCapToHolder(snap[i].holder, enable, v)) any = true;
-            if (snap[i].container)
-            {
-                uintptr_t h = HolderForContainer(snap[i].container);
-                if (h && ApplySlotCapToHolder(h, enable, v)) any = true;
-            }
-        }
-
         // Restores are one-shot: once every live bucket has been put back,
         // the captures have served their purpose, and holding them would only
         // let a recycled address hand a stale expansion to a later load.
@@ -2181,19 +2153,6 @@ namespace trinity::game
                     s_lastRepair = now;
                     RepairUsedSlots(CurrentHolder());
                     RepairUsedSlots(ServerHolder());
-
-                    Candidate snap[kMaxCandidates] = {};
-                    const int n = SnapshotCandidates(snap);
-                    for (int i = 0; i < n; ++i)
-                    {
-                        if (snap[i].holder)
-                            RepairUsedSlots(snap[i].holder);
-                        if (snap[i].container)
-                        {
-                            uintptr_t h = HolderForContainer(snap[i].container);
-                            if (h) RepairUsedSlots(h);
-                        }
-                    }
                 }
             }
 
