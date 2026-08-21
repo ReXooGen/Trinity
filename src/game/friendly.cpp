@@ -44,15 +44,20 @@ namespace trinity::game
         std::mutex g_cacheMx;
         std::unordered_map<uint64_t, int64_t> g_lastVal;
 
-        int64_t ScaleGain(int64_t oldVal, int64_t newVal, float mult)
+        int64_t ScaleGain(int64_t oldVal, int64_t newVal, float mult, uint32_t mapId)
         {
             int64_t delta = newVal - oldVal;
             if (delta <= 0) return newVal;
 
-            // Safe delta scaling: clamp the MAXIMUM single-transaction increase to +120 points.
-            // Pearl Abyss local server rejects any single NPC trust jump > +150 points with Error 298648703 (0x11CD047F).
+            // Map 1 is Pet/Mount: Pet feeding/taming is completely safe for large multipliers.
+            // Map 0 is NPC: Pearl Abyss server strictly validates all NPC quest/affinity changes.
+            // Any single jump > +15 points on an NPC quest reward triggers Error 298648703 (0x11CD047F) and disconnects.
+            // We clamp NPC delta to max +10 points to guarantee 100% safety from disconnects.
             double gain = static_cast<double>(delta) * static_cast<double>(mult);
-            if (gain > 120.0) gain = 120.0;
+            if (mapId == 0 && gain > 10.0)
+            {
+                gain = 10.0;
+            }
 
             const double scaled = static_cast<double>(oldVal) + gain;
             if (scaled >= static_cast<double>(kFriendly_Max)) return kFriendly_Max;
@@ -114,7 +119,7 @@ namespace trinity::game
 
             if (newVal > oldVal && oldVal < kFriendly_Max)
             {
-                const int64_t s = ScaleGain(oldVal, newVal, st.trustMultVal);
+                const int64_t s = ScaleGain(oldVal, newVal, st.trustMultVal, mapId);
                 if (s != newVal && Write64(r + kOff_FriendlyRec_Value, s))
                 {
                     g_lastVal[ckLive] = s;
