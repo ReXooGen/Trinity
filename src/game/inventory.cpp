@@ -44,6 +44,17 @@ namespace trinity::game
     namespace
     {
         // --- Live handles (set on the game thread by the hook) --------------
+        static int64_t g_walletSpoofValue = -1;
+        static int64_t g_campSpoofAddedValue = 0;
+        using GetMoney_t = int64_t(__fastcall*)(void* rcx);
+        GetMoney_t oGetMoney1 = nullptr;
+        GetMoney_t oGetMoney2 = nullptr;
+        GetMoney_t oGetMoney3 = nullptr;
+
+        static int64_t __fastcall hkGetMoney1(void* rcx) { return g_walletSpoofValue != -1 ? g_walletSpoofValue : oGetMoney1(rcx); }
+        static int64_t __fastcall hkGetMoney2(void* rcx) { return g_walletSpoofValue != -1 ? g_walletSpoofValue : oGetMoney2(rcx); }
+        static int64_t __fastcall hkGetMoney3(void* rcx) { return g_walletSpoofValue != -1 ? g_walletSpoofValue : oGetMoney3(rcx); }
+
         using GetItemQty_t = int64_t(__fastcall*)(void* container, uint16_t typeId, void* keyPtr);
         using GetHolder_t  = void*(__fastcall*)(void* container);
         // Per-holder insert: (bucket, err, CONTAINER, itemArr, i16, out, c, c, c).
@@ -938,17 +949,31 @@ namespace trinity::game
                 if (!h) h = snap[i].holder; // walk did not apply; captured pair is all we have
                 if (!h || h == clientH) continue;
                 if (!HolderLooksValid(h)) continue;
-                if (HolderBucketCount(h) != want) continue; // not a mirror of ours
+                if (HolderBucketCount(h) != want && HolderBucketCount(h) < 1) continue;
                 g_serverHolder.store(h, std::memory_order_release);
                 g_serverContainer.store(c, std::memory_order_release);
                 g_serverTick.store(now, std::memory_order_relaxed);
                 return h;
             }
 
-            // 3. Fallback: if cached holder is still valid in memory with matching bucket count, keep it!
-            if (cached && cached != clientH && HolderLooksValid(cached) && HolderBucketCount(cached) == want)
+            // 3. Fallback: if cached holder is still valid in memory, keep it!
+            if (cached && cached != clientH && HolderLooksValid(cached))
             {
                 return cached;
+            }
+
+            // 4. Any valid candidate holder distinct from client
+            for (int i = 0; i < n; ++i)
+            {
+                const uintptr_t c = snap[i].container;
+                if (!c || c == clientC) continue;
+                uintptr_t h = snap[i].holder ? snap[i].holder : HolderForContainer(c);
+                if (h && h != clientH && HolderLooksValid(h))
+                {
+                    g_serverHolder.store(h, std::memory_order_release);
+                    g_serverContainer.store(c, std::memory_order_release);
+                    return h;
+                }
             }
 
             // Nothing usable yet
@@ -998,14 +1023,109 @@ namespace trinity::game
                         g_holder.store(reinterpret_cast<uintptr_t>(h), std::memory_order_release);
                 }
             }
+            int64_t realQty = 0;
             __try
             {
-                return oGetItemQty(container, typeId, keyPtr);
+                realQty = oGetItemQty(container, typeId, keyPtr);
             }
             __except (EXCEPTION_EXECUTE_HANDLER)
             {
-                return 0;
+                realQty = 0;
             }
+
+            __try
+            {
+                if (g_campSpoofAddedValue > 0)
+                {
+                    uint16_t tCampMoney = Inventory::FindTypeIdByKey("Money_Camp_Money");
+                    uint16_t tCampFood = Inventory::FindTypeIdByKey("Money_Camp_Food");
+                    uint16_t tCampWeapon = Inventory::FindTypeIdByKey("Money_Camp_Weapon");
+                    uint16_t tCampTimber = Inventory::FindTypeIdByKey("Money_Camp_Timber");
+                    uint16_t tCampStone = Inventory::FindTypeIdByKey("Money_Camp_Stone");
+                    
+                    if ((tCampMoney && typeId == tCampMoney) ||
+                        (tCampFood && typeId == tCampFood) ||
+                        (tCampWeapon && typeId == tCampWeapon) ||
+                        (tCampTimber && typeId == tCampTimber) ||
+                        (tCampStone && typeId == tCampStone))
+                    {
+                        // We only want to boost the real amount if the container actually holds camp money (realQty > 0)
+                        // Or if it's querying the UI. But to be safe, just boost it.
+                        return realQty + g_campSpoofAddedValue;
+                    }
+                }
+
+                const uint16_t moneyTid = Inventory::FindTypeIdByKey("Money_Copper");
+                if (typeId == moneyTid || (moneyTid == 0 && typeId == 1868) || typeId == 1868)
+                {
+                    int64_t bagMoney = 0;
+                    auto queryHolderMoney = [&](uintptr_t holder) {
+                        if (holder < kMinPointer) return;
+                        uintptr_t buckets = 0;
+                        uint32_t bcount = 0;
+                        if (!ReadPtr(holder + kOff_InvHolder_Buckets, &buckets) || !Read32(holder + kOff_InvHolder_Count, &bcount)) return;
+                        if (buckets < kMinPointer || bcount == 0 || bcount > 4096) return;
+
+                        for (uint32_t b = 0; b < bcount; ++b)
+                        {
+                            uintptr_t bucket = 0;
+                            if (!ReadPtr(buckets + static_cast<uintptr_t>(b) * 8, &bucket) || bucket < kMinPointer) continue;
+                            uintptr_t slots = 0;
+                            uint16_t scount = 0;
+                            if (!ReadPtr(bucket + kOff_InvBucket_Slots, &slots) || !Read16(bucket + kOff_InvBucket_Count, &scount)) continue;
+                            if (slots < kMinPointer || scount == 0 || scount > 8192) continue;
+
+                            for (uint16_t i = 0; i < scount; ++i)
+                            {
+                                const uintptr_t slot = slots + static_cast<uintptr_t>(i) * SlotStride();
+                                uint16_t tid = 0;
+                                if (!Read16(slot + kOff_InvSlot_TypeId, &tid) || (tid != typeId && tid != moneyTid && tid != 1868)) continue;
+                                int64_t q = 0;
+                                if (Read64(slot + kOff_InvSlot_Quantity, &q) && q > bagMoney)
+                                {
+                                    bagMoney = q;
+                                }
+                            }
+                        }
+                    };
+
+                    if (container)
+                    {
+                        uintptr_t cHolder = HolderForContainer(reinterpret_cast<uintptr_t>(container));
+                        if (cHolder) queryHolderMoney(cHolder);
+                    }
+
+                    queryHolderMoney(CurrentHolder());
+                    queryHolderMoney(ServerHolder());
+
+                    for (int c = 0; c < 3; ++c)
+                    {
+                        uintptr_t charAct = Inventory::CharacterAddr(c);
+                        if (charAct >= kMinPointer)
+                        {
+                            uintptr_t h = HolderForContainer(charAct);
+                            if (h) queryHolderMoney(h);
+                        }
+                    }
+
+                    for (size_t s = 0; s < g_storages.size(); ++s)
+                        for (size_t g = 0; g < g_storages[s].groups.size(); ++g)
+                            for (size_t i = 0; i < g_storages[s].groups[g].items.size(); ++i)
+                            {
+                                const Item& it = g_storages[s].groups[g].items[i];
+                                if ((it.typeId == moneyTid || (moneyTid == 0 && typeId == 1868) || it.typeId == 1868) && it.qty > bagMoney)
+                                    bagMoney = it.qty;
+                            }
+
+                    if (bagMoney > 0)
+                    {
+                        return bagMoney;
+                    }
+                }
+            }
+            __except (EXCEPTION_EXECUTE_HANDLER) {}
+
+            return realQty;
         }
 
         // --- Blind container capture (game thread) --------------------------
@@ -1368,9 +1488,18 @@ namespace trinity::game
 
     bool Inventory::Install()
     {
-        if (!mem::InstallHook("inventory: item-count accessor", kSig_InvGetItemQty, "inventory disabled",
+        if (!mem::InstallHook("inventory: item-count accessor", kSig_InvGetItemQty, nullptr,
                               &hkGetItemQty, &oGetItemQty, &g_qtyTarget, 4))
-            return false;
+        {
+            if (!mem::InstallHook("inventory: item-count accessor legacy", kSig_InvGetItemQty_Legacy, "inventory disabled",
+                                  &hkGetItemQty, &oGetItemQty, &g_qtyTarget, 4))
+                return false;
+        }
+
+        uintptr_t gameBase = reinterpret_cast<uintptr_t>(GetModuleHandleA(nullptr));
+        MH_CreateHook(reinterpret_cast<void*>(gameBase + 0x16077B0), hkGetMoney1, reinterpret_cast<void**>(&oGetMoney1));
+        MH_CreateHook(reinterpret_cast<void*>(gameBase + 0x16078C0), hkGetMoney2, reinterpret_cast<void**>(&oGetMoney2));
+        MH_CreateHook(reinterpret_cast<void*>(gameBase + 0x16081D0), hkGetMoney3, reinterpret_cast<void**>(&oGetMoney3));
 
         const uintptr_t holderAddr = mem::FindPattern(kSig_InvGetHolder);
         if (!holderAddr)
@@ -1836,7 +1965,7 @@ namespace trinity::game
                 g_stackCaptured[row] = true;
             }
 
-            // Only scale genuinely stackable items (materials, consumables, arrows, pouches).
+            // Only scale genuinely stackable items (materials, consumables, arrows, pouches, currency).
             // NEVER alter non-stackable items (Weapons, Shields, Armor, Accessories, Quest Flyers/Docs)
             // because forcing applyMaxStackCap=1 on unique items breaks engine item creation and
             // triggers server validation Error 298648703 when receiving quest rewards.
@@ -1846,7 +1975,18 @@ namespace trinity::game
             if (enable)
             {
                 Write64(def + stackOff, static_cast<uint64_t>(value));
-                Write8(def + capOff, 1);
+                // Currency (Money_Copper) retains applyMaxStackCap=0 so shop purchases work flawlessly,
+                // while scaling maxStackCount to value (999,999,999) to keep everything in 1 single slot!
+                char k[64]{};
+                if (KeyForType(static_cast<uint16_t>(row), k, sizeof(k)) &&
+                    (_stricmp(k, "Money_Copper") == 0 || _stricmp(k, "Money_Camp_Money") == 0 || _stricmp(k, "Money_Exchange") == 0))
+                {
+                    Write8(def + capOff, 0);
+                }
+                else
+                {
+                    Write8(def + capOff, 1);
+                }
                 any = true;
             }
             else if (g_stackCaptured[row])
@@ -1857,7 +1997,7 @@ namespace trinity::game
             }
         }
 
-        // Automatically consolidate and merge all duplicate stacks into 1 master slot
+        // Automatically consolidate and merge all duplicate stacks (including Money) into 1 master slot
         if (enable && any)
         {
             ConsolidateAllItems();
@@ -2147,10 +2287,8 @@ namespace trinity::game
         if (value > 700) value = 700;
         const uint16_t v = static_cast<uint16_t>(value);
 
-        // Update in-memory InventoryInfo table so the engine and in-game UI natively recognize the 700-slot cap
-        SetAllTableMaxSlots(enable, v);
-
         bool any = false;
+        if (SetAllTableMaxSlots(enable, v)) any = true; // Sets InventoryInfo table denominator so UI renders 700!
         if (ApplySlotCapToHolder(CurrentHolder(), enable, v)) any = true;
         if (ApplySlotCapToHolder(ServerHolder(), enable, v))  any = true;
 
@@ -2309,6 +2447,15 @@ namespace trinity::game
                         if (snap[i].holder && HolderLooksValid(snap[i].holder))
                             RepairUsedSlots(snap[i].holder);
                     }
+
+                    // Keep Money_Copper's max stack count raised and cap flag neutral so money never splits or drops
+                    const uint16_t moneyTid = FindTypeIdByKey("Money_Copper");
+                    uintptr_t moneyDef = 0;
+                    if (moneyTid != 0 && DefForRow(g_itemTableGlobal, moneyTid, &moneyDef))
+                    {
+                        Write64(moneyDef + kOff_ItemDef_MaxStackCount, 999999999999ULL);
+                        Write8(moneyDef + kOff_ItemDef_ApplyMaxStackCap, 0);
+                    }
                 }
             }
 
@@ -2375,7 +2522,22 @@ namespace trinity::game
         bool WriteServerMirror(uint32_t bucketIdx, uint16_t slotIdx,
                                uint16_t typeId, int64_t oldQty, int64_t value)
         {
-            const uintptr_t sh = ServerHolder();
+            uintptr_t sh = ServerHolder();
+            if (!HolderLooksValid(sh))
+            {
+                Candidate snap[kMaxCandidates] = {};
+                const int n = SnapshotCandidates(snap);
+                const uintptr_t clientH = CurrentHolder();
+                for (int i = 0; i < n; ++i)
+                {
+                    uintptr_t ch = snap[i].holder ? snap[i].holder : HolderForContainer(snap[i].container);
+                    if (ch && ch != clientH && HolderLooksValid(ch))
+                    {
+                        sh = ch;
+                        break;
+                    }
+                }
+            }
             if (!HolderLooksValid(sh)) return false;
 
             uintptr_t buckets = 0;
@@ -2933,12 +3095,12 @@ namespace trinity::game
             return maxId;
         }
 
-        // Pending request: the UI runs on the render thread, but this path calls
+        // Pending request queue: the UI runs on the render thread, but this path calls
         // into engine code and must run on the game thread (Tick).
         struct AddRequest { uint16_t typeId; int64_t qty; };
-        AddRequest             g_addReq{};
-        std::atomic<bool>      g_addPending{false};
-        std::atomic<int>       g_addState{0}; // mirrors Inventory::AddState
+        std::mutex              g_singleAddMutex;
+        std::vector<AddRequest> g_singleAddQueue;
+        std::atomic<int>        g_addState{0}; // mirrors Inventory::AddState
 
         // The one add, on the GAME thread: resolves both holders, allocates one
         // shared instance id from the authority, and stamps the item into
@@ -3017,6 +3179,25 @@ namespace trinity::game
             if (serverH && serverH != clientH)
             {
                 okServer = AddIntoHolder(serverH, /*serverRealm=*/true,  typeId, qty, id, def);
+            }
+            if (!okServer)
+            {
+                Candidate snap[kMaxCandidates] = {};
+                const int n = SnapshotCandidates(snap);
+                for (int i = 0; i < n; ++i)
+                {
+                    uintptr_t ch = snap[i].holder ? snap[i].holder : HolderForContainer(snap[i].container);
+                    if (ch && ch != clientH && HolderLooksValid(ch))
+                    {
+                        if (AddIntoHolder(ch, /*serverRealm=*/true, typeId, qty, id, def))
+                        {
+                            okServer = true;
+                            g_serverHolder.store(ch, std::memory_order_release);
+                            if (snap[i].container) g_serverContainer.store(snap[i].container, std::memory_order_release);
+                            break;
+                        }
+                    }
+                }
             }
             const bool okClient = AddIntoHolder(clientH, /*serverRealm=*/false, typeId, qty, id, def);
 
@@ -3108,13 +3289,20 @@ namespace trinity::game
         // Runs on the GAME thread, from Tick().
         void RunPendingAdd()
         {
-            if (g_addPending.load(std::memory_order_acquire))
+            std::vector<AddRequest> toProcess;
             {
-                const AddRequest req = g_addReq;
-                g_addPending.store(false, std::memory_order_release);
-                g_addState.store(static_cast<int>(CommitAdd(req.typeId, req.qty)
-                                     ? Inventory::AddState::Added
-                                     : Inventory::AddState::Failed),
+                std::lock_guard<std::mutex> lk(g_singleAddMutex);
+                if (!g_singleAddQueue.empty())
+                {
+                    toProcess = std::move(g_singleAddQueue);
+                    g_singleAddQueue.clear();
+                }
+            }
+
+            for (const auto& req : toProcess)
+            {
+                const bool ok = CommitAdd(req.typeId, req.qty);
+                g_addState.store(static_cast<int>(ok ? Inventory::AddState::Added : Inventory::AddState::Failed),
                                  std::memory_order_release);
             }
             RunBulkAdd();
@@ -3344,53 +3532,154 @@ namespace trinity::game
         return AddItem(tid, count);
     }
 
-    bool Inventory::AddMoneyPouch(const char* itemKey, int64_t count)
+    // Background thread scan for wallet money (WeMod / Heap Scanner from Trinity-1.2.1)
+    static void BackgroundCurrencyScan(int64_t origCopper, int64_t copperAmount)
     {
-        return AddItemByKey(itemKey, count);
-    }
-
-    bool Inventory::AddMoneyAmount(int64_t silverAmount)
-    {
-        if (silverAmount <= 0) return false;
-        uint16_t tid = FindTypeIdByKey("Silver_Pack");
-        if (!tid) tid = FindTypeIdByKey("Small_Silver_Pack");
-        if (!tid) tid = FindTypeIdByKey("Small_Copper_Pack");
-        if (!tid) tid = FindTypeIdByKey("Boss_Reward_BigMoney");
-        if (!tid)
-        {
-            LOG_WARN("inventory: no money pouch definition found in item table.");
-            return false;
+        uintptr_t modBase = 0, modEnd = 0;
+        __try {
+            HMODULE hMod = GetModuleHandleA(nullptr);
+            modBase = reinterpret_cast<uintptr_t>(hMod);
+            auto* dos = reinterpret_cast<IMAGE_DOS_HEADER*>(hMod);
+            auto* nt  = reinterpret_cast<IMAGE_NT_HEADERS*>(
+                reinterpret_cast<uint8_t*>(hMod) + dos->e_lfanew);
+            modEnd = modBase + nt->OptionalHeader.SizeOfImage;
+        } __except (EXCEPTION_EXECUTE_HANDLER) {
+            modEnd = modBase + 0x10000000;
         }
 
-        int64_t count = silverAmount;
-        if (count > 99999) count = 99999;
-        return AddItem(tid, count);
+        MEMORY_BASIC_INFORMATION mbi{};
+        uintptr_t addr = 0x10000;
+        while (VirtualQuery(reinterpret_cast<void*>(addr), &mbi, sizeof(mbi)) > 0)
+        {
+            const uintptr_t base = reinterpret_cast<uintptr_t>(mbi.BaseAddress);
+            const size_t    size = mbi.RegionSize;
+
+            const bool writable = (mbi.Protect == PAGE_READWRITE);
+            const bool safe =
+                mbi.State == MEM_COMMIT && size >= 8 && writable &&
+                !(mbi.Protect & (PAGE_GUARD | PAGE_NOACCESS)) &&
+                !(modEnd > modBase && base >= modBase && base < modEnd);
+
+            if (safe)
+            {
+                // Heap Scanner disabled: Removed unsafe WeMod memory scanning that caused memory corruption.
+            }
+
+            addr = base + size;
+            if (addr >= 0x7FFFFFFFFFFF || addr <= base) break;
+        }
     }
 
-    bool Inventory::SetWalletMoneyValue(int64_t amount)
+    // 1. Direct Silver Setter (Sets exact silver balance in bag + server container)
+    bool Inventory::SetDirectSilver(int64_t silverAmount)
     {
-        if (amount < 0) amount = 0;
-        // In Crimson Desert, 1 Silver = 100 Copper internally (e.g. 99,999,999 Silver = 9,999,999,900 Copper)
-        const int64_t copperAmount = amount * 100;
+        if (silverAmount < 0) silverAmount = 0;
+        const int64_t copperAmount = silverAmount * 100;
         RefreshImpl(true);
 
         const uint16_t moneyTid = FindTypeIdByKey("Money_Copper");
+        if (moneyTid == 0) return false;
 
-        // Ensure max stack for Money_Copper in item table is set to 999,999,999,999
+        // ---- Capture original copper BEFORE any writes ----
+        int64_t origCopper = 0;
+        for (size_t s = 0; s < g_storages.size(); ++s)
+            for (size_t g = 0; g < g_storages[s].groups.size(); ++g)
+                for (size_t i = 0; i < g_storages[s].groups[g].items.size(); ++i)
+                {
+                    const Item& it = g_storages[s].groups[g].items[i];
+                    if (it.typeId == moneyTid || (moneyTid == 0 && _stricmp(it.key, "Money_Copper") == 0))
+                    { origCopper = it.qty; goto origCaptured; }
+                }
+        origCaptured:;
+
+        // Ensure max stack cap is unlocked for Money_Copper
         uintptr_t moneyDef = 0;
-        if (moneyTid != 0 && DefForRow(g_itemTableGlobal, moneyTid, &moneyDef))
+        if (DefForRow(g_itemTableGlobal, moneyTid, &moneyDef))
         {
             Write64(moneyDef + kOff_ItemDef_MaxStackCount, 999999999999ULL);
-            Write8(moneyDef + kOff_ItemDef_ApplyMaxStackCap, 1);
+            Write8(moneyDef + kOff_ItemDef_ApplyMaxStackCap, 0);
         }
 
         bool written = false;
 
-        // 1. Write to cached g_storages (visible item slots)
-        for (size_t s = 0; s < g_storages.size(); ++s)
-        {
-            for (size_t g = 0; g < g_storages[s].groups.size(); ++g)
+        // A. Write to existing Money_Copper slots in all holders
+        auto writeHolderMoney = [&](uintptr_t holder) {
+            if (!holder || holder < kMinPointer) return false;
+            uintptr_t buckets = 0;
+            uint32_t bcount = 0;
+            if (!ReadPtr(holder + kOff_InvHolder_Buckets, &buckets) || !Read32(holder + kOff_InvHolder_Count, &bcount)) return false;
+            if (buckets < kMinPointer || bcount == 0 || bcount > 4096) return false;
+
+            bool hWritten = false;
+            for (uint32_t b = 0; b < bcount; ++b)
             {
+                uintptr_t bucket = 0;
+                if (!ReadPtr(buckets + static_cast<uintptr_t>(b) * 8, &bucket) || bucket < kMinPointer) continue;
+                uintptr_t slots = 0;
+                uint16_t scount = 0;
+                if (!ReadPtr(bucket + kOff_InvBucket_Slots, &slots) || !Read16(bucket + kOff_InvBucket_Count, &scount)) continue;
+                if (slots < kMinPointer || scount == 0 || scount > 8192) continue;
+
+                for (uint16_t i = 0; i < scount; ++i)
+                {
+                    const uintptr_t slot = slots + static_cast<uintptr_t>(i) * SlotStride();
+                    uint16_t tid = 0;
+                    if (!Read16(slot + kOff_InvSlot_TypeId, &tid) || tid != moneyTid) continue;
+                    Write64(slot + kOff_InvSlot_Quantity, copperAmount);
+                    hWritten = true;
+                }
+            }
+            return hWritten;
+        };
+
+        const uintptr_t clientH = CurrentHolder();
+        const uintptr_t serverH = ServerHolder();
+        if (writeHolderMoney(clientH)) written = true;
+        if (writeHolderMoney(serverH)) written = true;
+
+        for (int c = 0; c < 3; ++c)
+        {
+            const uintptr_t candChar = CharacterAddr(c);
+            if (candChar >= kMinPointer)
+            {
+                uintptr_t h = HolderForContainer(candChar);
+                if (h && writeHolderMoney(h)) written = true;
+
+                uintptr_t sub = 0;
+                if (ReadPtr(candChar + kOff_Container_Sub, &sub) && sub >= kMinPointer)
+                {
+                    uintptr_t subH = 0;
+                    if (ReadPtr(sub + kOff_Sub_Holder, &subH) && subH >= kMinPointer)
+                        if (writeHolderMoney(subH)) written = true;
+                }
+
+                uintptr_t compRoot = 0;
+                if (ReadPtr(candChar + 0x68, &compRoot) && compRoot >= kMinPointer)
+                {
+                    uintptr_t actContainer = 0;
+                    if (ReadPtr(compRoot + 0xB8, &actContainer) && actContainer >= kMinPointer)
+                    {
+                        uintptr_t actH = HolderForContainer(actContainer);
+                        if (actH && writeHolderMoney(actH)) written = true;
+                    }
+                }
+            }
+        }
+
+        Candidate snap[kMaxCandidates] = {};
+        const int n = SnapshotCandidates(snap);
+        for (int i = 0; i < n; ++i)
+        {
+            uintptr_t ch = snap[i].holder ? snap[i].holder : HolderForContainer(snap[i].container);
+            if (ch && HolderLooksValid(ch))
+            {
+                if (writeHolderMoney(ch)) written = true;
+            }
+        }
+
+        // Also update cached g_storages
+        for (size_t s = 0; s < g_storages.size(); ++s)
+            for (size_t g = 0; g < g_storages[s].groups.size(); ++g)
                 for (size_t i = 0; i < g_storages[s].groups[g].items.size(); ++i)
                 {
                     Item& it = g_storages[s].groups[g].items[i];
@@ -3404,74 +3693,187 @@ namespace trinity::game
                         }
                     }
                 }
+
+        // B. If player has no Money_Copper slot yet (brand new save or 0 coins):
+        if (!written)
+        {
+            if (CommitAdd(moneyTid, copperAmount))
+            {
+                written = true;
+            }
+            else
+            {
+                AddItem(moneyTid, copperAmount);
+                written = true;
             }
         }
 
-        // 2. Write to all holder-based slots (client + server + candidates)
-        auto writeHolderMoney = [&](uintptr_t holder) {
-            if (!holder || holder < kMinPointer) return false;
+        // The memory injection has been delegated to Wallet Native Hooks.
+        // We just update the HUD value through the spoof so the engine saves it automatically upon any transaction.
+        if (copperAmount == 0)
+            g_walletSpoofValue = -1; // Disable spoof
+        else
+            g_walletSpoofValue = copperAmount; // Enable spoof
+
+        written = true;
+
+        ConsolidateMoney();
+        RefreshImpl(true);
+        LOG("inventory: SetDirectSilver -> %lld Silver (%lld Copper) [status=%d].", silverAmount, copperAmount, written ? 1 : 0);
+        return written;
+    }
+
+    // 2. Direct Silver Adder (Adds silver amount to existing balance)
+    bool Inventory::AddDirectSilver(int64_t silverAmount)
+    {
+        if (silverAmount <= 0) return false;
+        const int64_t copperAmount = silverAmount * 100;
+        RefreshImpl(true);
+
+        const uint16_t moneyTid = FindTypeIdByKey("Money_Copper");
+        if (moneyTid == 0) return false;
+
+        // Check current balance
+        int64_t curCopper = 0;
+        for (size_t s = 0; s < g_storages.size(); ++s)
+            for (size_t g = 0; g < g_storages[s].groups.size(); ++g)
+                for (size_t i = 0; i < g_storages[s].groups[g].items.size(); ++i)
+                {
+                    const Item& it = g_storages[s].groups[g].items[i];
+                    if (it.typeId == moneyTid || (moneyTid == 0 && _stricmp(it.key, "Money_Copper") == 0))
+                    {
+                        curCopper = it.qty;
+                        break;
+                    }
+                }
+
+        const int64_t targetSilver = (curCopper + copperAmount) / 100;
+        return SetDirectSilver(targetSilver);
+    }
+
+    // 3. Spawns Full Silver Pouches (Silver_Pack)
+    bool Inventory::SpawnSilverPouches(int64_t count)
+    {
+        if (count <= 0) return false;
+        uint16_t tid = FindTypeIdByKey("Silver_Pack");
+        if (!tid)
+        {
+            LOG_WARN("inventory: Silver_Pack not found in item table.");
+            return false;
+        }
+        return AddItem(tid, count);
+    }
+
+    // 4. Liquidates all Full Silver Pouches in bag directly into Silver Coins
+    bool Inventory::CashInAllSilverPouches(int64_t* outSilverAdded)
+    {
+        if (outSilverAdded) *outSilverAdded = 0;
+        RefreshImpl(true);
+
+        const uint16_t moneyTid = FindTypeIdByKey("Money_Copper");
+        const uint16_t silverPackTid = FindTypeIdByKey("Silver_Pack");
+
+        if (!silverPackTid) return false;
+
+        int64_t addedCopper = 0;
+        int pouchesCleared = 0;
+
+        // 1. Scan and wipe from g_storages
+        for (size_t s = 0; s < g_storages.size(); ++s)
+        {
+            for (size_t g = 0; g < g_storages[s].groups.size(); ++g)
+            {
+                for (size_t i = 0; i < g_storages[s].groups[g].items.size(); ++i)
+                {
+                    Item& it = g_storages[s].groups[g].items[i];
+                    if (it.qty > 0 && (it.typeId == silverPackTid || (it.key && _stricmp(it.key, "Silver_Pack") == 0)))
+                    {
+                        addedCopper += it.qty * 1000000LL; // 10,000 Silver per Full Silver Pouch
+                        Write16(it.slot + kOff_InvSlot_TypeId, kInvSlot_EmptyType);
+                        Write64(it.slot + kOff_InvSlot_Quantity, 0);
+                        WriteServerMirror(it.bucketIdx, it.slotIdx, kInvSlot_EmptyType, it.qty, 0);
+                        it.typeId = kInvSlot_EmptyType;
+                        it.qty = 0;
+                        ++pouchesCleared;
+                    }
+                }
+            }
+        }
+
+        // 2. Scan and wipe from all holders
+        auto cleanHolderPouches = [&](uintptr_t holder) {
+            if (!holder || holder < kMinPointer) return;
             uintptr_t buckets = 0;
             uint32_t bcount = 0;
-            if (!ReadPtr(holder + kOff_InvHolder_Buckets, &buckets) || !Read32(holder + kOff_InvHolder_Count, &bcount))
-                return false;
-            if (buckets < kMinPointer || bcount == 0 || bcount > 4096) return false;
+            if (!ReadPtr(holder + kOff_InvHolder_Buckets, &buckets) || !Read32(holder + kOff_InvHolder_Count, &bcount)) return;
+            if (buckets < kMinPointer || bcount == 0 || bcount > 4096) return;
 
-            bool hWritten = false;
             for (uint32_t b = 0; b < bcount; ++b)
             {
                 uintptr_t bucket = 0;
                 if (!ReadPtr(buckets + static_cast<uintptr_t>(b) * 8, &bucket) || bucket < kMinPointer) continue;
                 uintptr_t slots = 0;
                 uint16_t scount = 0;
-                if (!ReadPtr(bucket + kOff_InvBucket_Slots, &slots) || slots < kMinPointer) continue;
-                if (!Read16(bucket + kOff_InvBucket_Count, &scount) || scount == 0 || scount > 8192) continue;
+                if (!ReadPtr(bucket + kOff_InvBucket_Slots, &slots) || !Read16(bucket + kOff_InvBucket_Count, &scount)) continue;
+                if (slots < kMinPointer || scount == 0 || scount > 8192) continue;
 
                 for (uint16_t i = 0; i < scount; ++i)
                 {
                     const uintptr_t slot = slots + static_cast<uintptr_t>(i) * SlotStride();
                     uint16_t tid = 0;
-                    if (!Read16(slot + kOff_InvSlot_TypeId, &tid) || tid == kInvSlot_EmptyType || tid == 0) continue;
-                    if (tid == moneyTid || moneyTid == 0)
-                    {
-                        char k[64]{};
-                        if ((moneyTid != 0 && tid == moneyTid) ||
-                            (KeyForType(tid, k, sizeof(k)) && _stricmp(k, "Money_Copper") == 0))
-                        {
-                            Write64(slot + kOff_InvSlot_Quantity, copperAmount);
-                            hWritten = true;
-                        }
-                    }
+                    if (!Read16(slot + kOff_InvSlot_TypeId, &tid) || tid != silverPackTid) continue;
+                    Write16(slot + kOff_InvSlot_TypeId, kInvSlot_EmptyType);
+                    Write64(slot + kOff_InvSlot_Quantity, 0);
+                    WriteServerMirror(b, i, kInvSlot_EmptyType, 0, 0);
                 }
             }
-            return hWritten;
+            RepairUsedSlots(holder);
         };
 
-        const uintptr_t clientH = CurrentHolder();
-        const uintptr_t serverH = ServerHolder();
-        if (writeHolderMoney(clientH)) written = true;
-        if (writeHolderMoney(serverH)) written = true;
+        cleanHolderPouches(CurrentHolder());
+        cleanHolderPouches(ServerHolder());
 
         Candidate snap[kMaxCandidates] = {};
         const int n = SnapshotCandidates(snap);
         for (int i = 0; i < n; ++i)
         {
-            if (snap[i].holder)
-                if (writeHolderMoney(snap[i].holder)) written = true;
-            if (snap[i].container)
+            uintptr_t ch = snap[i].holder ? snap[i].holder : HolderForContainer(snap[i].container);
+            if (ch && HolderLooksValid(ch)) cleanHolderPouches(ch);
+        }
+
+        if (addedCopper <= 0)
+        {
+            LOG_WARN("inventory: no Full Silver Pouches found to cash in.");
+            return false;
+        }
+
+        const int64_t silverToAdd = addedCopper / 100;
+        AddDirectSilver(silverToAdd);
+
+        if (outSilverAdded) *outSilverAdded = silverToAdd;
+        LOG("inventory: Cashed in %d Full Silver Pouches for +%lld Silver.", pouchesCleared, silverToAdd);
+        return true;
+    }
+
+    // 5. Adds Camp Provisions & Supplies (Camp Money, Food, Weaponry)
+    bool Inventory::AddCampCurrency(int64_t amount)
+    {
+        if (amount <= 0) return false;
+        
+        // Instead of AddItem which fails to update the Camp Container, we boost the getter!
+        g_campSpoofAddedValue += amount;
+        
+        // Let's also do AddItem just in case the game needs it for something else
+        for (const char* campKey : { "Money_Camp_Money", "Money_Camp_Food", "Money_Camp_Weapon", "Money_Camp_Wood", "Money_Camp_Stone" })
+        {
+            uint16_t tid = FindTypeIdByKey(campKey);
+            if (tid)
             {
-                uintptr_t h = HolderForContainer(snap[i].container);
-                if (h && writeHolderMoney(h)) written = true;
+                AddItem(tid, amount);
             }
         }
-
-        // 3. If no existing slot was modified, inject/update Money_Copper
-        if (!written && moneyTid != 0)
-        {
-            AddItemByKey("Money_Copper", amount > 999999999 ? 999999999 : amount);
-            written = true;
-        }
-
-        return written;
+        RefreshImpl(true);
+        return true;
     }
 
     int Inventory::ConsolidateMoney()
@@ -3479,12 +3881,11 @@ namespace trinity::game
         RefreshImpl(true);
         const uint16_t moneyTid = FindTypeIdByKey("Money_Copper");
 
-        // Ensure max stack for Money_Copper in item table is set to 999,999,999,999
+        // Ensure max stack for Money_Copper in item table is set to 999,999,999,999 so it never splits into 1000.00 slots
         uintptr_t moneyDef = 0;
         if (moneyTid != 0 && DefForRow(g_itemTableGlobal, moneyTid, &moneyDef))
         {
             Write64(moneyDef + kOff_ItemDef_MaxStackCount, 999999999999ULL);
-            Write8(moneyDef + kOff_ItemDef_ApplyMaxStackCap, 1);
         }
 
         int64_t totalCopper = 0;
@@ -3525,13 +3926,16 @@ namespace trinity::game
             }
         }
 
-        auto cleanHolderDuplicates = [&](uintptr_t holder) {
+        auto cleanHolderDuplicates = [&](uintptr_t holder, int64_t targetCopper) {
             if (!holder || holder < kMinPointer) return;
             uintptr_t buckets = 0;
             uint32_t bcount = 0;
             if (!ReadPtr(holder + kOff_InvHolder_Buckets, &buckets) || !Read32(holder + kOff_InvHolder_Count, &bcount))
                 return;
             if (buckets < kMinPointer || bcount == 0 || bcount > 4096) return;
+
+            uintptr_t holderFirstSlot = 0;
+            int64_t holderCopper = 0;
 
             for (uint32_t b = 0; b < bcount; ++b)
             {
@@ -3551,16 +3955,19 @@ namespace trinity::game
                     KeyForType(tid, key, sizeof(key));
                     if (tid == moneyTid || (moneyTid == 0 && _stricmp(key, "Money_Copper") == 0) || _stricmp(key, "Money_Copper") == 0)
                     {
-                        if (firstSlot == 0)
+                        if (holderFirstSlot == 0)
                         {
-                            firstSlot = s;
-                        }
-                        else if (s != firstSlot)
-                        {
-                            // Clear duplicate slot
+                            holderFirstSlot = s;
                             int64_t q = 0;
                             Read64(s + kOff_InvSlot_Quantity, &q);
-                            totalCopper += q;
+                            holderCopper += q;
+                        }
+                        else
+                        {
+                            // Clear duplicate slot within THIS holder
+                            int64_t q = 0;
+                            Read64(s + kOff_InvSlot_Quantity, &q);
+                            holderCopper += q;
                             Write16(s + kOff_InvSlot_TypeId, kInvSlot_EmptyType);
                             Write64(s + kOff_InvSlot_Quantity, 0);
                             ++duplicateSlotsFound;
@@ -3568,24 +3975,37 @@ namespace trinity::game
                     }
                 }
             }
+            if (holderFirstSlot != 0)
+            {
+                const int64_t finalQty = (targetCopper > 0) ? targetCopper : holderCopper;
+                Write64(holderFirstSlot + kOff_InvSlot_Quantity, finalQty);
+            }
         };
 
-        cleanHolderDuplicates(CurrentHolder());
-        cleanHolderDuplicates(ServerHolder());
+        const int64_t targetTotal = (totalCopper > 0) ? totalCopper : 0;
+        cleanHolderDuplicates(CurrentHolder(), targetTotal);
+        cleanHolderDuplicates(ServerHolder(), targetTotal);
 
-        // Ensure the single master money slot holds the full wallet amount (9,999,703.13 Silver = 999,970,313 Copper)
-        if (totalCopper < 999970313)
+        Candidate snap[kMaxCandidates] = {};
+        const int n = SnapshotCandidates(snap);
+        for (int i = 0; i < n; ++i)
         {
-            totalCopper = 999970313;
+            uintptr_t ch = snap[i].holder ? snap[i].holder : HolderForContainer(snap[i].container);
+            if (ch && HolderLooksValid(ch))
+            {
+                cleanHolderDuplicates(ch, targetTotal);
+            }
         }
 
         if (firstSlot != 0 && totalCopper > 0)
         {
             Write64(firstSlot + kOff_InvSlot_Quantity, totalCopper);
-            if (firstBucket != 0)
-                WriteServerMirror(firstBucket, firstSlotIdx, moneyTid, 0, totalCopper);
+            WriteServerMirror(firstBucket, firstSlotIdx, moneyTid, totalCopper, totalCopper);
         }
 
+        RepairUsedSlots(CurrentHolder());
+        RepairUsedSlots(ServerHolder());
+        RefreshImpl(true);
         return duplicateSlotsFound;
     }
 
@@ -3691,10 +4111,11 @@ namespace trinity::game
         if (typeId == kInvSlot_EmptyType || typeId == 0) return false;
         uintptr_t def = 0;
         if (!DefForRow(g_itemTableGlobal, typeId, &def)) return false; // unknown item
-        if (g_addPending.load(std::memory_order_acquire)) return false; // one at a time
-        g_addReq = { typeId, qty };
+        {
+            std::lock_guard<std::mutex> lk(g_singleAddMutex);
+            g_singleAddQueue.push_back({ typeId, qty });
+        }
         g_addState.store(static_cast<int>(AddState::Pending), std::memory_order_release);
-        g_addPending.store(true, std::memory_order_release);
         return true;
     }
 

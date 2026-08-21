@@ -131,6 +131,7 @@ namespace trinity::ui
         char segoePath[MAX_PATH], seguisbPath[MAX_PATH], segoeuibPath[MAX_PATH];
         char yaheiPath[MAX_PATH], yaheibdPath[MAX_PATH];
         char malgunPath[MAX_PATH], malgunbdPath[MAX_PATH];
+        char meiryoPath[MAX_PATH], meiryobdPath[MAX_PATH];
 
         snprintf(segoePath, sizeof(segoePath), "%s\\Fonts\\segoeui.ttf", windir);
         snprintf(seguisbPath, sizeof(seguisbPath), "%s\\Fonts\\seguisb.ttf", windir);
@@ -142,10 +143,15 @@ namespace trinity::ui
         snprintf(malgunPath, sizeof(malgunPath), "%s\\Fonts\\malgun.ttf", windir);
         snprintf(malgunbdPath, sizeof(malgunbdPath), "%s\\Fonts\\malgunbd.ttf", windir);
 
+        snprintf(meiryoPath, sizeof(meiryoPath), "%s\\Fonts\\meiryo.ttc", windir);
+        snprintf(meiryobdPath, sizeof(meiryobdPath), "%s\\Fonts\\meiryob.ttc", windir);
+
         const bool hasYahei = (GetFileAttributesA(yaheiPath) != INVALID_FILE_ATTRIBUTES);
         const bool hasYaheiBd = (GetFileAttributesA(yaheibdPath) != INVALID_FILE_ATTRIBUTES);
         const bool hasMalgun = (GetFileAttributesA(malgunPath) != INVALID_FILE_ATTRIBUTES);
         const bool hasMalgunBd = (GetFileAttributesA(malgunbdPath) != INVALID_FILE_ATTRIBUTES);
+        const bool hasMeiryo = (GetFileAttributesA(meiryoPath) != INVALID_FILE_ATTRIBUTES);
+        const bool hasMeiryoBd = (GetFileAttributesA(meiryobdPath) != INVALID_FILE_ATTRIBUTES);
 
         // Build a lean, high-speed Chinese glyph range (Common 2500 + all Trinity menu characters)
         static ImVector<ImWchar> s_zhRanges;
@@ -167,7 +173,16 @@ namespace trinity::ui
             builder.BuildRanges(&s_koRanges);
         }
 
-        auto LoadFontWithFallbacks = [&](const char* primaryPath, const char* zhPath, const char* koPath, float size) -> ImFont*
+        // Build Japanese glyph range
+        static ImVector<ImWchar> s_jaRanges;
+        if (s_jaRanges.empty() && hasMeiryo)
+        {
+            ImFontGlyphRangesBuilder builder;
+            builder.AddRanges(io.Fonts->GetGlyphRangesJapanese());
+            builder.BuildRanges(&s_jaRanges);
+        }
+
+        auto LoadFontWithFallbacks = [&](const char* primaryPath, const char* zhPath, const char* koPath, const char* jaPath, float size) -> ImFont*
         {
             ImFontConfig cfg;
             cfg.OversampleH = 1;
@@ -199,11 +214,17 @@ namespace trinity::ui
                 io.Fonts->AddFontFromFileTTF(koPath, size, &cfgMerge, s_koRanges.Data);
             }
 
+            // Merge Japanese glyphs into THIS font
+            if (jaPath && !s_jaRanges.empty())
+            {
+                io.Fonts->AddFontFromFileTTF(jaPath, size, &cfgMerge, s_jaRanges.Data);
+            }
+
             return font;
         };
 
-        g_fontBody  = LoadFontWithFallbacks(segoePath,   hasYahei ? yaheiPath : nullptr,     hasMalgun ? malgunPath : nullptr,     21.0f * g_scale);
-        g_fontBold  = LoadFontWithFallbacks(seguisbPath, hasYaheiBd ? yaheibdPath : (hasYahei ? yaheiPath : nullptr), hasMalgunBd ? malgunbdPath : (hasMalgun ? malgunPath : nullptr), 21.0f * g_scale);
+        g_fontBody  = LoadFontWithFallbacks(segoePath,   hasYahei ? yaheiPath : nullptr,     hasMalgun ? malgunPath : nullptr,     hasMeiryo ? meiryoPath : nullptr,     21.0f * g_scale);
+        g_fontBold  = LoadFontWithFallbacks(seguisbPath, hasYaheiBd ? yaheibdPath : (hasYahei ? yaheiPath : nullptr), hasMalgunBd ? malgunbdPath : (hasMalgun ? malgunPath : nullptr), hasMeiryoBd ? meiryobdPath : (hasMeiryo ? meiryoPath : nullptr), 21.0f * g_scale);
 
         // g_fontTitle is for TRINITY header (Latin)
         ImFontConfig cfgTitle;

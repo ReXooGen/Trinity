@@ -1010,6 +1010,33 @@ namespace trinity::game
         }
     }
 
+    bool Equipment::IsRefinableTag(uint16_t tag)
+    {
+        switch (tag)
+        {
+        case 0:  // Main Hand Weapon
+        case 1:  // Off-Hand Weapon / Shield
+        case 2:  // Ranged Weapon (Bow / Arbalest)
+        case 3:  // Helmet / Headgear
+        case 4:  // Chest Armor
+        case 5:  // Gloves
+        case 6:  // Boots
+        case 7:  // Earring 1
+        case 8:  // Earring 2
+        case 9:  // Necklace
+        case 10: // Ring 1
+        case 11: // Ring 2
+        case 12: // Dagger
+        case 13: // Two-Handed Weapon
+        case 16: // Cloak
+            return true;
+        default:
+            // Exclude Lantern (15), Axiom Bracelet (20), Backpack (19), Glasses (17), Mask (18), Mount gear (14, 21-25)
+            // These items have no enhancement curve in engine ItemInfo; refining them causes 0xC0000005 crash.
+            return false;
+        }
+    }
+
     const char* Equipment::CharacterName(int index)
     {
         switch (index)
@@ -1323,6 +1350,7 @@ namespace trinity::game
     bool Equipment::SetRefine(uint16_t tag, int level, bool* persisted)
     {
         if (persisted) *persisted = false;
+        if (!IsRefinableTag(tag)) return false; // Strictly protect non-refinable utility gadgets (Lantern, Axiom Bracelet)
         if (level < 0) level = 0;
         if (level > kRefine_Max) level = kRefine_Max;
         const uint16_t lvl = static_cast<uint16_t>(level);
@@ -1462,12 +1490,15 @@ namespace trinity::game
             SlotInfo info{};
             if (GetSlot(i, &info))
             {
-                SetRefine(info.tag, level);
-                ++count;
+                if (IsRefinableTag(info.tag))
+                {
+                    if (SetRefine(info.tag, level))
+                        ++count;
+                }
             }
         }
         if (refinedCount) *refinedCount = count;
-        LOG("equipment: [%s] Refined all %d equipped pieces to +%d.", CharacterName(GetActiveCharacter()), count, level);
+        LOG("equipment: [%s] Refined all %d eligible equipped pieces to +%d.", CharacterName(GetActiveCharacter()), count, level);
         return count > 0;
     }
 

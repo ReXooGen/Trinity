@@ -1403,9 +1403,9 @@ namespace trinity::game
                             float targetVx = vx * horizMult * speedMult;
                             float targetVz = vz * horizMult * speedMult;
 
-                            // BlackSpace Engine Havok character controller safe maximum speed limit (50.0f m/s)
-                            // Speeds beyond ~55.0f cause physics broadphase overflow, wing glider stall, and CTD.
-                            constexpr float kMaxSafeFlightSpeed = 50.0f;
+                            // BlackSpace Engine Havok character controller safe maximum speed limit (35.0f m/s)
+                            // Speeds beyond ~35.0f-40.0f while Gliding cause physics broadphase overflow, wing glider stall, and CTD.
+                            constexpr float kMaxSafeFlightSpeed = 35.0f;
                             const float targetSpeed = std::sqrt(targetVx * targetVx + targetVz * targetVz);
                             if (targetSpeed > kMaxSafeFlightSpeed)
                             {

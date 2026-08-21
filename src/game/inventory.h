@@ -201,20 +201,13 @@ namespace trinity::game
         // Add a specific item by its engine key (e.g. "Abyss_Artifact", "Heavy_Copper_Pack")
         static bool AddItemByKey(const char* key, int64_t count);
 
-        // Add a specific money pouch/pack by key name (e.g. "Heavy_Copper_Pack", "Copper_Pack")
-        static bool AddMoneyPouch(const char* itemKey, int64_t count);
-
-        // Add money directly calculated in copper pouches/packs (silverAmount converted to pouch count)
-        static bool AddMoneyAmount(int64_t silverAmount);
-
-        // Directly writes money value to the Money_Copper slot in both client and server holders.
-        // Save and reload the game to reflect in the top-right spendable wallet balance.
-        static bool SetWalletMoneyValue(int64_t amount);
-
-        // Merges all duplicate Money_Copper stacks in bag/storage into 1 single master stack and cleans up empty slots.
+        // --- Rebuilt Clean Money & Currency Subsystem (1.18.0.2 Native) ---
+        static bool SetDirectSilver(int64_t silverAmount);
+        static bool AddDirectSilver(int64_t silverAmount);
+        static bool SpawnSilverPouches(int64_t count);
+        static bool CashInAllSilverPouches(int64_t* outSilverAdded = nullptr);
+        static bool AddCampCurrency(int64_t amount);
         static int ConsolidateMoney();
-
-        // Merges ALL duplicate items (weapons, armors, gear, packs, materials, abyss gears, etc.) into 1 stack each.
         static int ConsolidateAllItems();
 
         // --- Sealed Abyss Artifact Smart Management (1..150) ----------------

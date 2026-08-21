@@ -780,7 +780,7 @@ namespace trinity::game
                         delta = ScaleDamage(owner, sourceCtx, delta);
                     }
                 }
-                else if ((st.infStamina || st.infMountStamina) &&
+                else if ((st.infStamina || st.infMountStamina || Teleport::GetFlightEngaged()) &&
                          (isPlayerTarget || InSet(g_mountActors, kMaxMounts, owner) || InSet(g_mountStamEntries, kMaxStatEntries, owner)) &&
                          (IsStaminaType(statusId) || statusId == StatType_MountSprint || statusId == 19 ||
                           statusId == StatType_SprintSt || statusId == 20 || statusId == StatType_StaminaPool117 || statusId == 22))

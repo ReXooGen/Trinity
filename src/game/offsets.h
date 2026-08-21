@@ -535,7 +535,11 @@ namespace trinity::game
     // every item, and writing a slot's quantity sticks - the game even re-stacks
     // it. Money is the exception: its inventory slot is a passive mirror, so
     // editing it does not change spendable currency.)
+    // 1.18.0.2 Native GetItemQuantity (sub_1582880 @ 0x141582880)
+    // Called by HUD wallet, vendor shops, and crafting recipes
     inline constexpr const char* kSig_InvGetItemQty =
+        "66 89 54 24 10 53 57 48 83 EC 28 0F B7 DA";
+    inline constexpr const char* kSig_InvGetItemQty_Legacy =
         "48 89 5C 24 ? 48 89 6C 24 ? 48 89 74 24 ? 57 48 83 EC 20 49 8B E8 0F B7 DA";
     inline constexpr const char* kSig_InvGetHolder =
         "40 53 48 83 EC 20 48 8B 41 68 48 8B D9 48 8B 48 20 0F B7 41 30";

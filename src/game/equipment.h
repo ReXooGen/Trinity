@@ -108,6 +108,11 @@ namespace trinity::game
         // socket edit does, the best available "apply now" lever.
         static bool SetRefine(uint16_t tag, int level, bool* persisted = nullptr);
 
+        // Check whether this equipment slot is refinable (weapons, armor, accessories).
+        // Strictly excludes utility items (Lantern, Axiom Bracelet, Tools, Mount Gear)
+        // to prevent engine 0xC0000005 crashes during effect stat recomputation.
+        static bool IsRefinableTag(uint16_t tag);
+
         // Unlock every socket on the piece (open all five). Durable, like the
         // gear writes - both realms get every record a real index.
         static bool UnlockAll(uint16_t tag);

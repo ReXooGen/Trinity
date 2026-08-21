@@ -1975,83 +1975,105 @@ namespace trinity::gui
     }
 
     // --- Money & Currency Generator -------------------------------------------
-    static int s_directMoneyValue = 99999999;
-    static int s_customPouchCount = 1000;
-    static int s_customChestCount = 100;
+    static int s_directSilverInput = 20000000;
+    static int s_pouchCountInput = 1000;
+
+    static void RenderInventoryMoneyOptional()
+    {
+        ui::Begin(LOC("Optional"));
+
+        if (ui::Option(LOC(">> Clear Bugged/Fake Wallet Coins <<"),
+                       LOC("Wipes all fake/bugged silver coins from your bag so you can fix the 0-Wallet desync.")))
+        {
+            game::Inventory::SetDirectSilver(0);
+            ui::Toast(LOC("Fake coins cleared! Now sell 1 item to the merchant, then try Set Money."));
+        }
+
+        if (ui::Option(LOC("Consolidate All Money Stacks"),
+                       LOC("Merges all scattered silver slots into 1 single master slot in your bag.")))
+        {
+            int cleaned = game::Inventory::ConsolidateMoney();
+            ui::Toast(LOC("Consolidated money into 1 stack (cleaned %d duplicate slots)."), cleaned);
+        }
+
+        ui::End();
+    }
 
     static void RenderInventoryMoney()
     {
         ui::Begin(LOC("Money & Currency"));
         ReportPendingAdd();
 
-        // 1. DIRECT WALLET / SAVE-RELOAD METHOD (WeMod Method)
-        ui::IntOption(LOC("Direct Silver Value"), &s_directMoneyValue, 100, 999999999, 1000000, 99999999,
-                      LOC("Enter amount. After applying: SAVE the game and RELOAD that save to see top-right wallet change."));
+        // 1. DIRECT SILVER WALLET
+        ui::IntOption(LOC("Direct Silver Amount"), &s_directSilverInput, 0, 20000000, 1000000, 20000000,
+                      LOC("Specify the amount of Silver coins to add or set directly into your wallet (max 20,000,000). Set to 0 to clear bugged coins."));
 
-        if (ui::Option(LOC(">> Apply Direct Silver (Save & Reload) <<"),
-                       LOC("Writes to memory. After pressing: SAVE GAME and LOAD GAME to update the top-right wallet!")))
+        if (ui::Option(LOC(">> Set Wallet to Exact Amount <<"),
+                       LOC("Sets your Silver balance to the exact value specified above.")))
         {
-            if (game::Inventory::SetWalletMoneyValue(s_directMoneyValue))
-            {
-                game::Inventory::ConsolidateMoney();
-                ui::Toast(LOC("Silver set to %d! Save & reload game now."), s_directMoneyValue);
-            }
+            if (game::Inventory::SetDirectSilver(s_directSilverInput))
+                ui::Toast(LOC("Wallet set to %d Silver!"), s_directSilverInput);
             else
             {
-                ui::Toast(LOC("Silver set! Save & reload game to see changes."));
+                ui::Toast(LOC("ENGINE BLOCK: Wallet is empty or too low (0 Silver)."));
+                ui::Toast(LOC("Please sell 1 junk item to any merchant to get at least 2 Silver first, then try again!"));
             }
         }
 
-        if (ui::Option(LOC("Set to 10,000,000 Silver (Save & Reload)"),
-                       LOC("Sets coin stack to 10,000,000. Save game and reload save to apply.")))
+
+        if (ui::Option(LOC(">> Add Amount to Existing Wallet <<"),
+                       LOC("Adds the specified silver amount on top of your current wallet balance.")))
         {
-            if (game::Inventory::SetWalletMoneyValue(10000000))
-                ui::Toast(LOC("Set to 10M! Save game & reload now."));
+            if (game::Inventory::AddDirectSilver(s_directSilverInput))
+                ui::Toast(LOC("Added +%d Silver to wallet!"), s_directSilverInput);
+            else
+                ui::Toast(LOC("Silver added to bag!"));
         }
 
-        if (ui::Option(LOC("Set to 99,999,999 Silver (Save & Reload)"),
-                       LOC("Sets coin stack to 99,999,999. Save game and reload save to apply.")))
+        // Quick Presets
+        if (ui::Option(LOC("Set to 1,000,000 Silver (1 Million)"), LOC("Instantly sets wallet to 1,000,000 Silver.")))
         {
-            if (game::Inventory::SetWalletMoneyValue(99999999))
-                ui::Toast(LOC("Set to 99.9M! Save game & reload now."));
+            game::Inventory::SetDirectSilver(1000000);
+            ui::Toast(LOC("Wallet set to 1,000,000 Silver!"));
         }
 
-        // 2. POUCHES & CHESTS METHOD (Instant in-bag use)
-        ui::IntOption(LOC("Full Silver Pouches (Count)"), &s_customPouchCount, 1, 99999, 100, 1000,
-                      LOC("Quantity of Full Silver Pouches to spawn. Open them in-game for silver."));
+        if (ui::Option(LOC("Set to 10,000,000 Silver (10 Million)"), LOC("Instantly sets wallet to 10,000,000 Silver.")))
+        {
+            game::Inventory::SetDirectSilver(10000000);
+            ui::Toast(LOC("Wallet set to 10,000,000 Silver!"));
+        }
+
+        if (ui::Option(LOC("Set to 20,000,000 Silver (20 Million)"), LOC("Instantly sets wallet to 20,000,000 Silver (Safe Cap).")))
+        {
+            game::Inventory::SetDirectSilver(20000000);
+            ui::Toast(LOC("Wallet set to 20,000,000 Silver!"));
+        }
+
+        // 2. FULL SILVER POUCHES (INVENTORY ITEMS)
+        ui::IntOption(LOC("Full Silver Pouches (Count)"), &s_pouchCountInput, 10, 10000, 100, 1000,
+                      LOC("Quantity of Full Silver Pouches to inject into your bag (10,000 Silver each)."));
 
         if (ui::Option(LOC(">> Spawn Full Silver Pouches <<"),
-                       LOC("Press Enter / Space / Click to inject Full Silver Pouches into bag.")))
+                       LOC("Spawns the specified count of Full Silver Pouches into your bag.")))
         {
-            if (game::Inventory::AddItemByKey("Silver_Pack", s_customPouchCount))
-                ui::Toast(LOC("Added %d Full Silver Pouches"), s_customPouchCount);
+            if (game::Inventory::SpawnSilverPouches(s_pouchCountInput))
+                ui::Toast(LOC("Spawned %d Full Silver Pouches!"), s_pouchCountInput);
             else
-                ui::Toast(LOC("Failed to add pouches - inventory full or not ready"));
+                ui::Toast(LOC("Failed to spawn pouches."));
         }
 
-        ui::IntOption(LOC("Plunderer's Gold Chests (Count)"), &s_customChestCount, 1, 9999, 10, 100,
-                      LOC("Quantity of Plunderer's Gold Chests (Massive Gold) to spawn."));
-
-        if (ui::Option(LOC(">> Spawn Plunderer's Gold Chests <<"),
-                       LOC("Press Enter / Space / Click to inject Gold Chests into bag.")))
+        if (ui::Option(LOC(">> Cash In All Pouches (Instant Liquidate) <<"),
+                       LOC("Converts all Full Silver Pouches in your bag into spendable Silver coins and frees pouch slots.")))
         {
-            if (game::Inventory::AddItemByKey("Boss_Reward_BigMoney", s_customChestCount))
-                ui::Toast(LOC("Added %d Gold Chests"), s_customChestCount);
+            int64_t added = 0;
+            if (game::Inventory::CashInAllSilverPouches(&added))
+                ui::Toast(LOC("Liquidated pouches for +%lld Silver!"), added);
             else
-                ui::Toast(LOC("Failed to add chests"));
+                ui::Toast(LOC("No Full Silver Pouches found in bag."));
         }
 
-        if (ui::Option(LOC("Add 1,000x Full Silver Pouches"), LOC("Spawns 1,000x Full Silver Pouches (~10M Silver value).")))
-        {
-            if (game::Inventory::AddItemByKey("Silver_Pack", 1000))
-                ui::Toast(LOC("Added 1,000x Full Silver Pouches"));
-        }
-
-        if (ui::Option(LOC("Add 100x Plunderer's Gold Chests"), LOC("Spawns 100x Plunderer's Gold Chests (Huge Gold Reward).")))
-        {
-            if (game::Inventory::AddItemByKey("Boss_Reward_BigMoney", 100))
-                ui::Toast(LOC("Added 100x Plunderer's Gold Chests"));
-        }
+        // 4. MAINTENANCE
+        ui::Submenu(LOC("Optional"), "invmoney_opt", LOC("Tools for bugged wallets and stack consolidation."));
 
         ui::End();
     }
@@ -2944,6 +2966,7 @@ namespace trinity::gui
         else if (!strcmp(cur, "invrestore_mount")) RenderRestoreMount();
         else if (!strcmp(cur, "invrestore_medals")) RenderRestoreMedals();
         else if (!strcmp(cur, "invmoney"))  RenderInventoryMoney();
+        else if (!strcmp(cur, "invmoney_opt")) RenderInventoryMoneyOptional();
         else if (!strcmp(cur, "invabyss"))  RenderInventoryAbyss();
         else if (!strcmp(cur, "combat_options")) RenderCombatOptions();
         else if (!strcmp(cur, "mount_options")) RenderMountOptions();
