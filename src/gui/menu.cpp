@@ -1612,8 +1612,8 @@ namespace trinity::gui
 
         bool changed = false;
         if (ui::ToggleInt(LOC("Slot Size"), &st.invSlotSize, &st.invSlotSizeVal,
-                          1, 9999, 10, 2000,
-                          LOC("Sets every storage's slot count to this number.")))
+                          1, 700, 10, 700,
+                          LOC("Sets every storage's slot count to this number (safe maximum: 700).")))
             changed = true;
         if (ui::Toggle(LOC("Max Stack Size"), &st.invStackSize,
                        LOC("Enables universal stack limits for all items (weapons, armors, potions, materials, etc.).")))

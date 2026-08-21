@@ -229,7 +229,7 @@ namespace trinity
         st.trustMult     = vals.trustMult;
         st.trustMultVal  = ClampF(vals.trustMultVal, 1.0f, 25.0f);
         st.invSlotSize     = vals.invSlotSize;
-        st.invSlotSizeVal  = ClampI(vals.invSlotSizeVal, 1, 9999);
+        st.invSlotSizeVal  = ClampI(vals.invSlotSizeVal, 1, 700);
         st.invStackSize    = vals.invStackSize;
         st.invStackSizeVal = ClampI(vals.invStackSizeVal, 1, 999999999);
         st.showFps       = vals.showFps;

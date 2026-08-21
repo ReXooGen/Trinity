@@ -1089,15 +1089,13 @@ namespace trinity::game
             return oHolderInsert(bucket, err, container, itemArr, a5, a6, a7, a8, a9);
         }
 
-        // --- The expansion-setter hook: make the engine's re-stamps OURS -----
         bool OverrideExpandForType(uint16_t type, int value, uint16_t* out,
                                    uint16_t* outDef = nullptr)
         {
             uint16_t defSlots = 0, maxSlots = 0;
             if (!StorageSlotsForType(type, &defSlots, &maxSlots)) return false;
             if (value < 1) value = 1;
-            if (maxSlots > 0 && value > maxSlots) value = maxSlots;
-            else if (value > 300) value = 300;
+            if (value > 700) value = 700;
             *out = (value > defSlots) ? static_cast<uint16_t>(value - defSlots) : 0;
             if (outDef) *outDef = defSlots;
             return true;

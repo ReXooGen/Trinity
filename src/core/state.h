@@ -145,7 +145,7 @@ namespace trinity
         // and turning the toggle back off restores each row's own original
         // value.
         bool invSlotSize     = false;
-        int  invSlotSizeVal  = 2000;
+        int  invSlotSizeVal  = 700;
         bool invStackSize    = false;
         int  invStackSizeVal = 999999;
 
