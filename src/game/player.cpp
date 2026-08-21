@@ -541,15 +541,6 @@ namespace trinity::game
             for (int i = nSpir; i < kMaxStatEntries; ++i) g_spiritEntries[i].store(0, std::memory_order_release);
 
             const State& st = State::Get();
-            if (st.infStamina)
-                for (int i = 0; i < nStam; ++i)
-                    PinEntry(g_stamEntries[i].load(std::memory_order_relaxed));
-            if (st.infMountStamina)
-                for (int i = 0; i < nMountStam; ++i)
-                    PinEntry(g_mountStamEntries[i].load(std::memory_order_relaxed));
-            if (st.infSpirit)
-                for (int i = 0; i < nSpir; ++i)
-                    PinEntry(g_spiritEntries[i].load(std::memory_order_relaxed));
 
             // Log only when discovery changes, so the console shows whether
             // the player chain and gauge typing are healthy without frame spam.
