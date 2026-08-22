@@ -1,0 +1,37 @@
+# Build output
+build/
+build-clean/
+out/
+*.asi
+*.pdb
+*.exp
+*.ilk
+
+# Visual Studio / CMake local state
+.vs/
+*.user
+CMakeSettings.json
+CMakeUserPresets.json
+compile_commands.json
+
+# RC compiler temporaries (RCxxxxx / RCaxxxxx left next to the .rc)
+src/RC[0-9a-zA-Z]*
+
+# Local tooling config (machine-specific, may contain tokens)
+.claude/
+.mcp.json
+
+# Reverse-engineering scratch work
+/scripts/Frida/
+
+# Python
+__pycache__/
+*.pyc
+.venv/
+venv/
+
+# Game data extracts
+*.json
+!CMakeSettings.json
+!CMakeUserPresets.json
+!iteminfo.json

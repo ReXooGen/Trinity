@@ -1,0 +1,13 @@
+C:/GABUT/apalah/Trinity-Legacy/build-dlc/CMakeFiles/imgui.dir
+C:/GABUT/apalah/Trinity-Legacy/build-dlc/CMakeFiles/Trinity.dir
+C:/GABUT/apalah/Trinity-Legacy/build-dlc/CMakeFiles/edit_cache.dir
+C:/GABUT/apalah/Trinity-Legacy/build-dlc/CMakeFiles/rebuild_cache.dir
+C:/GABUT/apalah/Trinity-Legacy/build-dlc/CMakeFiles/list_install_components.dir
+C:/GABUT/apalah/Trinity-Legacy/build-dlc/CMakeFiles/install.dir
+C:/GABUT/apalah/Trinity-Legacy/build-dlc/CMakeFiles/install/local.dir
+C:/GABUT/apalah/Trinity-Legacy/build-dlc/_deps/minhook-build/CMakeFiles/minhook.dir
+C:/GABUT/apalah/Trinity-Legacy/build-dlc/_deps/minhook-build/CMakeFiles/edit_cache.dir
+C:/GABUT/apalah/Trinity-Legacy/build-dlc/_deps/minhook-build/CMakeFiles/rebuild_cache.dir
+C:/GABUT/apalah/Trinity-Legacy/build-dlc/_deps/minhook-build/CMakeFiles/list_install_components.dir
+C:/GABUT/apalah/Trinity-Legacy/build-dlc/_deps/minhook-build/CMakeFiles/install.dir
+C:/GABUT/apalah/Trinity-Legacy/build-dlc/_deps/minhook-build/CMakeFiles/install/local.dir

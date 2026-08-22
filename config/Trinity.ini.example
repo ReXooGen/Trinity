@@ -1,0 +1,63 @@
+; Trinity configuration file (Trinity.ini)
+; Place this file beside Trinity.asi.
+; Settings are automatically loaded on launch and saved from the in-game SYSTEM tab.
+
+; Win32 virtual-key code for menu toggle (default: 121 = F10, or 45 = Insert)
+openKeyVk=45
+; XInput button mask for menu toggle (default: 258 = LB + D-Pad Down)
+openPadMask=258
+
+; Free Flight Keybinds
+flyUpKeyVk=20
+flyDownKeyVk=17
+flyUpPadMask=512
+flyDownPadMask=131072
+
+; Destination Map Marker Teleport
+markerTeleportKeyVk=121
+markerTeleportPadMask=0
+markerFallbackHeight=550.000
+
+; Auto Save feature states between sessions (1 = enabled, 0 = disabled)
+autoSave=0
+
+; Player Cheats & Multipliers
+godMode=0
+oneHitKill=0
+infDurability=0
+noFallDamage=1
+infStamina=0
+infMountStamina=0
+infSpirit=0
+easyParry=0
+easyEvade=0
+dmgOutMult=1.000
+dmgInMult=1.000
+gameSpeed=0
+gameSpeedMult=1.000
+timeFrozen=0
+superRun=0
+superRunMult=2.000
+superJump=0
+superJumpMult=2.000
+freeFlight=0
+flightSpeed=8.000
+trustMult=0
+trustMultVal=20.000
+
+; Inventory Overrides
+invSlotSize=0
+invSlotSizeVal=2000
+invStackSize=0
+invStackSizeVal=999999
+
+; System & UI
+showFps=0
+fileLogging=1
+
+; Theme Color: 0=Crimson Red, 1=Cyber Cyan, 2=Neon Purple, 3=Matrix Emerald, 4=Royal Gold, 5=Sunset Orange
+themeIndex=0
+
+; UI Language: en (English default), zh (Simplified Chinese), ko (Korean), etc.
+language=en
+

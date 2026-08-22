@@ -1,0 +1,3 @@
+C:/GABUT/apalah/Trinity-Legacy/build-dlc/_deps/minhook-subbuild/CMakeFiles/minhook-populate.dir
+C:/GABUT/apalah/Trinity-Legacy/build-dlc/_deps/minhook-subbuild/CMakeFiles/edit_cache.dir
+C:/GABUT/apalah/Trinity-Legacy/build-dlc/_deps/minhook-subbuild/CMakeFiles/rebuild_cache.dir
