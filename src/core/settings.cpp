@@ -130,6 +130,15 @@ namespace trinity
                 while (len > 0 && (vals.languageCode[len - 1] == '\r' || vals.languageCode[len - 1] == '\n' || vals.languageCode[len - 1] == ' '))
                     vals.languageCode[--len] = '\0';
             }
+            else if (!strcmp(key, "useCustomFont"))       vals.useCustomFont       = atoi(val) != 0;
+            else if (!strcmp(key, "builtInFontIndex"))    vals.builtInFontIndex    = atoi(val);
+            else if (!strcmp(key, "customFont"))
+            {
+                snprintf(vals.customFont, sizeof(vals.customFont), "%s", val);
+                size_t len = strlen(vals.customFont);
+                while (len > 0 && (vals.customFont[len - 1] == '\r' || vals.customFont[len - 1] == '\n' || vals.customFont[len - 1] == ' '))
+                    vals.customFont[--len] = '\0';
+            }
             else if (!strncmp(key, "loc_", 4))
             {
                 int idx = -1;
@@ -177,6 +186,9 @@ namespace trinity
         st.fileLogging = vals.fileLogging;
         st.themeIndex = vals.themeIndex;
         st.playstationIcons = vals.playstationIcons;
+        st.useCustomFont = vals.useCustomFont;
+        st.builtInFontIndex = vals.builtInFontIndex;
+        snprintf(st.customFont, sizeof(st.customFont), "%s", vals.customFont);
         st.savedLocations.clear();
         for (const auto& loc : vals.savedLocations)
         {
@@ -331,7 +343,10 @@ namespace trinity
                 "fileLogging=%d\n"
                 "themeIndex=%d\n"
                 "playstationIcons=%d\n"
-                "language=%s\n",
+                "language=%s\n"
+                "useCustomFont=%d\n"
+                "builtInFontIndex=%d\n"
+                "customFont=%s\n",
                 st.openKeyVk,
                 st.openPadMask,
                 st.flyUpKeyVk,
@@ -389,7 +404,10 @@ namespace trinity
                 st.fileLogging ? 1 : 0,
                 st.themeIndex,
                 st.playstationIcons ? 1 : 0,
-                loc::GetLanguageCode(st.languageIndex));
+                loc::GetLanguageCode(st.languageIndex),
+                st.useCustomFont ? 1 : 0,
+                st.builtInFontIndex,
+                st.customFont);
 
         for (size_t i = 0; i < st.savedLocations.size(); ++i)
         {

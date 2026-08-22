@@ -243,10 +243,42 @@ namespace trinity::ui
         cfgTitle.OversampleH = 1;
         cfgTitle.OversampleV = 1;
         cfgTitle.PixelSnapH = true;
-        if (GetFileAttributesA(segoeuibPath) != INVALID_FILE_ATTRIBUTES)
-            g_fontTitle = io.Fonts->AddFontFromFileTTF(segoeuibPath, 30.0f * g_scale, &cfgTitle, s_baseRanges.Data);
-        else
-            g_fontTitle = io.Fonts->AddFontDefault(&cfgTitle);
+        
+        char impactPath[MAX_PATH], georgiaPath[MAX_PATH];
+        snprintf(impactPath, sizeof(impactPath), "%s\\Fonts\\impact.ttf", windir);
+        snprintf(georgiaPath, sizeof(georgiaPath), "%s\\Fonts\\georgiab.ttf", windir);
+
+        const trinity::State& st = trinity::State::Get();
+        bool fontLoaded = false;
+
+        if (st.useCustomFont && st.customFont[0] != '\0' && GetFileAttributesA(st.customFont) != INVALID_FILE_ATTRIBUTES)
+        {
+            g_fontTitle = io.Fonts->AddFontFromFileTTF(st.customFont, 35.0f * g_scale, &cfgTitle, s_baseRanges.Data);
+            fontLoaded = true;
+        }
+
+        if (!fontLoaded)
+        {
+            if (st.builtInFontIndex == 1 && GetFileAttributesA(impactPath) != INVALID_FILE_ATTRIBUTES)
+                g_fontTitle = io.Fonts->AddFontFromFileTTF(impactPath, 34.0f * g_scale, &cfgTitle, s_baseRanges.Data);
+            else if (st.builtInFontIndex == 2 && GetFileAttributesA(georgiaPath) != INVALID_FILE_ATTRIBUTES)
+                g_fontTitle = io.Fonts->AddFontFromFileTTF(georgiaPath, 32.0f * g_scale, &cfgTitle, s_baseRanges.Data);
+            else if (GetFileAttributesA(segoeuibPath) != INVALID_FILE_ATTRIBUTES)
+                g_fontTitle = io.Fonts->AddFontFromFileTTF(segoeuibPath, 30.0f * g_scale, &cfgTitle, s_baseRanges.Data);
+            else
+                g_fontTitle = io.Fonts->AddFontDefault(&cfgTitle);
+        }
+
+        if (fontLoaded)
+        {
+            // If custom font is loaded, apply it to everything (body and bold)
+            ImFontConfig cfgBody;
+            cfgBody.OversampleH = 1;
+            cfgBody.OversampleV = 1;
+            cfgBody.PixelSnapH = true;
+            g_fontBody = io.Fonts->AddFontFromFileTTF(st.customFont, 24.0f * g_scale, &cfgBody, s_baseRanges.Data);
+            g_fontBold = g_fontBody;
+        }
 
         if (!g_fontBody)  g_fontBody  = io.Fonts->AddFontDefault();
         if (!g_fontBold)  g_fontBold  = g_fontBody;
@@ -268,17 +300,44 @@ namespace trinity::ui
             return false;
 
         ZeroMemory(&out, sizeof(out));
+        bool anyConnected = false;
+
         // Read the REAL pad across slots 0-3, bypassing the menu-open neutralisation
-        // the XInput hook applies to the game - otherwise the menu couldn't read the pad
-        // it's busy blocking.
+        // the XInput hook applies to the game. Merge states so an idle virtual controller
+        // on slot 0 doesn't mask a real controller on slot 1.
         for (DWORD i = 0; i < 4; ++i)
         {
-            if (hooks::XInputReadReal(i, &out) == ERROR_SUCCESS)
+            XINPUT_STATE temp;
+            if (hooks::XInputReadReal(i, &temp) == ERROR_SUCCESS)
             {
-                s_connected = true;
-                return true;
+                anyConnected = true;
+                out.Gamepad.wButtons |= temp.Gamepad.wButtons;
+                
+                if (temp.Gamepad.bLeftTrigger > out.Gamepad.bLeftTrigger)
+                    out.Gamepad.bLeftTrigger = temp.Gamepad.bLeftTrigger;
+                if (temp.Gamepad.bRightTrigger > out.Gamepad.bRightTrigger)
+                    out.Gamepad.bRightTrigger = temp.Gamepad.bRightTrigger;
+                    
+                // Use the thumbstick values from the first controller that has them moved
+                if (out.Gamepad.sThumbLX == 0 && out.Gamepad.sThumbLY == 0)
+                {
+                    out.Gamepad.sThumbLX = temp.Gamepad.sThumbLX;
+                    out.Gamepad.sThumbLY = temp.Gamepad.sThumbLY;
+                }
+                if (out.Gamepad.sThumbRX == 0 && out.Gamepad.sThumbRY == 0)
+                {
+                    out.Gamepad.sThumbRX = temp.Gamepad.sThumbRX;
+                    out.Gamepad.sThumbRY = temp.Gamepad.sThumbRY;
+                }
             }
         }
+        
+        if (anyConnected)
+        {
+            s_connected = true;
+            return true;
+        }
+
         s_connected = false;
         s_nextRetry = now + 2000;
         return false;

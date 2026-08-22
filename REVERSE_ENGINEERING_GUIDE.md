@@ -168,10 +168,11 @@ int64_t __fastcall hkDamageApply(void* targetOwner, uint16_t statusId,
 ### B. Perfect Parry (Just Guard) Implementation
 When `easyParry` is enabled and the player holds the Guard button (Right Click / L1):
 ```cpp
-if (st.easyParry && isPlayerTarget && sourceCtx != 0 && IsPlayerHoldingGuard())
+if (st.easyParry && isPlayerTarget && isEnemyAttacker && IsPlayerHoldingGuard())
 {
+    // Force Perfect Deflect / Parry
     delta = 0; // Nullify all incoming damage
-    a6 = 2;    // Force Perfect Parry Deflect reaction
+    a6 = 2;    // Force Perfect Parry Deflect reaction flag
     a7 = 1;    // Stagger attacking enemy immediately
 }
 ```
