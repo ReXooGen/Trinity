@@ -2834,10 +2834,16 @@ namespace trinity::game
             // Damiane (1)
             if (tid == 53935 || tid == 6324 || tid == 6041 || tid == 5306 || tid == 5300 ||
                 tid == 5297 || tid == 5277 || tid == 3463 || (tid >= 5450 && tid <= 5468) ||
-                (tid >= 5270 && tid <= 5310) || (tid >= 6320 && tid <= 6330))
+                (tid >= 5270 && tid <= 5310) || (tid >= 6320 && tid <= 6330) ||
+                // TU 1.14 TypeIDs
+                tid == 1001559 || tid == 1001747 || tid == 1001605 || tid == 1003687 ||
+                tid == 2600036 || tid == 1000012 || tid == 1000895 || tid == 1000011)
                 return 1;
             // Oongka (2)
-            if (tid == 6560 || tid == 6042 || tid == 6305 || (tid >= 6550 && tid <= 6570))
+            if (tid == 6560 || tid == 6042 || tid == 6305 || (tid >= 6550 && tid <= 6570) ||
+                // TU 1.14 TypeIDs
+                tid == 1163251 || tid == 1001435 || tid == 1003688 || tid == 1000678 ||
+                tid == 1002101 || (tid >= 1000953 && tid <= 1000993))
                 return 2;
             // Kliff (0)
             if (tid == 6303 || tid == 6040 || (tid >= 5330 && tid <= 5350))

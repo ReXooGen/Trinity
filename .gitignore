@@ -1,37 +1,62 @@
 # Build output
-build/
-build-clean/
-out/
-*.asi
+/build/
+/build-*/
+/out/
+/cmake-build-*/
+CMakeFiles/
+CMakeCache.txt
+cmake_install.cmake
+*.sln
+*.vcxproj*
+*.obj
 *.pdb
-*.exp
 *.ilk
+*.lib
+*.exp
+*.asi
+*.dll
 
-# Visual Studio / CMake local state
+# Visual Studio / editors
 .vs/
+.vscode/
 *.user
-CMakeSettings.json
-CMakeUserPresets.json
-compile_commands.json
+*.suo
 
-# RC compiler temporaries (RCxxxxx / RCaxxxxx left next to the .rc)
-src/RC[0-9a-zA-Z]*
+# Runtime and local configuration
+Trinity.ini
+Trinity.log
+Trinity_DyeWatch.txt
+*.bak
+*.dmp
 
-# Local tooling config (machine-specific, may contain tokens)
-.claude/
-.mcp.json
-
-# Reverse-engineering scratch work
-/scripts/Frida/
-
-# Python
+# OS / Python
+.DS_Store
+Thumbs.db
 __pycache__/
 *.pyc
-.venv/
-venv/
 
-# Game data extracts
-*.json
-!CMakeSettings.json
-!CMakeUserPresets.json
-!iteminfo.json
+# Notes & Changelogs
+RELEASE_NOTES_*.md
+TRINITY_*.md
+CLEAN_ADD_ITEM_RECOVERY.md
+CHANGELOG.md
+SECURITY.md
+THIRD_PARTY_NOTICES.md
+trinity_nexus_banner.jpg
+Build_Trinity.ps1
+
+# Reference folders & external repos
+XeTrinityz-reference/
+*XeTrinityz*
+/Archives/
+/Cheat_Engine/
+/Media/
+/Mod_Files/
+*.pabgb
+
+# DLC hooks
+dlc.cpp
+dlc.h
+src/game/dlc.cpp
+src/game/dlc.h
+

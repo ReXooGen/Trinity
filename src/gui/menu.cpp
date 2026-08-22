@@ -256,9 +256,9 @@ namespace trinity::gui
         }
         else
         {
-            static const char* const kCharNames[] = { "Kliff" };
+            static const char* const kCharNames[] = { "Kliff", "Damiane", "Oongka" };
             int dyeChar = game::Dye::GetActiveCharacter();
-            if (ui::Combo(LOC("Character"), &dyeChar, kCharNames, 1, LOC("Select which character's armor to dye.")))
+            if (ui::Combo(LOC("Character"), &dyeChar, kCharNames, 3, LOC("Select which character's armor to dye.")))
             {
                 game::Dye::SetActiveCharacter(dyeChar);
             }
@@ -536,9 +536,9 @@ namespace trinity::gui
     {
         ui::Begin();
 
-        static const char* const kCharNames[] = { "Kliff" };
+        static const char* const kCharNames[] = { "Kliff", "Damiane", "Oongka" };
         int eqChar = game::Equipment::GetActiveCharacter();
-        if (ui::Combo(LOC("Character"), &eqChar, kCharNames, 1, LOC("Select which character's equipment to view and edit.")))
+        if (ui::Combo(LOC("Character"), &eqChar, kCharNames, 3, LOC("Select which character's equipment to view and edit.")))
         {
             game::Equipment::SetActiveCharacter(eqChar);
         }
@@ -728,9 +728,11 @@ namespace trinity::gui
         static const char* const kCharFilters[] = {
             "All Characters",
             "Current Character Only",
-            "Kliff Only"
+            "Kliff Only",
+            "Damiane Only",
+            "Oongka Only"
         };
-        ui::Combo(LOC("Character Filter"), &s_eqCharFilter, kCharFilters, 3,
+        ui::Combo(LOC("Character Filter"), &s_eqCharFilter, kCharFilters, 5,
                   LOC("Filter equipment suitable for this character or show all items."));
 
         // 2. Category / Slot Filter
@@ -751,6 +753,8 @@ namespace trinity::gui
         int filterChar = -1;
         if (s_eqCharFilter == 1) filterChar = activeChar;
         else if (s_eqCharFilter == 2) filterChar = 0;
+        else if (s_eqCharFilter == 3) filterChar = 1;
+        else if (s_eqCharFilter == 4) filterChar = 2;
 
         const int nCats = game::Inventory::CatalogCategoryCount();
         int shown = 0;
