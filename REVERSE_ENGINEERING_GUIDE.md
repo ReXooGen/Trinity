@@ -300,4 +300,119 @@ if (hasModernDyeBatch) {
 }
 ```
 
-This guarantees 100% accurate Title Update detection and runtime dispatching without user configuration.
+## 12. Critical Crash & Progression Bug Resolutions (v1.2.5)
+
+This section documents the exact memory offsets, struct layouts, and C++ implementation logic used to solve the 5 most critical game-breaking bugs.
+
+---
+
+### A. Local Server Disconnect & Error Code 298648703 (`0x11CD047F`)
+
+> [!WARNING]
+> **Anti-Cheat Validation Rule**
+> The BlackSpace engine enforces a strict server-side sanity check on RPC transaction ledgers. Trust/Affinity multipliers that inject a massive instantaneous `delta` (e.g., > 20 points) during `FriendlySetNpc` trigger a ledger desynchronization, resulting in an immediate kick to the main menu.
+
+#### 1. Trust Record Layout
+| Offset | Type | Description |
+| :--- | :--- | :--- |
+| `0x00` | `uint32_t` | Key (`0` = System baseline) |
+| `0x04` | `uint16_t` | Group (Faction/Family ID) |
+| `0x10` | `int64_t` | Absolute Trust Score Value |
+
+#### 2. Implementation Methodology
+To safely scale the trust gain without tripping the anti-cheat, we intercept the transaction, filter out internal system updates (`key == 0`), and strictly clamp the maximum `delta`:
+
+```cpp
+int64_t ScaleGain(int64_t oldVal, int64_t newVal, float mult, uint32_t mapId) {
+    int64_t delta = newVal - oldVal;
+    if (delta <= 0) return newVal;
+
+    // Safe delta scaling: clamp the MAXIMUM single-transaction increase
+    double gain = static_cast<double>(delta) * static_cast<double>(mult);
+    if (gain > 20.0) gain = 20.0; // Clamped to prevent Error 298648703
+
+    const double scaled = static_cast<double>(oldVal) + gain;
+    if (scaled >= static_cast<double>(kFriendly_Max)) return kFriendly_Max;
+    return static_cast<int64_t>(scaled + 0.5);
+}
+```
+
+---
+
+### B. Vendor Transaction Rejection (Cannot Buy Items)
+
+> [!CAUTION]
+> **Storage Bucket Corruption**
+> Forcing the `Money_Copper` max stack to `999,999,999` breaks the `kOff_InvBucket_Used` (`+0x12`) counter. The engine uses a "mega-stack" division accumulator (`ceil(qty/stackMax)`). Modifying max stacks for non-stackable gear locks the `cap - used > 0` free-space gate in the `oHolderInsert` planner.
+
+#### 1. Data Flow Resolution
+```mermaid
+graph TD
+    A[hkGetRow_ItemTable] --> B{Is Infinite Stack On?}
+    B -- Yes --> C[Read Typology Tag 0x3A]
+    C --> D{Is Category 2 or 4?}
+    D -- Consumable/Material --> E[Write MaxStack = 0]
+    D -- Weapon/Armor --> F[Keep Original Stack]
+    F --> G[Vendor Insert Planner Allows Purchase]
+    E --> G
+```
+
+#### 2. Repairing Corrupted Saves
+To repair corrupted saves where `kOff_InvBucket_Used` is out of sync, we invoke `RepairUsedSlots()` dynamically during `Tick()` to recount active slots based on actual iteration rather than the corrupted internal cache.
+
+---
+
+### C. Mount/Horse Stamina & Dye Persistence
+
+> [!NOTE]
+> **Dye Rendering vs Save Persistence**
+> `DyeApplyBatch` only writes to the DX12 buffer. The server realm ignores it unless explicitly forced to serialize.
+
+#### 1. Struct Offset Resolution
+| Stat Target | Status ID (`statusId`) | Notes |
+| :--- | :--- | :--- |
+| Player Health | `0` | Humanoid |
+| Player Stamina | `1` | Humanoid |
+| **Mount Health** | `17` | Quadruped / Vehicle |
+| **Mount Sprint** | `19` | Quadruped / Vehicle |
+| **Wyvern Flight**| `22` | Aerial Vehicle |
+
+#### 2. C++ Thread Local Storage (TLS) Mirroring
+```cpp
+void CallDyeApplySlot(...) {
+    oDyeApplySlot(...); // Apply to visual client realm (TLS = 0)
+    
+    // Force Realm Synchronization to write to .pabgb save file
+    __try {
+        uint8_t* tls = (uint8_t*)__readgsqword(kOff_Teb_TlsPointer);
+        tls[kTls_RealmFlag] = 1; // Swap to Server Realm
+        MirrorToServer(bucketIdx, slotIdx, typeId, 1, 1);
+        tls[kTls_RealmFlag] = 0; // Restore Client Realm
+    } __except(1) {}
+}
+```
+
+---
+
+### D. Damiane/Oongka Character Resolution & Abyss Sockets
+
+> [!TIP]
+> **Dynamic Offset Shifts**
+> Title Update 1.18+ shifted `TrItemValue` socket pointers by exactly 8 bytes. We now resolve this dynamically based on runtime binary fingerprinting.
+
+#### 1. Cross-Version Offsets
+| Target Field | Legacy (TU 1.10 - 1.16) | Modern (TU 1.18+) |
+| :--- | :--- | :--- |
+| `SocketData` | `+0x58` | `+0x60` |
+| `UnlockedCount`| `+0x68` | `+0x70` |
+
+#### 2. Triple Identification Strategy (TypeIDs)
+We abandoned string matching in favor of hardcoded weapon `TypeID` ranges to definitively identify characters regardless of language localization.
+
+```mermaid
+flowchart LR
+    A[Get Weapon TypeID] --> B{Check ID Ranges}
+    B -- "53935, 6324, 5450..5468" --> C[Return: Damiane]
+    B -- "6560, 6550..6570" --> D[Return: Oongka]
+    B -- "Other" --> E[Fallback: Party VTable]
+```
