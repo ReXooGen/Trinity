@@ -2845,6 +2845,9 @@ namespace trinity::gui
             save = true;
         }
 
+        save |= ui::Toggle(LOC("PlayStation Icons"), &st.playstationIcons, 
+                           LOC("Use PlayStation controller icons (Cross, Circle, etc) instead of Xbox buttons.")) && st.autoSave;
+
         // Dynamic Language Selector (detects Trinity_*.ini files)
         const int langCount = loc::GetLanguageCount();
         if (langCount > 1)

@@ -151,6 +151,7 @@ namespace trinity
 
         // UI Theme: 0=Crimson Red, 1=Cyber Cyan, 2=Neon Purple, 3=Matrix Emerald, 4=Royal Gold, 5=Sunset Orange
         int themeIndex = 0;
+        bool playstationIcons = false;
 
         // UI Language: "en" (default), "zh", "ko", or any custom code matching Trinity_<code.ini
         char languageCode[16] = "en";

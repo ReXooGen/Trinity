@@ -11,20 +11,23 @@
 #include <vector>
 
 #include "../core/logger.h"
+#include "../core/state.h"
 #include "../game/pak.h"
+#include "ps_atlas_raw.h"
 
 namespace trinity::ui
 {
     namespace
     {
         // --- Atlas + per-icon rect table ------------------------------------
-        enum AtlasId { A_COMMON = 0, A_KBD = 1, A_PAD = 2, A_COUNT = 3 };
+        enum AtlasId { A_COMMON = 0, A_KBD = 1, A_PAD = 2, A_PS_PAD = 3, A_COUNT = 4 };
 
         struct AtlasSrc { const char* dir; const char* file; };
         const AtlasSrc kAtlasSrc[A_COUNT] = {
             { "ui/texture", "cd_icon_common_00.dds"   },
             { "ui/texture", "cd_icon_keyguide_01.dds" },
             { "ui/texture", "cd_icon_keyguide_00.dds" },
+            { nullptr, nullptr } // A_PS_PAD is raw bytes
         };
 
         struct Rect { AtlasId atlas; int x, y, w, h; };
@@ -167,6 +170,88 @@ namespace trinity::ui
             }
             return false;
         }
+        bool UploadRGBA(ID3D12Device* dev, ID3D12DescriptorHeap* heap,
+                        unsigned inc, unsigned slot,
+                        uint32_t width, uint32_t height,
+                        const uint8_t* pixels, Atlas& out)
+        {
+            D3D12_HEAP_PROPERTIES defHeap = {}; defHeap.Type = D3D12_HEAP_TYPE_DEFAULT;
+            D3D12_HEAP_PROPERTIES upHeap  = {}; upHeap.Type  = D3D12_HEAP_TYPE_UPLOAD;
+
+            D3D12_RESOURCE_DESC td = {};
+            td.Dimension        = D3D12_RESOURCE_DIMENSION_TEXTURE2D;
+            td.Width            = width;
+            td.Height           = height;
+            td.DepthOrArraySize = 1;
+            td.MipLevels        = 1;
+            td.Format           = DXGI_FORMAT_R8G8B8A8_UNORM;
+            td.SampleDesc.Count = 1;
+            td.Layout           = D3D12_TEXTURE_LAYOUT_UNKNOWN;
+
+            ID3D12Resource* tex = nullptr;
+            if (FAILED(dev->CreateCommittedResource(&defHeap, D3D12_HEAP_FLAG_NONE, &td,
+                    D3D12_RESOURCE_STATE_COPY_DEST, nullptr, IID_PPV_ARGS(&tex))))
+                return false;
+
+            D3D12_PLACED_SUBRESOURCE_FOOTPRINT fp = {};
+            UINT   numRows  = 0;
+            UINT64 rowBytes = 0, uploadSize = 0;
+            dev->GetCopyableFootprints(&td, 0, 1, 0, &fp, &numRows, &rowBytes, &uploadSize);
+
+            D3D12_RESOURCE_DESC bd = {};
+            bd.Dimension        = D3D12_RESOURCE_DIMENSION_BUFFER;
+            bd.Width            = uploadSize;
+            bd.Height           = 1;
+            bd.DepthOrArraySize = 1;
+            bd.MipLevels        = 1;
+            bd.Format           = DXGI_FORMAT_UNKNOWN;
+            bd.SampleDesc.Count = 1;
+            bd.Layout           = D3D12_TEXTURE_LAYOUT_ROW_MAJOR;
+
+            ID3D12Resource* upload = nullptr;
+            if (FAILED(dev->CreateCommittedResource(&upHeap, D3D12_HEAP_FLAG_NONE, &bd,
+                    D3D12_RESOURCE_STATE_GENERIC_READ, nullptr, IID_PPV_ARGS(&upload))))
+            {
+                tex->Release();
+                return false;
+            }
+
+            uint8_t* mapped = nullptr;
+            D3D12_RANGE noRead = { 0, 0 };
+            if (FAILED(upload->Map(0, &noRead, reinterpret_cast<void**>(&mapped))))
+            {
+                upload->Release(); tex->Release();
+                return false;
+            }
+            // For RGBA8, each pixel is 4 bytes. Source row width is width * 4.
+            const size_t srcRowBytes = static_cast<size_t>(width) * 4;
+            for (UINT r = 0; r < numRows; ++r)
+                memcpy(mapped + fp.Offset + static_cast<size_t>(r) * fp.Footprint.RowPitch,
+                       pixels + static_cast<size_t>(r) * srcRowBytes,
+                       srcRowBytes);
+            upload->Unmap(0, nullptr);
+
+            g_pending.push_back({ tex, upload, fp });
+
+            D3D12_SHADER_RESOURCE_VIEW_DESC sd = {};
+            sd.Format                        = DXGI_FORMAT_R8G8B8A8_UNORM;
+            sd.ViewDimension                 = D3D12_SRV_DIMENSION_TEXTURE2D;
+            sd.Shader4ComponentMapping       = D3D12_DEFAULT_SHADER_4_COMPONENT_MAPPING;
+            sd.Texture2D.MipLevels           = 1;
+
+            D3D12_CPU_DESCRIPTOR_HANDLE cpuHandle = heap->GetCPUDescriptorHandleForHeapStart();
+            cpuHandle.ptr += static_cast<SIZE_T>(slot) * inc;
+            dev->CreateShaderResourceView(tex, &sd, cpuHandle);
+
+            D3D12_GPU_DESCRIPTOR_HANDLE gpuHandle = heap->GetGPUDescriptorHandleForHeapStart();
+            gpuHandle.ptr += static_cast<UINT64>(slot) * inc;
+
+            out.tex = tex;
+            out.id = (ImTextureID)gpuHandle.ptr;
+            out.w  = width;
+            out.h  = height;
+            return true;
+        }
 
         // Create a default-heap block-compressed texture from a DDS, fill an
         // upload buffer, create its SRV at `slot`, and queue the GPU copy for
@@ -290,6 +375,16 @@ namespace trinity::ui
         int loaded = 0;
         for (int a = 0; a < A_COUNT; ++a)
         {
+            if (a == A_PS_PAD)
+            {
+                if (UploadRGBA(device, srvHeap, srvIncrement, firstSlot + a,
+                               ps_atlas_width, ps_atlas_height, ps_atlas_rgba, g_atlas[a]))
+                    ++loaded;
+                else
+                    LOG_ERR("icons: failed to upload PS atlas.");
+                continue;
+            }
+
             std::vector<uint8_t> dds;
             if (!game::pak::ReadFile(12, kAtlasSrc[a].dir, kAtlasSrc[a].file, dds))
             {
@@ -372,6 +467,13 @@ namespace trinity::ui
         const int i = static_cast<int>(ic);
         if (i <= 0 || i >= static_cast<int>(Icon::Count) || height <= 0.0f)
             return ImVec2(0, 0);
+
+        if (State::Get().playstationIcons && ic >= Icon::PadA && ic <= Icon::PadDpad)
+        {
+            // All PS icons in the raw atlas are 64x64 (aspect 1.0)
+            return ImVec2(height, height);
+        }
+
         const Rect& r = kRects[i];
         const float aspect = r.h > 0 ? static_cast<float>(r.w) / static_cast<float>(r.h) : 1.0f;
         return ImVec2(height * aspect, height);
@@ -382,6 +484,22 @@ namespace trinity::ui
         const int i = static_cast<int>(ic);
         if (!g_ready || !dl || i <= 0 || i >= static_cast<int>(Icon::Count))
             return;
+
+        if (State::Get().playstationIcons && ic >= Icon::PadA && ic <= Icon::PadDpad)
+        {
+            const Atlas& a = g_atlas[A_PS_PAD];
+            if (!a.tex || a.w <= 0 || a.h <= 0) return;
+            
+            // Map PadA..PadDpad to 0..6
+            int psIndex = i - static_cast<int>(Icon::PadA);
+            float x0 = static_cast<float>(psIndex * 64) / a.w;
+            float x1 = static_cast<float>(psIndex * 64 + 64) / a.w;
+            float y0 = 0.0f;
+            float y1 = 1.0f; // 64 / 64
+            dl->AddImage(a.id, pMin, pMax, ImVec2(x0, y0), ImVec2(x1, y1), tint);
+            return;
+        }
+
         const Rect&  r = kRects[i];
         const Atlas& a = g_atlas[r.atlas];
         if (!a.tex || a.w <= 0 || a.h <= 0)

@@ -182,13 +182,15 @@ namespace trinity::ui
             builder.BuildRanges(&s_jaRanges);
         }
 
-        // Build base glyph range (Default ASCII/Latin + Cyrillic for Russian)
+        // Build base glyph range (Default ASCII/Latin + Cyrillic + PlayStation Text Icons)
         static ImVector<ImWchar> s_baseRanges;
         if (s_baseRanges.empty())
         {
             ImFontGlyphRangesBuilder builder;
             builder.AddRanges(io.Fonts->GetGlyphRangesDefault());
             builder.AddRanges(io.Fonts->GetGlyphRangesCyrillic());
+            // Add PlayStation controller text equivalents: ✖ (Cross), ◯ (Circle), ⬜ (Square), △ (Triangle)
+            builder.AddText(u8"✖◯⬜△");
             builder.BuildRanges(&s_baseRanges);
         }
 

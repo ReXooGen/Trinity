@@ -122,6 +122,7 @@ namespace trinity
             else if (!strcmp(key, "showFps"))             vals.showFps             = atoi(val) != 0;
             else if (!strcmp(key, "fileLogging"))         vals.fileLogging         = atoi(val) != 0;
             else if (!strcmp(key, "themeIndex"))          vals.themeIndex          = atoi(val);
+            else if (!strcmp(key, "playstationIcons"))    vals.playstationIcons    = atoi(val) != 0;
             else if (!strcmp(key, "language"))
             {
                 snprintf(vals.languageCode, sizeof(vals.languageCode), "%s", val);
@@ -175,6 +176,7 @@ namespace trinity
         st.autoSave = vals.autoSave;
         st.fileLogging = vals.fileLogging;
         st.themeIndex = vals.themeIndex;
+        st.playstationIcons = vals.playstationIcons;
         st.savedLocations.clear();
         for (const auto& loc : vals.savedLocations)
         {
@@ -328,6 +330,7 @@ namespace trinity
                 "showFps=%d\n"
                 "fileLogging=%d\n"
                 "themeIndex=%d\n"
+                "playstationIcons=%d\n"
                 "language=%s\n",
                 st.openKeyVk,
                 st.openPadMask,
@@ -385,6 +388,7 @@ namespace trinity
                 st.showFps ? 1 : 0,
                 st.fileLogging ? 1 : 0,
                 st.themeIndex,
+                st.playstationIcons ? 1 : 0,
                 loc::GetLanguageCode(st.languageIndex));
 
         for (size_t i = 0; i < st.savedLocations.size(); ++i)
