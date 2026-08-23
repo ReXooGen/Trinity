@@ -157,6 +157,11 @@ namespace trinity
         char languageCode[16] = "en";
         int  languageIndex = 0;
 
+        // Custom Title Font (Settings UI)
+        bool useCustomFont = true;
+        int  builtInFontIndex = 0;
+        char customFont[64] = "Kirsty Bd.otf";
+
         // Bookmark / Saved Locations (dynamic unlimited list)
         struct SavedLocation
         {
@@ -169,7 +174,12 @@ namespace trinity
 
         // Overlay extras.
         bool showFps = false;
+        bool showConsole = true;
         bool fileLogging = true; // mirror the console to Trinity.log
+
+        // UI customizations
+        float menuScale = 1.0f;
+        bool  showItemTooltip = true;
 
         // Persistence (settings.cpp). While on, every feature change is
         // written to Trinity.ini and restored on the next launch. The flag

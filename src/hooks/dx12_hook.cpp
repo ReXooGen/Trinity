@@ -534,7 +534,7 @@ namespace trinity::hooks
         // We only get here in the process that actually presents - open the
         // console now and flush the buffered startup logs into it, and claim
         // Trinity.ini so the launcher's copy of the ASI can never save over us.
-        Logger::EnableConsole(State::Get().fileLogging);
+        Logger::EnableConsole(State::Get().showConsole, State::Get().fileLogging);
         Settings::ClaimOwnership();
 
         if (FAILED(swapChain->GetDevice(IID_PPV_ARGS(&g_device))))
@@ -641,7 +641,7 @@ namespace trinity::hooks
         ImGuiIO& io = ImGui::GetIO();
         io.IniFilename = nullptr; // don't litter the game folder
 
-        ui::InitStyle(static_cast<float>(desc.BufferDesc.Height) / 1080.0f);
+        ui::InitStyle((static_cast<float>(desc.BufferDesc.Height) / 1080.0f) * State::Get().menuScale);
 
         ImGui_ImplWin32_Init(g_hwnd);
         // Always a fixed SDR format, independent of the real back buffer's
@@ -766,6 +766,23 @@ namespace trinity::hooks
         LeaveCriticalSection(&g_queueLock);
         if (!submitQueue)
             return;
+
+        if (ui::g_needFontRebuild)
+        {
+            // Wait for all in-flight frames to finish on the GPU before destroying the old font texture
+            for (auto& f : g_frames)
+            {
+                if (f.fenceValue != 0 && g_fence->GetCompletedValue() < f.fenceValue)
+                {
+                    g_fence->SetEventOnCompletion(f.fenceValue, g_fenceEvent);
+                    WaitForSingleObject(g_fenceEvent, INFINITE);
+                }
+            }
+            ImGui_ImplDX12_InvalidateDeviceObjects();
+            ui::InitStyle((static_cast<float>(g_scHeight) / 1080.0f) * State::Get().menuScale);
+            ImGui_ImplDX12_CreateDeviceObjects();
+            ui::g_needFontRebuild = false;
+        }
 
         ImGui_ImplDX12_NewFrame();
         ImGui_ImplWin32_NewFrame();

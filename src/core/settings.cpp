@@ -120,6 +120,9 @@ namespace trinity
             else if (!strcmp(key, "clearDistantFog"))     vals.clearDistantFog     = atoi(val) != 0;
             else if (!strcmp(key, "weatherPreset"))       vals.weatherPreset       = atoi(val);
             else if (!strcmp(key, "showFps"))             vals.showFps             = atoi(val) != 0;
+            else if (!strcmp(key, "showConsole"))         vals.showConsole         = atoi(val) != 0;
+            else if (!strcmp(key, "menuScale"))           vals.menuScale           = strtof(val, nullptr);
+            else if (!strcmp(key, "showItemTooltip"))     vals.showItemTooltip     = atoi(val) != 0;
             else if (!strcmp(key, "fileLogging"))         vals.fileLogging         = atoi(val) != 0;
             else if (!strcmp(key, "themeIndex"))          vals.themeIndex          = atoi(val);
             else if (!strcmp(key, "playstationIcons"))    vals.playstationIcons    = atoi(val) != 0;
@@ -130,6 +133,7 @@ namespace trinity
                 while (len > 0 && (vals.languageCode[len - 1] == '\r' || vals.languageCode[len - 1] == '\n' || vals.languageCode[len - 1] == ' '))
                     vals.languageCode[--len] = '\0';
             }
+
             else if (!strcmp(key, "useCustomFont"))       vals.useCustomFont       = atoi(val) != 0;
             else if (!strcmp(key, "builtInFontIndex"))    vals.builtInFontIndex    = atoi(val);
             else if (!strcmp(key, "customFont"))
@@ -189,6 +193,7 @@ namespace trinity
         st.useCustomFont = vals.useCustomFont;
         st.builtInFontIndex = vals.builtInFontIndex;
         snprintf(st.customFont, sizeof(st.customFont), "%s", vals.customFont);
+
         st.savedLocations.clear();
         for (const auto& loc : vals.savedLocations)
         {
@@ -247,6 +252,9 @@ namespace trinity
         st.invStackSize    = vals.invStackSize;
         st.invStackSizeVal = ClampI(vals.invStackSizeVal, 1, 999999999);
         st.showFps       = vals.showFps;
+        st.showConsole   = vals.showConsole;
+        st.menuScale     = vals.menuScale;
+        st.showItemTooltip = vals.showItemTooltip;
 
         // Apply language setting
         snprintf(st.languageCode, sizeof(st.languageCode), "%s", vals.languageCode);
@@ -340,6 +348,9 @@ namespace trinity
                 "clearDistantFog=%d\n"
                 "weatherPreset=%d\n"
                 "showFps=%d\n"
+                "showConsole=%d\n"
+                "menuScale=%.3f\n"
+                "showItemTooltip=%d\n"
                 "fileLogging=%d\n"
                 "themeIndex=%d\n"
                 "playstationIcons=%d\n"
@@ -401,6 +412,9 @@ namespace trinity
                 st.clearDistantFog ? 1 : 0,
                 st.weatherPreset,
                 st.showFps ? 1 : 0,
+                st.showConsole ? 1 : 0,
+                st.menuScale,
+                st.showItemTooltip ? 1 : 0,
                 st.fileLogging ? 1 : 0,
                 st.themeIndex,
                 st.playstationIcons ? 1 : 0,

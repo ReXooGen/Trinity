@@ -1317,6 +1317,7 @@ namespace trinity::game
             static bool s_flightAscended = false;
             static float s_lastFlightY = 0.0f;
             static int s_groundedFrames = 0;
+            static int s_forceLandFrames = 0; // Trigger Havok engine ground impact
 
             bool flyingNow = false;
 
@@ -1342,6 +1343,7 @@ namespace trinity::game
                         {
                             s_flightAscended = false;
                             s_groundedFrames = 0;
+                            s_forceLandFrames = 2; // Force ground impact to restore friction
                         }
                     }
                     else
@@ -1429,12 +1431,28 @@ namespace trinity::game
             }
             else
             {
+                if (s_flightAscended)
+                {
+                    s_forceLandFrames = 2; // Force ground impact if disabled while flying
+                }
                 s_flightAscended = false;
                 s_groundedFrames = 0;
             }
 
             if (isPlayer)
+            {
                 g_flightEngaged.store(flyingNow, std::memory_order_relaxed);
+                
+                // Force a gentle downward spike so the physics engine registers a soft landing
+                // and kill horizontal momentum so they don't air-dash into the ground.
+                if (s_forceLandFrames > 0 && vel)
+                {
+                    RawWriteFloat(vel, 0.0f);
+                    RawWriteFloat(vel + 1, -4.0f);
+                    RawWriteFloat(vel + 2, 0.0f);
+                    s_forceLandFrames--;
+                }
+            }
 
             // Ground locomotion: Super Run applies when player is on ground / not airborne flight
             if (isPlayer && st.superRun && !flyingNow && st.superRunMult != 1.0f && vel)

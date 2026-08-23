@@ -67,9 +67,12 @@ namespace trinity::ui
     ImFont*  g_fontBody  = nullptr;
     ImFont*  g_fontBold  = nullptr;
     float    g_scale     = 1.0f;
+    bool     g_needFontRebuild = false;
     float    g_x = 0.0f, g_y = 0.0f, g_width = 0.0f, g_listTop = 0.0f;
     int      g_rowIndex  = 0;
     char     g_selectedDesc[256] = {};
+    char     g_selectedItemName[128] = {};
+    char     g_selectedItemIcon[64] = {};
     RowKind  g_hintKind  = RowKind::None;
     bool     g_padActive = false;
     bool     g_captureSeen = false;
@@ -125,6 +128,8 @@ namespace trinity::ui
         g_scale = uiScale < 0.5f ? 0.5f : uiScale;
 
         ImGuiIO& io = ImGui::GetIO();
+        io.Fonts->Clear(); // Allow runtime rebuilding by clearing existing fonts
+        
         char windir[MAX_PATH]{};
         GetWindowsDirectoryA(windir, MAX_PATH);
 
@@ -235,50 +240,66 @@ namespace trinity::ui
             return font;
         };
 
-        g_fontBody  = LoadFontWithFallbacks(segoePath,   hasYahei ? yaheiPath : nullptr,     hasMalgun ? malgunPath : nullptr,     hasMeiryo ? meiryoPath : nullptr,     21.0f * g_scale);
-        g_fontBold  = LoadFontWithFallbacks(seguisbPath, hasYaheiBd ? yaheibdPath : (hasYahei ? yaheiPath : nullptr), hasMalgunBd ? malgunbdPath : (hasMalgun ? malgunPath : nullptr), hasMeiryoBd ? meiryobdPath : (hasMeiryo ? meiryoPath : nullptr), 21.0f * g_scale);
-
-        // g_fontTitle is for TRINITY header (Latin)
-        ImFontConfig cfgTitle;
-        cfgTitle.OversampleH = 1;
-        cfgTitle.OversampleV = 1;
-        cfgTitle.PixelSnapH = true;
-        
-        char impactPath[MAX_PATH], georgiaPath[MAX_PATH];
+        char impactPath[MAX_PATH], georgiaPath[MAX_PATH], georgiaBdPath[MAX_PATH];
         snprintf(impactPath, sizeof(impactPath), "%s\\Fonts\\impact.ttf", windir);
-        snprintf(georgiaPath, sizeof(georgiaPath), "%s\\Fonts\\georgiab.ttf", windir);
+        snprintf(georgiaPath, sizeof(georgiaPath), "%s\\Fonts\\georgia.ttf", windir);
+        snprintf(georgiaBdPath, sizeof(georgiaBdPath), "%s\\Fonts\\georgiab.ttf", windir);
 
         const trinity::State& st = trinity::State::Get();
-        bool fontLoaded = false;
+
+        const char* primaryBody = segoePath;
+        const char* primaryBold = seguisbPath;
+        const char* primaryTitle = segoeuibPath;
+        float bodySize = 21.0f * g_scale;
+        float boldSize = 21.0f * g_scale;
+        float titleSize = 30.0f * g_scale;
 
         if (st.useCustomFont && st.customFont[0] != '\0' && GetFileAttributesA(st.customFont) != INVALID_FILE_ATTRIBUTES)
         {
-            g_fontTitle = io.Fonts->AddFontFromFileTTF(st.customFont, 35.0f * g_scale, &cfgTitle, s_baseRanges.Data);
-            fontLoaded = true;
+            primaryBody = st.customFont;
+            primaryBold = st.customFont;
+            primaryTitle = st.customFont;
+            bodySize = 22.0f * g_scale;
+            boldSize = 22.0f * g_scale;
+            titleSize = 35.0f * g_scale;
+        }
+        else if (st.builtInFontIndex == 1 && GetFileAttributesA(impactPath) != INVALID_FILE_ATTRIBUTES)
+        {
+            primaryBody = impactPath;
+            primaryBold = impactPath;
+            primaryTitle = impactPath;
+            bodySize = 22.0f * g_scale;
+            boldSize = 22.0f * g_scale;
+            titleSize = 34.0f * g_scale;
+        }
+        else if (st.builtInFontIndex == 2 && (GetFileAttributesA(georgiaBdPath) != INVALID_FILE_ATTRIBUTES || GetFileAttributesA(georgiaPath) != INVALID_FILE_ATTRIBUTES))
+        {
+            const char* gPath = (GetFileAttributesA(georgiaBdPath) != INVALID_FILE_ATTRIBUTES) ? georgiaBdPath : georgiaPath;
+            primaryBody = gPath;
+            primaryBold = gPath;
+            primaryTitle = gPath;
+            bodySize = 21.0f * g_scale;
+            boldSize = 21.0f * g_scale;
+            titleSize = 32.0f * g_scale;
         }
 
-        if (!fontLoaded)
-        {
-            if (st.builtInFontIndex == 1 && GetFileAttributesA(impactPath) != INVALID_FILE_ATTRIBUTES)
-                g_fontTitle = io.Fonts->AddFontFromFileTTF(impactPath, 34.0f * g_scale, &cfgTitle, s_baseRanges.Data);
-            else if (st.builtInFontIndex == 2 && GetFileAttributesA(georgiaPath) != INVALID_FILE_ATTRIBUTES)
-                g_fontTitle = io.Fonts->AddFontFromFileTTF(georgiaPath, 32.0f * g_scale, &cfgTitle, s_baseRanges.Data);
-            else if (GetFileAttributesA(segoeuibPath) != INVALID_FILE_ATTRIBUTES)
-                g_fontTitle = io.Fonts->AddFontFromFileTTF(segoeuibPath, 30.0f * g_scale, &cfgTitle, s_baseRanges.Data);
-            else
-                g_fontTitle = io.Fonts->AddFontDefault(&cfgTitle);
-        }
+        g_fontBody = LoadFontWithFallbacks(primaryBody,
+            hasYahei ? yaheiPath : nullptr,
+            hasMalgun ? malgunPath : nullptr,
+            hasMeiryo ? meiryoPath : nullptr,
+            bodySize);
 
-        if (fontLoaded)
-        {
-            // If custom font is loaded, apply it to everything (body and bold)
-            ImFontConfig cfgBody;
-            cfgBody.OversampleH = 1;
-            cfgBody.OversampleV = 1;
-            cfgBody.PixelSnapH = true;
-            g_fontBody = io.Fonts->AddFontFromFileTTF(st.customFont, 24.0f * g_scale, &cfgBody, s_baseRanges.Data);
-            g_fontBold = g_fontBody;
-        }
+        g_fontBold = LoadFontWithFallbacks(primaryBold,
+            hasYaheiBd ? yaheibdPath : (hasYahei ? yaheiPath : nullptr),
+            hasMalgunBd ? malgunbdPath : (hasMalgun ? malgunPath : nullptr),
+            hasMeiryoBd ? meiryobdPath : (hasMeiryo ? meiryoPath : nullptr),
+            boldSize);
+
+        g_fontTitle = LoadFontWithFallbacks(primaryTitle,
+            hasYaheiBd ? yaheibdPath : (hasYahei ? yaheiPath : nullptr),
+            hasMalgunBd ? malgunbdPath : (hasMalgun ? malgunPath : nullptr),
+            hasMeiryoBd ? meiryobdPath : (hasMeiryo ? meiryoPath : nullptr),
+            titleSize);
 
         if (!g_fontBody)  g_fontBody  = io.Fonts->AddFontDefault();
         if (!g_fontBold)  g_fontBold  = g_fontBody;
@@ -440,6 +461,8 @@ namespace trinity::ui
         g_nav         = {};
         g_captureSeen = false;
         g_hintKind    = RowKind::None;
+        g_selectedItemName[0] = 0;
+        g_selectedItemIcon[0] = 0;
 
         State&   st = State::Get();
 
@@ -795,14 +818,35 @@ namespace trinity::ui
                     WithAlpha(theme::TextBright, 0.55f), ver);
         g_y += brandH;
 
-        // Tab strip: every section always visible, one press away.
         const float tabH = 34.0f * s;
         dl->AddRectFilled(ImVec2(g_x, g_y), ImVec2(g_x + g_width, g_y + tabH), theme::BarBg);
         if (g_tabCount > 0)
         {
             const float cw = g_width / static_cast<float>(g_tabCount);
-            const float fz = g_fontBold->FontSize * 0.80f;
+            float fz = g_fontBold->FontSize * 0.80f;
             const bool  mouseMoved = io.MouseDelta.x != 0.0f || io.MouseDelta.y != 0.0f;
+
+            // Dynamically scale down font if the tabs overflow the column width
+            for (int i = 0; i < g_tabCount; ++i)
+            {
+                const Icon ic = TabIcon(g_tabNames[i]);
+                const float icoH = tabH * 0.52f;
+                const ImVec2 isz = ui::IconSize(ic, icoH);
+                const float igap = isz.x > 0.0f ? 6.0f * s : 0.0f;
+                const ImVec2 ts = g_fontBold->CalcTextSizeA(fz, FLT_MAX, 0.0f, g_tabNames[i]);
+                const float contentW = isz.x + igap + ts.x;
+                const float maxContentW = cw - 8.0f * s; // 4px padding each side
+                
+                if (contentW > maxContentW && ts.x > 0.0f)
+                {
+                    float availTextW = maxContentW - isz.x - igap;
+                    if (availTextW > 0.0f)
+                    {
+                        float newFz = fz * (availTextW / ts.x);
+                        if (newFz < fz) fz = newFz;
+                    }
+                }
+            }
 
             for (int i = 0; i < g_tabCount; ++i)
             {
@@ -1046,6 +1090,42 @@ namespace trinity::ui
             dl->AddRectFilled(mn, ImVec2(mn.x + 3.0f * s, mx.y), theme::Accent);
             dl->AddText(g_fontBody, dh, ImVec2(mn.x + pad + 4.0f * s, mn.y + pad),
                         theme::Text, g_selectedDesc, nullptr, wrapW);
+        }
+
+        // Side-panel Item Tooltip Preview
+        if (State::Get().showItemTooltip && g_selectedItemName[0] != '\0' && g_selectedItemIcon[0] != '\0')
+        {
+            const float tWidth = 280.0f * s;
+            const float tHeight = 280.0f * s;
+            const float tPad = 12.0f * s;
+            
+            // Draw it to the right of the main menu, starting at g_listTop
+            const ImVec2 tmn(g_x + g_width + 16.0f * s, g_listTop);
+            const ImVec2 tmx(tmn.x + tWidth, tmn.y + tHeight);
+            
+            dl->AddRectFilled(tmn, tmx, theme::BarBg);
+            dl->AddRect(tmn, tmx, theme::RowBg, 0, 0, 2.0f * s);
+            
+            // Draw Header Background (accent line or small box for name)
+            const float headerH = g_fontBold->FontSize + tPad * 2.0f;
+            dl->AddRectFilled(tmn, ImVec2(tmx.x, tmn.y + headerH), theme::RowBg);
+            
+            // Draw Item Name
+            const float nameW = tWidth - tPad * 2.0f;
+            dl->AddText(g_fontBold, g_fontBold->FontSize, 
+                        ImVec2(tmn.x + tPad, tmn.y + tPad), 
+                        theme::TextBright, g_selectedItemName, nullptr, nameW);
+            
+            // Draw large Icon
+            const float iconSz = 200.0f * s;
+            const ImVec2 iconMn(tmn.x + (tWidth - iconSz) * 0.5f, tmn.y + headerH + (tHeight - headerH - iconSz) * 0.5f);
+            const ImVec2 iconMx(iconMn.x + iconSz, iconMn.y + iconSz);
+            
+            if (!DrawItemIcon(dl, g_selectedItemIcon, iconMn, iconMx))
+            {
+                // Fallback box if icon fails to render
+                dl->AddRect(iconMn, iconMx, WithAlpha(theme::TextDim, 0.35f), 2.0f * s, 0, 2.0f * s);
+            }
         }
 
         // A menu without a capture-capable row can't be capturing text - drop

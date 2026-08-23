@@ -45,16 +45,17 @@ namespace trinity
             }
         }
 
-        static void EnableConsole(bool fileLogging)
+        static void EnableConsole(bool showConsole, bool fileLogging)
         {
             std::lock_guard<std::mutex> lock(Mutex());
-            if (s_console)
-                return;
-
-            AllocConsole();
-            freopen_s(&s_conFp, "CONOUT$", "w", stdout);
-            SetConsoleTitleA("Trinity - Crimson Desert");
-            s_console = true;
+            
+            if (showConsole && !s_console)
+            {
+                AllocConsole();
+                freopen_s(&s_conFp, "CONOUT$", "w", stdout);
+                SetConsoleTitleA("Trinity - Crimson Desert");
+                s_console = true;
+            }
 
             HMODULE module = nullptr;
             GetModuleHandleExA(GET_MODULE_HANDLE_EX_FLAG_FROM_ADDRESS |
@@ -79,6 +80,16 @@ namespace trinity
             for (const auto& line : s_buffer)
                 Emit(line);
             s_buffer.clear();
+        }
+
+        static void DisableConsole()
+        {
+            std::lock_guard<std::mutex> lock(Mutex());
+            if (!s_console) return;
+
+            if (s_conFp) { fclose(s_conFp); s_conFp = nullptr; }
+            FreeConsole();
+            s_console = false;
         }
 
         static void Shutdown()

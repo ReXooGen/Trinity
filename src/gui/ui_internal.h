@@ -90,6 +90,8 @@ namespace trinity::ui
     // as a pointer: callers routinely snprintf every row's desc into one
     // reused stack buffer.
     extern char    g_selectedDesc[256];
+    extern char    g_selectedItemName[128];
+    extern char    g_selectedItemIcon[64];
     extern RowKind g_hintKind;
 
     // True when the last nav input came from a controller - the footer shows

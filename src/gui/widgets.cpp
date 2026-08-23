@@ -79,6 +79,11 @@ namespace trinity::ui
         if (r.selected)
         {
             snprintf(g_selectedDesc, sizeof(g_selectedDesc), "%s", desc ? desc : "");
+            if (itemIcon && itemIcon[0])
+            {
+                snprintf(g_selectedItemName, sizeof(g_selectedItemName), "%s", label ? label : "");
+                snprintf(g_selectedItemIcon, sizeof(g_selectedItemIcon), "%s", itemIcon ? itemIcon : "");
+            }
             g_hintKind   = kind;
             r.activated |= g_nav.select;
             r.left       = g_nav.left;
@@ -1342,6 +1347,13 @@ namespace trinity::ui
                 snprintf(value, sizeof(value), "x%lld", *outQty);
             DrawRowValue(r, value, !locked, locked ? theme::TextDim : 0);
         }
+
+        if (r.selected)
+        {
+            snprintf(g_selectedItemName, sizeof(g_selectedItemName), "%s", label ? label : "");
+            snprintf(g_selectedItemIcon, sizeof(g_selectedItemIcon), "%s", icon ? icon : "");
+        }
+
         return result;
     }
 
@@ -1413,6 +1425,13 @@ namespace trinity::ui
         // a held arrow must not visibly trail the press.
         snprintf(value, sizeof(value), "x%lld", added ? added : qty);
         DrawRowValue(r, value, !locked, locked ? theme::TextDim : 0);
+        
+        if (r.selected)
+        {
+            snprintf(g_selectedItemName, sizeof(g_selectedItemName), "%s", label ? label : "");
+            snprintf(g_selectedItemIcon, sizeof(g_selectedItemIcon), "%s", icon ? icon : "");
+        }
+        
         return added;
     }
 

@@ -2822,6 +2822,120 @@ namespace trinity::gui
         ui::End();
     }
 
+    static std::vector<std::string> s_fontFiles;
+    static bool s_fontsScanned = false;
+
+    static void ScanFonts()
+    {
+        if (s_fontsScanned) return;
+        s_fontsScanned = true;
+        s_fontFiles.clear();
+
+        WIN32_FIND_DATAA fd;
+        HANDLE hFind = FindFirstFileA("*.ttf", &fd);
+        if (hFind != INVALID_HANDLE_VALUE)
+        {
+            do {
+                if (!(fd.dwFileAttributes & FILE_ATTRIBUTE_DIRECTORY))
+                    s_fontFiles.push_back(fd.cFileName);
+            } while (FindNextFileA(hFind, &fd));
+            FindClose(hFind);
+        }
+
+        hFind = FindFirstFileA("*.otf", &fd);
+        if (hFind != INVALID_HANDLE_VALUE)
+        {
+            do {
+                if (!(fd.dwFileAttributes & FILE_ATTRIBUTE_DIRECTORY))
+                    s_fontFiles.push_back(fd.cFileName);
+            } while (FindNextFileA(hFind, &fd));
+            FindClose(hFind);
+        }
+    }
+
+    static void RenderFontSettings()
+    {
+        State& st = State::Get();
+        ui::Begin();
+
+        bool save = false;
+
+        const char* const builtInNames[] = {
+            LOC("Segoe UI (Default)"), LOC("Impact (Rampage)"), LOC("Georgia Bold")
+        };
+        if (ui::Combo(LOC("Built-In Fallback"), &st.builtInFontIndex, builtInNames, 3,
+                      LOC("Select the built-in Windows font to use if no custom font is enabled.")))
+        {
+            save = true;
+        }
+
+        if (ui::Toggle(LOC("Enable Custom Font"), &st.useCustomFont,
+                       LOC("Use a custom .ttf/.otf font from the game folder instead of built-in fonts.")))
+        {
+            save = true;
+        }
+
+        if (st.useCustomFont)
+        {
+            ScanFonts();
+            if (s_fontFiles.empty())
+            {
+                ui::OptionItem(LOC("No Fonts Found"), "icon_sys", LOC("Place a .ttf or .otf file in the game directory."));
+            }
+            else
+            {
+                std::vector<const char*> fontNames(s_fontFiles.size());
+                int curIdx = -1;
+                for (size_t i = 0; i < s_fontFiles.size(); ++i)
+                {
+                    fontNames[i] = s_fontFiles[i].c_str();
+                    if (!strcmp(fontNames[i], st.customFont))
+                        curIdx = (int)i;
+                }
+
+                if (curIdx == -1) curIdx = 0; // Default to first if customFont string is invalid or not in list
+
+                if (ui::Combo(LOC("Select Custom Font"), &curIdx, fontNames.data(), (int)fontNames.size(),
+                              LOC("Select the custom font to load.")))
+                {
+                    snprintf(st.customFont, sizeof(st.customFont), "%s", fontNames[curIdx]);
+                    save = true;
+                }
+            }
+        }
+
+        if (save)
+        {
+            ui::g_needFontRebuild = true;
+            Settings::Save();
+        }
+
+        ui::End();
+    }
+
+    static void RenderMenuUISettings()
+    {
+        State& st = State::Get();
+        ui::Begin();
+
+        bool save = false;
+
+        if (ui::FloatOption(LOC("Menu Scale"), &st.menuScale, 0.5f, 2.5f, 0.1f, 1.0f, "%.1fx",
+                            LOC("Increases or decreases the size of the entire mod menu.")))
+        {
+            save = true;
+            ui::g_needFontRebuild = true;
+        }
+
+        save |= ui::Toggle(LOC("Show Item Tooltip"), &st.showItemTooltip, 
+                           LOC("Displays an enlarged icon and name when selecting items.")) && st.autoSave;
+
+        if (save)
+            Settings::Save();
+
+        ui::End();
+    }
+
     static void RenderSystem()
     {
         State& st = State::Get();
@@ -2834,6 +2948,9 @@ namespace trinity::gui
 
         ui::Submenu(LOC("Keybinds"), "keybinds",
                    LOC("Set the keyboard and controller binds for opening the menu and Free Flight."));
+                   
+        ui::Submenu(LOC("Menu UI Settings"), "menu_ui",
+                    LOC("Customize the mod menu's size and item previews."));
 
         const char* const localizedThemeNames[] = {
             LOC("Crimson Red"), LOC("Cyber Cyan"), LOC("Neon Purple"),
@@ -2867,7 +2984,22 @@ namespace trinity::gui
             }
         }
 
+        if (ui::Submenu(LOC("Title Font"), "font_settings",
+                        LOC("Customize the header font (requires game restart).")))
+        {
+            // Pushed Font submenu
+        }
+        
         save |= ui::Toggle(LOC("Show FPS Counter"), &st.showFps, LOC("Shows your FPS in the corner of the screen.")) && st.autoSave;
+
+        if (ui::Toggle(LOC("Show Console Window"), &st.showConsole, LOC("Shows the debug console window. (Instantly toggles)")))
+        {
+            save |= st.autoSave;
+            if (st.showConsole)
+                Logger::EnableConsole(true, st.fileLogging);
+            else
+                Logger::DisableConsole();
+        }
 
         // Detected Game Version Information
         const char* verStr = core::GetGameVersionDisplay();
@@ -2942,6 +3074,8 @@ namespace trinity::gui
             }
         }
         else if (!strcmp(cur, "keybinds")) RenderKeybinds();
+        else if (!strcmp(cur, "menu_ui")) RenderMenuUISettings();
+        else if (!strcmp(cur, "font_settings")) RenderFontSettings();
         else if (!strcmp(cur, "saved_locs")) RenderSavedLocations();
         else if (!strcmp(cur, "loc_manage")) RenderSavedLocationManage();
         else if (!strcmp(cur, "ftcats"))   RenderFastTravelCats();
