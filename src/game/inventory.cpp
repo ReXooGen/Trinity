@@ -2830,37 +2830,60 @@ namespace trinity::game
             uint16_t tid = 0;
             if (!Read16(entry + kOff_InvSlot_TypeId, &tid) || tid == kInvSlot_EmptyType || tid == 0) continue;
 
-            // Direct TypeID recognition
+            // Direct TypeID recognition (TU 1.14 & Modern 1.17 16-bit TypeIDs)
             // Damiane (1)
-            if (tid == 53935 || tid == 6324 || tid == 6041 || tid == 5306 || tid == 5300 ||
+            if (tid == 4293 || tid == 17643 || tid == 18707 || tid == 20647 ||
+                tid == 14300 || tid == 14400 || tid == 14200 || tid == 17070 || tid == 17071 ||
+                tid == 16973 || tid == 17646 || tid == 17762 || tid == 17802 || tid == 21763 ||
+                tid == 20208 || tid == 20888 || tid == 22406 || tid == 21524 || tid == 19452 ||
+                tid == 13500 || tid == 20736 || (tid >= 4395 && tid <= 4411) ||
+                tid == 17355 || tid == 17617 || tid == 17987 || tid == 18024 ||
+                (tid >= 19062 && tid <= 19066) ||
+                // 1.17+ Modern TypeIDs
+                tid == 53935 || tid == 6324 || tid == 6041 || tid == 5306 || tid == 5300 ||
                 tid == 5297 || tid == 5277 || tid == 3463 || (tid >= 5450 && tid <= 5468) ||
-                (tid >= 5270 && tid <= 5310) || (tid >= 6320 && tid <= 6330) ||
-                // TU 1.14 TypeIDs
-                tid == 1001559 || tid == 1001747 || tid == 1001605 || tid == 1003687 ||
-                tid == 2600036 || tid == 1000012 || tid == 1000895 || tid == 1000011)
+                (tid >= 5270 && tid <= 5310) || (tid >= 6320 && tid <= 6330))
                 return 1;
+
             // Oongka (2)
-            if (tid == 6560 || tid == 6042 || tid == 6305 || (tid >= 6550 && tid <= 6570) ||
-                // TU 1.14 TypeIDs
-                tid == 1163251 || tid == 1001435 || tid == 1003688 || tid == 1000678 ||
-                tid == 1002101 || (tid >= 1000953 && tid <= 1000993))
+            if (tid == 13472 || tid == 54387 || (tid >= 47524 && tid <= 47526) ||
+                tid == 14305 || tid == 17913 || tid == 17938 || tid == 17941 || tid == 17942 ||
+                tid == 17945 || tid == 17947 || tid == 17952 || tid == 17953 || tid == 17832 ||
+                tid == 17834 || tid == 20648 || tid == 18395 || tid == 17935 || tid == 19824 ||
+                tid == 9501 || tid == 9502 || tid == 9507 || tid == 9508 ||
+                tid == 15200 || tid == 15202 || tid == 15204 || tid == 16786 || tid == 17999 ||
+                tid == 18112 || tid == 18143 || tid == 19078 || tid == 19139 || tid == 19703 ||
+                tid == 35371 || tid == 45632 || tid == 45633 || tid == 46461 ||
+                tid == 55497 || tid == 55498 || tid == 65487 || tid == 65488 ||
+                // 1.17+ Modern TypeIDs
+                tid == 6560 || tid == 6042 || tid == 6305 || (tid >= 6550 && tid <= 6570))
                 return 2;
+
             // Kliff (0)
-            if (tid == 6303 || tid == 6040 || (tid >= 5330 && tid <= 5350))
+            if (tid == 6303 || tid == 6040 || (tid >= 5330 && tid <= 5350) ||
+                tid == 15901 || tid == 15902 || tid == 15903 || tid == 14705 ||
+                (tid >= 240001 && tid <= 240043))
                 return 0;
 
             char key[96] = "";
             if (KeyForType(tid, key, sizeof(key)))
             {
+                if (strstr(key, "Chamfron") || strstr(key, "Champron") || strstr(key, "Saddle") ||
+                    strstr(key, "Stirrup") || strstr(key, "Horseshoe") || strstr(key, "HorseArmor") ||
+                    strstr(key, "_HorseArmor_"))
+                    return -1; // Horse/Mount gear -> definitely not a player character
+
                 if (strstr(key, "Damian") || strstr(key, "Demian") || strstr(key, "Demeniss") ||
                     strstr(key, "Rapier") || strstr(key, "Spencer") || strstr(key, "Dewhaven") ||
-                    strstr(key, "White Wind") || strstr(key, "Hwando") || strstr(key, "hwando"))
+                    strstr(key, "White Wind") || strstr(key, "Hwando") || strstr(key, "hwando") ||
+                    strstr(key, "Serdin_Giant") || strstr(key, "Frenoa") || strstr(key, "Demian_"))
                     return 1; // Damiane
                 if (strstr(key, "Oongka") || strstr(key, "Giant") || strstr(key, "Tynion") ||
-                    strstr(key, "Rocket") || strstr(key, "Cannon") || strstr(key, "Club"))
+                    strstr(key, "Rocket") || strstr(key, "Cannon") || strstr(key, "Club") ||
+                    strstr(key, "Ashad") || strstr(key, "Solas") || strstr(key, "Langust") || strstr(key, "Oongka_"))
                     return 2; // Oongka
                 if (strstr(key, "Kliff") || strstr(key, "DarknessKing") || strstr(key, "Balgran") ||
-                    strstr(key, "Aeserion") || strstr(key, "Greatsword"))
+                    strstr(key, "Aeserion") || strstr(key, "Greatsword") || strstr(key, "Caliburn"))
                     return 0; // Kliff
             }
         }
@@ -2870,10 +2893,15 @@ namespace trinity::game
     uintptr_t Inventory::CharacterAddr(int index)
     {
         const uintptr_t clientC = ResolveClientContainer();
-        if (index == 0) return IsLiveCharacter(clientC) ? clientC : 0;
+        const int liveId = clientC ? IdentifyCharacterFromEquip(clientC) : -1;
 
         // Direct check: if client container belongs to this character
-        if (clientC && IdentifyCharacterFromEquip(clientC) == index)
+        if (clientC && liveId == index)
+            return clientC;
+
+        // If asking for Kliff (0) and client container is not a recognized companion (1 or 2),
+        // client container is Kliff by default.
+        if (index == 0 && (liveId == 0 || liveId < 0) && clientC)
             return clientC;
 
         // Collect all candidate containers
@@ -2930,13 +2958,7 @@ namespace trinity::game
                 return c;
         }
 
-        // Fallback: if player actor index is available directly
-        if (index > 0 && index < 3)
-        {
-            const uintptr_t partyAct = Player::GetActor(index);
-            if (partyAct >= kMinPointer) return partyAct;
-        }
-
+        // If the character is not verified in any candidate container, they are NOT in world/party.
         return 0;
     }
 

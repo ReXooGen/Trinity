@@ -397,60 +397,28 @@ namespace trinity::game
             const int liveIdx = Inventory::ActivePlayerCharacterIdx();
             const int targetIdx = (s_activeCharIdx < 0) ? liveIdx : s_activeCharIdx;
 
-            // 1. If companion is explicitly selected (Damiane = 1, Oongka = 2), query companion actor
-            if (targetIdx > 0)
+            // If target matches currently controlled live character:
+            if (targetIdx == liveIdx)
             {
-                if (targetIdx == liveIdx)
+                const uintptr_t liveChar = Inventory::ClientCharacterAddr();
+                if (liveChar)
                 {
-                    const uintptr_t liveChar = Inventory::ClientCharacterAddr();
-                    if (liveChar)
-                    {
-                        const uintptr_t comp = CompForCharacter(liveChar);
-                        if (comp) return comp;
-                    }
-                    const uintptr_t hooked = g_comp.load(std::memory_order_acquire);
-                    if (CompValid(hooked)) return hooked;
+                    const uintptr_t comp = CompForCharacter(liveChar);
+                    if (comp && !CompHasHorseGear(comp)) return comp;
                 }
-
-                const uintptr_t actor = Inventory::CharacterAddr(targetIdx);
-                if (actor)
-                {
-                    const uintptr_t comp = CompForCharacter(actor);
-                    if (comp) return comp;
-                }
-                const uintptr_t directActor = Player::GetActor(targetIdx);
-                if (directActor)
-                {
-                    const uintptr_t comp = CompForCharacter(directActor);
-                    if (comp) return comp;
-                }
-                return 0;
+                const uintptr_t hooked = g_comp.load(std::memory_order_acquire);
+                if (CompValid(hooked) && !CompHasHorseGear(hooked)) return hooked;
             }
 
-            // 2. Kliff (0) / Active player character
-            const uintptr_t liveChar = Inventory::ClientCharacterAddr();
-            if (liveChar)
+            // Otherwise resolve target companion or Kliff via Inventory::CharacterAddr:
+            const uintptr_t actor = Inventory::CharacterAddr(targetIdx);
+            if (actor)
             {
-                const uintptr_t comp = CompForCharacter(liveChar);
-                if (comp) return comp;
-            }
-            const uintptr_t actor0 = Inventory::CharacterAddr(0);
-            if (actor0)
-            {
-                const uintptr_t comp = CompForCharacter(actor0);
-                if (comp) return comp;
-            }
-            const uintptr_t direct0 = Player::GetActor(0);
-            if (direct0)
-            {
-                const uintptr_t comp = CompForCharacter(direct0);
-                if (comp) return comp;
+                const uintptr_t comp = CompForCharacter(actor);
+                if (comp && !CompHasHorseGear(comp)) return comp;
             }
 
-            const uintptr_t hooked = g_comp.load(std::memory_order_acquire);
-            if (CompValid(hooked)) return hooked;
-
-            return 0;
+            return 0; // If character not present in world, return 0 (no equipment).
         }
 
         // The server-authority component: what a save reload will show.
@@ -463,39 +431,26 @@ namespace trinity::game
                 return 0;
             }
 
-            const int targetIdx = (s_activeCharIdx < 0) ? Inventory::ActivePlayerCharacterIdx() : s_activeCharIdx;
+            const int liveIdx = Inventory::ActivePlayerCharacterIdx();
+            const int targetIdx = (s_activeCharIdx < 0) ? liveIdx : s_activeCharIdx;
 
-            // 1. If companion is explicitly selected (Damiane = 1, Oongka = 2), query companion server actor
-            if (targetIdx > 0)
+            if (targetIdx == 0 && liveIdx == 0)
             {
-                const uintptr_t actor = Inventory::CharacterAddr(targetIdx);
-                if (actor)
+                const uintptr_t serverChar = Inventory::ServerCharacterAddr();
+                if (serverChar)
                 {
-                    const uintptr_t comp = CompForCharacter(actor);
-                    if (comp) return comp;
+                    const uintptr_t comp = CompForCharacter(serverChar);
+                    if (comp && !CompHasHorseGear(comp)) return comp;
                 }
-                const uintptr_t directActor = Player::GetActor(targetIdx);
-                if (directActor)
-                {
-                    const uintptr_t comp = CompForCharacter(directActor);
-                    if (comp) return comp;
-                }
-                return 0;
             }
 
-            // 2. Kliff (0) / Server character container
-            const uintptr_t serverChar = Inventory::ServerCharacterAddr();
-            if (serverChar)
+            const uintptr_t actor = Inventory::CharacterAddr(targetIdx);
+            if (actor)
             {
-                const uintptr_t comp = CompForCharacter(serverChar);
-                if (comp) return comp;
+                const uintptr_t comp = CompForCharacter(actor);
+                if (comp && !CompHasHorseGear(comp)) return comp;
             }
-            const uintptr_t actor0 = Inventory::CharacterAddr(0);
-            if (actor0)
-            {
-                const uintptr_t comp = CompForCharacter(actor0);
-                if (comp) return comp;
-            }
+
             return 0;
         }
 

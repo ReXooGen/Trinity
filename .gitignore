@@ -43,7 +43,6 @@ CHANGELOG.md
 SECURITY.md
 THIRD_PARTY_NOTICES.md
 trinity_nexus_banner.jpg
-Build_Trinity.ps1
 
 # Reference folders & external repos
 XeTrinityz-reference/
@@ -52,11 +51,12 @@ XeTrinityz-reference/
 /Cheat_Engine/
 /Media/
 /Mod_Files/
+/docs/
 *.pabgb
+*.json
 
 # DLC hooks
 dlc.cpp
 dlc.h
 src/game/dlc.cpp
 src/game/dlc.h
-

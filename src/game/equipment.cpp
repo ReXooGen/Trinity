@@ -115,6 +115,84 @@ namespace trinity::game
             return out;
         }
 
+        // --- Horse Gear Detection ------------------------------------------
+        enum class HorseSlotType { None = 0, Chamfron = 1, HorseArmor = 2, Saddle = 3, Stirrups = 4, Horseshoes = 5 };
+
+        HorseSlotType GetHorseSlotType(const char* name, const char* icon)
+        {
+            if (!name) return HorseSlotType::None;
+
+            auto ContainsAny = [](const char* s, const char* const* list, size_t count) {
+                if (!s) return false;
+                for (size_t i = 0; i < count; ++i)
+                    if (strstr(s, list[i])) return true;
+                return false;
+            };
+
+            static const char* const kExcludeWords[] = {
+                "Feed", "feed", "Food", "food", "Potion", "potion", "Meat", "Fruit",
+                "Skill", "skill", "Recipe", "Book", "Horn", "Material", "Sugar", "sugar",
+                "Hay", "hay", "Berry", "berry", "Juice", "juice", "Beet", "beet", "trade", "Trade",
+                "AbyssGear", "Item_Skill", "Riding_Deer_Horn"
+            };
+
+            if (ContainsAny(name, kExcludeWords, sizeof(kExcludeWords) / sizeof(kExcludeWords[0])) ||
+                (icon && ContainsAny(icon, kExcludeWords, sizeof(kExcludeWords) / sizeof(kExcludeWords[0]))))
+                return HorseSlotType::None;
+
+            // 1. Chamfron (Head / Helm)
+            if (strstr(name, "_HorseArmor_Helm") || strstr(name, "_Chamfron") || strstr(name, "Chamfron") || strstr(name, "Champron") ||
+                (icon && (strstr(icon, "chamfron") || strstr(icon, "horse_helm"))))
+                return HorseSlotType::Chamfron;
+
+            // 2. Horse Armor (Barding / Body Armor)
+            if (strstr(name, "_HorseArmor_Armor") || strstr(name, "_Barding") || strstr(name, "HorseArmor_Armor") || strstr(name, "Barding") ||
+                (icon && (strstr(icon, "horsearmor_armor") || strstr(icon, "barding"))))
+                return HorseSlotType::HorseArmor;
+
+            // 3. Saddle
+            if (strstr(name, "Saddle") || strstr(name, "saddle") || strstr(name, "_HorseArmor_Saddle") ||
+                (icon && strstr(icon, "saddle")))
+                return HorseSlotType::Saddle;
+
+            // 4. Stirrups
+            if (strstr(name, "Stirrup") || strstr(name, "stirrup") || strstr(name, "_HorseArmor_Stirrup") ||
+                (icon && strstr(icon, "stirrup")))
+                return HorseSlotType::Stirrups;
+
+            // 5. Horseshoes
+            if (strstr(name, "Shoe") || strstr(name, "shoe") || strstr(name, "Horseshoe") || strstr(name, "horseshoe") || strstr(name, "_HorseArmor_Shoe") ||
+                (icon && strstr(icon, "horseshoe")))
+                return HorseSlotType::Horseshoes;
+
+            return HorseSlotType::None;
+        }
+
+        bool CompHasHorseGear(uintptr_t comp)
+        {
+            const EquipTableDesc tbl = ReadEquipTableDesc(comp);
+            if (!tbl.valid) return false;
+
+            for (uint32_t i = 0; i < tbl.count; ++i)
+            {
+                const uintptr_t entry = tbl.array + static_cast<uintptr_t>(i) * tbl.stride;
+                uint16_t tid = 0;
+                int64_t qty = 0;
+                if (!Read16(entry + kOff_InvSlot_TypeId, &tid) || tid == kInvSlot_EmptyType || tid == 0) continue;
+                if (!Read64(entry + kOff_InvSlot_Quantity, &qty) || qty <= 0) continue;
+
+                char itemName[96] = "";
+                char icon[128] = "";
+                if (Inventory::NameForTypeId(tid, itemName, sizeof(itemName)))
+                {
+                    Inventory::IconForTypeId(tid, icon, sizeof(icon));
+                    if (GetHorseSlotType(itemName, icon) != HorseSlotType::None)
+                        return true;
+                }
+            }
+            return false;
+        }
+
         // --- Each realm's equip component, by walk (mirrors dye.cpp) ----------
         bool CompValid(uintptr_t comp)
         {
@@ -181,59 +259,28 @@ namespace trinity::game
             const int liveIdx = Inventory::ActivePlayerCharacterIdx();
             const int targetIdx = (s_activeCharIdx < 0) ? liveIdx : s_activeCharIdx;
 
-            // 1. If companion is explicitly selected (Damiane = 1, Oongka = 2), resolve companion actor
-            if (targetIdx > 0)
+            // If target matches currently controlled live character:
+            if (targetIdx == liveIdx)
             {
-                if (targetIdx == liveIdx)
+                const uintptr_t liveChar = Inventory::ClientCharacterAddr();
+                if (liveChar)
                 {
-                    const uintptr_t liveChar = Inventory::ClientCharacterAddr();
-                    if (liveChar)
-                    {
-                        const uintptr_t comp = CompForCharacter(liveChar);
-                        if (comp) return comp;
-                    }
-                    const uintptr_t active = Dye::ActiveClientComp();
-                    if (active && CompValid(active)) return active;
+                    const uintptr_t comp = CompForCharacter(liveChar);
+                    if (comp && !CompHasHorseGear(comp)) return comp;
                 }
-
-                const uintptr_t actor = Inventory::CharacterAddr(targetIdx);
-                if (actor)
-                {
-                    const uintptr_t comp = CompForCharacter(actor);
-                    if (comp) return comp;
-                }
-                const uintptr_t directActor = Player::GetActor(targetIdx);
-                if (directActor)
-                {
-                    const uintptr_t comp = CompForCharacter(directActor);
-                    if (comp) return comp;
-                }
-                return 0;
+                const uintptr_t active = Dye::ActiveClientComp();
+                if (active && CompValid(active) && !CompHasHorseGear(active)) return active;
             }
 
-            // 2. Kliff (0) / Active player character
-            const uintptr_t liveChar = Inventory::ClientCharacterAddr();
-            if (liveChar)
+            // Otherwise resolve target companion or Kliff via Inventory::CharacterAddr:
+            const uintptr_t actor = Inventory::CharacterAddr(targetIdx);
+            if (actor)
             {
-                const uintptr_t comp = CompForCharacter(liveChar);
-                if (comp) return comp;
+                const uintptr_t comp = CompForCharacter(actor);
+                if (comp && !CompHasHorseGear(comp)) return comp;
             }
-            const uintptr_t actor0 = Inventory::CharacterAddr(0);
-            if (actor0)
-            {
-                const uintptr_t comp = CompForCharacter(actor0);
-                if (comp) return comp;
-            }
-            const uintptr_t direct0 = Player::GetActor(0);
-            if (direct0)
-            {
-                const uintptr_t comp = CompForCharacter(direct0);
-                if (comp) return comp;
-            }
-            const uintptr_t active = Dye::ActiveClientComp();
-            if (active && CompValid(active)) return active;
 
-            return 0;
+            return 0; // If not found in party/world, return 0 (no equipment).
         }
 
         uintptr_t ServerComp()
@@ -241,37 +288,23 @@ namespace trinity::game
             const int liveIdx = Inventory::ActivePlayerCharacterIdx();
             const int targetIdx = (s_activeCharIdx < 0) ? liveIdx : s_activeCharIdx;
 
-            // 1. If companion is explicitly selected (Damiane = 1, Oongka = 2), resolve companion server actor
-            if (targetIdx > 0)
+            if (targetIdx == 0 && liveIdx == 0)
             {
-                const uintptr_t actor = Inventory::CharacterAddr(targetIdx);
-                if (actor)
+                const uintptr_t serverChar = Inventory::ServerCharacterAddr();
+                if (serverChar)
                 {
-                    const uintptr_t comp = CompForCharacter(actor);
-                    if (comp) return comp;
+                    const uintptr_t comp = CompForCharacter(serverChar);
+                    if (comp && !CompHasHorseGear(comp)) return comp;
                 }
-                const uintptr_t directActor = Player::GetActor(targetIdx);
-                if (directActor)
-                {
-                    const uintptr_t comp = CompForCharacter(directActor);
-                    if (comp) return comp;
-                }
-                return 0;
             }
 
-            // 2. Kliff (0) / Server character container
-            const uintptr_t serverChar = Inventory::ServerCharacterAddr();
-            if (serverChar)
+            const uintptr_t actor = Inventory::CharacterAddr(targetIdx);
+            if (actor)
             {
-                const uintptr_t comp = CompForCharacter(serverChar);
-                if (comp) return comp;
+                const uintptr_t comp = CompForCharacter(actor);
+                if (comp && !CompHasHorseGear(comp)) return comp;
             }
-            const uintptr_t actor0 = Inventory::CharacterAddr(0);
-            if (actor0)
-            {
-                const uintptr_t comp = CompForCharacter(actor0);
-                if (comp) return comp;
-            }
+
             return 0;
         }
 
