@@ -59,6 +59,7 @@ namespace trinity::game
             uint16_t gearTypeId;    // 0xFFFF when empty
             char     gearName[64];  // resolved gear name (empty when unfilled)
             char     gearIcon[96];  // sprite name for ui::DrawItemIcon (empty when unfilled)
+            char     gearBuff[64];  // stat effect description (e.g. "Attack 1", "Abyss Dmg +15%")
         };
         struct SlotInfo
         {
@@ -69,6 +70,11 @@ namespace trinity::game
             int      filledCount;   // of those, how many hold a gear
             int      maxSockets;    // natural max capacity for this equipment piece (0..5)
             int      refineLevel;   // refinement/enhancement level (0..10)
+            int      durability;    // durability (e.g. 10000 = 100%)
+            int      attack;        // total weapon/gear attack power
+            int      defense;       // total armor/gear defense power
+            int      reinforceExp;  // reinforcement progress (e.g. 72 / 100)
+            int      reinforceBonus;// reinforcement attack/defense bonus (e.g. +2)
             char     slotName[24];
             char     itemName[64];
             char     icon[96];      // sprite name for ui::DrawItemIcon
@@ -84,6 +90,7 @@ namespace trinity::game
         // at internal buffers valid until the next catalog access.
         static int  GearCount();
         static bool GetGear(int idx, uint16_t* typeId, const char** name, const char** icon);
+        static const char* GetGearBuffDescription(const char* name);
 
         // --- Edits -----------------------------------------------------------
         // Raw record writes (no engine call), so these run inline and return

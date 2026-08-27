@@ -119,24 +119,25 @@ namespace trinity::game
         bool CompValid(uintptr_t comp)
         {
             if (comp < kMinPointer) return false;
-            uintptr_t owner = 0;
-            if (!ReadPtr(comp + kOff_EquipComp_Owner, &owner) || owner < kMinPointer) return false;
-            return ReadEquipTableDesc(comp).valid;
+            const EquipTableDesc tbl = ReadEquipTableDesc(comp);
+            return tbl.valid && tbl.count > 0 && tbl.count <= 64;
         }
 
         uintptr_t FindEquipCompFromActor(uintptr_t actor)
         {
             if (actor < kMinPointer) return 0;
 
+            // 1. Standard character / mount container walk (*(*(actor+0x68)+0x38))
             uintptr_t sub = 0, comp = 0;
-            if (ReadPtr(actor + kOff_Container_Sub, &sub) && sub >= kMinPointer &&
-                ReadPtr(sub + kOff_Sub_EquipComp, &comp) && CompValid(comp))
+            if (ReadPtr(actor + kOff_Container_Sub, &sub) && sub >= kMinPointer)
             {
-                return comp;
+                if (ReadPtr(sub + kOff_Sub_EquipComp, &comp) && CompValid(comp))
+                    return comp;
             }
 
-            const uintptr_t subOffsets[] = { 0x60, 0x70, 0x58, 0x78, 0x80, 0x88 };
-            const uintptr_t compOffsets[] = { 0x38, 0x30, 0x40, 0x28, 0x48 };
+            // 2. Alternate sub-container offsets on actor
+            const uintptr_t subOffsets[] = { 0x60, 0x68, 0x70, 0x58, 0x78, 0x80, 0x88, 0x90, 0x98, 0xA0 };
+            const uintptr_t compOffsets[] = { 0x38, 0x30, 0x40, 0x28, 0x48, 0x50, 0x58, 0x60, 0x68 };
             for (uintptr_t sOff : subOffsets)
             {
                 if (ReadPtr(actor + sOff, &sub) && sub >= kMinPointer)
@@ -149,7 +150,8 @@ namespace trinity::game
                 }
             }
 
-            const uintptr_t directOffsets[] = { 0x38, 0x40, 0x48, 0x50, 0x58, 0x60, 0x68, 0x70, 0x78, 0x80, 0x88, 0x90 };
+            // 3. Direct component pointer on actor
+            const uintptr_t directOffsets[] = { 0x38, 0x40, 0x48, 0x50, 0x58, 0x60, 0x68, 0x70, 0x78, 0x80, 0x88, 0x90, 0x98, 0xA0, 0x168 };
             for (uintptr_t dOff : directOffsets)
             {
                 if (ReadPtr(actor + dOff, &comp) && CompValid(comp))
@@ -176,101 +178,115 @@ namespace trinity::game
 
         static int s_activeCharIdx = -1; // -1 = auto-detect active player character
 
+        // Strict per-character routing, mirroring dye.cpp:
+        //   target == live  -> the live component (hook capture first, then a
+        //                      walk of the live character), so the on-screen
+        //                      character edits in real time.
+        //   target != live  -> an identity-verified component from
+        //                      Inventory::CharacterAddr / Player::GetActor -
+        //                      NEVER the live capture or the live character.
+        //                      In Chapter 4 that fallback handed Kliff's slot
+        //                      Damiane's live mesh and her equipment list.
         uintptr_t ClientComp()
         {
             const int liveIdx = Inventory::ActivePlayerCharacterIdx();
             const int targetIdx = (s_activeCharIdx < 0) ? liveIdx : s_activeCharIdx;
 
-            // 1. If companion is explicitly selected (Damiane = 1, Oongka = 2), resolve companion actor
-            if (targetIdx > 0)
+            if (targetIdx == liveIdx)
             {
-                if (targetIdx == liveIdx)
+                // The validated live character's walk leads - see dye.cpp for
+                // why the hook capture must not lead (a server-realm capture
+                // carries the same gear and passes every identity check, but
+                // has no controller and no render state).
+                const uintptr_t liveChar = Inventory::ClientCharacterAddr();
+                if (liveChar)
                 {
-                    const uintptr_t liveChar = Inventory::ClientCharacterAddr();
-                    if (liveChar)
-                    {
-                        const uintptr_t comp = CompForCharacter(liveChar);
-                        if (comp) return comp;
-                    }
-                    const uintptr_t active = Dye::ActiveClientComp();
-                    if (active && CompValid(active)) return active;
-                }
-
-                const uintptr_t actor = Inventory::CharacterAddr(targetIdx);
-                if (actor)
-                {
-                    const uintptr_t comp = CompForCharacter(actor);
+                    const uintptr_t comp = CompForCharacter(liveChar);
                     if (comp) return comp;
                 }
+
+                const uintptr_t hooked = Dye::HookedClientComp();
+                if (hooked)
+                {
+                    uintptr_t hookedOwner = 0;
+                    const bool ownerKnown =
+                        ReadPtr(hooked + kOff_EquipComp_Owner, &hookedOwner);
+                    if (!liveChar || (ownerKnown && hookedOwner == liveChar))
+                    {
+                        const int id = Inventory::IdentifyCharacterFromComp(hooked);
+                        if (id < 0 || id == targetIdx) return hooked;
+                    }
+                }
+
+                if (liveIdx > 0 && liveIdx < 3)
+                {
+                    const uintptr_t liveActor = Player::GetActor(liveIdx);
+                    if (liveActor)
+                    {
+                        const uintptr_t comp = CompForCharacter(liveActor);
+                        if (comp) return comp;
+                    }
+                }
+                return 0; // never another character's component
+            }
+
+            // Off-screen selection: strict identity lookup only.
+            const uintptr_t actor = Inventory::CharacterAddr(targetIdx);
+            if (actor)
+            {
+                const uintptr_t comp = CompForCharacter(actor);
+                if (comp) return comp;
+            }
+            if (targetIdx > 0 && targetIdx < 3)
+            {
                 const uintptr_t directActor = Player::GetActor(targetIdx);
                 if (directActor)
                 {
                     const uintptr_t comp = CompForCharacter(directActor);
                     if (comp) return comp;
                 }
-                return 0;
             }
-
-            // 2. Kliff (0) / Active player character
-            const uintptr_t liveChar = Inventory::ClientCharacterAddr();
-            if (liveChar)
-            {
-                const uintptr_t comp = CompForCharacter(liveChar);
-                if (comp) return comp;
-            }
-            const uintptr_t actor0 = Inventory::CharacterAddr(0);
-            if (actor0)
-            {
-                const uintptr_t comp = CompForCharacter(actor0);
-                if (comp) return comp;
-            }
-            const uintptr_t direct0 = Player::GetActor(0);
-            if (direct0)
-            {
-                const uintptr_t comp = CompForCharacter(direct0);
-                if (comp) return comp;
-            }
-            const uintptr_t active = Dye::ActiveClientComp();
-            if (active && CompValid(active)) return active;
-
             return 0;
         }
 
+        // Server-authority mirror with the same strict routing as dye.cpp.
         uintptr_t ServerComp()
         {
             const int liveIdx = Inventory::ActivePlayerCharacterIdx();
             const int targetIdx = (s_activeCharIdx < 0) ? liveIdx : s_activeCharIdx;
 
-            // 1. If companion is explicitly selected (Damiane = 1, Oongka = 2), resolve companion server actor
-            if (targetIdx > 0)
+            if (targetIdx == liveIdx)
             {
-                const uintptr_t actor = Inventory::CharacterAddr(targetIdx);
-                if (actor)
+                const uintptr_t serverChar = Inventory::ServerCharacterAddr();
+                if (serverChar)
                 {
-                    const uintptr_t comp = CompForCharacter(actor);
+                    const uintptr_t comp = CompForCharacter(serverChar);
                     if (comp) return comp;
                 }
-                const uintptr_t directActor = Player::GetActor(targetIdx);
-                if (directActor)
-                {
-                    const uintptr_t comp = CompForCharacter(directActor);
-                    if (comp) return comp;
-                }
-                return 0;
             }
 
-            // 2. Kliff (0) / Server character container
-            const uintptr_t serverChar = Inventory::ServerCharacterAddr();
-            if (serverChar)
+            const uintptr_t actor = Inventory::CharacterAddr(targetIdx);
+            if (actor)
             {
-                const uintptr_t comp = CompForCharacter(serverChar);
-                if (comp) return comp;
+                const uintptr_t comp = CompForCharacter(actor);
+                if (comp)
+                {
+                    const int id = Inventory::IdentifyCharacterFromComp(comp);
+                    if (id < 0 || id == targetIdx) return comp;
+                }
             }
-            const uintptr_t actor0 = Inventory::CharacterAddr(0);
-            if (actor0)
+            if (targetIdx > 0 && targetIdx < 3)
             {
-                const uintptr_t comp = CompForCharacter(actor0);
-                if (comp) return comp;
+                const uintptr_t directActor = Player::GetActor(targetIdx);
+                if (directActor && directActor != actor)
+                {
+                    const uintptr_t comp = CompForCharacter(directActor);
+                    if (comp)
+                    {
+                        const int id = Inventory::IdentifyCharacterFromComp(comp);
+                        if (id < 0 || id == targetIdx) return comp;
+                    }
+                }
             }
             return 0;
         }
@@ -466,6 +482,37 @@ namespace trinity::game
                 WriteRecord(data, k, kSock_Empty);
         }
 
+        // Safety gate for the profile auto-restore in Tick(): only let it touch
+        // an entry that really is a piece of player gear from this slot. After a
+        // game update the tag -> item mapping can shift, and blindly writing
+        // refine/socket bytes into a quest item or container is what produced
+        // the random menu crashes on newer game versions.
+        bool ProfileTargetValid(uintptr_t entry, uint16_t tag)
+        {
+            if (entry < kMinPointer) return false;
+
+            uint16_t tid = 0;
+            if (!Read16(entry + kOff_InvSlot_TypeId, &tid) || tid == kInvSlot_EmptyType || tid == 0)
+                return false;
+
+            // The socket vector must already be structurally sane before we
+            // write any records into it.
+            const bool isLegacy = core::IsLegacyTU();
+            uint32_t sz = 0, cap = 0, unlocked = 0;
+            if (!Read32(entry + (isLegacy ? 0x60 : 0x68), &sz) ||
+                !Read32(entry + (isLegacy ? 0x64 : 0x6C), &cap) ||
+                !Read32(entry + (isLegacy ? 0x68 : 0x70), &unlocked))
+                return false;
+            if (sz > 5 || cap > 5 || cap < sz || unlocked > 5)
+                return false;
+
+            // Slot taxonomy: resolve the item name and require it to match what
+            // this equipment slot accepts (same check the menu's equip path uses).
+            char name[64] = "";
+            Inventory::NameForTypeId(tid, name, sizeof(name));
+            return Equipment::IsItemForSlot(tag, tid, name, name);
+        }
+
         bool SyncSocketAllRealms(uint16_t tag, int64_t instId, int idx, uint16_t gear)
         {
             bool ok = false;
@@ -478,17 +525,17 @@ namespace trinity::game
                 if (ce) ok |= WriteSocketToEntry(ce, idx, gear);
             }
 
-            for (int c = 0; c < 3; ++c)
+            // Every realm copy of the SELECTED character only - never the
+            // other protagonists' same-tag items.
+            uintptr_t sockCopies[16] = {};
+            const int sockNCopies = Inventory::CharacterAddrs(Equipment::GetActiveCharacter(), sockCopies, 16);
+            for (int i = 0; i < sockNCopies; ++i)
             {
-                const uintptr_t act = Inventory::CharacterAddr(c);
-                if (act)
+                const uintptr_t comp = CompForCharacter(sockCopies[i]);
+                if (comp && comp != clientC)
                 {
-                    const uintptr_t comp = CompForCharacter(act);
-                    if (comp && comp != clientC)
-                    {
-                        const uintptr_t ce = FindEntryByTag(comp, tag);
-                        if (ce) ok |= WriteSocketToEntry(ce, idx, gear);
-                    }
+                    const uintptr_t ce = FindEntryByTag(comp, tag);
+                    if (ce) ok |= WriteSocketToEntry(ce, idx, gear);
                 }
             }
 
@@ -514,17 +561,15 @@ namespace trinity::game
                     if (se) ok |= WriteSocketToEntry(se, idx, gear);
                 }
 
-                for (int c = 0; c < 3; ++c)
+                uintptr_t sockSCopies[16] = {};
+                const int sockSNCopies = Inventory::CharacterAddrs(Equipment::GetActiveCharacter(), sockSCopies, 16);
+                for (int i = 0; i < sockSNCopies; ++i)
                 {
-                    const uintptr_t act = Inventory::CharacterAddr(c);
-                    if (act)
+                    const uintptr_t comp = CompForCharacter(sockSCopies[i]);
+                    if (comp && comp != serverC)
                     {
-                        const uintptr_t comp = CompForCharacter(act);
-                        if (comp && comp != serverC)
-                        {
-                            const uintptr_t se = FindEntryByTag(comp, tag);
-                            if (se) ok |= WriteSocketToEntry(se, idx, gear);
-                        }
+                        const uintptr_t se = FindEntryByTag(comp, tag);
+                        if (se) ok |= WriteSocketToEntry(se, idx, gear);
                     }
                 }
 
@@ -548,17 +593,15 @@ namespace trinity::game
                 if (ce) ok |= Write16(ce + kOff_ItemVal_RefineLevel, lvl);
             }
 
-            for (int c = 0; c < 3; ++c)
+            uintptr_t refCopies[16] = {};
+            const int refNCopies = Inventory::CharacterAddrs(Equipment::GetActiveCharacter(), refCopies, 16);
+            for (int i = 0; i < refNCopies; ++i)
             {
-                const uintptr_t act = Inventory::CharacterAddr(c);
-                if (act)
+                const uintptr_t comp = CompForCharacter(refCopies[i]);
+                if (comp && comp != clientC)
                 {
-                    const uintptr_t comp = CompForCharacter(act);
-                    if (comp && comp != clientC)
-                    {
-                        const uintptr_t ce = FindEntryByTag(comp, tag);
-                        if (ce) ok |= Write16(ce + kOff_ItemVal_RefineLevel, lvl);
-                    }
+                    const uintptr_t ce = FindEntryByTag(comp, tag);
+                    if (ce) ok |= Write16(ce + kOff_ItemVal_RefineLevel, lvl);
                 }
             }
 
@@ -584,17 +627,15 @@ namespace trinity::game
                     if (se) ok |= Write16(se + kOff_ItemVal_RefineLevel, lvl);
                 }
 
-                for (int c = 0; c < 3; ++c)
+                uintptr_t refSCopies[16] = {};
+                const int refSNCopies = Inventory::CharacterAddrs(Equipment::GetActiveCharacter(), refSCopies, 16);
+                for (int i = 0; i < refSNCopies; ++i)
                 {
-                    const uintptr_t act = Inventory::CharacterAddr(c);
-                    if (act)
+                    const uintptr_t comp = CompForCharacter(refSCopies[i]);
+                    if (comp && comp != serverC)
                     {
-                        const uintptr_t comp = CompForCharacter(act);
-                        if (comp && comp != serverC)
-                        {
-                            const uintptr_t se = FindEntryByTag(comp, tag);
-                            if (se) ok |= Write16(se + kOff_ItemVal_RefineLevel, lvl);
-                        }
+                        const uintptr_t se = FindEntryByTag(comp, tag);
+                        if (se) ok |= Write16(se + kOff_ItemVal_RefineLevel, lvl);
                     }
                 }
 
@@ -619,15 +660,13 @@ namespace trinity::game
             const uintptr_t clientC = ClientComp();
             if (clientC) openOnEntry(FindEntryByTag(clientC, tag));
 
-            for (int c = 0; c < 3; ++c)
+            uintptr_t unlCopies[16] = {};
+            const int unlNCopies = Inventory::CharacterAddrs(Equipment::GetActiveCharacter(), unlCopies, 16);
+            for (int i = 0; i < unlNCopies; ++i)
             {
-                const uintptr_t act = Inventory::CharacterAddr(c);
-                if (act)
-                {
-                    const uintptr_t comp = CompForCharacter(act);
-                    if (comp && comp != clientC)
-                        openOnEntry(FindEntryByTag(comp, tag));
-                }
+                const uintptr_t comp = CompForCharacter(unlCopies[i]);
+                if (comp && comp != clientC)
+                    openOnEntry(FindEntryByTag(comp, tag));
             }
 
             // 2. Client Inventory Holders & All Companion Containers
@@ -648,15 +687,13 @@ namespace trinity::game
                 const uintptr_t serverC = ServerComp();
                 if (serverC) openOnEntry(FindEntryByTag(serverC, tag));
 
-                for (int c = 0; c < 3; ++c)
+                uintptr_t unlSCopies[16] = {};
+                const int unlSNCopies = Inventory::CharacterAddrs(Equipment::GetActiveCharacter(), unlSCopies, 16);
+                for (int i = 0; i < unlSNCopies; ++i)
                 {
-                    const uintptr_t act = Inventory::CharacterAddr(c);
-                    if (act)
-                    {
-                        const uintptr_t comp = CompForCharacter(act);
-                        if (comp && comp != serverC)
-                            openOnEntry(FindEntryByTag(comp, tag));
-                    }
+                    const uintptr_t comp = CompForCharacter(unlSCopies[i]);
+                    if (comp && comp != serverC)
+                        openOnEntry(FindEntryByTag(comp, tag));
                 }
 
                 Inventory::FindAndApplyAllHolders(instId, unlockCb, &uArg);
@@ -680,15 +717,13 @@ namespace trinity::game
             const uintptr_t clientC = ClientComp();
             if (clientC) emptyOnEntry(FindEntryByTag(clientC, tag));
 
-            for (int c = 0; c < 3; ++c)
+            uintptr_t empCopies[16] = {};
+            const int empNCopies = Inventory::CharacterAddrs(Equipment::GetActiveCharacter(), empCopies, 16);
+            for (int i = 0; i < empNCopies; ++i)
             {
-                const uintptr_t act = Inventory::CharacterAddr(c);
-                if (act)
-                {
-                    const uintptr_t comp = CompForCharacter(act);
-                    if (comp && comp != clientC)
-                        emptyOnEntry(FindEntryByTag(comp, tag));
-                }
+                const uintptr_t comp = CompForCharacter(empCopies[i]);
+                if (comp && comp != clientC)
+                    emptyOnEntry(FindEntryByTag(comp, tag));
             }
 
             // 2. Client Inventory Holders & All Companion Containers
@@ -706,15 +741,13 @@ namespace trinity::game
                 const uintptr_t serverC = ServerComp();
                 if (serverC) emptyOnEntry(FindEntryByTag(serverC, tag));
 
-                for (int c = 0; c < 3; ++c)
+                uintptr_t empSCopies[16] = {};
+                const int empSNCopies = Inventory::CharacterAddrs(Equipment::GetActiveCharacter(), empSCopies, 16);
+                for (int i = 0; i < empSNCopies; ++i)
                 {
-                    const uintptr_t act = Inventory::CharacterAddr(c);
-                    if (act)
-                    {
-                        const uintptr_t comp = CompForCharacter(act);
-                        if (comp && comp != serverC)
-                            emptyOnEntry(FindEntryByTag(comp, tag));
-                    }
+                    const uintptr_t comp = CompForCharacter(empSCopies[i]);
+                    if (comp && comp != serverC)
+                        emptyOnEntry(FindEntryByTag(comp, tag));
                 }
 
                 Inventory::FindAndApplyAllHolders(instId, emptyCb, &ok);
@@ -736,16 +769,27 @@ namespace trinity::game
         {
             if (g_gearCat != -2) return g_gearCat;
             const int n = Inventory::CatalogCategoryCount(); // builds the catalog
-            int abyssAny = -1;
+            for (int c = 0; c < n; ++c)
+            {
+                const char* name = Inventory::CatalogCategoryName(c);
+                if (_stricmp(name, "Abyss Gear") == 0)
+                {
+                    g_gearCat = c;
+                    return c;
+                }
+            }
+            // Fallback
             for (int c = 0; c < n; ++c)
             {
                 char low[96];
                 LowerCopy(Inventory::CatalogCategoryName(c), low, sizeof(low));
-                if (!strstr(low, "abyss") && !strstr(low, "artifact") && !strstr(low, "geer")) continue;
-                if (strstr(low, "gear") || strstr(low, "geer")) { g_gearCat = c; return c; } // prefer "Abyss Gear" / "Abyss Geer"
-                if (abyssAny < 0) abyssAny = c;                       // else any "Abyss ..."
+                if (strstr(low, "abyss gear") || strstr(low, "abyss geer"))
+                {
+                    g_gearCat = c;
+                    return c;
+                }
             }
-            g_gearCat = abyssAny;
+            g_gearCat = -1;
             return g_gearCat;
         }
 
@@ -774,6 +818,12 @@ namespace trinity::game
             if (!f) return;
 
             fprintf(f, "# Trinity Persistent Equipment Profile (Auto-Saved)\n");
+            // Version stamp: profiles saved under a different game build are
+            // refused on load - a patch can reshuffle the tag -> item mapping,
+            // and re-applying a stale profile would then corrupt whatever now
+            // lives in that slot (the "crash after update, fixed by deleting
+            // the INI" report).
+            fprintf(f, "# GameVersion=%s\n", core::GetGameVersionDisplay());
             fprintf(f, "# Saves Refinement, Unlocked Sockets, and Abyss Gems for Kliff, Damiane, and Oongka\n\n");
 
             for (int c = 0; c < 3; ++c)
@@ -814,11 +864,20 @@ namespace trinity::game
             char line[256];
             int curChar = -1;
             int curTag = -1;
+            bool sawVersion = false;
+            bool versionOk  = false;
 
             while (fgets(line, sizeof(line), f))
             {
                 char* p = line + strlen(line);
                 while (p > line && (*(p - 1) == '\r' || *(p - 1) == '\n' || *(p - 1) == ' ')) { *(--p) = '\0'; }
+
+                if (line[0] == '#' && !strncmp(line, "# GameVersion=", 14))
+                {
+                    sawVersion = true;
+                    versionOk  = strcmp(line + 14, core::GetGameVersionDisplay()) == 0;
+                    continue;
+                }
 
                 if (line[0] == '[' && line[strlen(line) - 1] == ']')
                 {
@@ -857,6 +916,18 @@ namespace trinity::game
                 }
             }
             fclose(f);
+
+            if (!sawVersion || !versionOk)
+            {
+                // Stale profile (saved by an older build, or pre-stamp file):
+                // drop everything instead of force-applying it to whatever now
+                // occupies those tags. It regenerates on the next edit.
+                memset(s_savedEquipSlots, 0, sizeof(s_savedEquipSlots));
+                LOG_WARN("equipment: profile saved under a different game build - ignored (file will re-save under %s).",
+                         core::GetGameVersionDisplay());
+                return;
+            }
+
             LOG("equipment: loaded persistent profiles from '%s'.", iniPath);
         }
 
@@ -896,6 +967,122 @@ namespace trinity::game
         const char* SlotNameForTag(uint16_t tag)
         {
             return Equipment::SlotNameForTag(tag);
+        }
+
+        // Map an abyss-gear display name to its stat effect description.
+        static const char* ResolveGearBuff(const char* name)
+        {
+            if (!name || !name[0]) return "";
+
+            // Material specific Abyss Gears
+            if (strstr(name, "Insight Gear") || strstr(name, "Critical Rate By Material") || strstr(name, "Critical Rate"))
+            {
+                if (strstr(name, "Fabric") || strstr(name, "Cloth")) return "Crit Rate (Fabric)";
+                if (strstr(name, "Feather")) return "Crit Rate (Feather)";
+                if (strstr(name, "Leather") || strstr(name, "Hide")) return "Crit Rate (Leather)";
+                if (strstr(name, "Ore") || strstr(name, "Metal")) return "Crit Rate (Ore)";
+                if (strstr(name, "Plant") || strstr(name, "Flora")) return "Crit Rate (Plant)";
+                if (strstr(name, "Gem") || strstr(name, "Precious") || strstr(name, "Stone")) return "Crit Rate (Gem)";
+                if (strstr(name, "Wood") || strstr(name, "Timber")) return "Crit Rate (Wood)";
+            }
+            if (strstr(name, "Destruction Gear") || strstr(name, "Attack By Material") || strstr(name, "Attack By"))
+            {
+                if (strstr(name, "Fabric") || strstr(name, "Cloth")) return "Attack + (Fabric)";
+                if (strstr(name, "Feather")) return "Attack + (Feather)";
+                if (strstr(name, "Leather") || strstr(name, "Hide")) return "Attack + (Leather)";
+                if (strstr(name, "Ore") || strstr(name, "Metal")) return "Attack + (Ore)";
+                if (strstr(name, "Plant") || strstr(name, "Flora")) return "Attack + (Plant)";
+                if (strstr(name, "Gem") || strstr(name, "Precious") || strstr(name, "Stone")) return "Attack + (Gem)";
+                if (strstr(name, "Wood") || strstr(name, "Timber")) return "Attack + (Wood)";
+            }
+            if (strstr(name, "Aegis Gear") || strstr(name, "Defense By Material") || strstr(name, "Defense By"))
+            {
+                if (strstr(name, "Fabric") || strstr(name, "Cloth")) return "Defense + (Fabric)";
+                if (strstr(name, "Feather")) return "Defense + (Feather)";
+                if (strstr(name, "Leather") || strstr(name, "Hide")) return "Defense + (Leather)";
+                if (strstr(name, "Ore") || strstr(name, "Metal")) return "Defense + (Ore)";
+                if (strstr(name, "Plant") || strstr(name, "Flora")) return "Defense + (Plant)";
+                if (strstr(name, "Gem") || strstr(name, "Precious") || strstr(name, "Stone")) return "Defense + (Gem)";
+                if (strstr(name, "Wood") || strstr(name, "Timber")) return "Defense + (Wood)";
+            }
+
+            if (strstr(name, "Destruction I") && !strstr(name, "II") && !strstr(name, "III")) return "Attack 1";
+            if (strstr(name, "Destruction II")) return "Attack 2";
+            if (strstr(name, "Destruction III")) return "Attack 3";
+            if (strstr(name, "Greater Destruction")) return "Attack 5";
+            if (strstr(name, "Colossal Might")) return "Attack +10%";
+            if (strstr(name, "Aegis I") && !strstr(name, "II") && !strstr(name, "III")) return "Damage Reduction 1";
+            if (strstr(name, "Aegis II")) return "Damage Reduction 2";
+            if (strstr(name, "Aegis III")) return "Damage Reduction 3";
+            if (strstr(name, "Fortification I") && !strstr(name, "II") && !strstr(name, "III")) return "Defense +5";
+            if (strstr(name, "Fortification II")) return "Defense +10";
+            if (strstr(name, "Fortification III")) return "Defense +15";
+            if (strstr(name, "Insight I") && !strstr(name, "II") && !strstr(name, "III")) return "Critical Rate +2%";
+            if (strstr(name, "Insight II")) return "Critical Rate +4%";
+            if (strstr(name, "Insight III")) return "Critical Rate +6%";
+            if (strstr(name, "Greater Insight")) return "Critical Rate +10%";
+            if (strstr(name, "Swift I") && !strstr(name, "II") && !strstr(name, "III")) return "Attack Speed +4%";
+            if (strstr(name, "Swift II")) return "Attack Speed +8%";
+            if (strstr(name, "Swift III")) return "Attack Speed +12%";
+            if (strstr(name, "Greater Swift")) return "Attack Speed +20%";
+            if (strstr(name, "Vitality I") && !strstr(name, "II") && !strstr(name, "III")) return "HP Recovery +5";
+            if (strstr(name, "Vitality II")) return "HP Recovery +10";
+            if (strstr(name, "Vitality III")) return "HP Recovery +15";
+            if (strstr(name, "Vigor I") && !strstr(name, "II") && !strstr(name, "III")) return "Stamina Recovery +5%";
+            if (strstr(name, "Vigor II")) return "Stamina Recovery +10%";
+            if (strstr(name, "Vigor III")) return "Stamina Recovery +15%";
+            if (strstr(name, "Composure I") && !strstr(name, "II") && !strstr(name, "III")) return "Spirit Recovery +5%";
+            if (strstr(name, "Composure II")) return "Spirit Recovery +10%";
+            if (strstr(name, "Composure III")) return "Spirit Recovery +15%";
+            if (strstr(name, "Haste I") && !strstr(name, "II") && !strstr(name, "III")) return "Move Speed +3%";
+            if (strstr(name, "Haste II")) return "Move Speed +6%";
+            if (strstr(name, "Haste III")) return "Move Speed +10%";
+            if (strstr(name, "Abyssbane I") && !strstr(name, "II") && !strstr(name, "III")) return "Abyss Damage +5%";
+            if (strstr(name, "Abyssbane II")) return "Abyss Damage +10%";
+            if (strstr(name, "Abyssbane III")) return "Abyss Damage +15%";
+            if (strstr(name, "Beastbane I") && !strstr(name, "II") && !strstr(name, "III")) return "Beast Damage +5%";
+            if (strstr(name, "Beastbane II")) return "Beast Damage +10%";
+            if (strstr(name, "Beastbane III")) return "Beast Damage +15%";
+            if (strstr(name, "Bloodbane I") && !strstr(name, "II") && !strstr(name, "III")) return "Humanoid Damage +5%";
+            if (strstr(name, "Bloodbane II")) return "Humanoid Damage +10%";
+            if (strstr(name, "Bloodbane III")) return "Humanoid Damage +15%";
+            if (strstr(name, "Malicebane")) return "Boss Damage +10%";
+            if (strstr(name, "Life Transference")) return "HP Steal on Hit";
+            if (strstr(name, "Spirit Transference")) return "Spirit Steal on Hit";
+            if (strstr(name, "Stamina Transference")) return "Stamina Steal on Hit";
+            if (strstr(name, "Celestial Transference")) return "Spirit & Stamina Drain";
+            if (strstr(name, "Crescent Moon Slash")) return "Crescent Wave Skill";
+            if (strstr(name, "Fullmoon Slash")) return "Full Moon Wave Skill";
+            if (strstr(name, "Crow Storm")) return "Crow Whirlwind";
+            if (strstr(name, "Crow's Pursuit")) return "Crow Dive Strike";
+            if (strstr(name, "Arrow Rain")) return "Volley Arrow Skill";
+            if (strstr(name, "Ator's Orb")) return "Ator Drone Support";
+            if (strstr(name, "Ancient Wrath")) return "Ancient Wrath Aura";
+            if (strstr(name, "Ancient Reckoning")) return "Reckoning Burst";
+            if (strstr(name, "Ancient Retribution")) return "Retribution Counter";
+            if (strstr(name, "Tempest of Destruction")) return "Tempest Whirlwind";
+            if (strstr(name, "Earthrending Strike")) return "Shockwave Impact";
+            if (strstr(name, "Lightning God's Affliction")) return "Thunder Strike";
+            if (strstr(name, "Warden of Darkness")) return "Dark Spear Aura";
+            if (strstr(name, "Rising Torrent")) return "Water Slam Impact";
+            if (strstr(name, "Flames of Judgment")) return "Fiery Strike";
+            if (strstr(name, "Putrid Touch")) return "Poison Infliction";
+            if (strstr(name, "Shadow Claw")) return "Shadow Slash";
+            if (strstr(name, "Howling of Chaos")) return "Chaos Roar";
+            if (strstr(name, "Pillar of Wind")) return "Wind Tornado";
+            if (strstr(name, "Frost Spike")) return "Ice Shard Pierce";
+            if (strstr(name, "Aptitude I") && !strstr(name, "II") && !strstr(name, "III")) return "Skill EXP +10%";
+            if (strstr(name, "Aptitude II")) return "Skill EXP +20%";
+            if (strstr(name, "Aptitude III")) return "Skill EXP +30%";
+            if (strstr(name, "Fortune")) return "Money Drop +10%";
+            if (strstr(name, "Efficiency")) return "Crafting Cost -10%";
+            if (strstr(name, "Gourmet")) return "Food Duration +20%";
+            if (strstr(name, "Equestrian")) return "Horse EXP +15%";
+            if (strstr(name, "Companionship")) return "Companion Bond +10%";
+            if (strstr(name, "Service")) return "Contribution EXP +10%";
+            if (strstr(name, "Disarm")) return "Equipment Drop +5%";
+            if (strstr(name, "Infinite Arrows")) return "Ammo Free Chance 20%";
+            return "Abyss Power";
         }
 
         void RebuildSnapshot()
@@ -940,6 +1127,28 @@ namespace trinity::game
                 Read16(entry + kOff_ItemVal_RefineLevel, &refine);
                 s.refineLevel = (refine > kRefine_Max) ? kRefine_Max : static_cast<int>(refine);
 
+                uint16_t dura = 0;
+                if (Read16(entry + kOff_ItemVal_Durability, &dura) && dura > 0)
+                    s.durability = static_cast<int>(dura);
+                else
+                    s.durability = 10000;
+
+                // Base stats & reinforcement calculation
+                const bool isWeapon = (tag == 0 || tag == 12 || tag == 13 || tag == 2);
+                const bool isShield = (tag == 1);
+                const bool isArmor = (tag >= 3 && tag <= 6);
+
+                int baseAtk = 0;
+                int baseDef = 0;
+                if (isWeapon) baseAtk = 14 + s.refineLevel;
+                else if (isShield) { baseAtk = 0; baseDef = 20 + s.refineLevel * 2; }
+                else if (isArmor) baseDef = (tag == 4 ? 35 : 20) + s.refineLevel * 2;
+
+                s.reinforceExp = 72; // in-game default progress
+                s.reinforceBonus = (s.refineLevel >= 4) ? 2 : 1;
+                if (isWeapon) s.attack = baseAtk + s.reinforceBonus;
+                if (isArmor || isShield) s.defense = baseDef + s.reinforceBonus;
+
                 const int maxSock = GetMaxSocketsForTag(tag);
                 s.maxSockets = maxSock;
                 s.unlockedCount = (maxSock > 0) ? UnlockedCount(entry) : 0;
@@ -969,6 +1178,16 @@ namespace trinity::game
                         if (!Inventory::NameForTypeId(so.gearTypeId, so.gearName, sizeof(so.gearName)))
                             snprintf(so.gearName, sizeof(so.gearName), "Gear #%u", so.gearTypeId);
                         Inventory::IconForTypeId(so.gearTypeId, so.gearIcon, sizeof(so.gearIcon));
+                        const char* buff = ResolveGearBuff(so.gearName);
+                        snprintf(so.gearBuff, sizeof(so.gearBuff), "%s", buff);
+
+                        if (isWeapon)
+                        {
+                            if (strstr(so.gearBuff, "Attack 1")) s.attack += 1;
+                            else if (strstr(so.gearBuff, "Attack 2")) s.attack += 2;
+                            else if (strstr(so.gearBuff, "Attack 3")) s.attack += 3;
+                            else if (strstr(so.gearBuff, "Attack 5")) s.attack += 5;
+                        }
                         ++s.filledCount;
                     }
                 }
@@ -1052,22 +1271,38 @@ namespace trinity::game
     {
         if (charIdx < 0 || charIdx > 2) return true;
 
-        // Damiane (1)
+        auto ContainsCi = [](const char* haystack, const char* needle) -> bool {
+            if (!haystack || !needle || !*needle) return false;
+            const size_t nlen = strlen(needle);
+            for (; *haystack; ++haystack)
+            {
+                if (_strnicmp(haystack, needle, nlen) == 0)
+                    return true;
+            }
+            return false;
+        };
+
+        // Damiane (1): Royal Oath, Demenissian Hero's Musket, Caliburn, rapiers, Rivenheim Cloth Armor
         if (charIdx == 1)
         {
             if (typeId == 53935 || typeId == 6324 || typeId == 6041 || typeId == 5306 || typeId == 5300 ||
                 typeId == 5297 || typeId == 5277 || typeId == 3463 || (typeId >= 5450 && typeId <= 5468) ||
                 (typeId >= 5270 && typeId <= 5310) || (typeId >= 6320 && typeId <= 6330))
                 return true;
-            if (name && (strstr(name, "Rapier") || strstr(name, "rapier") || strstr(name, "Damian") ||
-                         strstr(name, "Demian") || strstr(name, "Spencer") || strstr(name, "Dewhaven") ||
-                         strstr(name, "White Wind") || strstr(name, "Hwando") || strstr(name, "hwando") ||
-                         strstr(name, "Demeniss") || strstr(name, "Fencing") || strstr(name, "Dual Blade")))
+            if (name && (ContainsCi(name, "Rapier") || ContainsCi(name, "Damian") || ContainsCi(name, "Demian") ||
+                         ContainsCi(name, "Spencer") || ContainsCi(name, "Dewhaven") || ContainsCi(name, "White Wind") ||
+                         ContainsCi(name, "WhiteWind") || ContainsCi(name, "Hwando") || ContainsCi(name, "Demeniss") ||
+                         ContainsCi(name, "Fencing") || ContainsCi(name, "Dual Blade") || ContainsCi(name, "DualBlade") ||
+                         ContainsCi(name, "Musket") || ContainsCi(name, "Caliburn") || ContainsCi(name, "Royal Oath") ||
+                         ContainsCi(name, "Rivenheim") || ContainsCi(name, "Cloth Armor")))
                 return true;
-            if (key && (strstr(key, "Rapier") || strstr(key, "rapier") || strstr(key, "Damian") ||
-                        strstr(key, "Demian") || strstr(key, "Spencer") || strstr(key, "Dewhaven") ||
-                        strstr(key, "White Wind") || strstr(key, "Hwando") || strstr(key, "hwando") ||
-                        strstr(key, "Demeniss") || strstr(key, "Fencing")))
+            if (key && (ContainsCi(key, "Rapier") || ContainsCi(key, "Damian") || ContainsCi(key, "Demian") ||
+                        ContainsCi(key, "Spencer") || ContainsCi(key, "Dewhaven") || ContainsCi(key, "WhiteWind") ||
+                        ContainsCi(key, "White_Wind") || ContainsCi(key, "Hwando") || ContainsCi(key, "Demeniss") ||
+                        ContainsCi(key, "Fencing") || ContainsCi(key, "DualBlade") || ContainsCi(key, "Dual_Blade") ||
+                        ContainsCi(key, "Musket") || ContainsCi(key, "Caliburn") || ContainsCi(key, "RoyalOath") ||
+                        ContainsCi(key, "Royal_Oath") || ContainsCi(key, "Rivenheim") || ContainsCi(key, "ClothArmor") ||
+                        ContainsCi(key, "Cloth_Armor")))
                 return true;
             return false;
         }
@@ -1075,15 +1310,35 @@ namespace trinity::game
         // Oongka (2)
         if (charIdx == 2)
         {
-            if (typeId == 6560 || typeId == 6042 || typeId == 6305 || (typeId >= 6550 && typeId <= 6570))
+            if (typeId == 6560 || typeId == 6042 || typeId == 6305 || (typeId >= 6550 && typeId <= 6570) ||
+                typeId == 2299 || typeId == 3740 || (typeId >= 3762 && typeId <= 3777) ||
+                (typeId >= 1090 && typeId <= 1094) || typeId == 1390)
                 return true;
-            if (name && (strstr(name, "Oongka") || strstr(name, "Giant") || strstr(name, "Tynion") ||
-                         strstr(name, "Rocket") || strstr(name, "Cannon") || strstr(name, "Club") ||
-                         strstr(name, "Hammer") || strstr(name, "Heavy Mace")))
+            if (name && (ContainsCi(name, "Oongka") || ContainsCi(name, "Giant") || ContainsCi(name, "Tynion") ||
+                         ContainsCi(name, "Rocket") || ContainsCi(name, "Cannon") || ContainsCi(name, "Club") ||
+                         ContainsCi(name, "Hammer") || ContainsCi(name, "Heavy Mace") || ContainsCi(name, "Greatshield") ||
+                         ContainsCi(name, "Gauntlet") || ContainsCi(name, "Valortread") || ContainsCi(name, "Belkandor") ||
+                         ContainsCi(name, "Ashen Wolf") || ContainsCi(name, "Brass Warden") || ContainsCi(name, "Kuku") ||
+                         ContainsCi(name, "Daeil") || ContainsCi(name, "Troll") || ContainsCi(name, "Ordinary Gloves") ||
+                         ContainsCi(name, "Wells") || ContainsCi(name, "Well") || ContainsCi(name, "Betrayer") ||
+                         ContainsCi(name, "Two-Handed") || ContainsCi(name, "War Hammer") || ContainsCi(name, "Halberd") ||
+                         ContainsCi(name, "Silverwolf") || ContainsCi(name, "Silver Wolf") || ContainsCi(name, "Axe") ||
+                         ContainsCi(name, "Plate Armor") || ContainsCi(name, "Horned Helmet") || ContainsCi(name, "Horned") ||
+                         ContainsCi(name, "Heavy Plate") || ContainsCi(name, "Heavy Armor")))
                 return true;
-            if (key && (strstr(key, "Oongka") || strstr(key, "Giant") || strstr(key, "Tynion") ||
-                        strstr(key, "Rocket") || strstr(key, "Cannon") || strstr(key, "Club") ||
-                        strstr(key, "Hammer")))
+            if (key && (ContainsCi(key, "Oongka") || ContainsCi(key, "Giant") || ContainsCi(key, "Tynion") ||
+                        ContainsCi(key, "Rocket") || ContainsCi(key, "Cannon") || ContainsCi(key, "Club") ||
+                        ContainsCi(key, "Hammer") || ContainsCi(key, "Greatshield") || ContainsCi(key, "Gauntlet") ||
+                        ContainsCi(key, "HeavyMace") || ContainsCi(key, "Heavy_Mace") || ContainsCi(key, "Valortread") ||
+                        ContainsCi(key, "Belkandor") || ContainsCi(key, "Ashen_Wolf") || ContainsCi(key, "AshenWolf") ||
+                        ContainsCi(key, "Brass_Warden") || ContainsCi(key, "BrassWarden") || ContainsCi(key, "Kuku") ||
+                        ContainsCi(key, "Daeil") || ContainsCi(key, "Troll") || ContainsCi(key, "Fist") ||
+                        ContainsCi(key, "Wells") || ContainsCi(key, "Well") || ContainsCi(key, "Betrayer") ||
+                        ContainsCi(key, "TwoHanded") || ContainsCi(key, "WarHammer") || ContainsCi(key, "Alebard") ||
+                        ContainsCi(key, "Silverwolf") || ContainsCi(key, "Silver_Wolf") || ContainsCi(key, "SilverWolf") ||
+                        ContainsCi(key, "Axe") || ContainsCi(key, "PlateArmor") || ContainsCi(key, "Plate_Armor") ||
+                        ContainsCi(key, "Horned") || ContainsCi(key, "HeavyPlate") || ContainsCi(key, "Heavy_Plate") ||
+                        ContainsCi(key, "HeavyArmor") || ContainsCi(key, "Heavy_Armor")))
                 return true;
             return false;
         }
@@ -1285,6 +1540,11 @@ namespace trinity::game
         if (name)   *name   = info.name;
         if (icon)   *icon   = info.icon;
         return true;
+    }
+
+    const char* Equipment::GetGearBuffDescription(const char* name)
+    {
+        return ResolveGearBuff(name);
     }
 
     // --- Edits -------------------------------------------------------------
@@ -1659,11 +1919,15 @@ namespace trinity::game
                 const int liveIdx = Inventory::ActivePlayerCharacterIdx();
                 if (c == liveIdx)
                 {
-                    comp = Dye::ActiveClientComp();
-                    if (!comp)
+                    // Resolve the live character directly - ActiveClientComp()
+                    // is routed by the dye MENU selection, which may be a
+                    // different character than `c`.
+                    const uintptr_t liveChar = Inventory::ClientCharacterAddr();
+                    if (liveChar) comp = CompForCharacter(liveChar);
+                    if (!comp && c > 0 && c < 3)
                     {
-                        const uintptr_t liveChar = Inventory::ClientCharacterAddr();
-                        if (liveChar) comp = CompForCharacter(liveChar);
+                        const uintptr_t liveActor = Player::GetActor(c);
+                        if (liveActor) comp = CompForCharacter(liveActor);
                     }
                 }
                 if (!comp)
@@ -1688,6 +1952,7 @@ namespace trinity::game
 
                     const uintptr_t entry = FindEntryByTag(comp, t);
                     if (!entry) continue;
+                    if (!ProfileTargetValid(entry, t)) continue;
 
                     // 1. Check Refinement Level
                     uint16_t liveRefine = 0;

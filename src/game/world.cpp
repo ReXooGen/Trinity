@@ -514,7 +514,10 @@ namespace trinity::game
             const uintptr_t envSig = mem::FindPattern(kSig_EnvManager);
             if (envSig)
             {
-                g_pEnvManager = mem::ResolveRipAt(envSig + kOff_EnvManager_Mov, kLen_EnvManager_Mov);
+                // The `mov rcx, cs:<pEnvManager>` IS the first instruction of
+                // the match (7 bytes: opcode + disp32) - resolving from +3
+                // produced garbage pointers on TU 2.00.
+                g_pEnvManager = mem::ResolveRipAt(envSig, kLen_EnvManager_Mov);
                 if (g_pEnvManager >= kMinPointer)
                 {
                     LOG("world: safe EnvManager pointer resolved: 0x%llX", g_pEnvManager);

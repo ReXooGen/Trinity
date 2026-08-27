@@ -3,7 +3,9 @@
 // Internal contract between the menu shell (framework.cpp) and the row
 // widgets (widgets.cpp). Nothing outside src/gui should include this.
 
+#include <cstdint>
 #include <imgui.h>
+#include "framework.h"
 
 namespace trinity::ui
 {
@@ -83,7 +85,7 @@ namespace trinity::ui
     extern float   g_scale;
 
     // Per-frame layout cursor (set up by Begin, advanced by rows).
-    extern float g_x, g_y, g_width, g_listTop;
+    extern float g_x, g_y, g_width, g_listTop, g_menuTop;
     extern int   g_rowIndex;
 
     // The selected row's description, drawn later in End(). COPIED, not kept
@@ -93,6 +95,49 @@ namespace trinity::ui
     extern char    g_selectedItemName[128];
     extern char    g_selectedItemIcon[64];
     extern RowKind g_hintKind;
+
+    // Rich Side-panel tooltip info
+    struct TooltipSocketInfo
+    {
+        bool     unlocked = false;
+        bool     filled = false;
+        uint16_t gearTypeId = 0xFFFF;
+        char     gearName[64] = {};
+        char     gearIcon[96] = {};
+        char     gearBuff[64] = {};
+    };
+
+    struct TooltipPreviewInfo
+    {
+        bool              valid = false;
+        bool              isEquipped = false;
+        bool              isDye = false;
+        char              name[128] = {};
+        char              subtitle[64] = {};
+        char              icon[96] = {};
+        char              gearBuff[64] = {};
+        int               refineLevel = -1;
+        int               durability = -1;
+        int               attack = 0;
+        int               defense = 0;
+        int               reinforceExp = 0;
+        int               reinforceBonus = 0;
+        int               maxSockets = 0;
+        int               unlockedSockets = 0;
+        int               filledSockets = 0;
+        TooltipSocketInfo sockets[5] = {};
+
+        // Dye Live Preview
+        int               dyeActiveZone = 0;
+        uint32_t          dyeActiveRGB = 0;
+        int               dyeMaterial = 0;
+        int               dyeCondition = 100;
+        int               dyeTotalZones = 0;
+        uint32_t          dyeZoneRGB[12] = {};
+        bool              dyeZoneDyed[12] = {};
+    };
+
+    extern TooltipPreviewInfo g_selectedTooltip;
 
     // True when the last nav input came from a controller - the footer shows
     // pad glyphs instead of keyboard keys.

@@ -2,6 +2,7 @@
 
 #include <cstddef>
 #include <cstdint>
+#include "../game/equipment.h"
 
 namespace trinity::ui
 {
@@ -19,6 +20,8 @@ namespace trinity::ui
     // lists aligned.
     bool OptionItem(const char* label, const char* icon,
                     const char* desc = nullptr);
+    bool OptionItemWithBuff(const char* label, const char* icon, const char* buff,
+                            const char* desc = nullptr);
 
     // On/off switch. Enter/A/click or Left/Right flips it; the knob animates.
     bool Toggle(const char* label, bool* value, const char* desc = nullptr);
@@ -80,6 +83,10 @@ namespace trinity::ui
     // Submenu with the game's own icon at the left (see OptionItem / icons.h).
     bool SubmenuItem(const char* label, const char* icon, const char* id,
                      const char* desc = nullptr);
+
+    // Submenu with full equipment slot info for rich side-panel stats and sockets preview.
+    bool SubmenuEquipItem(const char* label, const char* icon, const char* id,
+                          const game::Equipment::SlotInfo& si, const char* desc = nullptr);
 
     // Type-to-filter row for long lists. Activating it starts text capture
     // (all keyboard input is swallowed from the game while typing - see

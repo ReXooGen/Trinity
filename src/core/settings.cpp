@@ -122,6 +122,7 @@ namespace trinity
             else if (!strcmp(key, "showFps"))             vals.showFps             = atoi(val) != 0;
             else if (!strcmp(key, "showConsole"))         vals.showConsole         = atoi(val) != 0;
             else if (!strcmp(key, "menuScale"))           vals.menuScale           = strtof(val, nullptr);
+            else if (!strcmp(key, "tooltipImageScale"))    vals.tooltipImageScale   = strtof(val, nullptr);
             else if (!strcmp(key, "showItemTooltip"))     vals.showItemTooltip     = atoi(val) != 0;
             else if (!strcmp(key, "fileLogging"))         vals.fileLogging         = atoi(val) != 0;
             else if (!strcmp(key, "themeIndex"))          vals.themeIndex          = atoi(val);
@@ -229,7 +230,7 @@ namespace trinity
         st.godMode         = vals.godMode;
         st.noFallDamage    = vals.noFallDamage;
         st.infStamina      = vals.infStamina;
-        st.infMountStamina = vals.infMountStamina;
+        st.infMountStamina = vals.infMountStamina || vals.infStamina;
         st.infSpirit       = vals.infSpirit;
         st.easyParry       = vals.easyParry;
         st.easyEvade       = vals.easyEvade;
@@ -253,7 +254,8 @@ namespace trinity
         st.invStackSizeVal = ClampI(vals.invStackSizeVal, 1, 999999999);
         st.showFps       = vals.showFps;
         st.showConsole   = vals.showConsole;
-        st.menuScale     = vals.menuScale;
+        st.menuScale     = ClampF(vals.menuScale, 0.5f, 2.5f);
+        st.tooltipImageScale = vals.tooltipImageScale > 0.1f ? vals.tooltipImageScale : 1.0f;
         st.showItemTooltip = vals.showItemTooltip;
 
         // Apply language setting
@@ -350,6 +352,7 @@ namespace trinity
                 "showFps=%d\n"
                 "showConsole=%d\n"
                 "menuScale=%.3f\n"
+                "tooltipImageScale=%.3f\n"
                 "showItemTooltip=%d\n"
                 "fileLogging=%d\n"
                 "themeIndex=%d\n"
@@ -414,6 +417,7 @@ namespace trinity
                 st.showFps ? 1 : 0,
                 st.showConsole ? 1 : 0,
                 st.menuScale,
+                st.tooltipImageScale,
                 st.showItemTooltip ? 1 : 0,
                 st.fileLogging ? 1 : 0,
                 st.themeIndex,

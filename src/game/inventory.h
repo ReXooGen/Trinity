@@ -352,6 +352,19 @@ namespace trinity::game
         static uintptr_t ClientCharacterAddr();
         static uintptr_t ServerCharacterAddr();
         static uintptr_t CharacterAddr(int index);
+
+        // Character identity from equipped gear (0 = Kliff, 1 = Damiane,
+        // 2 = Oongka, -1 = unrecognized) for a raw EQUIP COMPONENT - used to
+        // verify a hook-captured or walked component really belongs to the
+        // character an editor targets before any write is routed through it.
+        static int IdentifyCharacterFromComp(uintptr_t comp);
+
+        // Every container that positively identifies as `index` (0..2), most
+        // trusted first. Lets the editors sync one character's change across
+        // ALL of that character's realm copies without touching the other
+        // protagonists' containers.
+        static int CharacterAddrs(int index, uintptr_t* out, int maxCount);
+
         static int       ActivePlayerCharacterIdx();
         static uintptr_t RealmFlagAddress(uint8_t* outVal);
         static uintptr_t ClientHolderAddr();

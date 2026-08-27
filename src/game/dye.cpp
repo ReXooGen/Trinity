@@ -47,10 +47,35 @@ namespace trinity::game
         using DyeApplyBatch_t = int*  (__fastcall*)(void*, int*, void*);
         using DyeUpsert_t     = void* (__fastcall*)(void*, const void*);
 
-        EquipBatch_t    oEquipBatch   = nullptr;
+        // Per-slot RENDER leaves (see kSig_DyeVisualSet / kSig_DyeVisualClear
+        // in offsets.h). Possession-independent: safe on companions.
+        using DyeVisualSet_t   = void* (__fastcall*)(void* comp, void* entry,
+                                                     const void* rec, uint16_t tag,
+                                                     uint64_t stackCh, uint64_t stackZero);
+        using DyeVisualClear_t = void* (__fastcall*)(void* comp, void* entry,
+                                                     uint16_t tag, uint8_t channel,
+                                                     uint64_t stackZero);
+         // Data remove-by-channel on an entry's dye vector.
+         using DyeRecRemove_t   = void  (__fastcall*)(void* entry, uint8_t channel);
+
+         // Per-slot applier (sub_847D24 / kSig_DyeApplySlot): writes ONE
+         // 16-byte record straight into an entry's GPU material buffer on
+         // ANY equip component - no possessor-chain probe and no long
+         // render-state walk - so it is THE live-visual path that works on
+         // companion bodies (Damiane / Oongka), where DyeApplyBatch
+         // early-outs on its possessor probe AND the batch's own render
+         // leaf faults on their render structures.
+         using DyeApplySlot_t   = void* (__fastcall*)(void* comp, uint16_t slotTag,
+                                                      const uint8_t rec[16], int channel);
+
+         EquipBatch_t    oEquipBatch   = nullptr;
         void*           g_equipTarget = nullptr;
         DyeApplyBatch_t g_dyeApply    = nullptr;
-        DyeUpsert_t     g_dyeUpsert   = nullptr;
+         DyeUpsert_t     g_dyeUpsert   = nullptr;
+         DyeVisualSet_t   g_dyeVisualSet   = nullptr;
+         DyeVisualClear_t g_dyeVisualClear = nullptr;
+         DyeRecRemove_t   g_dyeRecRemove   = nullptr;
+         DyeApplySlot_t   g_dyeApplySlot   = nullptr;
 
         void DyeWatchFile(const char* fmt, ...)
         {
@@ -191,6 +216,12 @@ namespace trinity::game
         std::atomic<uintptr_t> g_comp{ 0 };
         std::atomic<uintptr_t> g_mountComp{ 0 };
 
+        // Tick of the last NEW player-component equip-batch capture. Gear
+        // changes rebuild the GPU material instances back to natural colors
+        // while dye records persist as data, so the auto-restore pass forces
+        // a bounded visual replay right after each change.
+        std::atomic<ULONGLONG> s_lastEquipChangeMs{ 0 };
+
         bool ReadEquipTable(uintptr_t comp, uintptr_t& outArray, uint32_t& outCount,
                             uintptr_t* outStride = nullptr, uintptr_t* outSlotTag = nullptr,
                             uintptr_t* outDyeData = nullptr, uintptr_t* outDyeCount = nullptr)
@@ -288,15 +319,15 @@ namespace trinity::game
 
             // 1. Standard character / mount container walk (*(*(actor+0x68)+0x38))
             uintptr_t sub = 0, comp = 0;
-            if (ReadPtr(actor + kOff_Container_Sub, &sub) && sub >= kMinPointer &&
-                ReadPtr(sub + kOff_Sub_EquipComp, &comp) && CompValid(comp))
+            if (ReadPtr(actor + kOff_Container_Sub, &sub) && sub >= kMinPointer)
             {
-                return comp;
+                if (ReadPtr(sub + kOff_Sub_EquipComp, &comp) && CompValid(comp))
+                    return comp;
             }
 
             // 2. Alternate sub-container offsets on actor
-            const uintptr_t subOffsets[] = { 0x60, 0x70, 0x58, 0x78, 0x80, 0x88 };
-            const uintptr_t compOffsets[] = { 0x38, 0x30, 0x40, 0x28, 0x48 };
+            const uintptr_t subOffsets[] = { 0x60, 0x68, 0x70, 0x58, 0x78, 0x80, 0x88, 0x90, 0x98, 0xA0 };
+            const uintptr_t compOffsets[] = { 0x38, 0x30, 0x40, 0x28, 0x48, 0x50, 0x58, 0x60, 0x68 };
             for (uintptr_t sOff : subOffsets)
             {
                 if (ReadPtr(actor + sOff, &sub) && sub >= kMinPointer)
@@ -310,7 +341,7 @@ namespace trinity::game
             }
 
             // 3. Direct component pointer on actor
-            const uintptr_t directOffsets[] = { 0x38, 0x40, 0x48, 0x50, 0x58, 0x60, 0x68, 0x70, 0x78, 0x80, 0x88, 0x90 };
+            const uintptr_t directOffsets[] = { 0x38, 0x40, 0x48, 0x50, 0x58, 0x60, 0x68, 0x70, 0x78, 0x80, 0x88, 0x90, 0x98, 0xA0, 0x168 };
             for (uintptr_t dOff : directOffsets)
             {
                 if (ReadPtr(actor + dOff, &comp) && CompValid(comp))
@@ -381,10 +412,20 @@ namespace trinity::game
         }
 
         // The component we render through, and the one every read in this file
-        // reports. The walk leads and the hook capture is only a fallback -
-        // same doctrine as the inventory holder: a capture cannot be checked
-        // for staleness or for which realm it came from, while the walk starts
-        // from the character the engine itself repoints on load.
+        // reports. Routing is STRICT per character:
+        //
+        //   target == live  -> the live 3D component (hook capture first, then
+        //                      a walk of the live character), so the on-screen
+        //                      character dyes in real time.
+        //   target != live  -> an identity-verified component resolved from
+        //                      Inventory::CharacterAddr / Player::GetActor.
+        //                      NEVER g_comp and never the live character: in
+        //                      Chapter 4 that used to hand Kliff's slot to
+        //                      Damiane's live mesh, so "Kliff" showed her
+        //                      equipment and her colors followed his picks.
+        // A hook capture is additionally accepted only when its contents do
+        // not positively belong to a different character - a stale capture
+        // from a previous session must never route onto another body.
         uintptr_t ClientComp()
         {
             if (s_targetMode == 1)
@@ -397,63 +438,75 @@ namespace trinity::game
             const int liveIdx = Inventory::ActivePlayerCharacterIdx();
             const int targetIdx = (s_activeCharIdx < 0) ? liveIdx : s_activeCharIdx;
 
-            // 1. If companion is explicitly selected (Damiane = 1, Oongka = 2), query companion actor
-            if (targetIdx > 0)
+            if (targetIdx == liveIdx)
             {
-                if (targetIdx == liveIdx)
+                // 1. Walk of the VALIDATED live character leads. IsLiveCharacter
+                //    proves possessor->pawn == this container, so its component
+                //    is the on-screen RENDER component. This must lead over the
+                //    hook capture: a capture cannot be realm-checked by its
+                //    contents (server and client components carry the same
+                //    gear, live-proved 2026-08-25 - the hook handed back the
+                //    SERVER component, which has no controller and no render
+                //    state, so nothing ever painted).
+                const uintptr_t liveChar = Inventory::ClientCharacterAddr();
+                if (liveChar)
                 {
-                    const uintptr_t liveChar = Inventory::ClientCharacterAddr();
-                    if (liveChar)
-                    {
-                        const uintptr_t comp = CompForCharacter(liveChar);
-                        if (comp) return comp;
-                    }
-                    const uintptr_t hooked = g_comp.load(std::memory_order_acquire);
-                    if (CompValid(hooked)) return hooked;
-                }
-
-                const uintptr_t actor = Inventory::CharacterAddr(targetIdx);
-                if (actor)
-                {
-                    const uintptr_t comp = CompForCharacter(actor);
+                    const uintptr_t comp = CompForCharacter(liveChar);
                     if (comp) return comp;
                 }
+
+                // 2. Hook capture - only when it provably belongs to the live
+                //    client character (owner back-reference equality), or when
+                //    no live character is resolvable yet.
+                const uintptr_t hooked = g_comp.load(std::memory_order_acquire);
+                if (CompValid(hooked))
+                {
+                    uintptr_t hookedOwner = 0;
+                    const bool ownerKnown =
+                        ReadPtr(hooked + kOff_EquipComp_Owner, &hookedOwner);
+                    if (!liveChar || (ownerKnown && hookedOwner == liveChar))
+                    {
+                        const int id = Inventory::IdentifyCharacterFromComp(hooked);
+                        if (id < 0 || id == targetIdx) return hooked;
+                    }
+                }
+
+                // 3. Tracked party actor of the live index.
+                if (liveIdx > 0 && liveIdx < 3)
+                {
+                    const uintptr_t liveActor = Player::GetActor(liveIdx);
+                    if (liveActor)
+                    {
+                        const uintptr_t comp = CompForCharacter(liveActor);
+                        if (comp) return comp;
+                    }
+                }
+                return 0; // never another character's component
+            }
+
+            // Off-screen selection: strict identity lookup only.
+            const uintptr_t actor = Inventory::CharacterAddr(targetIdx);
+            if (actor)
+            {
+                const uintptr_t comp = CompForCharacter(actor);
+                if (comp) return comp;
+            }
+            if (targetIdx > 0 && targetIdx < 3)
+            {
                 const uintptr_t directActor = Player::GetActor(targetIdx);
                 if (directActor)
                 {
                     const uintptr_t comp = CompForCharacter(directActor);
                     if (comp) return comp;
                 }
-                return 0;
             }
-
-            // 2. Kliff (0) / Active player character
-            const uintptr_t liveChar = Inventory::ClientCharacterAddr();
-            if (liveChar)
-            {
-                const uintptr_t comp = CompForCharacter(liveChar);
-                if (comp) return comp;
-            }
-            const uintptr_t actor0 = Inventory::CharacterAddr(0);
-            if (actor0)
-            {
-                const uintptr_t comp = CompForCharacter(actor0);
-                if (comp) return comp;
-            }
-            const uintptr_t direct0 = Player::GetActor(0);
-            if (direct0)
-            {
-                const uintptr_t comp = CompForCharacter(direct0);
-                if (comp) return comp;
-            }
-
-            const uintptr_t hooked = g_comp.load(std::memory_order_acquire);
-            if (CompValid(hooked)) return hooked;
-
             return 0;
         }
 
-        // The server-authority component: what a save reload will show.
+        // The server-authority component: what a save reload will show. Same
+        // strict per-character routing as ClientComp - the server mirror of
+        // the ACTIVE character serves only the live selection; every other
+        // selection resolves strictly by identity.
         uintptr_t ServerComp()
         {
             if (s_targetMode == 1)
@@ -463,38 +516,41 @@ namespace trinity::game
                 return 0;
             }
 
-            const int targetIdx = (s_activeCharIdx < 0) ? Inventory::ActivePlayerCharacterIdx() : s_activeCharIdx;
+            const int liveIdx = Inventory::ActivePlayerCharacterIdx();
+            const int targetIdx = (s_activeCharIdx < 0) ? liveIdx : s_activeCharIdx;
 
-            // 1. If companion is explicitly selected (Damiane = 1, Oongka = 2), query companion server actor
-            if (targetIdx > 0)
+            if (targetIdx == liveIdx)
             {
-                const uintptr_t actor = Inventory::CharacterAddr(targetIdx);
-                if (actor)
+                const uintptr_t serverChar = Inventory::ServerCharacterAddr();
+                if (serverChar)
                 {
-                    const uintptr_t comp = CompForCharacter(actor);
+                    const uintptr_t comp = CompForCharacter(serverChar);
                     if (comp) return comp;
                 }
+            }
+
+            const uintptr_t actor = Inventory::CharacterAddr(targetIdx);
+            if (actor)
+            {
+                const uintptr_t comp = CompForCharacter(actor);
+                if (comp)
+                {
+                    const int id = Inventory::IdentifyCharacterFromComp(comp);
+                    if (id < 0 || id == targetIdx) return comp;
+                }
+            }
+            if (targetIdx > 0 && targetIdx < 3)
+            {
                 const uintptr_t directActor = Player::GetActor(targetIdx);
-                if (directActor)
+                if (directActor && directActor != actor)
                 {
                     const uintptr_t comp = CompForCharacter(directActor);
-                    if (comp) return comp;
+                    if (comp)
+                    {
+                        const int id = Inventory::IdentifyCharacterFromComp(comp);
+                        if (id < 0 || id == targetIdx) return comp;
+                    }
                 }
-                return 0;
-            }
-
-            // 2. Kliff (0) / Server character container
-            const uintptr_t serverChar = Inventory::ServerCharacterAddr();
-            if (serverChar)
-            {
-                const uintptr_t comp = CompForCharacter(serverChar);
-                if (comp) return comp;
-            }
-            const uintptr_t actor0 = Inventory::CharacterAddr(0);
-            if (actor0)
-            {
-                const uintptr_t comp = CompForCharacter(actor0);
-                if (comp) return comp;
             }
             return 0;
         }
@@ -552,17 +608,28 @@ namespace trinity::game
 
         void* __fastcall hkEquipBatch(void* a1, void* a2, void* a3, void* a4)
         {
-            const uintptr_t comp = reinterpret_cast<uintptr_t>(a1);
-            if (comp >= kMinPointer && CompValid(comp))
+            // Capture only; the trampoline call stays outside so an engine
+            // fault can never be swallowed by our guard. POD locals only -
+            // SEH cannot coexist with unwinding in the same frame.
+            __try
             {
-                if (CompHasHorseGear(comp))
+                const uintptr_t comp = reinterpret_cast<uintptr_t>(a1);
+                if (comp >= kMinPointer && CompValid(comp))
                 {
-                    g_mountComp.store(comp, std::memory_order_release);
+                    if (CompHasHorseGear(comp))
+                    {
+                        g_mountComp.store(comp, std::memory_order_release);
+                    }
+                    else if (g_comp.load(std::memory_order_relaxed) != comp)
+                    {
+                        g_comp.store(comp, std::memory_order_release);
+                        s_lastEquipChangeMs.store(GetTickCount64(), std::memory_order_release);
+                    }
                 }
-                else if (g_comp.load(std::memory_order_relaxed) != comp)
-                {
-                    g_comp.store(comp, std::memory_order_release);
-                }
+            }
+            __except (EXCEPTION_EXECUTE_HANDLER)
+            {
+                // A faulting capture drops this one event - never fatal.
             }
             return oEquipBatch(a1, a2, a3, a4);
         }
@@ -667,6 +734,20 @@ namespace trinity::game
         // --- SEH wrappers around engine calls (POD locals only) -----------
         bool CallDyeApply(uintptr_t comp, void* batch, int* outErr)
         {
+            if (!g_dyeApply || comp < kMinPointer || !batch) return false;
+            // CRITICAL CRASH GUARD: DyeApplyBatch dereferences:
+            // actor = [comp + 8] -> possessor = [actor + 0xA0] -> pawn = [possessor + 0xD0] -> sub = [pawn + 0x68] -> render = [sub + 0x110]
+            uintptr_t actor = 0;
+            if (!ReadPtr(comp + 8, &actor) || actor < kMinPointer) return false;
+            uintptr_t possessor = 0;
+            if (!ReadPtr(actor + 0xA0, &possessor) || possessor < kMinPointer) return false;
+            uintptr_t pawn = 0;
+            if (!ReadPtr(possessor + 0xD0, &pawn) || pawn < kMinPointer) return false;
+            uintptr_t sub = 0;
+            if (!ReadPtr(pawn + 0x68, &sub) || sub < kMinPointer) return false;
+            uintptr_t render = 0;
+            if (!ReadPtr(sub + 0x110, &render) || render < kMinPointer) return false;
+
             __try
             {
                 g_dyeApply(reinterpret_cast<void*>(comp), outErr, batch);
@@ -680,6 +761,85 @@ namespace trinity::game
             __try
             {
                 g_dyeUpsert(reinterpret_cast<void*>(itemVal), rec);
+                return true;
+            }
+            __except (EXCEPTION_EXECUTE_HANDLER) { return false; }
+        }
+
+        // Drives the game's official equip batch rebuild (0x1403AAF40) to
+        // reconstruct and refresh the 3D materials live across all bodies
+        // (Kliff, Damiane, Oongka, Mounts) without requiring manual unequip/re-equip.
+        bool TriggerEquipRefresh(uintptr_t comp)
+        {
+            if (!oEquipBatch || comp < kMinPointer) return false;
+            __try
+            {
+                uintptr_t actor = 0;
+                if (ReadPtr(comp + kOff_EquipComp_Owner, &actor) && actor >= kMinPointer)
+                {
+                    uintptr_t actor8 = 0;
+                    if (!ReadPtr(actor + 8, &actor8) || actor8 < kMinPointer)
+                    {
+                        return false;
+                    }
+                }
+                oEquipBatch(reinterpret_cast<void*>(comp), nullptr, nullptr, nullptr);
+                return true;
+            }
+            __except (EXCEPTION_EXECUTE_HANDLER)
+            {
+                return false;
+            }
+        }
+
+        // SEH wrapper around the per-slot applier - the only engine call
+        // proven to repaint companion bodies (Damiane / Oongka) live, so
+        // every call is fault-isolated.
+        bool CallDyeApplySlot(uintptr_t comp, uint16_t tag, const uint8_t rec[16], int channel)
+        {
+            if (!g_dyeApplySlot) return false;
+            __try
+            {
+                g_dyeApplySlot(reinterpret_cast<void*>(comp), tag, rec, channel);
+                return true;
+            }
+            __except (EXCEPTION_EXECUTE_HANDLER) { return false; }
+        }
+
+        // SEH wrappers around the per-slot render leaves. These are what make
+        // a dye VISIBLE on any body - including companions whose components
+        // DyeApplyBatch refuses - so every call is fault-isolated.
+        bool CallDyeVisualSet(uintptr_t comp, uintptr_t entry, const uint8_t rec[16],
+                              uint16_t tag, int channel)
+        {
+            if (!g_dyeVisualSet) return false;
+            __try
+            {
+                g_dyeVisualSet(reinterpret_cast<void*>(comp), reinterpret_cast<void*>(entry),
+                               rec, tag, static_cast<uint64_t>(channel), 0);
+                return true;
+            }
+            __except (EXCEPTION_EXECUTE_HANDLER) { return false; }
+        }
+
+        bool CallDyeVisualClear(uintptr_t comp, uintptr_t entry, uint16_t tag, int channel)
+        {
+            if (!g_dyeVisualClear) return false;
+            __try
+            {
+                g_dyeVisualClear(reinterpret_cast<void*>(comp), reinterpret_cast<void*>(entry),
+                                 tag, static_cast<uint8_t>(channel), 0);
+                return true;
+            }
+            __except (EXCEPTION_EXECUTE_HANDLER) { return false; }
+        }
+
+        bool CallDyeRecordRemove(uintptr_t entry, int channel)
+        {
+            if (!g_dyeRecRemove) return false;
+            __try
+            {
+                g_dyeRecRemove(reinterpret_cast<void*>(entry), static_cast<uint8_t>(channel));
                 return true;
             }
             __except (EXCEPTION_EXECUTE_HANDLER) { return false; }
@@ -884,57 +1044,54 @@ namespace trinity::game
                 }
             }
 
-            // 2. Multi-Actor Character Sync (Kliff, Damiane, Oongka) - write to EVERY copy in CharMgr
-            for (int c = 0; c < 3; ++c)
+            // 2. Multi-copy sync for the SELECTED character only. One
+            // protagonist can own several containers (client, server, party
+            // body) and every copy must carry the change - but the other
+            // characters' same-tag items must never be touched. The old
+            // all-characters loop stamped Kliff's pick onto Damiane's equipped
+            // piece and back, which is exactly the bleed the per-character
+            // routing above exists to prevent.
+            const int liveIdx = Inventory::ActivePlayerCharacterIdx();
+            const int targetIdx = (s_activeCharIdx < 0) ? liveIdx : s_activeCharIdx;
+            uintptr_t copies[16] = {};
+            const int nCopies = (targetIdx >= 0 && targetIdx < 3)
+                ? Inventory::CharacterAddrs(targetIdx, copies, 16) : 0;
+            for (int i = 0; i < nCopies; ++i)
             {
-                const uintptr_t act = Inventory::CharacterAddr(c);
-                if (act)
+                const uintptr_t act = copies[i];
+                if (!act) continue;
+                const uintptr_t cComp = CompForCharacter(act);
+                if (cComp && cComp != comp)
                 {
-                    const uintptr_t cComp = CompForCharacter(act);
-                    if (cComp && cComp != comp)
+                    const uintptr_t cEntry = FindEntryByTag(cComp, tag);
+                    if (cEntry)
                     {
-                        const uintptr_t cEntry = FindEntryByTag(cComp, tag);
-                        if (cEntry)
-                        {
-                            Write32(cEntry + kOff_ItemVal_DyeCount, 0);
-                            for (int ch = 0; ch < static_cast<int>(kDye_MaxChannels); ++ch)
-                                if (mask & (1u << ch))
-                                    ok |= CallDyeUpsert(cEntry, recs[ch]);
-                        }
-                    }
-                }
-                const uintptr_t directAct = Player::GetActor(c);
-                if (directAct)
-                {
-                    const uintptr_t dComp = CompForCharacter(directAct);
-                    if (dComp && dComp != comp)
-                    {
-                        const uintptr_t dEntry = FindEntryByTag(dComp, tag);
-                        if (dEntry)
-                        {
-                            Write32(dEntry + kOff_ItemVal_DyeCount, 0);
-                            for (int ch = 0; ch < static_cast<int>(kDye_MaxChannels); ++ch)
-                                if (mask & (1u << ch))
-                                    ok |= CallDyeUpsert(dEntry, recs[ch]);
-                        }
+                        Write32(cEntry + kOff_ItemVal_DyeCount, 0);
+                        for (int ch = 0; ch < static_cast<int>(kDye_MaxChannels); ++ch)
+                            if (mask & (1u << ch))
+                                ok |= CallDyeUpsert(cEntry, recs[ch]);
                     }
                 }
             }
 
-            // 3. Also write to server character root container
-            const uintptr_t sChar = Inventory::ServerCharacterAddr();
-            if (sChar)
+            // 3. Also write to the active character's SERVER realm container -
+            // which is only ever the target's when the selection is on screen.
+            if (targetIdx == liveIdx)
             {
-                const uintptr_t sComp = CompForCharacter(sChar);
-                if (sComp && sComp != comp)
+                const uintptr_t sChar = Inventory::ServerCharacterAddr();
+                if (sChar)
                 {
-                    const uintptr_t sEntry = FindEntryByTag(sComp, tag);
-                    if (sEntry)
+                    const uintptr_t sComp = CompForCharacter(sChar);
+                    if (sComp && sComp != comp)
                     {
-                        Write32(sEntry + kOff_ItemVal_DyeCount, 0);
-                        for (int ch = 0; ch < static_cast<int>(kDye_MaxChannels); ++ch)
-                            if (mask & (1u << ch))
-                                ok |= CallDyeUpsert(sEntry, recs[ch]);
+                        const uintptr_t sEntry = FindEntryByTag(sComp, tag);
+                        if (sEntry)
+                        {
+                            Write32(sEntry + kOff_ItemVal_DyeCount, 0);
+                            for (int ch = 0; ch < static_cast<int>(kDye_MaxChannels); ++ch)
+                                if (mask & (1u << ch))
+                                    ok |= CallDyeUpsert(sEntry, recs[ch]);
+                        }
                     }
                 }
             }
@@ -1405,13 +1562,37 @@ namespace trinity::game
                     if (g_dyeUpsert) upsertOk |= CallDyeUpsert(entry, rec);
                 }
 
-                // Mirror to server realm for permanent save persistence across save & load
+                // Mirror to server realm and all inventory holders for permanent save persistence across save & load and unequip/equip
                 bool durableOk = false;
                 if (instId > 0)
                 {
                     uint8_t recs[kDye_MaxChannels][16];
                     const uint32_t mask = ReadRecords(entry, recs);
                     durableOk = MirrorToServer(req.tag, instId, recs, mask);
+
+                    struct DyeSyncCtx {
+                        const uint8_t (*recs)[16];
+                        uint32_t mask;
+                        bool clear;
+                    } syncCtx{ recs, mask, req.clear };
+
+                    Inventory::FindAndApplyAllHolders(instId, [](uintptr_t slot, void* ud) {
+                        auto* ctx = static_cast<DyeSyncCtx*>(ud);
+                        if (!slot || !ctx) return;
+                        if (ctx->clear)
+                        {
+                            Write32(slot + kOff_ItemVal_DyeCount, 0);
+                        }
+                        else
+                        {
+                            Write32(slot + kOff_ItemVal_DyeCount, 0);
+                            for (int c = 0; c < static_cast<int>(kDye_MaxChannels); ++c)
+                            {
+                                if (ctx->mask & (1u << c))
+                                    CallDyeUpsert(slot, ctx->recs[c]);
+                            }
+                        }
+                    }, &syncCtx);
                 }
 
                 // Multi-Actor Server Sync: write to all tracked mount actors in CharMgr with RealmFlag = 1
@@ -1469,28 +1650,29 @@ namespace trinity::game
                     SaveDyeCacheToFile();
                 }
 
-                bool batchApplyOk = false;
-                // 2. Batch applier
-                if (comp && g_dyeApply)
+                // Build batch applier for mount
+                static uint8_t mountBatch[kDyeBatch_Size];
+                memset(mountBatch, 0, sizeof(mountBatch));
+                for (size_t blk = 0; blk < kDyeBatch_Blocks; ++blk)
                 {
-                    static uint8_t mountBatch[kDyeBatch_Size];
-                    memset(mountBatch, 0, sizeof(mountBatch));
-                    for (size_t blk = 0; blk < kDyeBatch_Blocks; ++blk)
-                    {
-                        uint8_t* block = mountBatch + blk * kDyeBatch_BlockSize;
-                        const uint16_t tag = (blk == 0) ? req.tag : 0xFFFF;
-                        memcpy(block, &tag, 2);
-                        for (uint32_t r = 0; r < kDye_MaxChannels; ++r)
-                            block[kDyeBatch_RecordsOff + r * 16 + 6] = 0xFF;
-                    }
-                    for (int ch = chFirst; ch <= chLast; ++ch)
-                    {
-                        uint8_t* rec = mountBatch + kDyeBatch_RecordsOff + static_cast<size_t>(ch) * 16;
-                        if (req.clear) BuildClearRecord(rec, ch);
-                        else           BuildSetRecord(rec, ch, req.value);
-                    }
-                    int mountErr = 0;
-                    batchApplyOk = CallDyeApply(comp, mountBatch, &mountErr) && (mountErr == 0);
+                    uint8_t* block = mountBatch + blk * kDyeBatch_BlockSize;
+                    const uint16_t tag = (blk == 0) ? req.tag : 0xFFFF;
+                    memcpy(block, &tag, 2);
+                    for (uint32_t r = 0; r < kDye_MaxChannels; ++r)
+                        block[kDyeBatch_RecordsOff + r * 16 + 6] = 0xFF;
+                }
+                for (int ch = chFirst; ch <= chLast; ++ch)
+                {
+                    uint8_t* rec = mountBatch + kDyeBatch_RecordsOff + static_cast<size_t>(ch) * 16;
+                    if (req.clear) BuildClearRecord(rec, ch);
+                    else           BuildSetRecord(rec, ch, req.value);
+                }
+
+                int err = 0;
+                bool batchApplyOk = false;
+                if (g_dyeApply && comp)
+                {
+                    batchApplyOk = CallDyeApply(comp, mountBatch, &err) && (err == 0);
                 }
 
                 DyeWatchFile("ProcessRequest: mount tag=%u comp=%p entry=%p instId=%lld upsertOk=%d durableOk=%d batchApply=%d",
@@ -1498,12 +1680,13 @@ namespace trinity::game
                     static_cast<long long>(instId), upsertOk ? 1 : 0, durableOk ? 1 : 0,
                     batchApplyOk ? 1 : 0);
 
+                TriggerEquipRefresh(comp);
+
                 g_state.store(static_cast<int>((upsertOk || durableOk || batchApplyOk) ? Dye::OpState::Done : Dye::OpState::Failed),
                               std::memory_order_release);
                 return;
             }
 
-            // ===== PLAYER CHARACTER MODE: original proven approach ===========
             const uintptr_t comp = ClientComp();
             if (!comp)
             {
@@ -1574,15 +1757,54 @@ namespace trinity::game
                 if (g_dyeUpsert) upsertOk |= CallDyeUpsert(entry, rec);
             }
 
-            if (!applyOk && !upsertOk)
+            // Universal LIVE-material update: drive the batch applier's own
+            // per-channel render leaves straight on (comp, entry). They read
+            // only comp+8 -> actor render state - never the possessor chain -
+            // so they repaint companions (Damiane / Oongka) instantly, where
+            // DyeApplyBatch early-outs before ever reaching them. For the
+            // possessed player the leaves are exactly what the batch runs per
+            // record, so this is an idempotent re-push of identical data.
+            bool visualOk = false;
+            for (int ch = chFirst; ch <= chLast; ++ch)
+            {
+                uint8_t rec[16] = {};
+                if (req.clear) BuildClearRecord(rec, ch);
+                else           BuildSetRecord(rec, ch, req.value);
+
+                if (req.clear)
+                {
+                    // Engine clear order: drop the rendered override first,
+                    // then remove the record. Our data side deliberately
+                    // keeps the clear-shaped record (persistence parity with
+                    // MirrorToServer), so only the visual half is mirrored.
+                    visualOk |= CallDyeVisualClear(comp, entry, req.tag, ch);
+                    visualOk |= CallDyeRecordRemove(entry, ch);
+                    visualOk |= CallDyeUpsert(entry, rec); // keep durable clear marker
+                }
+                else
+                {
+                    // Per-slot applier LEADS: it touches no possessor chain
+                    // and walks only comp+0x80's own table, so it repaints
+                    // every equipped body - Damiane / Oongka included - where
+                    // DyeApplyBatch early-outs (possessor probe) and the raw
+                    // render leaf faults on companion render structures.
+                    visualOk |= CallDyeApplySlot(comp, req.tag, rec, ch);
+                    // Render leaf kept as belt-and-braces fallback for the
+                    // possessed player.
+                    visualOk |= CallDyeVisualSet(comp, entry, rec, req.tag, ch);
+                }
+            }
+
+            if (!applyOk && !upsertOk && !visualOk)
             {
                 LOG_WARN("dye: applier refused (err=%d, slot tag %u).", err, req.tag);
                 g_state.store(static_cast<int>(Dye::OpState::Failed), std::memory_order_release);
                 return;
             }
 
-            DyeWatchFile("ProcessRequest: player tag=%u comp=%p err=%d applyOk=%d upsertOk=%d",
-                req.tag, reinterpret_cast<void*>(comp), err, applyOk ? 1 : 0, upsertOk ? 1 : 0);
+            DyeWatchFile("ProcessRequest: player tag=%u comp=%p err=%d applyOk=%d upsertOk=%d visualOk=%d",
+                req.tag, reinterpret_cast<void*>(comp), err, applyOk ? 1 : 0, upsertOk ? 1 : 0,
+                visualOk ? 1 : 0);
 
             // Mirror the post-apply state (the client entry is the source of
             // truth now - the applier upserted/removed our channels there)
@@ -1597,56 +1819,69 @@ namespace trinity::game
                 const uint32_t mask = ReadRecords(entry, recs);
                 MirrorToServer(req.tag, instId, recs, mask);
 
-                // Multi-Actor Character Server Sync: write to all tracked player actors with RealmFlag = 1
+                // Multi-copy server sync for the SELECTED character only, with
+                // RealmFlag = 1. Other protagonists' same-tag items are never
+                // touched - one character's color choice stays theirs.
                 uint8_t oldFlag = 0;
                 const uintptr_t flagAddr = Inventory::RealmFlagAddress(&oldFlag);
                 if (flagAddr && RawWrite8(flagAddr, 1))
                 {
-                    for (int c = 0; c < 3; ++c)
+                    const int syncIdx = (s_activeCharIdx < 0) ? Inventory::ActivePlayerCharacterIdx() : s_activeCharIdx;
+                    uintptr_t copies[16] = {};
+                    const int nCopies = (syncIdx >= 0 && syncIdx < 3)
+                        ? Inventory::CharacterAddrs(syncIdx, copies, 16) : 0;
+                    for (int i = 0; i < nCopies; ++i)
                     {
-                        const uintptr_t act = Inventory::CharacterAddr(c);
-                        if (act)
+                        const uintptr_t act = copies[i];
+                        if (!act) continue;
+                        const uintptr_t pComp = CompForCharacter(act);
+                        if (pComp && pComp != comp)
                         {
-                            const uintptr_t pComp = CompForCharacter(act);
-                            if (pComp && pComp != comp)
+                            const uintptr_t pEntry = FindEntryByTag(pComp, req.tag);
+                            if (pEntry)
                             {
-                                const uintptr_t pEntry = FindEntryByTag(pComp, req.tag);
-                                if (pEntry)
+                                Write32(pEntry + kOff_ItemVal_DyeCount, 0);
+                                for (int ch = chFirst; ch <= chLast; ++ch)
                                 {
-                                    Write32(pEntry + kOff_ItemVal_DyeCount, 0);
-                                    for (int ch = chFirst; ch <= chLast; ++ch)
-                                    {
-                                        uint8_t rec[16] = {};
-                                        if (req.clear) BuildClearRecord(rec, ch);
-                                        else           BuildSetRecord(rec, ch, req.value);
-                                        CallDyeUpsert(pEntry, rec);
-                                    }
-                                }
-                            }
-                        }
-                        const uintptr_t directAct = Player::GetActor(c);
-                        if (directAct)
-                        {
-                            const uintptr_t pComp = CompForCharacter(directAct);
-                            if (pComp && pComp != comp)
-                            {
-                                const uintptr_t pEntry = FindEntryByTag(pComp, req.tag);
-                                if (pEntry)
-                                {
-                                    Write32(pEntry + kOff_ItemVal_DyeCount, 0);
-                                    for (int ch = chFirst; ch <= chLast; ++ch)
-                                    {
-                                        uint8_t rec[16] = {};
-                                        if (req.clear) BuildClearRecord(rec, ch);
-                                        else           BuildSetRecord(rec, ch, req.value);
-                                        CallDyeUpsert(pEntry, rec);
-                                    }
+                                    uint8_t rec[16] = {};
+                                    if (req.clear) BuildClearRecord(rec, ch);
+                                    else           BuildSetRecord(rec, ch, req.value);
+                                    CallDyeUpsert(pEntry, rec);
                                 }
                             }
                         }
                     }
                     RawWrite8(flagAddr, oldFlag);
                 }
+
+                // Mirror to all inventory holders so the game reconciles equipped state
+                struct DyeSyncCtx {
+                    const uint8_t (*recs)[16];
+                    uint32_t mask;
+                    bool clear;
+                } syncCtx{ recs, mask, req.clear };
+
+                Inventory::FindAndApplyAllHolders(instId, [](uintptr_t slot, void* ud) {
+                    auto* ctx = static_cast<DyeSyncCtx*>(ud);
+                    if (!slot || !ctx) return;
+                    if (ctx->clear)
+                    {
+                        Write32(slot + kOff_ItemVal_DyeCount, 0);
+                    }
+                    else
+                    {
+                        Write32(slot + kOff_ItemVal_DyeCount, 0);
+                        for (int c = 0; c < static_cast<int>(kDye_MaxChannels); ++c)
+                        {
+                            if (ctx->mask & (1u << c))
+                                CallDyeUpsert(slot, ctx->recs[c]);
+                        }
+                    }
+                }, &syncCtx);
+
+                // Auto-refresh character dress-up state without requiring manual unequip & equip
+                Inventory::ForceRefresh();
+                TriggerEquipRefresh(comp);
 
                 uint16_t itemTypeId = 0;
                 Read16(entry + kOff_InvSlot_TypeId, &itemTypeId);
@@ -1727,6 +1962,50 @@ namespace trinity::game
         }
         g_dyeUpsert = reinterpret_cast<DyeUpsert_t>(upsert);
 
+        // Universal per-slot render leaves - the only live-visual path that
+        // works on companion bodies (Damiane / Oongka), where DyeApplyBatch
+        // early-outs on its possessor-chain probe. Optional: without them,
+        // dyeing still persists but companions need a reload to show it.
+        g_dyeVisualSet   = reinterpret_cast<DyeVisualSet_t>(mem::FindPattern(kSig_DyeVisualSet));
+        g_dyeVisualClear = reinterpret_cast<DyeVisualClear_t>(mem::FindPattern(kSig_DyeVisualClear));
+        g_dyeRecRemove   = reinterpret_cast<DyeRecRemove_t>(mem::FindPattern(kSig_DyeRecordRemove));
+
+        // Universal per-slot applier - the live-visual path that works on
+        // companion bodies (Damiane / Oongka), where both DyeApplyBatch
+        // (possessor probe) and the render leaf (render-structure walk)
+        // fail. Optional: without it companions fall back to the leaves.
+        g_dyeApplySlot = reinterpret_cast<DyeApplySlot_t>(mem::FindPattern(kSig_DyeApplySlot));
+        if (g_dyeApplySlot)
+            LOG("dye: per-slot applier @ %p (companion-safe universal apply).",
+                reinterpret_cast<void*>(g_dyeApplySlot));
+        else
+            LOG_WARN("dye: per-slot applier not found - companion dye falls back to render leaves.");
+        if (g_dyeVisualSet && g_dyeVisualClear && g_dyeRecRemove)
+        {
+            LOG("dye: per-slot visual set @ %p, clear @ %p, record remove @ %p "
+                "(companion-safe live apply).",
+                reinterpret_cast<void*>(g_dyeVisualSet),
+                reinterpret_cast<void*>(g_dyeVisualClear),
+                reinterpret_cast<void*>(g_dyeRecRemove));
+        }
+        else
+        {
+            LOG_WARN("dye: per-slot visual leaves not found - companion dye will be data-only.");
+            g_dyeVisualSet = nullptr;
+            g_dyeVisualClear = nullptr;
+            g_dyeRecRemove = nullptr;
+        }
+
+        // On TU 2.00+ (PE >= 2625), DyeApplyBatch + DyeUpsert is the genuine official pipeline;
+        // avoid calling outdated TU 1.18 leaf hooks.
+        if (core::GetGameVersion().revision >= 2625)
+        {
+            g_dyeApplySlot = nullptr;
+            g_dyeVisualSet = nullptr;
+            g_dyeVisualClear = nullptr;
+            g_dyeRecRemove = nullptr;
+        }
+
         return true;
     }
 
@@ -1736,6 +2015,10 @@ namespace trinity::game
         oEquipBatch = nullptr;
         g_dyeApply  = nullptr;
         g_dyeUpsert = nullptr;
+        g_dyeVisualSet = nullptr;
+        g_dyeVisualClear = nullptr;
+        g_dyeRecRemove = nullptr;
+        g_dyeApplySlot = nullptr;
         g_comp.store(0, std::memory_order_release);
     }
 
@@ -1784,6 +2067,13 @@ namespace trinity::game
     uintptr_t Dye::ActiveClientComp()
     {
         return ClientComp();
+    }
+
+    uintptr_t Dye::HookedClientComp()
+    {
+        const uintptr_t hooked = g_comp.load(std::memory_order_acquire);
+        if (CompValid(hooked)) return hooked;
+        return 0;
     }
 
     int Dye::SlotCount()
@@ -1882,12 +2172,24 @@ namespace trinity::game
         {
             s_lastRestore = now;
 
-            // 1. Player Characters Auto-Restore (Kliff = 0, Damiane = 1, Oongka = 2)
+            // 1. Player Characters Auto-Restore (Kliff = 0, Damiane = 1, Oongka = 2).
+            // Each character resolves its OWN component - never ClientComp(),
+            // which is routed by the menu selection and may legitimately point
+            // at a different character than `c`.
             for (int c = 0; c < 3; ++c)
             {
+                const int liveIdx = Inventory::ActivePlayerCharacterIdx();
                 uintptr_t comp = 0;
-                if (c == Inventory::ActivePlayerCharacterIdx())
-                    comp = ClientComp();
+                if (c == liveIdx)
+                {
+                    const uintptr_t liveChar = Inventory::ClientCharacterAddr();
+                    if (liveChar) comp = CompForCharacter(liveChar);
+                    if (!comp && c > 0 && c < 3)
+                    {
+                        const uintptr_t liveActor = Player::GetActor(c);
+                        if (liveActor) comp = CompForCharacter(liveActor);
+                    }
+                }
                 if (!comp)
                 {
                     const uintptr_t act = Inventory::CharacterAddr(c);
@@ -1954,47 +2256,84 @@ namespace trinity::game
                         }
                     }
 
-                    // Restore custom dye when undyed (e.g. after save reload, fast travel, or area transition)
+                    // Restore custom dye when the rendered state drifted from
+                    // the saved profile - after save reload, fast travel, area
+                    // transition, AND gear changes: re-equipping rebuilds the
+                    // GPU material instance in natural colors while the DATA
+                    // records stay on the entry (liveDyeCount > 0), which is
+                    // why a weapon switch used to blank companion dyes. So
+                    // compare per channel and replay whatever differs, driving
+                    // the possession-independent visual leaves (DyeApplyBatch
+                    // no-ops here for companions).
                     if (s_savedPlayerSlots[c][tag].active && s_savedPlayerSlots[c][tag].mask > 0 &&
                         (s_savedPlayerSlots[c][tag].typeId == 0 || s_savedPlayerSlots[c][tag].typeId == liveTypeId))
                     {
-                        if (liveDyeCount == 0)
+                        uint8_t liveRecs[kDye_MaxChannels][16];
+                        const uint32_t liveMask = ReadRecords(entry, liveRecs);
+
+                        bool needsData = (liveDyeCount == 0);
+                        bool needsVisual = false;
+                        for (int ch = 0; ch < static_cast<int>(kDye_MaxChannels); ++ch)
                         {
-                            // 1. Data Upsert
-                            if (g_dyeUpsert)
+                            if (!(s_savedPlayerSlots[c][tag].mask & (1u << ch))) continue;
+                            if (!(liveMask & (1u << ch)))
                             {
-                                for (int ch = 0; ch < static_cast<int>(kDye_MaxChannels); ++ch)
+                                needsData = true;
+                                needsVisual = true;
+                            }
+                            else if (memcmp(liveRecs[ch], s_savedPlayerSlots[c][tag].records[ch], 16) != 0)
+                            {
+                                needsData = true;
+                                needsVisual = true;
+                            }
+                        }
+                        // Data present but the mesh was rebuilt natural by an
+                        // equip change: records alone do not repaint it. The
+                        // forced replay is bounded to a short window after the
+                        // equip-batch hook last fired, so steady state stays
+                        // silent and only real gear changes repaint.
+                        if (!needsVisual && liveDyeCount > 0 &&
+                            s_lastEquipChangeMs != 0 &&
+                            GetTickCount64() - s_lastEquipChangeMs < 3000)
+                        {
+                            needsVisual = true;
+                        }
+
+                        if (needsData && g_dyeUpsert)
+                        {
+                            for (int ch = 0; ch < static_cast<int>(kDye_MaxChannels); ++ch)
+                            {
+                                if (s_savedPlayerSlots[c][tag].mask & (1u << ch))
                                 {
-                                    if (s_savedPlayerSlots[c][tag].mask & (1u << ch))
-                                    {
-                                        CallDyeUpsert(entry, s_savedPlayerSlots[c][tag].records[ch]);
-                                    }
+                                    CallDyeUpsert(entry, s_savedPlayerSlots[c][tag].records[ch]);
                                 }
                             }
+                        }
 
-                            // 2. 3D Visual Shader Batch Apply (instantly forces DX12 mesh to render the dyed material on world load)
-                            if (g_dyeApply)
+                        if (needsVisual)
+                        {
+                            // Per-channel visual replay: possession-INdependent,
+                            // so this repaints companions (Damiane / Oongka)
+                            // where DyeApplyBatch early-outs on its possessor
+                            // probe.
+                            //
+                            // The per-slot applier leads (no possessor probe, no
+                            // render-structure walk - the render leaf faults on
+                            // companion bodies); the leaf is only a fallback.
+                            //
+                            // Deliberately NO DyeApplyBatch call here: that is
+                            // the client's dye-ACK handler and it pops the
+                            // game's own "Item dyed successfully" toast every
+                            // pass - a silent background restore must never
+                            // toast.
+                            for (int ch = 0; ch < static_cast<int>(kDye_MaxChannels); ++ch)
                             {
-                                static uint8_t restoreBatch[kDyeBatch_Size];
-                                memset(restoreBatch, 0, sizeof(restoreBatch));
-                                for (size_t blk = 0; blk < kDyeBatch_Blocks; ++blk)
+                                if (s_savedPlayerSlots[c][tag].mask & (1u << ch))
                                 {
-                                    uint8_t* block = restoreBatch + blk * kDyeBatch_BlockSize;
-                                    const uint16_t blkTag = (blk == 0) ? tag : 0xFFFF;
-                                    memcpy(block, &blkTag, 2);
-                                    for (uint32_t r = 0; r < kDye_MaxChannels; ++r)
-                                        block[kDyeBatch_RecordsOff + r * 16 + 6] = 0xFF;
+                                    const uint8_t* rec = s_savedPlayerSlots[c][tag].records[ch];
+                                    if (!CallDyeApplySlot(comp, tag, rec, ch))
+                                        CallDyeVisualSet(comp, entry, rec, tag, ch);
                                 }
-                                for (int ch = 0; ch < static_cast<int>(kDye_MaxChannels); ++ch)
-                                {
-                                    if (s_savedPlayerSlots[c][tag].mask & (1u << ch))
-                                    {
-                                        uint8_t* rec = restoreBatch + kDyeBatch_RecordsOff + static_cast<size_t>(ch) * 16;
-                                        memcpy(rec, s_savedPlayerSlots[c][tag].records[ch], 16);
-                                    }
-                                }
-                                int restoreErr = 0;
-                                CallDyeApply(comp, restoreBatch, &restoreErr);
                             }
                         }
                     }
@@ -2072,28 +2411,15 @@ namespace trinity::game
                                         CallDyeUpsert(entry, s_savedMountSlots[tag].records[ch]);
                                 }
                             }
-                            if (g_dyeApply)
+                            // Visual replay on mount: use universal per-slot applier (no controller probe)
+                            for (int ch = 0; ch < static_cast<int>(kDye_MaxChannels); ++ch)
                             {
-                                static uint8_t restoreBatch[kDyeBatch_Size];
-                                memset(restoreBatch, 0, sizeof(restoreBatch));
-                                for (size_t blk = 0; blk < kDyeBatch_Blocks; ++blk)
+                                if (s_savedMountSlots[tag].mask & (1u << ch))
                                 {
-                                    uint8_t* block = restoreBatch + blk * kDyeBatch_BlockSize;
-                                    const uint16_t blkTag = (blk == 0) ? tag : 0xFFFF;
-                                    memcpy(block, &blkTag, 2);
-                                    for (uint32_t r = 0; r < kDye_MaxChannels; ++r)
-                                        block[kDyeBatch_RecordsOff + r * 16 + 6] = 0xFF;
+                                    const uint8_t* rec = s_savedMountSlots[tag].records[ch];
+                                    if (!CallDyeApplySlot(mComp, tag, rec, ch))
+                                        CallDyeVisualSet(mComp, entry, rec, tag, ch);
                                 }
-                                for (int ch = 0; ch < static_cast<int>(kDye_MaxChannels); ++ch)
-                                {
-                                    if (s_savedMountSlots[tag].mask & (1u << ch))
-                                    {
-                                        uint8_t* rec = restoreBatch + kDyeBatch_RecordsOff + static_cast<size_t>(ch) * 16;
-                                        memcpy(rec, s_savedMountSlots[tag].records[ch], 16);
-                                    }
-                                }
-                                int restoreErr = 0;
-                                CallDyeApply(mComp, restoreBatch, &restoreErr);
                             }
                         }
                     }
@@ -2119,9 +2445,15 @@ namespace trinity::game
 
             const uintptr_t clientAct = Inventory::CharacterAddr(c);
             if (clientAct) clientComp = CompForCharacter(clientAct);
-            if (!clientComp && c == 0) clientComp = ActiveClientComp();
+            // The routed live component belongs to whoever is on screen - it
+            // may stand in for Kliff only when Kliff IS the live selection.
+            if (!clientComp && c == 0 && c == Inventory::ActivePlayerCharacterIdx())
+                clientComp = ActiveClientComp();
 
-            if (c == 0) serverComp = CompForCharacter(Inventory::ServerCharacterAddr());
+            // The server realm container is the ACTIVE character's; only the
+            // live selection may read it as its own.
+            if (c == 0 && c == Inventory::ActivePlayerCharacterIdx())
+                serverComp = CompForCharacter(Inventory::ServerCharacterAddr());
             if (!serverComp)
             {
                 const uintptr_t directAct = Player::GetActor(c);

@@ -83,6 +83,10 @@ namespace trinity::ui
             {
                 snprintf(g_selectedItemName, sizeof(g_selectedItemName), "%s", label ? label : "");
                 snprintf(g_selectedItemIcon, sizeof(g_selectedItemIcon), "%s", itemIcon ? itemIcon : "");
+                if (!g_selectedTooltip.valid)
+                {
+                    SetTooltipPreview(label, itemIcon, nullptr, -1, -1, 0, 0, 0);
+                }
             }
             g_hintKind   = kind;
             r.activated |= g_nav.select;
@@ -311,6 +315,46 @@ namespace trinity::ui
     bool OptionItem(const char* label, const char* icon, const char* desc)
     {
         return RowBase(label, desc, RowKind::Action, icon).activated;
+    }
+
+    bool OptionItemWithBuff(const char* label, const char* icon, const char* buff, const char* desc)
+    {
+        char fullDesc[256];
+        if (buff && buff[0])
+            snprintf(fullDesc, sizeof(fullDesc), "%s  [Effect: %s]", desc ? desc : "Socket this abyss gear.", buff);
+        else
+            snprintf(fullDesc, sizeof(fullDesc), "%s", desc ? desc : "Socket this abyss gear.");
+
+        const float s = g_scale;
+        char fittedLabel[192];
+        const char* actualLabel = label;
+        if (buff && buff[0])
+        {
+            const float bFSz = g_fontBody->FontSize * 0.88f;
+            const float bW = g_fontBody->CalcTextSizeA(bFSz, FLT_MAX, 0.0f, buff).x;
+            const float rowW = g_width;
+            const float textX = (icon && icon[0]) ? 40.0f * s : 14.0f * s;
+            const float avail = rowW - textX - bW - 32.0f * s;
+            FitLabel(fittedLabel, sizeof(fittedLabel), label, avail);
+            actualLabel = fittedLabel;
+        }
+
+        RowResult r = RowBase(actualLabel, fullDesc, RowKind::Action, icon);
+        if (r.selected)
+        {
+            SetAbyssGearTooltip(label, icon, buff);
+        }
+        if (r.drawn && buff && buff[0])
+        {
+            ImDrawList* dl = DL();
+            const float bFSz = g_fontBody->FontSize * 0.88f;
+            const float bW = g_fontBody->CalcTextSizeA(bFSz, FLT_MAX, 0.0f, buff).x;
+            const float bY = (r.mn.y + r.mx.y - bFSz) * 0.5f;
+            dl->AddText(g_fontBody, bFSz,
+                        ImVec2(r.mx.x - bW - 16.0f * s, bY),
+                        IM_COL32(100, 220, 130, 255), buff);
+        }
+        return r.activated;
     }
 
     // Draws an on/off switch with its right edge at `trackRight`, vertically
@@ -860,6 +904,33 @@ namespace trinity::ui
         return r.activated;
     }
 
+    bool SubmenuEquipItem(const char* label, const char* icon, const char* id,
+                          const game::Equipment::SlotInfo& si, const char* desc)
+    {
+        RowResult r = RowBase(label, desc, RowKind::Submenu, icon);
+        if (r.selected)
+        {
+            SetEquipTooltip(si);
+        }
+        if (r.drawn)
+        {
+            ImDrawList* dl = DL();
+            const float s  = g_scale;
+            ArrowH(dl, ImVec2(r.mx.x - 20.0f * s, (r.mn.y + r.mx.y) * 0.5f), 5.0f * s, true,
+                   r.selected ? theme::TextBright : theme::TextDim);
+        }
+        if (r.activated)
+        {
+            // Breadcrumb title = the label minus any trailing "  (count)".
+            char title[96];
+            snprintf(title, sizeof(title), "%s", label);
+            if (char* cut = strstr(title, "  ("))
+                *cut = 0;
+            RequestPush(id, title);
+        }
+        return r.activated;
+    }
+
     bool Search(char* buf, size_t cap, const char* desc)
     {
         g_captureSeen = true;
@@ -1352,6 +1423,7 @@ namespace trinity::ui
         {
             snprintf(g_selectedItemName, sizeof(g_selectedItemName), "%s", label ? label : "");
             snprintf(g_selectedItemIcon, sizeof(g_selectedItemIcon), "%s", icon ? icon : "");
+            SetTooltipPreview(label, icon, nullptr, -1, -1, 0, 0, 0);
         }
 
         return result;
@@ -1430,8 +1502,9 @@ namespace trinity::ui
         {
             snprintf(g_selectedItemName, sizeof(g_selectedItemName), "%s", label ? label : "");
             snprintf(g_selectedItemIcon, sizeof(g_selectedItemIcon), "%s", icon ? icon : "");
+            SetTooltipPreview(label, icon, nullptr, -1, -1, 0, 0, 0);
         }
-        
+
         return added;
     }
 

@@ -179,6 +179,7 @@ namespace trinity
 
         // UI customizations
         float menuScale = 1.0f;
+        float tooltipImageScale = 1.0f;
         bool  showItemTooltip = true;
 
         // Persistence (settings.cpp). While on, every feature change is

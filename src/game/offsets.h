@@ -165,13 +165,15 @@ namespace trinity::game
     // (sub_1412D8340 there - byte-identical dispatch shape) and re-validated
     // in our dump: unique match at 0x145B2A0.
     inline constexpr const char* kSig_DamageApply =
+        "48 89 5C 24 08 48 89 6C 24 10 48 89 74 24 18 57 48 83 EC 70 49 8B C1 49 8B E8 0F B7 DA 48 8B F1 4D 85 C9";
+    inline constexpr const char* kSig_DamageApply_Alt =
         "48 89 5C 24 ?? 48 89 6C 24 ?? 48 89 74 24 ?? 57 48 83 EC ?? 49 8B C1 49 8B E8 0F B7 DA 48 8B F1 4D 85 C9";
 
     // --- Just Core: Just Guard (Perfect Parry) & Just Evade (Perfect Dodge) ---
     // Evaluates timing windows for Perfect Parry (a4 != 0) and Perfect Dodge (a4 == 0).
     // Overriding returns true and *a5 = true, triggering native slow-mo and counters.
     inline constexpr const char* kSig_JustCore =
-        "48 8B C4 55 41 56 48 81 EC ?? ?? 00 00 44 0F 29 40 ?? 45 32 DB";
+        "48 8B C4 55 41 56 48 81 EC ?? ?? ?? ?? C5 FC 10 89";
     inline constexpr const char* kSig_JustCore_Alt =
         "48 8B C4 55 41 56 48 81 EC ?? ?? ?? ?? 44 0F 29";
 
@@ -854,9 +856,13 @@ namespace trinity::game
     // default. The commit re-reads it, but we need it to pick the bucket too.
     // Working 0.13.2 ASI FUN_180012840 reads the holder bucket type from
     // itemDef+0x418 before selecting the matching client/server bucket.
-    inline constexpr uintptr_t kOff_ItemDef_BucketType  = 0x418; // u16, 1.17
+    inline constexpr uintptr_t kOff_ItemDef_BucketType  = 0x418; // u16, TU 1.17-1.18.02
+    // TU 2.00+ (PE rev >= 2625): moved to 0x428 — confirmed from binary:
+    // InvHolderInsert (VA 0x142091150) reads def+0x428 then compares with bucket+0x10,
+    // InvCommitPlacement (VA 0x141DF9CF0) same pattern. 225 binary hits at 0x428 vs 1 at 0x418.
+    // BucketForItem() in inventory.cpp uses GetGameVersion().revision >= 2625 ? 0x428 : 0x418.
     //
-    // ★ The inventory CONTAINER *is* the player CHARACTER object - the very same
+    // ? The inventory CONTAINER *is* the player CHARACTER object - the very same
     // "owner" the player/god-mode code resolves. Live-confirmed 2026-07-15: the
     // container's type tag (kOff_Owner_TypeDesc -> +1) reads 1 = SelfPlayer, and
     // its possessor round-trips exactly as kOff_Owner_Possessor/
@@ -975,7 +981,7 @@ namespace trinity::game
     // --- Item taxonomy: the inventory's REAL category tree -------------------
     // Every "*info" table row is built by a GENERATED deserializer whose
     // per-field failure message names the C++ member it was reading, e.g.
-    //   "ItemGroupInfo의 _groupName를 읽어들이는데 실패했다."
+    //   "ItemGroupInfo? _groupName? ?????? ????."
     //     ( = "failed to read ItemGroupInfo's _groupName" )
     // Walking that deserializer's disassembly and pairing each field read with
     // the error string in its failure block recovers the field->offset map
@@ -1115,8 +1121,8 @@ namespace trinity::game
     // 1.17.00/1.18.x note: this getter was recompiled across updates.
     // Localisation is optional; inventory falls back to prettified engine keys.
     inline constexpr const char* kSig_LocStringGet =
-        "8B 51 10 48 8B 05 ? ? ? ? 48 8B 48 08 3B 51 08 72 08 "
-        "48 8D 05 ? ? ? ? C3 48 8B C2 48 03 01 C3";
+        "8B 41 18 48 8B 0D ? ? ? ? 3B 41 60 72 08 "
+        "48 8D 05 ? ? ? ? C3 48 03 41 58 C3";
     inline constexpr const char* kSig_LocStringGet_Alt1 =
         "8B 51 10 48 8B 05 ?? ?? ?? ?? 48 8B 48 08";
     inline constexpr const char* kSig_LocStringGet_Alt2 =
@@ -1124,8 +1130,8 @@ namespace trinity::game
     inline constexpr const char* kSig_LocStringGet_Legacy =
         "8B 41 10 48 8B 05 ?? ?? ?? ?? 48 8B 48 08";
     inline constexpr uintptr_t kOff_LocGet_MovGlobal = 0x03; // mov rax, cs:<locMgr>
-    inline constexpr uintptr_t kOff_LocProv_Offset   = 0x10; // u32 offset into blob
-    inline constexpr uintptr_t kOff_LocMgr_Blob      = 0x08; // ptr -> blob
+    inline constexpr uintptr_t kOff_LocProv_Offset   = 0x18; // u32 offset into blob
+    inline constexpr uintptr_t kOff_LocMgr_Blob      = 0x58; // ptr -> blob
     inline constexpr uintptr_t kOff_LocBlob_Data     = 0x00; // char*
     inline constexpr uintptr_t kOff_LocBlob_Size     = 0x08; // u32 used bytes
 
@@ -1153,12 +1159,12 @@ namespace trinity::game
     //   match+37: `vmovss xmm0, cs:dword_615A4F0`     (value; 8-byte instr)
     // IDB match at 0x8FC348. Unique block.
     inline constexpr const char* kSig_GameSpeed =
-        "80 3D ?? ?? ?? ?? 01 75 30 48 8B 4F 58 41 8B C7 C5 78 2F ?? 64 0F 97 C0 "
+        "80 3D ?? ?? ?? ?? 01 75 30 48 8B 4F 60 41 8B C7 C5 78 2F 61 64 0F 97 C0 "
         "85 C0 74 09 80 3D ?? ?? ?? ?? 01 75 14 C5 FA 10 05 ?? ?? ?? ?? C5 FA 11 "
         "41 64 C6 05 ?? ?? ?? ?? 00";
     inline constexpr uintptr_t kOff_GameSpeed_FlagDisp    = 2;  // disp32 of cmp cs:byte_606B9CE,1
     inline constexpr uintptr_t kOff_GameSpeed_FlagEnd     = 7;  // next-instr addr for that cmp
-    inline constexpr uintptr_t kOff_GameSpeed_ValueVmovss = 37; // vmovss xmm0,cs:dword_615A4F0
+    inline constexpr uintptr_t kOff_GameSpeed_ValueVmovss = 35; // vmovss xmm0,cs:dword_615A4F0
     inline constexpr int       kLen_GameSpeed_Vmovss      = 8;  // that vmovss is 8 bytes (disp at end)
     // Engine fixed-timestep reference: cs:Y (1.0f) / target fps (dword_5E379E0,
     // default 60.0f) => baseline delta 1/60. A 1.00x multiplier over this is the
@@ -1253,8 +1259,8 @@ namespace trinity::game
     //   cmp cs:dword_648F680, -1 ; jnz ; mov cs:qword_648F688, rbx ; mov cs:.., rdi
     // The engine global = RIP target of that first `mov cs:<g>, rbx` store.
     inline constexpr const char* kSig_TodEngineGlobal =
-        "83 3D ?? ?? ?? ?? FF 75 1B 48 89 1D ?? ?? ?? ?? 48 89 3D ?? ?? ?? ?? "
-        "48 8D 0D ?? ?? ?? ?? E8";
+        "83 3D ?? ?? ?? ?? FF 75 ?? 48 89 1D ?? ?? ?? ?? 48 89 3D ?? ?? ?? ?? "
+        "44 89";
     inline constexpr uintptr_t kOff_TodEngineGlobal_Mov = 9; // the `48 89 1D <disp32>`
     inline constexpr int       kLen_TodEngineGlobal_Mov = 7; // 3-byte opcode + disp32
     inline constexpr uintptr_t kOff_Tod_Manager     = 0x2F8; // engine -> render manager
@@ -1278,7 +1284,7 @@ namespace trinity::game
 
     // Safe EnvManager resolution and cloud/atmosphere nodes in TU 1.18.00+:
     inline constexpr const char* kSig_EnvManager =
-        "48 8B 0D ?? ?? ?? ?? 48 8B 01 FF 50 40 48 8B 88 F0 0E 00 00";
+        "48 8B 0D ?? ?? ?? ?? 48 8B 01 FF 50 40 48 8B D7 48 8B 88 E0 0E 00 00";
     inline constexpr uintptr_t kOff_EnvManager_Mov = 3;
     inline constexpr int       kLen_EnvManager_Mov = 7;
 
@@ -1454,6 +1460,54 @@ namespace trinity::game
     inline constexpr const char* kSig_DyeUpsert_Legacy =
         "48 8B 41 ? 4C 8B D1 44 8B 41 ? 49 C1 E0 04";
 
+    // --- WHY DyeApplyBatch SILENTLY NO-OPS ON COMPANIONS (RE 2026-08-25) ------
+    // Disassembly of sub_814BD0 (kSig_DyeApplyBatch @ VA 0x1408157D0): before
+    // touching any equipped entry it resolves a RENDER context through the
+    // possessor chain -
+    //     [[comp+8] + 0xA0] -> possessor, [+0xD0] -> pawn,
+    //     [[pawn+0x68] + 0x110] -> render/equip view; NULL => *outErr=err,
+    // early return.
+    // For the possessed player that chain is alive, so Kliff dyes instantly.
+    // For companion bodies (Damiane / Oongka summoned, and mount actors) the
+    // view resolves to nothing: the applier returns an error without ever
+    // reaching the per-channel material update, so records land as DATA only
+    // and the mesh keeps its natural palette until a full reload - no amount
+    // of weapon-switching refreshes it, because equipping never reads these
+    // records back into the render state.
+    //
+    // Everything downstream of that prologue, however, needs NO possessor:
+    // per 16-byte record the batch loop just walks comp+0x80's table to the
+    // slot-tag entry (rsi), runs the data upsert (entry, record) =
+    // 0x14206EB70 (= kSig_DyeUpsert), then drives the RENDER LEAF below -
+    // which reads only [comp+8] -> actor -> [actor+0x68] render structures
+    // that every protagonist body owns. Driving those leaves directly is the
+    // universal live apply, possessed or not:
+    //
+    // Visual SET leaf (sub_8154A0 @ VA 0x1408160A0, TU 1.18.02 unique):
+    //     void f(void* comp, void* entry, const uint8_t rec[16],
+    //            uint16_t slotTag, uint8_t stackCh /*=channel*/,
+    //            uint8_t stackZero /*=0*/)
+    // Builds the material parameter block from `rec` and pushes the override
+    // into the item's GPU material instance (call 0x140804340 inside).
+    inline constexpr const char* kSig_DyeVisualSet =
+        "48 89 5C 24 18 55 56 57 41 54 41 55 41 56 41 57 "
+        "48 8D AC 24 10 FF FF FF 48 81 EC F0 01 00 00 "
+        "45 0F B7 F1 49 8B F0 48 8B FA";
+    // Visual CLEAR leaf (sub_817310 @ VA 0x140817310, unique): drops the
+    // rendered override for one channel so the piece shows its natural
+    // material again.
+    //     void f(void* comp, void* entry, uint16_t slotTag,
+    //            uint8_t channel, uint8_t stackZero /*=0*/)
+    inline constexpr const char* kSig_DyeVisualClear =
+        "48 89 5C 24 18 44 88 4C 24 20 55 56 57 41 54 41 55 41 56 41 57 "
+        "48 8B EC 48 81 EC 80 00 00 00 45 0F B7 F0 48 8B FA 48 8B F1";
+    // Data remove-by-channel (sub_206EBF0 @ VA 0x14206EBF0, unique): scans
+    // the entry's dye vector for record[+6]==channel and shifts it out - what
+    // the batch's clear branch runs AFTER the visual clear.
+    //     void f(void* entry, uint8_t channel)
+    inline constexpr const char* kSig_DyeRecordRemove =
+        "44 8B 91 80 00 00 00 33 C0 4C 8B D9 45 85 D2 0F 84";
+
     // Equip component layout (verified in THIS build from BatchEquip's own
     // table walk: `a1[17]` -> desc, `*(desc+8) + 200*i`, tag at +192).
     inline constexpr uintptr_t kOff_EquipComp_Table  = 0x80; // 1.17 -> table descriptor (live client/server chain capture)
@@ -1497,7 +1551,7 @@ namespace trinity::game
 
     // --- Refinement level (the equipment "refinement"/enhancement upgrade) -----
     // Every piece refines up to level 10 (wiki: "Refinement"; internally the
-    // enhancement/"강화" concept). The level lives inline on the TrItemValue at
+    // enhancement/"??" concept). The level lives inline on the TrItemValue at
     // +0x0A - the SAME u16 offsets.h otherwise calls the item subtype: a freshly
     // made stack reads 0 there, a refined piece carries its level (seen 7->8 live
     // in the value copier sub_F4DAD00). Because sub_F4DAD00 copies +0x0A, the
@@ -1571,7 +1625,7 @@ namespace trinity::game
     // generated straight from this install's own data tables by
     // scripts/gen_dye_data.py - rerun it after a game patch.
 
-    // --- Trust Multiplier: scale the friendly ("Friendly"/친밀도) gain --------
+    // --- Trust Multiplier: scale the friendly ("Friendly"/???) gain --------
     // "Friendly" is the engine's TRUST value for both NPCs (gifting) and
     // animals/mounts (feeding-to-tame): strings UI_Gift_Friendly_IncreaseAmount
     // and UI_Vehicle_FriendlyLevelUp, runtime field _varyFriendly. It is a
@@ -1603,15 +1657,42 @@ namespace trinity::game
     // cache is seeded (unscaled) the first time a key is seen - and because the
     // save-loader drives these SAME setters at login, every relationship is
     // pre-seeded there, so the first in-game gift/feed is already scaled and a
-    // loaded save is never re-scaled. See the trinity-friendly-system notes.
+    // CDtrustA (Site 1: 0x141BDA967, inside SetNpc):
+    inline constexpr const char* kSig_FriendlyTrustSiteA =
+        "41 8B C0 EB 4E C5 FC 10 07 C5 FC 11 01 C5 FC 10 4F 20 C5 FC 11 49 20";
+    inline constexpr size_t kOff_FriendlyTrustSiteA_Hook = 0x12;
+
+    // CDtrustB (Site 2: 0x14D4AEFAF, inside SetPet):
+    inline constexpr const char* kSig_FriendlyTrustSiteB =
+        "44 89 C0 EB 4E C5 FC 10 07 C5 FC 11 01 C5 FC 10 4F 20 C5 FC 11 49 20";
+    inline constexpr size_t kOff_FriendlyTrustSiteB_Hook = 0x12;
+
+    // Original 15 bytes replaced at hook site:
+    // vmovups [rcx+20h], ymm1   (C5 FC 11 49 20)
+    // vmovups xmm0, [rdi+40h]   (C5 F8 10 47 40)
+    // vmovups [rcx+40h], xmm0   (C5 F8 11 41 40)
+    inline constexpr uint8_t kOrig_FriendlyTrustBytes[15] = {
+        0xC5, 0xFC, 0x11, 0x49, 0x20, 0xC5, 0xF8, 0x10, 0x47, 0x40, 0xC5, 0xF8, 0x11, 0x41, 0x40
+    };
+
+    // Direct SetNpc and SetPet function prologues for TU 2.00:
     inline constexpr const char* kSig_FriendlySetNpc =
-        "49 89 E3 53 55 56 57 41 56 48 83 EC 60 48 89 D7 48 8D 69 18 0F B7 42 04 66 41 89 43 08";
+        "4C 8B DC 53 55 56 57 41 56 48 83 EC 60 48 8B FA 48 8D 69 38";
+
     inline constexpr const char* kSig_FriendlySetPet =
-        "4C 8B DC 53 55 56 57 41 56 48 83 EC 60 48 8B FA 48 8D 69 38 "
-        "0F B7 42 04 66 41 89 43 08";
+        "49 89 E3 53 55 56 57 41 56 48 83 EC 60 48 89 D7 B8";
+
+    // NpcTrustWriter (0x141BDF910): The direct internal relation writer for NPCs (Greet, Gift, Dialogue)
+    inline constexpr const char* kSig_FriendlyNpcTrustWriter =
+        "48 89 5C 24 10 66 44 89 44 24 18 55 56 57 41 54 41 55 41 56 41 57 48 8D 6C 24 E1 48 81 EC E0 00";
+
+    // FactionRelationAlertDispatcher (0x142759760): The authoritative UI and Faction dispatcher
+    inline constexpr const char* kSig_FriendlyAlertDisp =
+        "48 89 5C 24 10 66 44 89 44 24 18 55 56 57 41 54 41 55 41 56 41 57 48 8D 6C 24 B0 48 81 EC 50 01";
 
     inline constexpr uintptr_t kOff_FriendlyRec_Key   = 0x00; // u32 record key
     inline constexpr uintptr_t kOff_FriendlyRec_Group = 0x04; // u16 group/bucket key
-    inline constexpr uintptr_t kOff_FriendlyRec_Value = 0x20; // i64 trust value
-    inline constexpr int64_t   kFriendly_Max          = 100;  // the taming cap
+    inline constexpr uintptr_t kOff_FriendlyRec_Value = 0x28; // i64 trust value (confirmed: QWORD @ +0x28 in TU 2.00)
+    inline constexpr int64_t   kFriendly_Max          = 100;  // the taming/NPC cap (0..100)
 }
+

@@ -12,6 +12,7 @@
 
 #include "../core/logger.h"
 #include "../core/state.h"
+#include "../core/version_detect.h"
 #include "../game/pak.h"
 #include "ps_atlas_raw.h"
 

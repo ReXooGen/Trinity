@@ -35,6 +35,12 @@ namespace trinity::game
         static bool Ready();
         static uintptr_t ActiveClientComp();
 
+        // The raw equip-batch hook capture (g_comp), validated, WITHOUT any
+        // character routing. Deliberately recursion-free - ActivePlayerCharacterIdx()
+        // scans it to identify who is on screen, so it must never call back
+        // into ClientComp(). 0 until the game has run one equip batch.
+        static uintptr_t HookedClientComp();
+
         // Character selection (0 = Kliff, 1 = Damiane, 2 = Oongka)
         static void SetActiveCharacter(int index);
         static int  GetActiveCharacter();

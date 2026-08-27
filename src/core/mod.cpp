@@ -4,6 +4,7 @@
 #include "settings.h"
 #include "state.h"
 #include "version.h"
+#include "build_timestamp.h"
 #include "localization.h"
 #include "version_detect.h"
 #include "../hooks/dx12_hook.h"
@@ -26,7 +27,7 @@ namespace trinity
             return;
 
         m_module = module;
-        LOG("Trinity v%s initializing (built %s %s).", TRINITY_VERSION, __DATE__, __TIME__);
+        LOG("Trinity v%s initializing (built %s).", TRINITY_VERSION, TRINITY_BUILD_TIME);
 
         // Detect and log game version on startup
         core::GetGameVersion();
@@ -95,3 +96,4 @@ namespace trinity
         m_initialized = false;
     }
 }
+

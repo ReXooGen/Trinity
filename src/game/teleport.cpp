@@ -544,9 +544,9 @@ namespace trinity::game
             const auto origins = mem::FindAllMatches(kSig_MarkerOriginPrefix, 32);
             const auto protections = mem::FindAllMatches(kSig_MarkerProtection, 2);
 
-            if (markers.size() != kExpected_MarkerMatches || (origins.size() != 9 && origins.size() != 11))
+            if (markers.size() != kExpected_MarkerMatches || origins.size() < 6)
             {
-                LOG_WARN("teleport: marker signatures count mismatch (markers=%zu exp=%zu, origins=%zu exp=9 or 11)",
+                LOG_WARN("teleport: marker signatures count mismatch (markers=%zu exp=%zu, origins=%zu)",
                          markers.size(), kExpected_MarkerMatches, origins.size());
                 return false;
             }
@@ -1532,7 +1532,6 @@ namespace trinity::game
             // walk so god mode / infinite stamina / spirit always target the
             // live player (this is the movement tick the mod already owns).
             Player::Tick();
-            Player::RefreshSelf();
 
             // Apply Game Speed here too: the fixed-timestep override must be
             // held on the game thread, once per frame, same as the resolve.
@@ -1738,7 +1737,15 @@ namespace trinity::game
 
         // Named area boxes for waypoint labels (optional - degrades gracefully).
         if (!ResolveTableResolver(kStr_LevelNameTable, &g_lvlResolver, &g_lvlRegistryGlobal))
-            LOG_WARN("teleport: area-name resolver not found - waypoint names fall back to indices.");
+        {
+            if (!ResolveTableResolver("regioninfo", &g_lvlResolver, &g_lvlRegistryGlobal))
+            {
+                if (!ResolveTableResolver("fieldinfo", &g_lvlResolver, &g_lvlRegistryGlobal))
+                {
+                    LOG_WARN("teleport: area-name resolver not found - waypoint names fall back to indices.");
+                }
+            }
+        }
 
         // Locomotion sub-step driver for Super Run (optional - Super Jump and
         // everything else still works without it).

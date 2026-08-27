@@ -56,7 +56,15 @@ namespace trinity::core
             const bool hasModernDyeBatch = (mem::FindPattern(game::kSig_DyeApplyBatch) != 0);
             const bool hasLegacyDyeBatch = (mem::FindPattern(game::kSig_DyeApplyBatch_Legacy) != 0);
 
-            if (hasModernDyeBatch)
+            // TU 2.00.00+: the PE revision moves per title update
+            // (1.0.0.2474 = TU 1.18.02, 1.0.0.2625 = TU 2.00.00).
+            if (g_versionInfo.revision >= 2625)
+            {
+                g_versionInfo.tu = GameTU::TU_1_18_01_Plus; // modern layout family
+                snprintf(g_versionInfo.displayStr, sizeof(g_versionInfo.displayStr),
+                         "Crimson Desert TU 2.00.00 (Active)");
+            }
+            else if (hasModernDyeBatch)
             {
                 g_versionInfo.tu = GameTU::TU_1_18_01_Plus;
                 snprintf(g_versionInfo.displayStr, sizeof(g_versionInfo.displayStr),
@@ -141,7 +149,9 @@ namespace trinity::core
         const GameVersionInfo& info = GetGameVersion();
         if (info.tu == GameTU::TU_1_13 || info.tu == GameTU::TU_1_14 || info.tu == GameTU::TU_1_15 || info.tu == GameTU::TU_1_16)
             return 66; // Legacy bucket type offset 0x42 (66)
-        return 0x418;  // Modern bucket type offset in TU 1.17+
+        if (info.revision >= 2625)
+            return 0x428; // TU 2.00.00+: BucketType at +0x428 (confirmed from InvHolderInsert/CommitPlacement binary)
+        return 0x418;  // Modern bucket type offset in TU 1.17 - 1.18.02
     }
 
     uintptr_t GetItemValWorkingSize()

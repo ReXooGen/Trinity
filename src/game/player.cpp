@@ -125,6 +125,8 @@ namespace trinity::game
 
         constexpr int kMaxMounts = 4;
         std::atomic<uintptr_t> g_mountActors[kMaxMounts]{};
+        std::atomic<uintptr_t> g_mountTargetOwners[kMaxMounts]{};
+        std::atomic<uintptr_t> g_mountOwners[kMaxMounts]{};
         std::atomic<int>       g_mountCount{0};
         std::atomic<bool>      g_isRidingMount{false};
         std::atomic<uintptr_t> g_playerPossessor{0};
@@ -243,7 +245,7 @@ namespace trinity::game
         }
 
         // Dedicated mount vital chain walker: does not require humanoid Health entry at index 0
-        bool WalkMountVitalChain(uintptr_t owner, uintptr_t* outStatArray)
+        bool WalkMountVitalChain(uintptr_t owner, uintptr_t* outStatArray, uintptr_t* outTargetOwner = nullptr, uintptr_t* outActor = nullptr)
         {
             uint64_t actor = 0, marker = 0, root = 0, arr = 0;
             if (!Read64(owner + kOff_Owner_Actor, &actor) || actor < kMinPointer)
@@ -255,6 +257,8 @@ namespace trinity::game
             if (!Read64(static_cast<uintptr_t>(root) + kOff_Root_StatArray, &arr) ||
                 arr < kMinPointer) return false;
             if (outStatArray) *outStatArray = static_cast<uintptr_t>(arr);
+            if (outTargetOwner) *outTargetOwner = static_cast<uintptr_t>(root);
+            if (outActor) *outActor = static_cast<uintptr_t>(actor);
             return true;
         }
 
@@ -287,6 +291,13 @@ namespace trinity::game
                 g_actors[i].store(0, std::memory_order_release);
                 g_targetOwners[i].store(0, std::memory_order_release);
             }
+            for (int i = 0; i < kMaxMounts; ++i)
+            {
+                g_mountActors[i].store(0, std::memory_order_release);
+                g_mountTargetOwners[i].store(0, std::memory_order_release);
+                g_mountOwners[i].store(0, std::memory_order_release);
+            }
+            g_mountCount.store(0, std::memory_order_release);
             for (int i = 0; i < kMaxStatEntries; ++i)
             {
                 g_stamEntries[i].store(0, std::memory_order_release);
@@ -386,6 +397,8 @@ namespace trinity::game
             uintptr_t nextMountStam[kMaxStatEntries]{};
             uintptr_t nextSpir[kMaxStatEntries]{};
             uintptr_t nextMounts[kMaxMounts]{};
+            uintptr_t nextMountTargets[kMaxMounts]{};
+            uintptr_t nextMountOwners[kMaxMounts]{};
             int nPlayers = 0, nStam = 0, nMountStam = 0, nSpir = 0, nMounts = 0;
 
             for (uint32_t i = 0; i < count; ++i)
@@ -425,7 +438,9 @@ namespace trinity::game
                     }
 
                     uintptr_t mountStatArray = 0;
-                    if (WalkMountVitalChain(owner, &mountStatArray) && mountStatArray >= kMinPointer)
+                    uintptr_t mountTarget = 0;
+                    uintptr_t mountResolvedActor = 0;
+                    if (WalkMountVitalChain(owner, &mountStatArray, &mountTarget, &mountResolvedActor) && mountStatArray >= kMinPointer)
                     {
                         for (int k = 0; k < kStatArray_ScanEntries; ++k)
                         {
@@ -436,15 +451,20 @@ namespace trinity::game
                             {
                                 if (nMountStam < kMaxStatEntries)
                                     nextMountStam[nMountStam++] = e;
-                                if (act >= kMinPointer && nMounts < kMaxMounts)
+                                if (nMounts < kMaxMounts)
                                 {
                                     bool alreadyAdded = false;
                                     for (int m = 0; m < nMounts; ++m)
                                     {
-                                        if (nextMounts[m] == act) { alreadyAdded = true; break; }
+                                        if (nextMounts[m] == act || (mountTarget && nextMountTargets[m] == mountTarget)) { alreadyAdded = true; break; }
                                     }
                                     if (!alreadyAdded)
-                                        nextMounts[nMounts++] = act;
+                                    {
+                                        nextMounts[nMounts] = act;
+                                        nextMountTargets[nMounts] = mountTarget;
+                                        nextMountOwners[nMounts] = owner;
+                                        ++nMounts;
+                                    }
                                 }
                             }
                         }
@@ -554,7 +574,11 @@ namespace trinity::game
                 g_spiritEntries[i].store(nextSpir[i], std::memory_order_release);
 
             for (int i = 0; i < kMaxMounts; ++i)
+            {
                 g_mountActors[i].store((i < nMounts) ? nextMounts[i] : 0, std::memory_order_release);
+                g_mountTargetOwners[i].store((i < nMounts) ? nextMountTargets[i] : 0, std::memory_order_release);
+                g_mountOwners[i].store((i < nMounts) ? nextMountOwners[i] : 0, std::memory_order_release);
+            }
             g_mountCount.store(nMounts, std::memory_order_release);
 
             // Clear any trailing slots from a previous tick so a stale entry
@@ -674,6 +698,16 @@ namespace trinity::game
             return false;
         }
 
+        bool IsMountEntity(uintptr_t target)
+        {
+            if (target < kMinPointer) return false;
+            if (InSet(g_mountTargetOwners, kMaxMounts, target)) return true;
+            if (InSet(g_mountActors, kMaxMounts, target)) return true;
+            if (InSet(g_mountOwners, kMaxMounts, target)) return true;
+            if (InSet(g_mountStamEntries, kMaxStatEntries, target)) return true;
+            return false;
+        }
+
         // --- Damage multipliers: scale the hit at the apply dispatcher -----
         int64_t ScaleDamage(uintptr_t targetOwner, uintptr_t sourceCtx, int64_t delta)
         {
@@ -735,6 +769,7 @@ namespace trinity::game
             const State& st = State::Get();
             const uintptr_t owner = reinterpret_cast<uintptr_t>(targetOwner);
             const bool isPlayerTarget = IsPlayerEntity(owner);
+            const bool isMountTarget  = IsMountEntity(owner);
 
             // Determine if damage source is an active hostile enemy vs environmental/fall impact
             bool isEnemyAttacker = false;
@@ -765,7 +800,7 @@ namespace trinity::game
             {
                 if (statusId == StatType_Health)
                 {
-                    if (st.godMode && isPlayerTarget)
+                    if (st.godMode && (isPlayerTarget || (st.infMountStamina && isMountTarget)))
                     {
                         delta = 0; // complete damage immunity
                     }
@@ -780,12 +815,17 @@ namespace trinity::game
                         delta = ScaleDamage(owner, sourceCtx, delta);
                     }
                 }
-                else if ((st.infStamina || st.infMountStamina || Teleport::GetFlightEngaged()) &&
-                         (isPlayerTarget || InSet(g_mountActors, kMaxMounts, owner) || InSet(g_mountStamEntries, kMaxStatEntries, owner)) &&
-                         (IsStaminaType(statusId) || statusId == StatType_MountSprint || statusId == 19 ||
-                          statusId == StatType_SprintSt || statusId == 20 || statusId == StatType_StaminaPool117 || statusId == 22))
+                else if (statusId == StatType_MountSprint || statusId == 19 ||
+                         ((st.infMountStamina || Teleport::GetFlightEngaged()) && (isMountTarget || !isEnemyAttacker)))
                 {
-                    delta = 0; // zero-out stamina drain instantly
+                    delta = 0; // zero-out mount stamina drain instantly
+                }
+                else if ((st.infStamina || Teleport::GetFlightEngaged()) &&
+                         (isPlayerTarget || !isEnemyAttacker) &&
+                         (IsStaminaType(statusId) || statusId == StatType_SprintSt || statusId == 20 ||
+                          statusId == StatType_StaminaPool117 || statusId == 22 || statusId != StatType_Health))
+                {
+                    delta = 0; // zero-out player stamina drain instantly
                 }
                 else if (isPlayerTarget && IsSpiritType(statusId) && st.infSpirit)
                 {
@@ -847,10 +887,24 @@ namespace trinity::game
                          "God Mode / Infinite Stamina / Infinite Spirit disabled",
                          &hkStatCommit, &oStatCommit, &g_commitTarget);
 
-        mem::InstallHook("player: damage-apply", kSig_DamageApply, "damage multipliers disabled",
-                         &hkDamageApply, &oDamageApply, &g_damageHookTarget);
-
-
+        // DamageApply: try primary signature first, then Alt (TU 2.00 recompile shifted the prologue).
+        if (!mem::InstallHook("player: damage-apply", kSig_DamageApply, "",
+                              &hkDamageApply, &oDamageApply, &g_damageHookTarget))
+        {
+            if (mem::InstallHook("player: damage-apply (alt)", kSig_DamageApply_Alt, "damage multipliers disabled",
+                                  &hkDamageApply, &oDamageApply, &g_damageHookTarget))
+            {
+                LOG_OK("player: damage-apply hook installed @ %p", g_damageHookTarget);
+            }
+            else
+            {
+                LOG_ERR("player: damage-apply signature NOT FOUND (tried primary + alt) - infinite stamina drain block disabled.");
+            }
+        }
+        else
+        {
+            LOG_OK("player: damage-apply hook installed @ %p", g_damageHookTarget);
+        }
 
         return true;
     }
@@ -863,6 +917,20 @@ namespace trinity::game
     void Player::RefreshSelf()
     {
         TickResolveSelf();
+        const State& st = State::Get();
+        if (st.infStamina || st.infMountStamina)
+        {
+            for (int i = 0; i < kMaxStatEntries; ++i)
+            {
+                if (st.infStamina) PinEntry(g_stamEntries[i].load(std::memory_order_relaxed));
+                if (st.infMountStamina) PinEntry(g_mountStamEntries[i].load(std::memory_order_relaxed));
+            }
+        }
+        if (st.infSpirit)
+        {
+            for (int i = 0; i < kMaxStatEntries; ++i)
+                PinEntry(g_spiritEntries[i].load(std::memory_order_relaxed));
+        }
     }
 
     void Player::Remove()
@@ -876,9 +944,17 @@ namespace trinity::game
             g_actors[i].store(0);
             g_targetOwners[i].store(0);
         }
+        for (int i = 0; i < kMaxMounts; ++i)
+        {
+            g_mountActors[i].store(0);
+            g_mountTargetOwners[i].store(0);
+            g_mountOwners[i].store(0);
+        }
+        g_mountCount.store(0);
         for (int i = 0; i < kMaxStatEntries; ++i)
         {
             g_stamEntries[i].store(0);
+            g_mountStamEntries[i].store(0);
             g_spiritEntries[i].store(0);
         }
     }

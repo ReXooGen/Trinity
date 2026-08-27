@@ -77,13 +77,21 @@ namespace trinity::gui
     // Manages gear dyeing and customization for mounts and horses.
     static void RenderMountOptions()
     {
+        State& st = State::Get();
         ui::Begin(LOC("Mount & Horse Options"));
+
+        bool changed = false;
+        changed |= ui::Toggle(LOC("Infinite Mount Stamina"), &st.infMountStamina,
+                   LOC("Unlimited gallop, sprint, and flight stamina for horses and mounts."));
 
         if (ui::Submenu(LOC("Mount Equipment Dye"), "dyeslots",
                     LOC("Recolor and customize equipment on your active horse or mount.")))
         {
             game::Dye::SetTargetMode(1);
         }
+
+        if (changed && st.autoSave)
+            Settings::Save();
 
         ui::End();
     }
@@ -107,8 +115,12 @@ namespace trinity::gui
                    LOC("Equipped weapons, shields, and armor never degrade (permanently locked at 100% max durability)."));
         changed |= ui::Toggle(LOC("No Fall Damage"), &st.noFallDamage,
                    LOC("Completely negates fall damage from high drops, cliffs, and Sky Arrival teleport."));
-        changed |= ui::Toggle(LOC("Infinite Stamina & Mount"), &st.infStamina,
-                   LOC("Sprint, dodge, climb, and gallop on horses/mounts with unlimited stamina."));
+        if (ui::Toggle(LOC("Infinite Stamina & Mount"), &st.infStamina,
+                   LOC("Sprint, dodge, climb, and gallop on horses/mounts with unlimited stamina.")))
+        {
+            st.infMountStamina = st.infStamina;
+            changed = true;
+        }
         changed |= ui::Toggle(LOC("Infinite Spirit"), &st.infSpirit,
                    LOC("Keeps your spirit / special ability gauge full."));
         changed |= ui::FloatOption(LOC("Outgoing Damage"), &st.dmgOutMult, 0.0f, 20.0f, 0.25f, 1.0f, "%.2fx",
@@ -189,9 +201,20 @@ namespace trinity::gui
     {
         const game::Dye::OpState s = game::Dye::Status();
         if (s == game::Dye::OpState::Done)
-            ui::Toast("Dye applied");
+        {
+            const int targetIdx = (game::Dye::GetTargetMode() == 0) ? game::Dye::GetActiveCharacter() : -1;
+            if (targetIdx == 1 || targetIdx == 2)
+            {
+                const char* name = game::Equipment::CharacterName(targetIdx);
+                ui::Toast(LOC("Dye applied to %s"), name);
+            }
+            else
+            {
+                ui::Toast(LOC("Dye applied"));
+            }
+        }
         else if (s == game::Dye::OpState::Failed)
-            ui::Toast("Could not dye that - see the log");
+            ui::Toast(LOC("Could not dye that - see the log"));
     }
 
     static void SendDye(uint32_t familyKey, int r, int g, int b)
@@ -238,6 +261,32 @@ namespace trinity::gui
         c.repair     = static_cast<uint8_t>(((100 - s_dyeRepair) * 127) / 100);
         if (game::Dye::Apply(s_dyeTag, s_dyeChan - 1, c))
             s_dyeRetouch = false; // else the queue was busy - retry next frame
+    }
+
+    static void UpdateDyeTooltip(const game::Dye::SlotInfo& curSlot, uint32_t activeRGB, int activeZone)
+    {
+        uint32_t zoneColors[12] = {};
+        bool zoneDyed[12] = {};
+        for (int z = 0; z < 12; ++z)
+        {
+            game::Dye::Channel c{};
+            if (game::Dye::GetChannel(curSlot.tag, z, &c))
+            {
+                zoneColors[z] = (uint32_t(c.r) << 16) | (uint32_t(c.g) << 8) | c.b;
+                zoneDyed[z] = true;
+            }
+        }
+        char sub[64];
+        if (activeZone == 0)
+            snprintf(sub, sizeof(sub), "%s  •  All Zones", curSlot.slotName[0] ? curSlot.slotName : "Dye Preview");
+        else
+            snprintf(sub, sizeof(sub), "%s  •  Zone %d", curSlot.slotName[0] ? curSlot.slotName : "Dye Preview", activeZone);
+
+        ui::SetDyePreviewTooltip(curSlot.itemName[0] ? curSlot.itemName : s_dyeItem,
+                                curSlot.icon, sub, activeZone, activeRGB,
+                                s_dyeMat, s_dyeRepair,
+                                curSlot.maxZones > 0 ? curSlot.maxZones : 12,
+                                zoneColors, zoneDyed);
     }
 
     static void RenderDyeSlots()
@@ -302,6 +351,27 @@ namespace trinity::gui
         const int n = game::Dye::SlotCount();
         int shown = 0, hidden = 0;
         char hiddenList[200] = "";
+
+        // Live Preview: automatically display the side-panel dye overview for the active/selected slot
+        game::Dye::SlotInfo previewSlot{};
+        bool havePreviewSlot = false;
+        for (int i = 0; i < n; ++i)
+        {
+            game::Dye::SlotInfo si{};
+            if (game::Dye::GetSlot(i, &si) && si.dyeable)
+            {
+                if (!havePreviewSlot || si.tag == s_dyeTag)
+                {
+                    previewSlot = si;
+                    havePreviewSlot = true;
+                    if (si.tag == s_dyeTag) break;
+                }
+            }
+        }
+        if (havePreviewSlot)
+        {
+            UpdateDyeTooltip(previewSlot, 0xFFFFFF, 0);
+        }
 
         for (int i = 0; i < n; ++i)
         {
@@ -462,11 +532,14 @@ namespace trinity::gui
                       "Swap the fabric or metal look. 0 keeps it natural.");
         touched |= ui::IntOption("Condition %", &s_dyeRepair, 0, 100, 5, 100,
                       "How worn the piece looks. 100 is pristine, 0 is battle-scarred.");
-        if (touched && s_dyeChan != 0)
-        {
-            s_dyeRetouch   = true;
-            s_dyeRetouchAt = GetTickCount64();
-        }
+        uint32_t activePreviewRGB = 0;
+        if (haveCur)
+            activePreviewRGB = (uint32_t(cur.r) << 16) | (uint32_t(cur.g) << 8) | cur.b;
+        else
+            activePreviewRGB = (uint32_t(s_dyeR) << 16) | (uint32_t(s_dyeG) << 8) | s_dyeB;
+
+        UpdateDyeTooltip(curSlot, activePreviewRGB, s_dyeChan);
+
         PumpDyeRetouch();
 
         ui::End();
@@ -476,12 +549,23 @@ namespace trinity::gui
     {
         ui::Begin(s_dyeItem[0] ? s_dyeItem : nullptr);
 
+        game::Dye::SlotInfo curSlot{};
+        const int nSlots = game::Dye::SlotCount();
+        for (int i = 0; i < nSlots; ++i)
+        {
+            if (game::Dye::GetSlot(i, &curSlot) && curSlot.tag == s_dyeTag)
+                break;
+        }
+
         ui::IntOption("Red",   &s_dyeR, 0, 255, 5, 200, "Red 0-255.");
         ui::IntOption("Green", &s_dyeG, 0, 255, 5, 30,  "Green 0-255.");
         ui::IntOption("Blue",  &s_dyeB, 0, 255, 5, 40,  "Blue 0-255.");
 
         const uint32_t mix = (uint32_t(s_dyeR) << 16) |
                              (uint32_t(s_dyeG) << 8)  | uint32_t(s_dyeB);
+
+        UpdateDyeTooltip(curSlot, mix, s_dyeChan);
+
         static int s_applyCursor = 0;
         if (ui::SwatchRow("Apply This Color", &mix, 1, &s_applyCursor, -1,
                           "Dye it with this exact color.") == 0)
@@ -596,8 +680,8 @@ namespace trinity::gui
                 snprintf(label, sizeof(label), "%s - %s  (%s)",
                          LOC(si.slotName), si.itemName, LOC("no sockets"));
 
-            if (ui::SubmenuItem(label, si.icon[0] ? si.icon : nullptr, "equipedit",
-                                LOC("Refine this piece and edit its abyss-gear sockets.")))
+            if (ui::SubmenuEquipItem(label, si.icon[0] ? si.icon : nullptr, "equipedit", si,
+                                     LOC("Refine this piece and edit its abyss-gear sockets.")))
             {
                 // A different piece gets a fresh picker page.
                 if (s_eqTag != si.tag || strcmp(s_eqItem, si.itemName) != 0)
@@ -624,6 +708,8 @@ namespace trinity::gui
             ui::End();
             return;
         }
+
+        ui::SetEquipTooltip(si);
 
         if (si.maxSockets > 0 && si.unlockedCount < si.maxSockets)
         {
@@ -883,7 +969,8 @@ namespace trinity::gui
             if (s_eqFind[0] && !ContainsNoCase(name, s_eqFind)) continue;
             ++shown;
 
-            if (ui::OptionItem(name, (icon && icon[0]) ? icon : nullptr, "Socket this abyss gear."))
+            const char* buff = game::Equipment::GetGearBuffDescription(name);
+            if (ui::OptionItemWithBuff(name, (icon && icon[0]) ? icon : nullptr, buff, "Socket this abyss gear."))
             {
                 bool p = false;
                 if (game::Equipment::AddGear(s_eqTag, s_eqSocket, tid, &p))
@@ -2927,8 +3014,14 @@ namespace trinity::gui
             ui::g_needFontRebuild = true;
         }
 
-        save |= ui::Toggle(LOC("Show Item Tooltip"), &st.showItemTooltip, 
+        save |= ui::Toggle(LOC("Show Item Tooltip"), &st.showItemTooltip,
                            LOC("Displays an enlarged icon and name when selecting items.")) && st.autoSave;
+
+        if (ui::FloatOption(LOC("Tooltip Image Size"), &st.tooltipImageScale, 0.8f, 2.5f, 0.1f, 1.0f, "%.1fx",
+                            LOC("Adjusts the preview image and panel size for item tooltips.")))
+        {
+            save = true;
+        }
 
         if (save)
             Settings::Save();

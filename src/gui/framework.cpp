@@ -68,16 +68,122 @@ namespace trinity::ui
     ImFont*  g_fontBold  = nullptr;
     float    g_scale     = 1.0f;
     bool     g_needFontRebuild = false;
-    float    g_x = 0.0f, g_y = 0.0f, g_width = 0.0f, g_listTop = 0.0f;
+    float    g_x = 0.0f, g_y = 0.0f, g_width = 0.0f, g_listTop = 0.0f, g_menuTop = 0.0f;
     int      g_rowIndex  = 0;
     char     g_selectedDesc[256] = {};
     char     g_selectedItemName[128] = {};
     char     g_selectedItemIcon[64] = {};
+    TooltipPreviewInfo g_selectedTooltip = {};
     RowKind  g_hintKind  = RowKind::None;
     bool     g_padActive = false;
     bool     g_captureSeen = false;
 
     ImDrawList* DL() { return ImGui::GetForegroundDrawList(); }
+
+    void SetTooltipPreview(const char* name, const char* icon, const char* subtitle,
+                           int refineLevel, int durability,
+                           int maxSockets, int unlockedSockets, int filledSockets)
+    {
+        g_selectedTooltip = {};
+        if (!name || !icon || !name[0] || !icon[0])
+            return;
+
+        g_selectedTooltip.valid           = true;
+        g_selectedTooltip.isEquipped      = false;
+        snprintf(g_selectedTooltip.name, sizeof(g_selectedTooltip.name), "%s", name);
+        snprintf(g_selectedTooltip.icon, sizeof(g_selectedTooltip.icon), "%s", icon);
+        if (subtitle && subtitle[0])
+            snprintf(g_selectedTooltip.subtitle, sizeof(g_selectedTooltip.subtitle), "%s", subtitle);
+
+        g_selectedTooltip.refineLevel     = refineLevel;
+        g_selectedTooltip.durability      = durability;
+        g_selectedTooltip.maxSockets      = maxSockets;
+        g_selectedTooltip.unlockedSockets = unlockedSockets;
+        g_selectedTooltip.filledSockets   = filledSockets;
+    }
+
+    void SetEquipTooltip(const game::Equipment::SlotInfo& si)
+    {
+        g_selectedTooltip = {};
+        if (!si.itemName[0])
+            return;
+
+        g_selectedTooltip.valid           = true;
+        g_selectedTooltip.isEquipped      = true;
+        snprintf(g_selectedTooltip.name, sizeof(g_selectedTooltip.name), "%s", si.itemName);
+        snprintf(g_selectedTooltip.icon, sizeof(g_selectedTooltip.icon), "%s", si.icon);
+
+        const char* charName = game::Equipment::CharacterName(game::Equipment::GetActiveCharacter());
+        if (charName && charName[0])
+            snprintf(g_selectedTooltip.subtitle, sizeof(g_selectedTooltip.subtitle), "%s  •  %s", si.slotName, charName);
+        else
+            snprintf(g_selectedTooltip.subtitle, sizeof(g_selectedTooltip.subtitle), "%s", si.slotName);
+
+        g_selectedTooltip.refineLevel     = si.refineLevel;
+        g_selectedTooltip.durability      = si.durability;
+        g_selectedTooltip.attack          = si.attack;
+        g_selectedTooltip.defense         = si.defense;
+        g_selectedTooltip.reinforceExp    = si.reinforceExp;
+        g_selectedTooltip.reinforceBonus  = si.reinforceBonus;
+        g_selectedTooltip.maxSockets      = si.maxSockets;
+        g_selectedTooltip.unlockedSockets = si.unlockedCount;
+        g_selectedTooltip.filledSockets   = si.filledCount;
+
+        for (int i = 0; i < si.maxSockets && i < 5; ++i)
+        {
+            g_selectedTooltip.sockets[i].unlocked   = si.sockets[i].unlocked;
+            g_selectedTooltip.sockets[i].filled     = si.sockets[i].filled;
+            g_selectedTooltip.sockets[i].gearTypeId = si.sockets[i].gearTypeId;
+            snprintf(g_selectedTooltip.sockets[i].gearName, sizeof(g_selectedTooltip.sockets[i].gearName), "%s", si.sockets[i].gearName);
+            snprintf(g_selectedTooltip.sockets[i].gearIcon, sizeof(g_selectedTooltip.sockets[i].gearIcon), "%s", si.sockets[i].gearIcon);
+            snprintf(g_selectedTooltip.sockets[i].gearBuff, sizeof(g_selectedTooltip.sockets[i].gearBuff), "%s", si.sockets[i].gearBuff);
+        }
+    }
+
+    void SetAbyssGearTooltip(const char* name, const char* icon, const char* buff)
+    {
+        g_selectedTooltip = {};
+        if (!name || !name[0]) return;
+        g_selectedTooltip.valid = true;
+        g_selectedTooltip.isEquipped = false;
+        snprintf(g_selectedTooltip.name, sizeof(g_selectedTooltip.name), "%s", name);
+        if (icon && icon[0])
+            snprintf(g_selectedTooltip.icon, sizeof(g_selectedTooltip.icon), "%s", icon);
+        snprintf(g_selectedTooltip.subtitle, sizeof(g_selectedTooltip.subtitle), "Abyss Gear  •  Socket Power");
+        if (buff && buff[0])
+            snprintf(g_selectedTooltip.gearBuff, sizeof(g_selectedTooltip.gearBuff), "%s", buff);
+    }
+
+    void SetDyePreviewTooltip(const char* name, const char* icon, const char* subtitle,
+                              int activeZone, uint32_t activeRGB, int activeMaterial, int activeCondition,
+                              int totalZones, const uint32_t* zoneColors, const bool* zoneDyed)
+    {
+        g_selectedTooltip = {};
+        if (!name || !name[0]) return;
+        g_selectedTooltip.valid         = true;
+        g_selectedTooltip.isEquipped    = false;
+        g_selectedTooltip.isDye         = true;
+        snprintf(g_selectedTooltip.name, sizeof(g_selectedTooltip.name), "%s", name);
+        if (icon && icon[0])
+            snprintf(g_selectedTooltip.icon, sizeof(g_selectedTooltip.icon), "%s", icon);
+        if (subtitle && subtitle[0])
+            snprintf(g_selectedTooltip.subtitle, sizeof(g_selectedTooltip.subtitle), "%s", subtitle);
+
+        g_selectedTooltip.dyeActiveZone = activeZone;
+        g_selectedTooltip.dyeActiveRGB  = activeRGB;
+        g_selectedTooltip.dyeMaterial   = activeMaterial;
+        g_selectedTooltip.dyeCondition  = activeCondition;
+        g_selectedTooltip.dyeTotalZones = (totalZones > 12) ? 12 : ((totalZones < 1) ? 1 : totalZones);
+
+        if (zoneColors)
+        {
+            for (int i = 0; i < 12; ++i)
+            {
+                g_selectedTooltip.dyeZoneRGB[i] = zoneColors[i];
+                g_selectedTooltip.dyeZoneDyed[i] = zoneDyed ? zoneDyed[i] : false;
+            }
+        }
+    }
 
     // --- Menu / navigation state ---------------------------------------------
     struct StackEntry
@@ -463,6 +569,7 @@ namespace trinity::ui
         g_hintKind    = RowKind::None;
         g_selectedItemName[0] = 0;
         g_selectedItemIcon[0] = 0;
+        g_selectedTooltip = {};
 
         State&   st = State::Get();
 
@@ -754,6 +861,7 @@ namespace trinity::ui
         g_width           = 460.0f * s;
         g_x               = 64.0f * s;
         g_y               = 64.0f * s;
+        g_menuTop         = g_y;
         g_rowIndex        = 0;
         g_selectedDesc[0] = 0;
 
@@ -1092,40 +1200,608 @@ namespace trinity::ui
                         theme::Text, g_selectedDesc, nullptr, wrapW);
         }
 
-        // Side-panel Item Tooltip Preview
-        if (State::Get().showItemTooltip && g_selectedItemName[0] != '\0' && g_selectedItemIcon[0] != '\0')
+        // Side-panel Item Tooltip Preview (rich: stats, refinement bars,
+        // sockets & abyss gears). Falls back to the plain name+icon preview
+        // when only the legacy globals were set.
+        if (State::Get().showItemTooltip && (g_selectedTooltip.valid || (g_selectedItemName[0] != '\0' && g_selectedItemIcon[0] != '\0')))
         {
-            const float tWidth = 280.0f * s;
-            const float tHeight = 280.0f * s;
-            const float tPad = 12.0f * s;
-            
-            // Draw it to the right of the main menu, starting at g_listTop
+            const float s        = g_scale;
+            const float imgScale = (State::Get().tooltipImageScale >= 0.5f) ? State::Get().tooltipImageScale : 1.0f;
+            const float tWidth   = (300.0f * s) * (imgScale > 1.0f ? (1.0f + (imgScale - 1.0f) * 0.40f) : 1.0f);
+            const float tPad     = 12.0f * s;
+
+            const char* dispName = g_selectedTooltip.valid && g_selectedTooltip.name[0] ? g_selectedTooltip.name : g_selectedItemName;
+            const char* dispIcon = g_selectedTooltip.valid && g_selectedTooltip.icon[0] ? g_selectedTooltip.icon : g_selectedItemIcon;
+            const char* dispSub  = g_selectedTooltip.valid ? g_selectedTooltip.subtitle : "";
+
+            const bool isDyeTooltip = g_selectedTooltip.valid && g_selectedTooltip.isDye;
+
+            if (isDyeTooltip)
+            {
+                const char* dispName = g_selectedTooltip.name;
+                const char* dispIcon = g_selectedTooltip.icon;
+                const char* dispSub  = g_selectedTooltip.subtitle;
+
+                const float nameW = tWidth - tPad * 2.0f - 8.0f * s;
+                const ImVec2 nameSize = g_fontBold->CalcTextSizeA(g_fontBold->FontSize, FLT_MAX, nameW, dispName);
+                const float titleH = (nameSize.y > g_fontBold->FontSize) ? nameSize.y : g_fontBold->FontSize;
+                const float headerH = titleH + (dispSub[0] ? g_fontBody->FontSize * 0.80f + 4.0f * s : 0.0f) + tPad * 2.0f;
+                const float iconSz  = 90.0f * s * imgScale;
+
+                const float activeCardH = 62.0f * s;
+                const int totalZones = (g_selectedTooltip.dyeTotalZones > 12) ? 12 : ((g_selectedTooltip.dyeTotalZones < 1) ? 1 : g_selectedTooltip.dyeTotalZones);
+                const float paletteHdrH = g_fontBold->FontSize * 0.82f + 4.0f * s;
+                const float zoneRowH = 28.0f * s;
+                const int zoneRows = (totalZones <= 6) ? 1 : 2;
+                const float paletteSectionH = paletteHdrH + zoneRows * zoneRowH + 6.0f * s;
+                const float hintH = g_fontBody->FontSize * 0.74f + 8.0f * s;
+
+                const float tHeight = headerH + tPad + iconSz + tPad * 0.75f + activeCardH + tPad * 0.75f + paletteSectionH + hintH + tPad;
+
+                const ImVec2 tmn(g_x + g_width + 16.0f * s, g_listTop);
+                const ImVec2 tmx(tmn.x + tWidth, tmn.y + tHeight);
+
+                dl->AddRectFilled(tmn, tmx, theme::BarBg, 4.0f * s);
+                dl->AddRect(tmn, tmx, WithAlpha(theme::RowBg, 0.9f), 4.0f * s, 0, 1.5f * s);
+
+                // Header
+                dl->AddRectFilled(tmn, ImVec2(tmx.x, tmn.y + headerH), theme::RowBg, 4.0f * s, ImDrawFlags_RoundCornersTop);
+                dl->AddRectFilled(tmn, ImVec2(tmn.x + 3.5f * s, tmn.y + headerH), theme::Accent, 4.0f * s, ImDrawFlags_RoundCornersTopLeft);
+
+                float hdrTextY = tmn.y + tPad;
+                dl->AddText(g_fontBold, g_fontBold->FontSize,
+                            ImVec2(tmn.x + tPad + 6.0f * s, hdrTextY),
+                            theme::TextBright, dispName, nullptr, nameW);
+
+                if (dispSub[0])
+                {
+                    hdrTextY += titleH + 2.0f * s;
+                    dl->AddText(g_fontBody, g_fontBody->FontSize * 0.80f,
+                                ImVec2(tmn.x + tPad + 6.0f * s, hdrTextY),
+                                theme::Accent, dispSub, nullptr, nameW);
+                }
+
+                // Item Icon Box
+                float curY = tmn.y + headerH + tPad;
+                {
+                    const ImVec2 iconBoxMn(tmn.x + tPad, curY);
+                    const ImVec2 iconBoxMx(tmx.x - tPad, curY + iconSz);
+                    dl->AddRectFilled(iconBoxMn, iconBoxMx, WithAlpha(theme::RowBg, 0.45f), 3.0f * s);
+                    dl->AddRect(iconBoxMn, iconBoxMx, WithAlpha(theme::RowBg, 0.80f), 3.0f * s, 0, 1.0f * s);
+
+                    const float innerSz = iconSz - 12.0f * s;
+                    const ImVec2 iconMn(tmn.x + (tWidth - innerSz) * 0.5f, curY + 6.0f * s);
+                    const ImVec2 iconMx(iconMn.x + innerSz, iconMn.y + innerSz);
+                    if (!DrawItemIcon(dl, dispIcon, iconMn, iconMx))
+                        dl->AddRect(iconMn, iconMx, WithAlpha(theme::TextDim, 0.35f), 2.0f * s, 0, 1.5f * s);
+                }
+                curY += iconSz + tPad * 0.75f;
+
+                // Active Selected Color Card Box
+                {
+                    const ImVec2 cardMn(tmn.x + tPad, curY);
+                    const ImVec2 cardMx(tmx.x - tPad, curY + activeCardH);
+                    dl->AddRectFilled(cardMn, cardMx, WithAlpha(theme::RowBg, 0.65f), 3.0f * s);
+                    dl->AddRect(cardMn, cardMx, WithAlpha(theme::RowBg, 0.90f), 3.0f * s, 0, 1.0f * s);
+
+                    const float swatchSz = activeCardH - 12.0f * s;
+                    const ImVec2 swMn(cardMn.x + 6.0f * s, cardMn.y + 6.0f * s);
+                    const ImVec2 swMx(swMn.x + swatchSz, swMn.y + swatchSz);
+
+                    const uint32_t activeRGB = g_selectedTooltip.dyeActiveRGB;
+                    const uint8_t ar = (activeRGB >> 16) & 0xFF;
+                    const uint8_t ag = (activeRGB >> 8) & 0xFF;
+                    const uint8_t ab = activeRGB & 0xFF;
+
+                    dl->AddRectFilled(swMn, swMx, IM_COL32(ar, ag, ab, 255), 3.0f * s);
+                    dl->AddRect(swMn, swMx, WithAlpha(theme::TextBright, 0.40f), 3.0f * s, 0, 1.0f * s);
+
+                    const float txtX = swMx.x + 8.0f * s;
+                    float txtY = cardMn.y + 5.0f * s;
+                    const float fSz = g_fontBody->FontSize * 0.78f;
+
+                    char hexBuf[32];
+                    snprintf(hexBuf, sizeof(hexBuf), "HEX: #%02X%02X%02X", ar, ag, ab);
+                    dl->AddText(g_fontBold, fSz * 1.05f, ImVec2(txtX, txtY), theme::TextBright, hexBuf);
+                    txtY += fSz + 2.0f * s;
+
+                    char rgbBuf[32];
+                    snprintf(rgbBuf, sizeof(rgbBuf), "RGB: (%d, %d, %d)", ar, ag, ab);
+                    dl->AddText(g_fontBody, fSz, ImVec2(txtX, txtY), IM_COL32(200, 200, 210, 255), rgbBuf);
+                    txtY += fSz + 2.0f * s;
+
+                    static const char* const kMatNames[] = { "Natural", "Cloth", "Leather", "Silk", "Iron", "Steel", "Gold", "Velvet", "Brass", "Silver", "Enamel" };
+                    int matId = g_selectedTooltip.dyeMaterial;
+                    const char* matStr = (matId >= 0 && matId <= 10) ? kMatNames[matId] : "Custom";
+                    char matBuf[48];
+                    snprintf(matBuf, sizeof(matBuf), "Mat: %s (%d%%)", matStr, g_selectedTooltip.dyeCondition);
+                    dl->AddText(g_fontBody, fSz * 0.92f, ImVec2(txtX, txtY), theme::Accent, matBuf);
+                }
+                curY += activeCardH + tPad * 0.75f;
+
+                // 12-Zone Color Scheme Palette Overview
+                {
+                    dl->AddText(g_fontBold, g_fontBold->FontSize * 0.82f,
+                                ImVec2(tmn.x + tPad + 4.0f * s, curY),
+                                theme::Accent, "Outfit Zone Palette (1-12)");
+                    curY += paletteHdrH;
+
+                    const int cols = 6;
+                    const float zoneDotR = 9.5f * s;
+                    const float zoneSpacing = (tWidth - tPad * 2.0f) / static_cast<float>(cols);
+                    const int actZ = g_selectedTooltip.dyeActiveZone;
+
+                    for (int z = 0; z < totalZones && z < 12; ++z)
+                    {
+                        const int col = z % cols;
+                        const int row = z / cols;
+                        const float cx = tmn.x + tPad + zoneSpacing * (col + 0.5f);
+                        const float cy = curY + row * zoneRowH + zoneDotR;
+                        const ImVec2 zCenter(cx, cy);
+
+                        const bool isDyed = g_selectedTooltip.dyeZoneDyed[z];
+                        const uint32_t zRGB = g_selectedTooltip.dyeZoneRGB[z];
+                        const uint8_t zr = (zRGB >> 16) & 0xFF;
+                        const uint8_t zg = (zRGB >> 8) & 0xFF;
+                        const uint8_t zb = zRGB & 0xFF;
+
+                        if (isDyed)
+                        {
+                            dl->AddCircleFilled(zCenter, zoneDotR, IM_COL32(zr, zg, zb, 255), 16);
+                            dl->AddCircle(zCenter, zoneDotR, WithAlpha(theme::TextDim, 0.45f), 16, 1.0f * s);
+                        }
+                        else
+                        {
+                            dl->AddCircleFilled(zCenter, zoneDotR, IM_COL32(38, 38, 42, 255), 16);
+                            dl->AddCircle(zCenter, zoneDotR, WithAlpha(theme::TextDim, 0.30f), 16, 1.0f * s);
+                        }
+
+                        char zNum[4];
+                        snprintf(zNum, sizeof(zNum), "%d", z + 1);
+                        const float numFSz = g_fontBody->FontSize * 0.65f;
+                        const float numW = g_fontBody->CalcTextSizeA(numFSz, FLT_MAX, 0.0f, zNum).x;
+                        const int lum = (zr * 299 + zg * 587 + zb * 114) / 1000;
+                        const ImU32 numCol = (!isDyed) ? theme::TextDim : (lum > 140 ? IM_COL32(10, 10, 12, 255) : IM_COL32(240, 240, 245, 255));
+                        dl->AddText(g_fontBody, numFSz, ImVec2(cx - numW * 0.5f, cy - numFSz * 0.5f), numCol, zNum);
+
+                        if (actZ == 0 || actZ == z + 1)
+                        {
+                            dl->AddCircle(zCenter, zoneDotR + 2.5f * s, IM_COL32(255, 215, 0, 255), 16, 1.8f * s);
+                        }
+                    }
+                    curY += zoneRows * zoneRowH + 6.0f * s;
+                }
+
+                // Hint Footer
+                {
+                    dl->AddLine(ImVec2(tmn.x + tPad, curY), ImVec2(tmx.x - tPad, curY),
+                                WithAlpha(theme::RowBg, 0.9f), 1.0f * s);
+                    curY += 6.0f * s;
+
+                    const float hintFSz = g_fontBody->FontSize * 0.74f;
+                    dl->AddText(g_fontBody, hintFSz,
+                                ImVec2(tmn.x + tPad + 2.0f * s, curY),
+                                theme::TextDim, "Instant Live Dye Preview");
+                }
+            }
+            else
+            {
+            const bool  isEquipped = g_selectedTooltip.valid && g_selectedTooltip.isEquipped;
+            const int   maxSock    = g_selectedTooltip.valid ? g_selectedTooltip.maxSockets : 0;
+            const int   unlockedS  = g_selectedTooltip.valid ? g_selectedTooltip.unlockedSockets : 0;
+            const int   filledS    = g_selectedTooltip.valid ? g_selectedTooltip.filledSockets : 0;
+            const int   refineLvl  = g_selectedTooltip.valid ? g_selectedTooltip.refineLevel : -1;
+            const int   durability = g_selectedTooltip.valid ? g_selectedTooltip.durability : -1;
+
+            const int   atkVal     = g_selectedTooltip.valid ? g_selectedTooltip.attack : 0;
+            const int   defVal     = g_selectedTooltip.valid ? g_selectedTooltip.defense : 0;
+            const int   rExp       = g_selectedTooltip.valid ? g_selectedTooltip.reinforceExp : 0;
+            const int   rBonus     = g_selectedTooltip.valid ? g_selectedTooltip.reinforceBonus : 0;
+
+            // Only show sockets / abyss section if:
+            // 1. It is an equipped piece with maxSockets > 0, OR
+            // 2. An item explicitly has sockets (maxSock > 0 and filledS > 0)
+            const bool  showSockets = (isEquipped && maxSock > 0) || (maxSock > 0 && filledS > 0);
+
+            // ---- dynamic height calculation --------------------------------
+            const float nameW = tWidth - tPad * 2.0f - 8.0f * s;
+            const ImVec2 nameSize = g_fontBold->CalcTextSizeA(g_fontBold->FontSize, FLT_MAX, nameW, dispName);
+            const float titleH = (nameSize.y > g_fontBold->FontSize) ? nameSize.y : g_fontBold->FontSize;
+            const float headerH = titleH + (dispSub[0] ? g_fontBody->FontSize * 0.80f + 4.0f * s : 0.0f) + tPad * 2.0f;
+            const float iconSz  = (showSockets ? 120.0f * s : 160.0f * s) * imgScale;
+
+            // Stats box metrics
+            const bool  hasGearBuff    = !isEquipped && (g_selectedTooltip.gearBuff[0] != '\0');
+            const bool  hasCombatStats = isEquipped && (atkVal > 0 || defVal > 0);
+            const bool  hasStats       = isEquipped || (refineLvl >= 0) || (durability >= 0) || hasGearBuff;
+            const float statsBoxH      = hasGearBuff ? 48.0f * s : (hasStats ? (hasCombatStats ? 72.0f * s : 40.0f * s) : 0.0f);
+
+            // Sockets & Abyss gears section metrics
+            const float dotR        = 5.5f * s;
+            const float dotSpacing  = 14.0f * s;
+            const float socketRowH  = showSockets ? (dotR * 2.0f + 8.0f * s) : 0.0f;
+            const float gearLblH    = showSockets ? (g_fontBody->FontSize * 0.82f + 6.0f * s) : 0.0f;
+            const float gearRowH    = 28.0f * s;
+            const float gearSectionH = showSockets
+                ? (tPad + socketRowH + gearLblH + maxSock * gearRowH + 6.0f * s)
+                : 0.0f;
+
+            const float tHeight = headerH + tPad + iconSz + (hasStats ? (tPad * 0.75f + statsBoxH) : 0.0f) + gearSectionH + tPad;
+
+            // ---- panel background ------------------------------------------
             const ImVec2 tmn(g_x + g_width + 16.0f * s, g_listTop);
             const ImVec2 tmx(tmn.x + tWidth, tmn.y + tHeight);
-            
-            dl->AddRectFilled(tmn, tmx, theme::BarBg);
-            dl->AddRect(tmn, tmx, theme::RowBg, 0, 0, 2.0f * s);
-            
-            // Draw Header Background (accent line or small box for name)
-            const float headerH = g_fontBold->FontSize + tPad * 2.0f;
-            dl->AddRectFilled(tmn, ImVec2(tmx.x, tmn.y + headerH), theme::RowBg);
-            
-            // Draw Item Name
-            const float nameW = tWidth - tPad * 2.0f;
-            dl->AddText(g_fontBold, g_fontBold->FontSize, 
-                        ImVec2(tmn.x + tPad, tmn.y + tPad), 
-                        theme::TextBright, g_selectedItemName, nullptr, nameW);
-            
-            // Draw large Icon
-            const float iconSz = 200.0f * s;
-            const ImVec2 iconMn(tmn.x + (tWidth - iconSz) * 0.5f, tmn.y + headerH + (tHeight - headerH - iconSz) * 0.5f);
-            const ImVec2 iconMx(iconMn.x + iconSz, iconMn.y + iconSz);
-            
-            if (!DrawItemIcon(dl, g_selectedItemIcon, iconMn, iconMx))
+
+            // Background & shadow/border
+            dl->AddRectFilled(tmn, tmx, theme::BarBg, 4.0f * s);
+            dl->AddRect(tmn, tmx, WithAlpha(theme::RowBg, 0.9f), 4.0f * s, 0, 1.5f * s);
+
+            // ---- header row ------------------------------------------------
+            dl->AddRectFilled(tmn, ImVec2(tmx.x, tmn.y + headerH), theme::RowBg, 4.0f * s, ImDrawFlags_RoundCornersTop);
+            dl->AddRectFilled(tmn, ImVec2(tmn.x + 3.5f * s, tmn.y + headerH), theme::Accent, 4.0f * s, ImDrawFlags_RoundCornersTopLeft);
+
+            float hdrTextY = tmn.y + tPad;
+            dl->AddText(g_fontBold, g_fontBold->FontSize,
+                        ImVec2(tmn.x + tPad + 6.0f * s, hdrTextY),
+                        theme::TextBright, dispName, nullptr, nameW);
+
+            if (dispSub[0])
             {
-                // Fallback box if icon fails to render
-                dl->AddRect(iconMn, iconMx, WithAlpha(theme::TextDim, 0.35f), 2.0f * s, 0, 2.0f * s);
+                hdrTextY += titleH + 2.0f * s;
+                dl->AddText(g_fontBody, g_fontBody->FontSize * 0.80f,
+                            ImVec2(tmn.x + tPad + 6.0f * s, hdrTextY),
+                            theme::Accent, dispSub, nullptr, nameW);
             }
+
+            // ---- item icon -------------------------------------------------
+            float curY = tmn.y + headerH + tPad;
+            {
+                const ImVec2 iconBoxMn(tmn.x + tPad, curY);
+                const ImVec2 iconBoxMx(tmx.x - tPad, curY + iconSz);
+
+                // Subtle icon background box
+                dl->AddRectFilled(iconBoxMn, iconBoxMx, WithAlpha(theme::RowBg, 0.45f), 3.0f * s);
+                dl->AddRect(iconBoxMn, iconBoxMx, WithAlpha(theme::RowBg, 0.80f), 3.0f * s, 0, 1.0f * s);
+
+                // Centered item icon
+                const float innerSz = iconSz - 12.0f * s;
+                const ImVec2 iconMn(tmn.x + (tWidth - innerSz) * 0.5f, curY + 6.0f * s);
+                const ImVec2 iconMx(iconMn.x + innerSz, iconMn.y + innerSz);
+                if (!DrawItemIcon(dl, dispIcon, iconMn, iconMx))
+                    dl->AddRect(iconMn, iconMx, WithAlpha(theme::TextDim, 0.35f), 2.0f * s, 0, 1.5f * s);
+            }
+            curY += iconSz + tPad;
+
+            // ---- Stats Section (Equipped piece / weapon stats) -------------
+            if (hasStats)
+            {
+                const ImVec2 statsMn(tmn.x + tPad, curY);
+                const ImVec2 statsMx(tmx.x - tPad, curY + statsBoxH);
+                dl->AddRectFilled(statsMn, statsMx, WithAlpha(theme::RowBg, 0.65f), 3.0f * s);
+                dl->AddRect(statsMn, statsMx, WithAlpha(theme::RowBg, 0.90f), 3.0f * s, 0, 1.0f * s);
+
+                const float statFSz = g_fontBody->FontSize * 0.80f;
+                float statY   = statsMn.y + 4.0f * s;
+
+                if (hasGearBuff)
+                {
+                    // Standalone Abyss Gear preview stat box
+                    dl->AddText(g_fontBody, statFSz * 0.90f,
+                                ImVec2(statsMn.x + 8.0f * s, statY),
+                                theme::TextDim, "Socket Stat Effect");
+
+                    dl->AddText(g_fontBold, statFSz * 1.18f,
+                                ImVec2(statsMn.x + 8.0f * s, statY + statFSz + 3.0f * s),
+                                IM_COL32(100, 220, 130, 255), g_selectedTooltip.gearBuff);
+                }
+                else if (hasCombatStats)
+                {
+                    // Calculate Total Attack / Defense dynamically including socket bonuses (Destruction, Aegis, etc.)
+                    int totalAtk = atkVal;
+                    int totalDef = defVal;
+
+                    for (int k = 0; k < maxSock; ++k)
+                    {
+                        const auto& sock = g_selectedTooltip.sockets[k];
+                        if (sock.filled && sock.gearName[0])
+                        {
+                            if (strstr(sock.gearName, "Destruction I") && !strstr(sock.gearName, "II") && !strstr(sock.gearName, "III")) totalAtk += 1;
+                            else if (strstr(sock.gearName, "Destruction II")) totalAtk += 2;
+                            else if (strstr(sock.gearName, "Destruction III")) totalAtk += 3;
+                            else if (strstr(sock.gearName, "Greater Destruction")) totalAtk += 5;
+                            else if (strstr(sock.gearName, "Fortification I") && !strstr(sock.gearName, "II") && !strstr(sock.gearName, "III")) totalDef += 5;
+                            else if (strstr(sock.gearName, "Fortification II")) totalDef += 10;
+                            else if (strstr(sock.gearName, "Fortification III")) totalDef += 15;
+                        }
+                    }
+                    if (rBonus > 0)
+                    {
+                        if (atkVal > 0) totalAtk += rBonus;
+                        if (defVal > 0) totalDef += rBonus;
+                    }
+
+                    // --- Row 1: Attack / Defense (Left) & Durability (Right) ---
+                    if (totalAtk > 0)
+                    {
+                        dl->AddText(g_fontBody, statFSz, ImVec2(statsMn.x + 8.0f * s, statY), theme::TextDim, "Attack");
+                        const float atkLblW = g_fontBody->CalcTextSizeA(statFSz, FLT_MAX, 0.0f, "Attack").x;
+                        char atkStr[16];
+                        snprintf(atkStr, sizeof(atkStr), "%d", totalAtk);
+                        dl->AddText(g_fontBold, statFSz * 1.08f,
+                                    ImVec2(statsMn.x + 8.0f * s + atkLblW + 8.0f * s, statY - 0.5f * s),
+                                    IM_COL32(80, 235, 120, 255), atkStr);
+                    }
+                    else if (totalDef > 0)
+                    {
+                        dl->AddText(g_fontBody, statFSz, ImVec2(statsMn.x + 8.0f * s, statY), theme::TextDim, "Defense");
+                        const float defLblW = g_fontBody->CalcTextSizeA(statFSz, FLT_MAX, 0.0f, "Defense").x;
+                        char defStr[16];
+                        snprintf(defStr, sizeof(defStr), "%d", totalDef);
+                        dl->AddText(g_fontBold, statFSz * 1.08f,
+                                    ImVec2(statsMn.x + 8.0f * s + defLblW + 8.0f * s, statY - 0.5f * s),
+                                    IM_COL32(90, 190, 245, 255), defStr);
+                    }
+
+                    if (durability >= 0)
+                    {
+                        char duraBuf[32];
+                        snprintf(duraBuf, sizeof(duraBuf), "Durability %d%%", durability / 100);
+                        const float duraW = g_fontBody->CalcTextSizeA(statFSz, FLT_MAX, 0.0f, duraBuf).x;
+                        dl->AddText(g_fontBody, statFSz,
+                                    ImVec2(statsMx.x - duraW - 8.0f * s, statY),
+                                    theme::TextDim, duraBuf);
+                    }
+                    statY += statFSz + 3.0f * s;
+
+                    // --- Row 2: Reinforcement & Reinforce Bonus (Only if non-zero) ---
+                    if (rExp > 0 || rBonus > 0)
+                    {
+                        char rfExpBuf[32];
+                        snprintf(rfExpBuf, sizeof(rfExpBuf), "Reinforcement  %d/100", rExp);
+                        dl->AddText(g_fontBody, statFSz * 0.90f,
+                                    ImVec2(statsMn.x + 8.0f * s, statY),
+                                    theme::Text, rfExpBuf);
+
+                        char rfBonusBuf[48];
+                        if (atkVal > 0)
+                            snprintf(rfBonusBuf, sizeof(rfBonusBuf), "Reinforcement: Attack +%d", rBonus);
+                        else
+                            snprintf(rfBonusBuf, sizeof(rfBonusBuf), "Reinforcement: Defense +%d", rBonus);
+                        const float rfBonusW = g_fontBody->CalcTextSizeA(statFSz * 0.90f, FLT_MAX, 0.0f, rfBonusBuf).x;
+                        dl->AddText(g_fontBody, statFSz * 0.90f,
+                                    ImVec2(statsMx.x - rfBonusW - 8.0f * s, statY),
+                                    IM_COL32(235, 195, 75, 255), rfBonusBuf);
+                        statY += statFSz + 3.0f * s;
+                    }
+
+                    // --- Row 3: Refinement + 10-Segment Golden Bars ---
+                    dl->AddText(g_fontBody, statFSz * 0.90f,
+                                ImVec2(statsMn.x + 8.0f * s, statY),
+                                theme::TextDim, "Refinement");
+
+                    const float refLblW = g_fontBody->CalcTextSizeA(statFSz * 0.90f, FLT_MAX, 0.0f, "Refinement").x;
+                    float barStartX = statsMn.x + 8.0f * s + refLblW + 8.0f * s;
+                    const float segW = 3.5f * s;
+                    const float segH = 8.5f * s;
+                    const float segGap = 2.0f * s;
+                    const float segY = statY + 1.0f * s;
+
+                    for (int b = 0; b < 10; ++b)
+                    {
+                        const ImVec2 bMn(barStartX, segY);
+                        const ImVec2 bMx(barStartX + segW, segY + segH);
+                        if (b < refineLvl)
+                        {
+                            dl->AddRectFilled(bMn, bMx, IM_COL32(235, 195, 75, 255), 1.0f * s);
+                            dl->AddRect(bMn, bMx, IM_COL32(255, 225, 120, 255), 1.0f * s, 0, 0.5f * s);
+                        }
+                        else
+                        {
+                            dl->AddRectFilled(bMn, bMx, WithAlpha(theme::TextDim, 0.25f), 1.0f * s);
+                        }
+                        barStartX += segW + segGap;
+                    }
+
+                    char refNumBuf[16];
+                    snprintf(refNumBuf, sizeof(refNumBuf), "+%d", refineLvl > 0 ? refineLvl : 0);
+                    dl->AddText(g_fontBold, statFSz * 0.92f,
+                                ImVec2(barStartX + 4.0f * s, statY),
+                                refineLvl >= 10 ? IM_COL32(255, 215, 0, 255) : (refineLvl > 0 ? IM_COL32(235, 195, 75, 255) : theme::TextDim),
+                                refNumBuf);
+
+                    // Right side: Sockets summary
+                    char sockSummary[32];
+                    snprintf(sockSummary, sizeof(sockSummary), "%d / %d Sockets", filledS, maxSock);
+                    const float sockSumW = g_fontBody->CalcTextSizeA(statFSz * 0.90f, FLT_MAX, 0.0f, sockSummary).x;
+                    dl->AddText(g_fontBody, statFSz * 0.90f,
+                                ImVec2(statsMx.x - sockSumW - 8.0f * s, statY),
+                                theme::TextDim, sockSummary);
+                }
+                else
+                {
+                    // Simpler 2-row layout for catalog / inventory preview
+                    char refBuf[32];
+                    if (refineLvl > 0)
+                        snprintf(refBuf, sizeof(refBuf), "Refine +%d", refineLvl);
+                    else
+                        snprintf(refBuf, sizeof(refBuf), "Refine +0");
+
+                    dl->AddText(g_fontBold, statFSz,
+                                ImVec2(statsMn.x + 8.0f * s, statY),
+                                refineLvl >= 10 ? IM_COL32(255, 215, 0, 255) : (refineLvl > 0 ? theme::Accent : theme::TextDim),
+                                refBuf);
+
+                    if (durability >= 0)
+                    {
+                        char duraBuf[32];
+                        snprintf(duraBuf, sizeof(duraBuf), "Durability %d%%", durability / 100);
+                        const float duraW = g_fontBody->CalcTextSizeA(statFSz, FLT_MAX, 0.0f, duraBuf).x;
+                        dl->AddText(g_fontBody, statFSz,
+                                    ImVec2(statsMx.x - duraW - 8.0f * s, statY),
+                                    theme::TextDim, duraBuf);
+                    }
+
+                    char sockSummary[48];
+                    if (maxSock > 0)
+                        snprintf(sockSummary, sizeof(sockSummary), "Sockets: %d / %d used", filledS, maxSock);
+                    else
+                        snprintf(sockSummary, sizeof(sockSummary), "No Sockets");
+
+                    dl->AddText(g_fontBody, statFSz * 0.92f,
+                                ImVec2(statsMn.x + 8.0f * s, statY + statFSz + 3.0f * s),
+                                filledS > 0 ? theme::Text : theme::TextDim, sockSummary);
+                }
+
+                curY += statsBoxH + tPad * 0.75f;
+            }
+
+            // ---- Abyss Section (Socket dots + live socketed abyss gears) ----
+            if (showSockets)
+            {
+                // Thin separator line
+                dl->AddLine(ImVec2(tmn.x + tPad, curY),
+                            ImVec2(tmx.x  - tPad, curY),
+                            WithAlpha(theme::RowBg, 0.9f), 1.0f * s);
+                curY += 8.0f * s;
+
+                // --- Socket dots row ---
+                const float dotsTotal = (maxSock - 1) * dotSpacing + dotR * 2.0f;
+                const float labelFSz  = g_fontBody->FontSize * 0.78f;
+                char sockLbl[48];
+                snprintf(sockLbl, sizeof(sockLbl), "%d Abyss Socket%s", maxSock, maxSock == 1 ? "" : "s");
+                const float lblW      = g_fontBody->CalcTextSizeA(labelFSz, FLT_MAX, 0.0f, sockLbl).x;
+                const float rowW      = dotsTotal + 8.0f * s + lblW;
+                float dotX = tmn.x + (tWidth - rowW) * 0.5f + dotR;
+                const float dotCY = curY + dotR;
+
+                for (int d = 0; d < maxSock; ++d)
+                {
+                    const ImVec2 dc(dotX, dotCY);
+                    const bool isUnlocked = g_selectedTooltip.sockets[d].unlocked;
+                    const bool isFilled   = g_selectedTooltip.sockets[d].filled;
+
+                    if (isFilled)
+                    {
+                        // Filled socket: glowing accent dot
+                        dl->AddCircleFilled(dc, dotR + 2.0f * s, WithAlpha(theme::Accent, 0.25f), 16);
+                        dl->AddCircleFilled(dc, dotR, theme::Accent, 16);
+                        dl->AddCircleFilled(ImVec2(dc.x - dotR * 0.25f, dc.y - dotR * 0.30f),
+                                            dotR * 0.35f, WithAlpha(IM_COL32_WHITE, 0.40f), 8);
+                    }
+                    else if (isUnlocked)
+                    {
+                        // Unlocked but empty socket: hollow circle
+                        dl->AddCircleFilled(dc, dotR, WithAlpha(theme::RowBg, 0.8f), 16);
+                        dl->AddCircle(dc, dotR, WithAlpha(theme::Accent, 0.6f), 16, 1.2f * s);
+                    }
+                    else
+                    {
+                        // Locked socket: dim gray circle
+                        dl->AddCircleFilled(dc, dotR * 0.8f, WithAlpha(theme::TextDim, 0.25f), 16);
+                        dl->AddCircle(dc, dotR, WithAlpha(theme::TextDim, 0.35f), 16, 1.0f * s);
+                    }
+                    dotX += dotSpacing;
+                }
+
+                // Sockets label
+                const float lblX = dotX - dotSpacing + dotR + 8.0f * s;
+                dl->AddText(g_fontBody, labelFSz,
+                            ImVec2(lblX, dotCY - labelFSz * 0.5f),
+                            theme::TextDim, sockLbl);
+                curY += dotR * 2.0f + 8.0f * s;
+
+                // --- "Abyss Gears" sub-header ---
+                const float aHdrFSz = g_fontBody->FontSize * 0.82f;
+                dl->AddText(g_fontBold, aHdrFSz,
+                            ImVec2(tmn.x + tPad + 4.0f * s, curY),
+                            theme::Accent, "Abyss Gears");
+                curY += gearLblH;
+
+                // --- Individual Sockets list (1..maxSock) ---
+                const float gearIconSz = 20.0f * s;
+                const float gFontSz    = g_fontBody->FontSize * 0.78f;
+
+                for (int k = 0; k < maxSock; ++k)
+                {
+                    const auto& sock = g_selectedTooltip.sockets[k];
+                    const float gy   = curY + k * gearRowH;
+                    const float icY  = gy + (gearRowH - gearIconSz) * 0.5f;
+                    const ImVec2 rowMn(tmn.x + tPad, gy);
+                    const ImVec2 rowMx(tmx.x - tPad, gy + gearRowH - 2.0f * s);
+
+                    // Alternate row background for sleek list appearance
+                    if (k % 2 == 0)
+                        dl->AddRectFilled(rowMn, rowMx, WithAlpha(theme::RowBg, 0.35f), 2.0f * s);
+
+                    const float gx      = tmn.x + tPad + 4.0f * s;
+                    const ImVec2 gIconMn(gx, icY);
+                    const ImVec2 gIconMx(gx + gearIconSz, icY + gearIconSz);
+                    const float gTxtX   = gx + gearIconSz + 6.0f * s;
+                    const float gTxtY   = gy + (gearRowH - gFontSz) * 0.5f;
+
+                    if (sock.filled && sock.gearName[0])
+                    {
+                        // Socket has an Abyss Gear
+                        if (!DrawItemIcon(dl, sock.gearIcon, gIconMn, gIconMx))
+                        {
+                            dl->AddRectFilled(gIconMn, gIconMx, WithAlpha(theme::Accent, 0.25f), 2.0f * s);
+                            dl->AddRect(gIconMn, gIconMx, WithAlpha(theme::Accent, 0.50f), 2.0f * s, 0, 1.0f * s);
+                        }
+
+                        char sockLine[128];
+                        snprintf(sockLine, sizeof(sockLine), "%d. %s", k + 1, sock.gearName);
+
+                        // Right side: Gear Buff / Stat Description (e.g. "Attack 1", "Abyss Dmg +15%")
+                        float buffW = 0.0f;
+                        if (sock.gearBuff[0])
+                        {
+                            const float buffFSz = gFontSz * 0.92f;
+                            buffW = g_fontBody->CalcTextSizeA(buffFSz, FLT_MAX, 0.0f, sock.gearBuff).x + 6.0f * s;
+                            ImU32 buffColor = IM_COL32(100, 220, 130, 255);
+                            if (strstr(sock.gearBuff, "Damage Reduction") || strstr(sock.gearBuff, "Aegis"))
+                                buffColor = IM_COL32(235, 185, 75, 255);
+                            else if (strstr(sock.gearBuff, "Defense") || strstr(sock.gearBuff, "Abyss Damage"))
+                                buffColor = IM_COL32(90, 200, 245, 255);
+                            else if (strstr(sock.gearBuff, "Critical") || strstr(sock.gearBuff, "Speed"))
+                                buffColor = IM_COL32(250, 210, 80, 255);
+
+                            dl->AddText(g_fontBody, buffFSz,
+                                        ImVec2(tmx.x - tPad - buffW, gTxtY),
+                                        buffColor, sock.gearBuff);
+                        }
+
+                        const float gTxtMaxW = (tmx.x - tPad) - gTxtX - buffW - 4.0f * s;
+                        dl->AddText(g_fontBody, gFontSz,
+                                    ImVec2(gTxtX, gTxtY),
+                                    theme::TextBright, sockLine, nullptr, gTxtMaxW);
+                    }
+                    else if (sock.unlocked)
+                    {
+                        // Empty socket
+                        dl->AddCircle(ImVec2(gx + gearIconSz * 0.5f, icY + gearIconSz * 0.5f),
+                                      gearIconSz * 0.35f, WithAlpha(theme::Accent, 0.5f), 16, 1.2f * s);
+
+                        char emptyLine[64];
+                        snprintf(emptyLine, sizeof(emptyLine), "%d. (Empty Socket)", k + 1);
+
+                        dl->AddText(g_fontBody, gFontSz,
+                                    ImVec2(gTxtX, gTxtY),
+                                    theme::TextDim, emptyLine);
+                    }
+                    else
+                    {
+                        // Locked socket
+                        dl->AddRect(gIconMn, gIconMx, WithAlpha(theme::TextDim, 0.25f), 2.0f * s, 0, 1.0f * s);
+
+                        char lockedLine[64];
+                        snprintf(lockedLine, sizeof(lockedLine), "%d. (Locked)", k + 1);
+                        dl->AddText(g_fontBody, gFontSz,
+                                    ImVec2(gTxtX, gTxtY),
+                                    WithAlpha(theme::TextDim, 0.55f), lockedLine);
+                    }
+                }
+            } // end showSockets
+            } // end else (non-dye tooltip)
         }
 
         // A menu without a capture-capable row can't be capturing text - drop
