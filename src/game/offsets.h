@@ -1680,7 +1680,7 @@ namespace trinity::game
         "4C 8B DC 53 55 56 57 41 56 48 83 EC 60 48 8B FA 48 8D 69 38";
 
     inline constexpr const char* kSig_FriendlySetPet =
-        "49 89 E3 53 55 56 57 41 56 48 83 EC 60 48 89 D7 B8";
+        "49 89 E3 53 55 56 57 41 56 48 83 EC 60 48 89 D7 48 8D 69 18";
 
     // NpcTrustWriter (0x141BDF910): The direct internal relation writer for NPCs (Greet, Gift, Dialogue)
     inline constexpr const char* kSig_FriendlyNpcTrustWriter =

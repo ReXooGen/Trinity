@@ -1230,6 +1230,20 @@ namespace trinity::game
             return false;
         }
 
+        bool IsDummyOrUnarmed(uint16_t typeId, const char* name)
+        {
+            if (typeId == 0 || typeId == kInvSlot_EmptyType) return true;
+            if (!name || !*name) return false;
+            if (strstr(name, "Ordinary Gloves") || strstr(name, "Ordinary_Gloves") ||
+                strstr(name, "OrdinaryGloves") || strstr(name, "Unarmed") ||
+                strstr(name, "Bare Hands") || strstr(name, "BareHands") ||
+                strstr(name, "Default Weapon") || strstr(name, "Dummy"))
+            {
+                return true;
+            }
+            return false;
+        }
+
         // Menu-side snapshot of the equipped slots.
         constexpr int    kMaxSlots = 64;
         Dye::SlotInfo    g_slots[kMaxSlots];
@@ -1290,8 +1304,8 @@ namespace trinity::game
                             int64_t  qty = 0, inst = 0;
                             if (!Read16(entry + kOff_InvSlot_TypeId, &tid) || tid == kInvSlot_EmptyType || tid == 0) continue;
                             if (!Read64(entry + kOff_InvSlot_Quantity, &qty) || qty <= 0) continue;
+                            if (!Read64(entry + kOff_ItemVal_InstanceId, &inst) || inst <= 0) continue;
                             Read16(entry + tagOffset, &tag);
-                            Read64(entry + kOff_ItemVal_InstanceId, &inst);
 
                             char itemName[96] = "";
                             char icon[128] = "";
@@ -1353,13 +1367,15 @@ namespace trinity::game
                         int64_t  qty = 0, inst = 0;
                         if (!Read16(slot + kOff_InvSlot_TypeId, &tid) || tid == kInvSlot_EmptyType || tid == 0) continue;
                         if (!Read64(slot + kOff_InvSlot_Quantity, &qty) || qty <= 0) continue;
-                        Read64(slot + kOff_ItemVal_InstanceId, &inst);
+                        if (!Read64(slot + kOff_ItemVal_InstanceId, &inst) || inst <= 0) continue;
 
                         char itemName[96] = "";
                         char icon[128] = "";
                         if (!Inventory::NameForTypeId(tid, itemName, sizeof(itemName)))
                             snprintf(itemName, sizeof(itemName), "Item #%u", tid);
                         Inventory::IconForTypeId(tid, icon, sizeof(icon));
+
+                        if (IsDummyOrUnarmed(tid, itemName)) continue;
 
                         const HorseSlotType hType = GetHorseSlotType(itemName, icon);
                         if (!IconPrefabDyeable(icon) && hType == HorseSlotType::None)
@@ -1405,19 +1421,23 @@ namespace trinity::game
             {
                 const uintptr_t entry = array + static_cast<uintptr_t>(i) * stride;
                 uint16_t tid = 0, tag = 0;
-                int64_t  inst = 0;
+                int64_t  inst = 0, qty = 1;
                 if (!Read16(entry + kOff_InvSlot_TypeId, &tid) || tid == kInvSlot_EmptyType || tid == 0) continue;
-                Read16(entry + tagOffset, &tag);
-                Read64(entry + kOff_ItemVal_InstanceId, &inst);
-
-                if (tag == 14 || tag == 22 || tag == 23 || tag == 24 || tag == 25)
-                    continue;
+                if (Read64(entry + kOff_InvSlot_Quantity, &qty) && qty <= 0) continue;
+                if (Read64(entry + kOff_ItemVal_InstanceId, &inst) && inst <= 0) continue;
 
                 char itemName[96] = "";
                 char icon[128] = "";
                 if (!Inventory::NameForTypeId(tid, itemName, sizeof(itemName)))
                     snprintf(itemName, sizeof(itemName), "Item #%u", tid);
                 Inventory::IconForTypeId(tid, icon, sizeof(icon));
+
+                if (IsDummyOrUnarmed(tid, itemName)) continue;
+
+                Read16(entry + tagOffset, &tag);
+
+                if (tag == 14 || tag == 22 || tag == 23 || tag == 24 || tag == 25)
+                    continue;
 
                 const int maxZones = 12;
                 Dye::SlotInfo& s = g_slots[g_slotCount++];

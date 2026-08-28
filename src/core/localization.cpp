@@ -90,7 +90,7 @@ namespace trinity::loc
                     std::string val = Trim(trimmed.substr(eq + 1));
                     if (!key.empty() && !val.empty())
                     {
-                        if (currentSection == "UI" || currentSection.empty())
+                        if (currentSection != "Language")
                         {
                             s_translations[key] = val;
                         }
@@ -151,28 +151,28 @@ namespace trinity::loc
                 }
             }
 
-            // Derive code from filename (e.g. Trinity_zh.ini -> zh) if not set
-            if (outCode.empty())
+            // Derive code from filename (e.g. Trinity_zh.ini -> zh) if not set or invalid
+            std::string fileDerivedCode = "";
+            const size_t under = fname.rfind('_');
+            const size_t dot = fname.rfind('.');
+            if (under != std::string::npos && dot != std::string::npos && dot > under)
+                fileDerivedCode = fname.substr(under + 1, dot - under - 1);
+
+            if (outCode.empty() || outCode == "Code" || outCode == "code")
             {
-                const size_t under = fname.rfind('_');
-                const size_t dot = fname.rfind('.');
-                if (under != std::string::npos && dot != std::string::npos && dot > under)
-                    outCode = fname.substr(under + 1, dot - under - 1);
+                outCode = fileDerivedCode;
             }
 
-            // Only accept if explicit [Language] section exists OR filename has a recognized language suffix
-            if (!hasLanguageSection)
+            // Accept standard ISO codes
+            if (outCode != "zh" && outCode != "ko" && outCode != "ja" &&
+                outCode != "es" && outCode != "ru" && outCode != "ptbr" &&
+                outCode != "pt" && outCode != "id" && outCode != "de" &&
+                outCode != "fr")
             {
-                if (outCode != "zh" && outCode != "ko" && outCode != "ja" &&
-                    outCode != "es" && outCode != "ru" && outCode != "ptbr" &&
-                    outCode != "pt" && outCode != "id" && outCode != "de" &&
-                    outCode != "fr")
-                {
-                    return false;
-                }
+                if (!hasLanguageSection) return false;
             }
 
-            if (outName.empty())
+            if (outName.empty() || outName == "Name" || outName == "Nom" || outName == "Nombre")
             {
                 if (outCode == "ko") outName = "한국어 (Korean)";
                 else if (outCode == "zh") outName = "简体中文 (Chinese)";

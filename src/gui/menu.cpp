@@ -81,9 +81,6 @@ namespace trinity::gui
         ui::Begin(LOC("Mount & Horse Options"));
 
         bool changed = false;
-        changed |= ui::Toggle(LOC("Infinite Mount Stamina"), &st.infMountStamina,
-                   LOC("Unlimited gallop, sprint, and flight stamina for horses and mounts."));
-
         if (ui::Submenu(LOC("Mount Equipment Dye"), "dyeslots",
                     LOC("Recolor and customize equipment on your active horse or mount.")))
         {
@@ -227,7 +224,7 @@ namespace trinity::gui
         c.materialId = (s_dyeMat == 0) ? uint16_t(0xFFFF) : static_cast<uint16_t>(s_dyeMat);
         c.repair     = static_cast<uint8_t>(((100 - s_dyeRepair) * 127) / 100);
         if (game::Dye::Apply(s_dyeTag, s_dyeChan - 1, c))
-            ui::Toast("Applying dye...");
+            ui::Toast(LOC("Applying dye..."));
         // The custom rows follow whatever was applied last, so the Custom
         // Color page always opens on the color the item just got.
         s_dyeR = r; s_dyeG = g; s_dyeB = b;
@@ -415,9 +412,9 @@ namespace trinity::gui
         }
 
         if (n == 0)
-            ui::Option("Nothing equipped", "Equip some gear first.");
+            ui::Option(LOC("Nothing equipped"), LOC("Equip some gear first."));
         else if (shown == 0)
-            ui::Option("Nothing dyeable equipped", "None of these pieces can be dyed.");
+            ui::Option(LOC("Nothing dyeable equipped"), LOC("None of these pieces can be dyed."));
 
         if (hidden > 0)
         {
@@ -467,8 +464,8 @@ namespace trinity::gui
 
         ui::Combo(LOC("Dye Zone"), &s_dyeChan, kZoneItems, comboCount,
                   LOC("Which zone of the item to color (Supports Zones 1-12)."));
-        ui::Combo("Color Family", &s_dyeFamily, s_famItems, game::kDyeFamilyCount,
-                  "Pick a color family to browse its shades below.");
+        ui::Combo(LOC("Color Family"), &s_dyeFamily, s_famItems, game::kDyeFamilyCount,
+                  LOC("Pick a color family to browse its shades below."));
 
         const game::DyeFamily& fam = game::kDyeFamilies[s_dyeFamily];
 
@@ -509,7 +506,7 @@ namespace trinity::gui
                 if (neutral && hit == 0)
                 {
                     if (game::Dye::Clear(s_dyeTag, s_dyeChan - 1))
-                        ui::Toast("Removing dye...");
+                        ui::Toast(LOC("Removing dye..."));
                 }
                 else
                 {
@@ -519,19 +516,19 @@ namespace trinity::gui
             }
         }
 
-        ui::Submenu("Custom Color", "dyecustom", "Mix your own color instead of a preset.");
+        ui::Submenu(LOC("Custom Color"), "dyecustom", LOC("Mix your own color instead of a preset."));
 
-        if (ui::Option("Remove All Dye (Reset)", "Clears all dye from this piece back to its natural default color."))
+        if (ui::Option(LOC("Remove All Dye (Reset)"), LOC("Clears all dye from this piece back to its natural default color.")))
         {
             if (game::Dye::Clear(s_dyeTag, -1))
-                ui::Toast("All dye removed");
+                ui::Toast(LOC("All dye removed"));
         }
 
         bool touched = false;
-        touched |= ui::IntOption("Material", &s_dyeMat, 0, 10, 1, 0,
-                      "Swap the fabric or metal look. 0 keeps it natural.");
-        touched |= ui::IntOption("Condition %", &s_dyeRepair, 0, 100, 5, 100,
-                      "How worn the piece looks. 100 is pristine, 0 is battle-scarred.");
+        touched |= ui::IntOption(LOC("Material"), &s_dyeMat, 0, 10, 1, 0,
+                      LOC("Swap the fabric or metal look. 0 keeps it natural."));
+        touched |= ui::IntOption(LOC("Condition %"), &s_dyeRepair, 0, 100, 5, 100,
+                      LOC("How worn the piece looks. 100 is pristine, 0 is battle-scarred."));
         uint32_t activePreviewRGB = 0;
         if (haveCur)
             activePreviewRGB = (uint32_t(cur.r) << 16) | (uint32_t(cur.g) << 8) | cur.b;
@@ -557,9 +554,9 @@ namespace trinity::gui
                 break;
         }
 
-        ui::IntOption("Red",   &s_dyeR, 0, 255, 5, 200, "Red 0-255.");
-        ui::IntOption("Green", &s_dyeG, 0, 255, 5, 30,  "Green 0-255.");
-        ui::IntOption("Blue",  &s_dyeB, 0, 255, 5, 40,  "Blue 0-255.");
+        ui::IntOption(LOC("Red"),   &s_dyeR, 0, 255, 5, 200, LOC("Red 0-255."));
+        ui::IntOption(LOC("Green"), &s_dyeG, 0, 255, 5, 30,  LOC("Green 0-255."));
+        ui::IntOption(LOC("Blue"),  &s_dyeB, 0, 255, 5, 40,  LOC("Blue 0-255."));
 
         const uint32_t mix = (uint32_t(s_dyeR) << 16) |
                              (uint32_t(s_dyeG) << 8)  | uint32_t(s_dyeB);
@@ -567,11 +564,11 @@ namespace trinity::gui
         UpdateDyeTooltip(curSlot, mix, s_dyeChan);
 
         static int s_applyCursor = 0;
-        if (ui::SwatchRow("Apply This Color", &mix, 1, &s_applyCursor, -1,
-                          "Dye it with this exact color.") == 0)
+        if (ui::SwatchRow(LOC("Apply This Color"), &mix, 1, &s_applyCursor, -1,
+                          LOC("Dye it with this exact color.")) == 0)
             SendDye(game::kDyeFamilies[s_dyeFamily].key, s_dyeR, s_dyeG, s_dyeB);
 
-        if (ui::Option("Load Current", "Load the zone's current color."))
+        if (ui::Option(LOC("Load Current"), LOC("Load the zone's current color.")))
         {
             const int ch = (s_dyeChan == 0) ? 0 : s_dyeChan - 1;
             game::Dye::Channel c{};
@@ -582,11 +579,11 @@ namespace trinity::gui
                 s_dyeRepair = (c.repair == 0xFF) ? 100 : 100 - (c.repair * 100 + 63) / 127;
                 for (int i = 0; i < game::kDyeFamilyCount; ++i)
                     if (game::kDyeFamilies[i].key == c.groupKey) { s_dyeFamily = i; break; }
-                ui::Toast("Loaded zone %d", ch + 1);
+                ui::Toast(LOC("Loaded zone %d"), ch + 1);
             }
             else
             {
-                ui::Toast("That zone has no dye yet");
+                ui::Toast(LOC("That zone has no dye yet"));
             }
         }
 
@@ -934,16 +931,16 @@ namespace trinity::gui
 
         // Clearing the socket is always the first choice (icon box left empty so
         // it lines up with the gear rows below).
-        if (ui::OptionItem("- Empty this socket -", nullptr, "Remove whatever gear is in this socket."))
+        if (ui::OptionItem(LOC("- Empty this socket -"), nullptr, LOC("Remove whatever gear is in this socket.")))
         {
             bool p = false;
             if (game::Equipment::ClearGear(s_eqTag, s_eqSocket, &p))
             {
-                ui::Toast(p ? "Socket cleared" : "Socket cleared (this session)");
+                ui::Toast(p ? LOC("Socket cleared") : LOC("Socket cleared (this session)"));
                 ui::PopMenu();
             }
             else
-                ui::Toast("Could not clear - see the log");
+                ui::Toast(LOC("Could not clear - see the log"));
             ui::End();
             return;
         }
@@ -951,13 +948,13 @@ namespace trinity::gui
         const int total = game::Equipment::GearCount();
         if (total == 0)
         {
-            ui::Option("No abyss gears found",
-                       "The game's Abyss Gear catalog did not resolve.");
+            ui::Option(LOC("No abyss gears found"),
+                       LOC("The game's Abyss Gear catalog did not resolve."));
             ui::End();
             return;
         }
 
-        ui::Search(s_eqFind, sizeof(s_eqFind), "Find an abyss gear by name.");
+        ui::Search(s_eqFind, sizeof(s_eqFind), LOC("Find an abyss gear by name."));
 
         int shown = 0;
         for (int i = 0; i < total && shown < 200; ++i)
@@ -970,24 +967,24 @@ namespace trinity::gui
             ++shown;
 
             const char* buff = game::Equipment::GetGearBuffDescription(name);
-            if (ui::OptionItemWithBuff(name, (icon && icon[0]) ? icon : nullptr, buff, "Socket this abyss gear."))
+            if (ui::OptionItemWithBuff(name, (icon && icon[0]) ? icon : nullptr, buff, LOC("Socket this abyss gear.")))
             {
                 bool p = false;
                 if (game::Equipment::AddGear(s_eqTag, s_eqSocket, tid, &p))
                 {
-                    ui::Toast(p ? "Socketed %s" : "Socketed %s (this session)", name);
+                    ui::Toast(p ? LOC("Socketed %s") : LOC("Socketed %s (this session)"), name);
                     ui::PopMenu();
                 }
                 else
-                    ui::Toast("Could not socket that - see the log");
+                    ui::Toast(LOC("Could not socket that - see the log"));
                 ui::End();
                 return;
             }
         }
         if (shown == 0)
-            ui::Option("No matches", "No abyss gear is called that.");
+            ui::Option(LOC("No matches"), LOC("No abyss gear is called that."));
         else if (shown >= 200)
-            ui::Option("More matches...", "Only the first 200 are listed - keep typing to narrow it down.");
+            ui::Option(LOC("More matches..."), LOC("Only the first 200 are listed - keep typing to narrow it down."));
 
         ui::End();
     }
@@ -1307,14 +1304,14 @@ namespace trinity::gui
 
         if (!game::Teleport::LoadCatalog())
         {
-            ui::Option("Building destination list...",
-                       "Loading - if this persists, load into the world first.");
+            ui::Option(LOC("Building destination list..."),
+                       LOC("Loading - if this persists, load into the world first."));
             ui::End();
             return;
         }
 
         const size_t n = game::Teleport::CategoryCount();
-        RenderCategoryList(n, "ftnodes", "Browse and warp to this category's locations.",
+        RenderCategoryList(n, "ftnodes", LOC("Browse and warp to this category's locations."),
                            &s_ftCat, s_ftFilter,
                            [](size_t i, char* label, size_t cap)
                            {
@@ -1339,7 +1336,7 @@ namespace trinity::gui
         const size_t total = game::Teleport::NodeCount(s_ftCat);
         if (total == 0)
         {
-            ui::Option("No locations", "Nothing to warp to in this category.");
+            ui::Option(LOC("No locations"), LOC("Nothing to warp to in this category."));
             ui::End();
             return;
         }

@@ -93,6 +93,24 @@ if (Test-Path (Join-Path $source 'README.md')) {
     Copy-Item -Path (Join-Path $source 'README.md') -Destination (Join-Path $pkgDir 'README.md') -Force
 }
 
+$parentDir = Split-Path $source -Parent
+
+# Extract clean numeric version (e.g. 2.00.01)
+$versionHeader = Get-Content (Join-Path $source 'src\core\version.h') -Raw
+$numMatch = [regex]::Match($versionHeader, '#define\s+TRINITY_VERSION_NUM\s+"([^"]+)"')
+if ($numMatch.Success) {
+    $versionStr = $numMatch.Groups[1].Value
+} else {
+    $majorMatch = [regex]::Match($versionHeader, '#define\s+TRINITY_VERSION_MAJOR\s+(\d+)')
+    $minorMatch = [regex]::Match($versionHeader, '#define\s+TRINITY_VERSION_MINOR\s+(\d+)')
+    $patchMatch = [regex]::Match($versionHeader, '#define\s+TRINITY_VERSION_PATCH\s+(\d+)')
+    if ($majorMatch.Success -and $minorMatch.Success -and $patchMatch.Success) {
+        $versionStr = "$($majorMatch.Groups[1].Value).$($minorMatch.Groups[1].Value).$($patchMatch.Groups[1].Value)"
+    } else {
+        $versionStr = "2.00.01"
+    }
+}
+
 # Mod Manager Metadata (DMM / Fluffy / Vortex identification)
 $modInfoContent = @"
 name=Trinity - vTweak
@@ -115,24 +133,29 @@ $infoJsonContent = @"
 Set-Content -Path (Join-Path $pkgDir 'info.json') -Value $infoJsonContent -Encoding UTF8
 
 # Copy ASI Loader (winmm.dll) and checksum file
-$parentDir = Split-Path $source -Parent
 $winmmPath = Join-Path $source 'loader\winmm.dll'
+if (-not (Test-Path -LiteralPath $winmmPath)) { $winmmPath = Join-Path $parentDir 'kebutuhan\Mod_Files\winmm.dll' }
+if (-not (Test-Path -LiteralPath $winmmPath)) { $winmmPath = Join-Path $parentDir 'Mod_Files\winmm.dll' }
 if (-not (Test-Path -LiteralPath $winmmPath)) { $winmmPath = Join-Path $parentDir 'winmm.dll' }
 if (-not (Test-Path -LiteralPath $winmmPath)) { $winmmPath = Join-Path $source 'winmm.dll' }
 if (Test-Path -LiteralPath $winmmPath) {
     Copy-Item -Path $winmmPath -Destination (Join-Path $pkgDir 'winmm.dll') -Force
+    if (-not (Test-Path (Join-Path $source 'loader\winmm.dll'))) {
+        Copy-Item -Path $winmmPath -Destination (Join-Path $source 'loader\winmm.dll') -Force
+    }
 }
 
 $shaPath = Join-Path $source 'loader\winmm-x64.SHA512'
+if (-not (Test-Path -LiteralPath $shaPath)) { $shaPath = Join-Path $parentDir 'kebutuhan\Mod_Files\winmm-x64.SHA512' }
+if (-not (Test-Path -LiteralPath $shaPath)) { $shaPath = Join-Path $parentDir 'Mod_Files\winmm-x64.SHA512' }
 if (-not (Test-Path -LiteralPath $shaPath)) { $shaPath = Join-Path $parentDir 'winmm-x64.SHA512' }
 if (-not (Test-Path -LiteralPath $shaPath)) { $shaPath = Join-Path $source 'winmm-x64.SHA512' }
 if (Test-Path -LiteralPath $shaPath) {
     Copy-Item -Path $shaPath -Destination (Join-Path $pkgDir 'winmm-x64.SHA512') -Force
+    if (-not (Test-Path (Join-Path $source 'loader\winmm-x64.SHA512'))) {
+        Copy-Item -Path $shaPath -Destination (Join-Path $source 'loader\winmm-x64.SHA512') -Force
+    }
 }
-
-$versionHeader = Get-Content (Join-Path $source 'src\core\version.h') -Raw
-$versionMatch = [regex]::Match($versionHeader, '#define\s+TRINITY_VERSION\s+"([^"\s]+)')
-$versionStr = if ($versionMatch.Success) { $versionMatch.Groups[1].Value } else { "1.2.4" }
 
 $commonReleaseDir = Join-Path $parentDir "Release\$versionStr"
 if (-not (Test-Path -LiteralPath $commonReleaseDir)) {
@@ -144,7 +167,7 @@ if (-not (Test-Path -LiteralPath $variantReleaseDir)) {
     New-Item -ItemType Directory -Path $variantReleaseDir -Force | Out-Null
 }
 
-$zipName = "Trinity-v$versionStr-vTweak (1.18.0.2).zip"
+$zipName = "Trinity-v$versionStr-vTweak (2.00.01).zip"
 $zipPath = Join-Path $variantReleaseDir $zipName
 if (Test-Path -LiteralPath $zipPath) {
     Remove-Item -LiteralPath $zipPath -Force
@@ -157,7 +180,7 @@ Copy-Item -Path $zipPath -Destination (Join-Path $commonReleaseDir $zipName) -Fo
 Copy-Item -Path $zipPath -Destination (Join-Path $releaseDir $zipName) -Force
 
 # Copy loose .asi files directly to variant release folder
-Copy-Item -Path (Join-Path $pkgDir 'Trinity.asi') -Destination (Join-Path $variantReleaseDir 'Trinity-1.18.02.asi') -Force
+Copy-Item -Path (Join-Path $pkgDir 'Trinity.asi') -Destination (Join-Path $variantReleaseDir 'Trinity-2.00.01.asi') -Force
 Copy-Item -Path (Join-Path $pkgDir 'Trinity.asi') -Destination (Join-Path $variantReleaseDir 'Trinity.asi') -Force
 
 # Setup dedicated Languages folders
@@ -214,9 +237,21 @@ Get-ChildItem -Path $sourceLangDir -Filter 'Trinity_*.ini' -File -ErrorAction Si
     Copy-Item -Path $_.FullName -Destination (Join-Path $modFilesLangDir $_.Name) -Force
     if (Test-Path -LiteralPath $steamGameDir) {
         Copy-Item -Path $_.FullName -Destination (Join-Path $steamGameDir $_.Name) -Force -ErrorAction SilentlyContinue
+        $bin64Lang1 = Join-Path $steamGameDir 'Languages'
+        $bin64Lang2 = Join-Path $steamGameDir 'languages'
+        New-Item -ItemType Directory -Path $bin64Lang1 -Force | Out-Null
+        New-Item -ItemType Directory -Path $bin64Lang2 -Force | Out-Null
+        Copy-Item -Path $_.FullName -Destination (Join-Path $bin64Lang1 $_.Name) -Force -ErrorAction SilentlyContinue
+        Copy-Item -Path $_.FullName -Destination (Join-Path $bin64Lang2 $_.Name) -Force -ErrorAction SilentlyContinue
     }
     if (Test-Path -LiteralPath $steamModsDir) {
         Copy-Item -Path $_.FullName -Destination (Join-Path $steamModsDir $_.Name) -Force -ErrorAction SilentlyContinue
+        $modsLang1 = Join-Path $steamModsDir 'Languages'
+        $modsLang2 = Join-Path $steamModsDir 'languages'
+        New-Item -ItemType Directory -Path $modsLang1 -Force | Out-Null
+        New-Item -ItemType Directory -Path $modsLang2 -Force | Out-Null
+        Copy-Item -Path $_.FullName -Destination (Join-Path $modsLang1 $_.Name) -Force -ErrorAction SilentlyContinue
+        Copy-Item -Path $_.FullName -Destination (Join-Path $modsLang2 $_.Name) -Force -ErrorAction SilentlyContinue
     }
 }
 Write-Host "Built: $($asi.FullName)"

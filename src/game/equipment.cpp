@@ -63,6 +63,21 @@ namespace trinity::game
             EquipTableDesc out{};
             if (comp < kMinPointer) return out;
 
+            auto validateTable = [](uintptr_t arr, uint32_t cnt, uintptr_t stride, uintptr_t tagOff) -> bool {
+                if (arr < kMinPointer || cnt == 0 || cnt > 64) return false;
+                for (uint32_t i = 0; i < cnt; ++i)
+                {
+                    const uintptr_t entry = arr + static_cast<uintptr_t>(i) * stride;
+                    uint16_t tid = 0, tag = 0;
+                    if (Read16(entry + kOff_InvSlot_TypeId, &tid) && tid != kInvSlot_EmptyType && tid != 0)
+                    {
+                        if (!Read16(entry + tagOff, &tag) || tag >= 32)
+                            return false; // Slot tags must be 0..31 for valid equip tables!
+                    }
+                }
+                return true;
+            };
+
             uintptr_t d = 0, a = 0;
             uint32_t c = 0;
 
@@ -71,13 +86,16 @@ namespace trinity::game
                 ReadPtr(d + kOff_EquipTable_Array, &a) && a >= kMinPointer &&
                 Read32(d + kOff_EquipTable_Count, &c) && c >= 1 && c <= 64)
             {
-                out.desc = d;
-                out.array = a;
-                out.count = c;
-                out.stride = 0xD0;
-                out.tagOffset = 0xC8;
-                out.valid = true;
-                return out;
+                if (validateTable(a, c, 0xD0, 0xC8))
+                {
+                    out.desc = d;
+                    out.array = a;
+                    out.count = c;
+                    out.stride = 0xD0;
+                    out.tagOffset = 0xC8;
+                    out.valid = true;
+                    return out;
+                }
             }
 
             // Legacy TU 1.14 table (+0x88)
@@ -85,13 +103,16 @@ namespace trinity::game
                 ReadPtr(d + kOff_EquipTable_Array, &a) && a >= kMinPointer &&
                 Read32(d + kOff_EquipTable_Count, &c) && c >= 1 && c <= 64)
             {
-                out.desc = d;
-                out.array = a;
-                out.count = c;
-                out.stride = 0xC8;
-                out.tagOffset = 0xC0;
-                out.valid = true;
-                return out;
+                if (validateTable(a, c, 0xC8, 0xC0))
+                {
+                    out.desc = d;
+                    out.array = a;
+                    out.count = c;
+                    out.stride = 0xC8;
+                    out.tagOffset = 0xC0;
+                    out.valid = true;
+                    return out;
+                }
             }
 
             // Alternate table offsets (+0x50, +0x38, +0x40, +0x48, +0x60, +0x70)
@@ -102,13 +123,16 @@ namespace trinity::game
                 if (ReadPtr(d + kOff_EquipTable_Array, &a) && a >= kMinPointer &&
                     Read32(d + kOff_EquipTable_Count, &c) && c >= 1 && c <= 64)
                 {
-                    out.desc = d;
-                    out.array = a;
-                    out.count = c;
-                    out.stride = 0xD0;
-                    out.tagOffset = 0xC8;
-                    out.valid = true;
-                    return out;
+                    if (validateTable(a, c, 0xD0, 0xC8))
+                    {
+                        out.desc = d;
+                        out.array = a;
+                        out.count = c;
+                        out.stride = 0xD0;
+                        out.tagOffset = 0xC8;
+                        out.valid = true;
+                        return out;
+                    }
                 }
             }
 
@@ -235,15 +259,27 @@ namespace trinity::game
             if (actor)
             {
                 const uintptr_t comp = CompForCharacter(actor);
-                if (comp) return comp;
+                if (comp)
+                {
+                    const int id = Inventory::IdentifyCharacterFromComp(comp);
+                    if (id < 0 || id == targetIdx) return comp;
+                }
             }
             if (targetIdx > 0 && targetIdx < 3)
             {
-                const uintptr_t directActor = Player::GetActor(targetIdx);
-                if (directActor)
+                for (int p = 0; p < 3; ++p)
                 {
-                    const uintptr_t comp = CompForCharacter(directActor);
-                    if (comp) return comp;
+                    const uintptr_t directActor = Player::GetActor(p);
+                    if (directActor)
+                    {
+                        const uintptr_t comp = CompForCharacter(directActor);
+                        if (comp)
+                        {
+                            const int id = Inventory::IdentifyCharacterFromComp(comp);
+                            if (id == targetIdx || (p == targetIdx && id < 0))
+                                return comp;
+                        }
+                    }
                 }
             }
             return 0;
@@ -277,18 +313,36 @@ namespace trinity::game
             }
             if (targetIdx > 0 && targetIdx < 3)
             {
-                const uintptr_t directActor = Player::GetActor(targetIdx);
-                if (directActor && directActor != actor)
+                for (int p = 0; p < 3; ++p)
                 {
-                    const uintptr_t comp = CompForCharacter(directActor);
-                    if (comp)
+                    const uintptr_t directActor = Player::GetActor(p);
+                    if (directActor && directActor != actor)
                     {
-                        const int id = Inventory::IdentifyCharacterFromComp(comp);
-                        if (id < 0 || id == targetIdx) return comp;
+                        const uintptr_t comp = CompForCharacter(directActor);
+                        if (comp)
+                        {
+                            const int id = Inventory::IdentifyCharacterFromComp(comp);
+                            if (id == targetIdx || (p == targetIdx && id < 0))
+                                return comp;
+                        }
                     }
                 }
             }
             return 0;
+        }
+
+        bool IsDummyOrUnarmed(uint16_t typeId, const char* name)
+        {
+            if (typeId == 0 || typeId == kInvSlot_EmptyType) return true;
+            if (!name || !*name) return false;
+            if (strstr(name, "Ordinary Gloves") || strstr(name, "Ordinary_Gloves") ||
+                strstr(name, "OrdinaryGloves") || strstr(name, "Unarmed") ||
+                strstr(name, "Bare Hands") || strstr(name, "BareHands") ||
+                strstr(name, "Default Weapon") || strstr(name, "Dummy"))
+            {
+                return true;
+            }
+            return false;
         }
 
         // The TrItemValue copy the component keeps for the equipped slot `tag`.
@@ -303,7 +357,17 @@ namespace trinity::game
                 uint16_t t = 0;
                 if (!Read16(entry + tbl.tagOffset, &t) || t != tag) continue;
                 uint16_t tid = 0;
-                if (!Read16(entry + kOff_InvSlot_TypeId, &tid) || tid == kInvSlot_EmptyType) return 0;
+                if (!Read16(entry + kOff_InvSlot_TypeId, &tid) || tid == kInvSlot_EmptyType || tid == 0) continue;
+
+                int64_t qty = 1;
+                if (Read64(entry + kOff_InvSlot_Quantity, &qty) && qty <= 0) continue;
+                int64_t inst = 1;
+                if (Read64(entry + kOff_ItemVal_InstanceId, &inst) && inst <= 0) continue;
+
+                char itemName[96] = "";
+                Inventory::NameForTypeId(tid, itemName, sizeof(itemName));
+                if (IsDummyOrUnarmed(tid, itemName)) continue;
+
                 return entry;
             }
             return 0;
@@ -1098,8 +1162,18 @@ namespace trinity::game
             {
                 const uintptr_t entry = tbl.array + static_cast<uintptr_t>(i) * tbl.stride;
                 uint16_t tid = 0, tag = 0;
-                int64_t  inst = 0;
+                int64_t  inst = 0, qty = 1;
                 if (!Read16(entry + kOff_InvSlot_TypeId, &tid) || tid == kInvSlot_EmptyType || tid == 0) continue;
+                if (Read64(entry + kOff_InvSlot_Quantity, &qty) && qty <= 0) continue;
+                if (Read64(entry + kOff_ItemVal_InstanceId, &inst) && inst <= 0) continue;
+
+                char itemName[96] = "";
+                if (!Inventory::NameForTypeId(tid, itemName, sizeof(itemName)))
+                    snprintf(itemName, sizeof(itemName), "Item #%u", tid);
+
+                // Exclude dummy unarmed placeholder gear (Ordinary Gloves) from Edit Equipment
+                if (IsDummyOrUnarmed(tid, itemName)) continue;
+
                 Read16(entry + tbl.tagOffset, &tag);
 
                 char fallbackName[64] = "";
@@ -1109,7 +1183,6 @@ namespace trinity::game
                     snprintf(fallbackName, sizeof(fallbackName), "Slot #%u", tag);
                     nm = fallbackName;
                 }
-                Read64(entry + kOff_ItemVal_InstanceId, &inst);
 
                 Equipment::SlotInfo& s = g_slots[g_slotCount++];
                 s = Equipment::SlotInfo{};
@@ -1118,9 +1191,7 @@ namespace trinity::game
                 s.instanceId = inst;
 
                 snprintf(s.slotName, sizeof(s.slotName), "%s", nm);
-
-                if (!Inventory::NameForTypeId(tid, s.itemName, sizeof(s.itemName)))
-                    snprintf(s.itemName, sizeof(s.itemName), "Item #%u", tid);
+                snprintf(s.itemName, sizeof(s.itemName), "%s", itemName);
                 Inventory::IconForTypeId(tid, s.icon, sizeof(s.icon));
 
                 uint16_t refine = 0;
@@ -1282,7 +1353,7 @@ namespace trinity::game
             return false;
         };
 
-        // Damiane (1): Royal Oath, Demenissian Hero's Musket, Caliburn, rapiers, Rivenheim Cloth Armor
+        // Damiane (1): Royal Oath, Demenissian Hero's Musket, Caliburn, shotguns, rapiers, fencing blades, Spencer, Dewhaven, Rivenheim Cloth/Fabric Armor
         if (charIdx == 1)
         {
             if (typeId == 53935 || typeId == 6324 || typeId == 6041 || typeId == 5306 || typeId == 5300 ||
@@ -1293,16 +1364,19 @@ namespace trinity::game
                          ContainsCi(name, "Spencer") || ContainsCi(name, "Dewhaven") || ContainsCi(name, "White Wind") ||
                          ContainsCi(name, "WhiteWind") || ContainsCi(name, "Hwando") || ContainsCi(name, "Demeniss") ||
                          ContainsCi(name, "Fencing") || ContainsCi(name, "Dual Blade") || ContainsCi(name, "DualBlade") ||
-                         ContainsCi(name, "Musket") || ContainsCi(name, "Caliburn") || ContainsCi(name, "Royal Oath") ||
-                         ContainsCi(name, "Rivenheim") || ContainsCi(name, "Cloth Armor")))
+                         ContainsCi(name, "Musket") || ContainsCi(name, "Shotgun") || ContainsCi(name, "Caliburn") ||
+                         ContainsCi(name, "Royal Oath") || ContainsCi(name, "Rivenheim") ||
+                         ContainsCi(name, "Cloth Armor") || ContainsCi(name, "Cloth")))
                 return true;
             if (key && (ContainsCi(key, "Rapier") || ContainsCi(key, "Damian") || ContainsCi(key, "Demian") ||
                         ContainsCi(key, "Spencer") || ContainsCi(key, "Dewhaven") || ContainsCi(key, "WhiteWind") ||
                         ContainsCi(key, "White_Wind") || ContainsCi(key, "Hwando") || ContainsCi(key, "Demeniss") ||
                         ContainsCi(key, "Fencing") || ContainsCi(key, "DualBlade") || ContainsCi(key, "Dual_Blade") ||
-                        ContainsCi(key, "Musket") || ContainsCi(key, "Caliburn") || ContainsCi(key, "RoyalOath") ||
-                        ContainsCi(key, "Royal_Oath") || ContainsCi(key, "Rivenheim") || ContainsCi(key, "ClothArmor") ||
-                        ContainsCi(key, "Cloth_Armor")))
+                        ContainsCi(key, "DualRapier") || ContainsCi(key, "Dual_Rapier") ||
+                        ContainsCi(key, "Musket") || ContainsCi(key, "Shotgun") || ContainsCi(key, "Caliburn") ||
+                        ContainsCi(key, "RoyalOath") || ContainsCi(key, "Royal_Oath") || ContainsCi(key, "Rivenheim") ||
+                        ContainsCi(key, "ClothArmor") || ContainsCi(key, "Cloth_Armor") ||
+                        ContainsCi(key, "Fabric") || ContainsCi(key, "Fabric_")))
                 return true;
             return false;
         }
@@ -1558,7 +1632,13 @@ namespace trinity::game
         const uintptr_t entry = FindEntryByTag(comp, tag);
         if (!entry) return false;
         int64_t instId = 0;
-        Read64(entry + kOff_ItemVal_InstanceId, &instId);
+        if (!Read64(entry + kOff_ItemVal_InstanceId, &instId) || instId <= 0) return false;
+
+        uint16_t tid = 0;
+        if (!Read16(entry + kOff_InvSlot_TypeId, &tid) || tid == 0 || tid == kInvSlot_EmptyType) return false;
+        char itemName[96] = "";
+        Inventory::NameForTypeId(tid, itemName, sizeof(itemName));
+        if (IsDummyOrUnarmed(tid, itemName)) return false;
 
         const bool ok = SyncSocketAllRealms(tag, instId, socketIdx, gearTypeId);
         if (persisted) *persisted = ok;
@@ -1589,7 +1669,13 @@ namespace trinity::game
         const uintptr_t entry = FindEntryByTag(comp, tag);
         if (!entry) return false;
         int64_t instId = 0;
-        Read64(entry + kOff_ItemVal_InstanceId, &instId);
+        if (!Read64(entry + kOff_ItemVal_InstanceId, &instId) || instId <= 0) return false;
+
+        uint16_t tid = 0;
+        if (!Read16(entry + kOff_InvSlot_TypeId, &tid) || tid == 0 || tid == kInvSlot_EmptyType) return false;
+        char itemName[96] = "";
+        Inventory::NameForTypeId(tid, itemName, sizeof(itemName));
+        if (IsDummyOrUnarmed(tid, itemName)) return false;
 
         const bool ok = SyncSocketAllRealms(tag, instId, socketIdx, kSock_Empty);
         if (persisted) *persisted = ok;
@@ -1611,16 +1697,23 @@ namespace trinity::game
     {
         if (persisted) *persisted = false;
         if (!IsRefinableTag(tag)) return false; // Strictly protect non-refinable utility gadgets (Lantern, Axiom Bracelet)
-        if (level < 0) level = 0;
-        if (level > kRefine_Max) level = kRefine_Max;
-        const uint16_t lvl = static_cast<uint16_t>(level);
 
         const uintptr_t comp = ClientComp();
         if (!comp) return false;
         const uintptr_t entry = FindEntryByTag(comp, tag);
         if (!entry) return false;
         int64_t instId = 0;
-        Read64(entry + kOff_ItemVal_InstanceId, &instId);
+        if (!Read64(entry + kOff_ItemVal_InstanceId, &instId) || instId <= 0) return false;
+
+        uint16_t tid = 0;
+        if (!Read16(entry + kOff_InvSlot_TypeId, &tid) || tid == 0 || tid == kInvSlot_EmptyType) return false;
+        char itemName[96] = "";
+        Inventory::NameForTypeId(tid, itemName, sizeof(itemName));
+        if (IsDummyOrUnarmed(tid, itemName)) return false; // Strictly refuse to refine dummy unarmed gloves
+
+        if (level < 0) level = 0;
+        if (level > kRefine_Max) level = kRefine_Max;
+        const uint16_t lvl = static_cast<uint16_t>(level);
 
         const bool ok = SyncRefineAllRealms(tag, instId, lvl);
         if (persisted) *persisted = ok;
@@ -1648,7 +1741,13 @@ namespace trinity::game
         const uintptr_t entry = FindEntryByTag(comp, tag);
         if (!entry) return false;
         int64_t instId = 0;
-        Read64(entry + kOff_ItemVal_InstanceId, &instId);
+        if (!Read64(entry + kOff_ItemVal_InstanceId, &instId) || instId <= 0) return false;
+
+        uint16_t tid = 0;
+        if (!Read16(entry + kOff_InvSlot_TypeId, &tid) || tid == 0 || tid == kInvSlot_EmptyType) return false;
+        char itemName[96] = "";
+        Inventory::NameForTypeId(tid, itemName, sizeof(itemName));
+        if (IsDummyOrUnarmed(tid, itemName)) return false;
 
         const bool ok = SyncUnlockAllRealms(tag, instId, maxSock);
 
@@ -1672,7 +1771,13 @@ namespace trinity::game
         const uintptr_t entry = FindEntryByTag(comp, tag);
         if (!entry) return false;
         int64_t instId = 0;
-        if (!Read64(entry + kOff_ItemVal_InstanceId, &instId)) return false;
+        if (!Read64(entry + kOff_ItemVal_InstanceId, &instId) || instId <= 0) return false;
+
+        uint16_t tid = 0;
+        if (!Read16(entry + kOff_InvSlot_TypeId, &tid) || tid == 0 || tid == kInvSlot_EmptyType) return false;
+        char itemName[96] = "";
+        Inventory::NameForTypeId(tid, itemName, sizeof(itemName));
+        if (IsDummyOrUnarmed(tid, itemName)) return false;
 
         const bool ok = SyncEmptyAllRealms(tag, instId);
 
@@ -1698,6 +1803,13 @@ namespace trinity::game
             if (entry < kMinPointer) return;
             uint16_t tid = 0;
             if (!Read16(entry + kOff_InvSlot_TypeId, &tid) || tid == kInvSlot_EmptyType || tid == 0) return;
+            int64_t qty = 1;
+            if (Read64(entry + kOff_InvSlot_Quantity, &qty) && qty <= 0) return;
+            int64_t inst = 1;
+            if (Read64(entry + kOff_ItemVal_InstanceId, &inst) && inst <= 0) return;
+            char itemName[96] = "";
+            Inventory::NameForTypeId(tid, itemName, sizeof(itemName));
+            if (IsDummyOrUnarmed(tid, itemName)) return;
             Write16(entry + kOff_ItemVal_Durability, 10000);
             ++repaired;
         };

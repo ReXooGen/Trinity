@@ -496,6 +496,22 @@ namespace trinity::game
             return out[0] != 0;
         }
 
+        static bool ContainsWord(const char* str, const char* word)
+        {
+            if (!str || !word || !*word) return false;
+            const size_t wlen = strlen(word);
+            for (const char* p = str; *p; ++p)
+            {
+                if (_strnicmp(p, word, wlen) == 0)
+                {
+                    const bool leftOk = (p == str) || !isalnum(static_cast<unsigned char>(*(p - 1)));
+                    const bool rightOk = (*(p + wlen) == 0) || !isalnum(static_cast<unsigned char>(*(p + wlen)));
+                    if (leftOk && rightOk) return true;
+                }
+            }
+            return false;
+        }
+
         const char* DeduceCategoryFromItem(const char* key, const char* name)
         {
             if (!key) key = "";
@@ -503,6 +519,10 @@ namespace trinity::game
 
             auto match = [&](const char* pat) -> bool {
                 return (strstr(key, pat) != nullptr) || (strstr(name, pat) != nullptr);
+            };
+
+            auto matchWord = [&](const char* word) -> bool {
+                return ContainsWord(key, word) || ContainsWord(name, word);
             };
 
             // 1. Genuine Socketable Abyss Gear (Items like Item_Stat_AbyssGear_, Item_Skill_AbyssGear_)
@@ -520,7 +540,7 @@ namespace trinity::game
                 match("Abyss_Transporter") || match("AbyssStone") || match("Abyss_InfiniteStat") ||
                 match("Rune") || match("Relic") || match("Orb") || match("Totem") || match("Idol") ||
                 match("Tablet") || match("Slate") || match("Charm") || match("Reliquary") ||
-                match("Ancient_Sculpture") || match("Effigy") || match("Figurine"))
+                match("Ancient_Sculpture") || match("Effigy"))
                 return "Sealed Artifacts";
 
             // 3. Special Boss Quest Equipment
@@ -563,21 +583,21 @@ namespace trinity::game
             if (match("Wall") || match("WallPaper") || match("Poster"))
                 return "Wall Documents";
 
-            // 13. Quest Memories, Notice Papers, Letters, Clues (MUST be before weapons/armor! e.g. NoticePaper_Skill_ShieldJustGuard)
+            // 13. Quest Memories, Notice Papers, Letters, Clues
             if (match("NoticePaper") || match("Memory") || match("Quest") || match("Mission") || match("Bounty") ||
                 match("Clue") || match("Evidence") || match("Interaction") || match("Trigger") || match("Gimmick") ||
                 match("Cutscene") || match("Request") || match("Notice"))
                 return "Quest Memories";
 
             // 14. Books
-            if (match("Book") || match("Tome") || match("Journal") || match("Diary") || match("Ledger"))
+            if (matchWord("Book") || matchWord("Tome") || matchWord("Journal") || matchWord("Diary") || matchWord("Ledger"))
                 return "Books";
 
             // 15. Documents
-            if (match("Document") || match("Scroll") || match("Note") || match("Letter") || match("Paper") ||
-                match("Contract") || match("Treaty") || match("Page") || match("Script") || match("Epistle") ||
-                match("Records") || match("Archive") || match("Report") || match("Sighting") || match("Guide") ||
-                match("Manual") || match("Pamphlet") || match("Leaflet") || match("Memo") || match("Dispatch"))
+            if (matchWord("Document") || matchWord("Scroll") || matchWord("Note") || matchWord("Letter") || matchWord("Paper") ||
+                matchWord("Contract") || matchWord("Treaty") || matchWord("Page") || matchWord("Script") || matchWord("Epistle") ||
+                matchWord("Records") || matchWord("Archive") || matchWord("Report") || matchWord("Sighting") || matchWord("Guide") ||
+                matchWord("Manual") || matchWord("Pamphlet") || matchWord("Leaflet") || matchWord("Memo") || matchWord("Dispatch"))
                 return "Documents";
 
             // 16. Packed Trade Goods
@@ -592,201 +612,212 @@ namespace trinity::game
             if (match("Animal") || match("Carcass"))
                 return "Animal Items";
 
-            // 19. Trade Goods
-            if (match("Trade") || match("Goods") || match("Cargo") || match("Crate") || match("Bundle") ||
-                match("Merchandise") || match("Delivery") || match("Commodity") || match("Export") || match("Import") ||
-                match("Parcel") || match("Transport") || match("Bale") || match("Barter") || match("Coffer") ||
-                match("Container") || match("Basket"))
+            // 19. Collection (Dolls, Toys, Ceramic, Pottery, Statues, Props) - MUST be before Rings/Armor!
+            if (matchWord("Doll") || matchWord("Toy") || matchWord("Figurine") || matchWord("Statue") ||
+                matchWord("Ceramic") || matchWord("Pottery") || matchWord("Vase") || matchWord("Jar") ||
+                matchWord("Bottle") || matchWord("Goblet") || matchWord("Bowl") || matchWord("Candelabra") ||
+                matchWord("Furnishing") || matchWord("Furniture") || matchWord("Decor") || matchWord("Collection") ||
+                matchWord("Lamp") || matchWord("Candle") || matchWord("Prop"))
+                return "Collection";
+
+            // 20. Trade Goods
+            if (matchWord("Trade") || matchWord("Goods") || matchWord("Cargo") || matchWord("Crate") || matchWord("Bundle") ||
+                matchWord("Merchandise") || matchWord("Delivery") || matchWord("Commodity") || matchWord("Export") || matchWord("Import") ||
+                matchWord("Parcel") || matchWord("Transport") || matchWord("Bale") || matchWord("Barter") || matchWord("Coffer") ||
+                matchWord("Container") || matchWord("Basket"))
                 return "Trade Goods";
 
-            // 20. Bags (Inventory Bags)
+            // 21. Bags (Inventory Bags)
             if (match("Inventory_Bag") || match("Expand_Bag") || match("Slot_Bag") || _stricmp(key, "bag") == 0)
                 return "Bags";
 
-            // 21. Backpacks
-            if (match("Backpack") || match("BackPack") || match("Knapsack") || match("Rucksack") ||
-                match("Resonator") || (match("Bag") && !match("Aging")))
+            // 22. Backpacks
+            if (matchWord("Backpack") || matchWord("BackPack") || matchWord("Knapsack") || matchWord("Rucksack") ||
+                matchWord("Resonator") || (matchWord("Bag") && !match("Aging")))
                 return "Backpacks";
 
-            // 22. Riding Gear
-            if (match("Saddle") || match("Barding") || match("Stirrup") || match("Harness") || match("Horse_Armor") ||
-                match("Riding") || match("Mount") || match("Ibex") || match("Rein"))
+            // 23. Riding Gear
+            if (matchWord("Saddle") || matchWord("Barding") || matchWord("Stirrup") || matchWord("Harness") || match("Horse_Armor") ||
+                matchWord("Riding") || matchWord("Mount") || matchWord("Ibex") || matchWord("Rein"))
                 return "Riding Gear";
 
-            // 23. Pet Armor
-            if (match("Pet_Armor") || match("Cat_Armor") || match("Dog_Armor") || match("Pet"))
+            // 24. Pet Armor
+            if (match("Pet_Armor") || match("Cat_Armor") || match("Dog_Armor") || (matchWord("Pet") && matchWord("Armor")))
                 return "Pet Armor";
 
-            // 24. Special Vehicles
-            if (match("Vehicle") || match("Wagon") || match("Cart") || match("Ship") || match("Boat"))
+            // 25. Special Vehicles
+            if (matchWord("Vehicle") || matchWord("Wagon") || matchWord("Cart") || matchWord("Ship") || matchWord("Boat"))
                 return "Special Vehicles";
 
-            // 25. Horse Food
-            if ((match("Horse") && (match("Food") || match("Carrot") || match("Fodder") || match("Feed") || match("Hay"))))
+            // 26. Horse Food
+            if (matchWord("Horse") && (matchWord("Food") || matchWord("Carrot") || matchWord("Fodder") || matchWord("Feed") || matchWord("Hay")))
                 return "Horse Food";
 
-            // 26. Potions
-            if (match("Potion") || match("Elixir") || match("Tonic") || match("Flask") || match("Remedy") ||
-                match("Draught") || match("Brew") || match("Vial") || match("Salve") || match("Ointment") || match("Balm"))
+            // 27. Potions
+            if (matchWord("Potion") || matchWord("Elixir") || matchWord("Tonic") || matchWord("Flask") || matchWord("Remedy") ||
+                matchWord("Draught") || matchWord("Brew") || matchWord("Vial") || matchWord("Salve") || matchWord("Ointment") || matchWord("Balm"))
                 return "Potions";
 
-            // 27. Tools
-            if (match("Pickaxe") || match("Pick") || match("Sickle") || match("Hoe") || match("Fishing_Rod") ||
-                match("Rod") || match("Fishing") || match("Chisel") || match("Trowel") || match("Shovel") ||
-                match("Saw") || match("Needle") || match("Trap") || match("Torch") || match("Lighter") ||
-                match("Flute") || match("Lute") || match("Instrument") || match("Drum") || match("Lantern") ||
-                match("Bucket") || match("Hammer_Craft") || match("Picket") || match("Net") || match("Hook") ||
-                match("Whistle") || match("Compass") || match("Spyglass") || match("Telescope") ||
-                match("Grindstone") || match("Anvil") || match("Scissors") || match("Spade"))
+            // 28. Tools
+            if (matchWord("Pickaxe") || matchWord("Pick") || matchWord("Sickle") || matchWord("Hoe") || match("Fishing_Rod") ||
+                matchWord("Rod") || matchWord("Fishing") || matchWord("Chisel") || matchWord("Trowel") || matchWord("Shovel") ||
+                matchWord("Saw") || matchWord("Needle") || matchWord("Trap") || matchWord("Torch") || matchWord("Lighter") ||
+                matchWord("Flute") || matchWord("Lute") || matchWord("Instrument") || matchWord("Drum") || matchWord("Lantern") ||
+                matchWord("Bucket") || match("Hammer_Craft") || matchWord("Picket") || matchWord("Net") || matchWord("Hook") ||
+                matchWord("Whistle") || matchWord("Compass") || matchWord("Spyglass") || matchWord("Telescope") ||
+                matchWord("Grindstone") || matchWord("Anvil") || matchWord("Scissors") || matchWord("Spade"))
                 return "Tools";
 
-            // 28. Ammunition
-            if (match("Ammo") || match("Arrow") || match("Bolt") || match("Bullet") || match("Shell") ||
-                match("Projectile") || match("Cartridge") || match("Pellet") || match("Quiver"))
+            // 29. Ammunition
+            if (matchWord("Ammo") || matchWord("Arrow") || matchWord("Bolt") || matchWord("Bullet") || matchWord("Shell") ||
+                matchWord("Projectile") || matchWord("Cartridge") || matchWord("Pellet") || matchWord("Quiver"))
                 return "Ammunition";
 
-            // 29. Keys
-            if (match("Key") || match("Lockpick") || match("Token") || match("Pass") || match("Emblem") ||
-                match("Crest") || match("Badge") || match("Seal") || match("Sigil") || match("Permission") ||
-                match("Ticket") || match("Stamp") || match("License") || match("Permit"))
+            // 30. Keys
+            if (matchWord("Key") || matchWord("Lockpick") || matchWord("Token") || matchWord("Pass") || matchWord("Emblem") ||
+                matchWord("Crest") || matchWord("Badge") || matchWord("Seal") || matchWord("Sigil") || matchWord("Permission") ||
+                matchWord("Ticket") || matchWord("Stamp") || matchWord("License") || matchWord("Permit"))
                 return "Keys";
 
-            // 30. Housing
-            if (match("Housing") || match("House_Seed") || match("Furniture_Seed") || match("Seed"))
+            // 31. Housing
+            if (matchWord("Housing") || match("House_Seed") || match("Furniture_Seed") || matchWord("Seed"))
                 return "Housing";
 
-            // 31. Currency
-            if (match("Money") || match("Coin") || match("Silver") || match("Gold") || match("Copper") ||
-                match("Cash") || match("Bill") || match("Currency") || match("Credit") || match("Tribute") ||
-                match("Price") || match("Wallet") || match("Funds"))
+            // 32. Currency
+            if (matchWord("Money") || matchWord("Coin") || matchWord("Silver") || matchWord("Gold") || matchWord("Copper") ||
+                matchWord("Cash") || matchWord("Bill") || matchWord("Currency") || matchWord("Credit") || matchWord("Tribute") ||
+                matchWord("Price") || matchWord("Wallet") || matchWord("Funds"))
                 return "Currency";
 
-            // 32. Daggers
-            if (match("OneHandDagger") || match("OneHand_Dagger") || match("Dagger") || match("Dirk"))
-                return "Daggers";
+            // --- WEARABLE EQUIPMENT (Helmets, Cloaks, Gloves, Boots, Armor, Weapons) ---
+            // Must be tested BEFORE Accessories / Rings to prevent "Bandit Armor", "Cloth Armor", etc. from becoming Rings!
 
-            // 33. Shields
-            if (match("OneHandShield") || match("OneHandTowerShield") || match("TowerShield") || match("Shield") ||
-                match("Targe") || match("Buckler") || match("Pavise") || match("Aegis"))
-                return "Shields";
-
-            // 34. Ranged Weapons
-            if ((match("Bow") || match("Crossbow") || match("Musket") || match("Pistol") || match("Shotgun") ||
-                 match("Cannon") || match("Gun") || match("Rifle") || match("Blaster") || match("Slingshot") ||
-                 match("Rocket") || match("Launcher") || match("Arbalest") || match("Range_Weapon") || match("OneHandRange") || match("Range")) &&
-                !match("Arrow") && !match("Bullet") && !match("Ammo") && !match("Shell"))
-                return "Ranged Weapons";
-
-            // 35. Two-Handed Weapons
-            if (match("TwoHand") || match("Greatsword") || match("GreatSword") || match("GiantHammer") || match("GreatHammer") ||
-                match("Spear") || match("Lance") || match("Polearm") || match("Halberd") || match("Glaive") ||
-                match("Greataxe") || match("BattleAxe") || match("Scythe") || match("Claymore") || match("Sledge") || match("Pike"))
-                return "Two-Handed Weapons";
-
-            // 36. One-Handed Weapons
-            if ((match("OneHand") || match("Sword") || match("Mace") || match("Axe") || match("Rapier") ||
-                 match("Hwando") || match("Blade") || match("Cutlass") || match("Sabre") || match("Scimitar") ||
-                 match("Wand") || match("Hammer") || match("Weapon") || match("Drill") || match("Katana")) &&
-                !match("Pickaxe") && !match("Hammer_Craft") && !match("Saw") && !match("TwoHand") && !match("Dagger") && !match("Shield"))
-                return "One-Handed Weapons";
-
-            // 37. Helmets
-            if (match("Helm") || match("Hat") || match("Cap") || match("Crown") || match("Hood") ||
-                match("Tiara") || match("Circlet") || match("Visor") || match("Headgear") || match("Head") ||
-                match("Turban") || match("Bonnet"))
+            // 33. Helmets
+            if (matchWord("Helm") || matchWord("Helmet") || matchWord("Hat") || matchWord("Cap") || matchWord("Crown") ||
+                matchWord("Hood") || matchWord("Tiara") || matchWord("Circlet") || matchWord("Visor") || matchWord("Headgear") ||
+                matchWord("Turban") || matchWord("Bonnet") || match("Player_Helm"))
                 return "Helmets";
 
-            // 38. Cloaks
-            if (match("Cloak") || match("Cape") || match("Mantle") || match("Shawl") || match("Poncho") || match("Scarf"))
+            // 34. Cloaks
+            if (matchWord("Cloak") || matchWord("Cape") || matchWord("Mantle") || matchWord("Shawl") || matchWord("Poncho") ||
+                matchWord("Scarf") || match("Player_Cloak"))
                 return "Cloaks";
 
-            // 39. Gloves
-            if (match("Glove") || match("Gloves") || match("Gauntlet") || match("Bracer") || match("Vambrace") ||
-                match("Mitt") || match("Cuff") || (match("Hand") && !match("OneHand") && !match("TwoHand")))
+            // 35. Gloves
+            if (matchWord("Glove") || matchWord("Gloves") || matchWord("Gauntlet") || matchWord("Bracer") || matchWord("Vambrace") ||
+                matchWord("Mitt") || matchWord("Cuff") || match("Player_Gloves"))
                 return "Gloves";
 
-            // 40. Boots
-            if (match("Boot") || match("Boots") || match("Shoe") || match("Shoes") || match("Greave") ||
-                match("Sabaton") || match("Sandal") || match("Foot") || match("Slipper"))
+            // 36. Boots
+            if (matchWord("Boot") || matchWord("Boots") || matchWord("Shoe") || matchWord("Shoes") || matchWord("Greave") ||
+                matchWord("Sabaton") || matchWord("Sandal") || matchWord("Slipper") || match("Player_Boots"))
                 return "Boots";
 
-            // 41. Necklaces
-            if (match("Necklace") || match("Amulet") || match("Pendant") || match("Choker") || match("Locket") ||
-                match("Talisman") || match("Collar"))
-                return "Necklaces";
-
-            // 42. Equip Accessory Earring
-            if (match("Earring"))
-                return "Equip Accessory Earring";
-
-            // 43. Rings
-            if (match("Ring") || match("Band") || match("Signet") || match("Loop"))
-                return "Rings";
-
-            // 44. Glasses
-            if (match("Glasses") || match("Monocle") || match("Goggle") || match("Eyepatch") || match("Spectacle"))
-                return "Glasses";
-
-            // 45. Masks
-            if (match("Mask") || match("Veil") || match("Blindfold") || match("Visage"))
-                return "Masks";
-
-            // 46. Armor (Chest/Body Armor)
-            if (match("Armor") || match("Robe") || match("Coat") || match("Chest") || match("Plate") ||
-                match("ChainMail") || match("Fabric") || match("Tunic") || match("Mail") || match("Cuirass") ||
-                match("Vest") || match("Shirt") || match("Breastplate") || match("Hauberk") || match("Doublet") ||
-                match("Outfit") || match("Costume") || match("Body") || match("Garment") || match("Attire") ||
-                match("Dress") || match("Trousers") || match("Pants"))
+            // 37. Body Armor / Clothing (Chest, Tunics, Robes, Cloth Armor, Leather Armor, Plate Armor)
+            if (matchWord("Armor") || matchWord("Plate") || matchWord("Robe") || matchWord("Coat") || matchWord("Chest") ||
+                matchWord("ChainMail") || matchWord("Tunic") || matchWord("Mail") || matchWord("Cuirass") ||
+                matchWord("Vest") || matchWord("Shirt") || matchWord("Breastplate") || matchWord("Hauberk") || matchWord("Doublet") ||
+                matchWord("Outfit") || matchWord("Costume") || matchWord("Garment") || matchWord("Attire") ||
+                matchWord("Dress") || matchWord("Trousers") || matchWord("Pants") || match("Player_Armor") ||
+                match("Cloth_Armor") || match("Leather_Armor") || match("Plate_Armor") ||
+                (match("Cloth") && match("Armor")) || (match("Leather") && match("Armor")))
                 return "Armor";
 
-            // 47. Collection
-            if (match("Collection") || match("Lamp") || match("Candle") || match("Ceramic") || match("Bottle") ||
-                match("Vase") || match("Jar") || match("Prop") || match("Candelabra") || match("Furnishing") ||
-                match("Statue") || match("Furniture") || match("Decor") || match("Dishware") || match("Pottery") ||
-                match("Goblet") || match("Bowl"))
-                return "Collection";
+            // 38. Daggers
+            if (match("OneHandDagger") || match("OneHand_Dagger") || matchWord("Dagger") || matchWord("Dirk"))
+                return "Daggers";
+
+            // 39. Shields
+            if (match("OneHandShield") || match("OneHandTowerShield") || match("TowerShield") || matchWord("Shield") ||
+                matchWord("Targe") || matchWord("Buckler") || matchWord("Pavise") || matchWord("Aegis"))
+                return "Shields";
+
+            // 40. Ranged Weapons
+            if ((matchWord("Bow") || matchWord("Crossbow") || matchWord("Musket") || matchWord("Pistol") || matchWord("Shotgun") ||
+                 matchWord("Cannon") || matchWord("Gun") || matchWord("Rifle") || matchWord("Blaster") || matchWord("Slingshot") ||
+                 matchWord("Rocket") || matchWord("Launcher") || matchWord("Arbalest") || match("Range_Weapon") || match("OneHandRange")) &&
+                !matchWord("Arrow") && !matchWord("Bullet") && !matchWord("Ammo") && !matchWord("Shell"))
+                return "Ranged Weapons";
+
+            // 41. Two-Handed Weapons
+            if (match("TwoHand") || matchWord("Greatsword") || matchWord("GreatSword") || matchWord("GiantHammer") || matchWord("GreatHammer") ||
+                matchWord("Spear") || matchWord("Lance") || matchWord("Polearm") || matchWord("Halberd") || matchWord("Glaive") ||
+                matchWord("Greataxe") || matchWord("BattleAxe") || matchWord("Scythe") || matchWord("Claymore") || matchWord("Sledge") || matchWord("Pike"))
+                return "Two-Handed Weapons";
+
+            // 42. One-Handed Weapons
+            if ((match("OneHand") || matchWord("Sword") || matchWord("Mace") || matchWord("Axe") || matchWord("Rapier") ||
+                 matchWord("Hwando") || matchWord("Blade") || matchWord("Cutlass") || matchWord("Sabre") || matchWord("Scimitar") ||
+                 matchWord("Wand") || matchWord("Hammer") || matchWord("Weapon") || matchWord("Drill") || matchWord("Katana")) &&
+                !matchWord("Pickaxe") && !match("Hammer_Craft") && !matchWord("Saw"))
+                return "One-Handed Weapons";
+
+            // --- ACCESSORIES (Necklaces, Earrings, Rings, Glasses, Masks) ---
+
+            // 43. Necklaces & Bracelets
+            if (matchWord("Necklace") || matchWord("Amulet") || matchWord("Pendant") || matchWord("Choker") || matchWord("Locket") ||
+                matchWord("Talisman") || matchWord("Collar") || matchWord("Bracelet") || matchWord("Bangle") || matchWord("Wristband"))
+                return "Necklaces";
+
+            // 44. Earrings
+            if (matchWord("Earring") || matchWord("Earrings"))
+                return "Equip Accessory Earring";
+
+            // 45. Glasses
+            if (matchWord("Glasses") || matchWord("Monocle") || matchWord("Goggle") || matchWord("Eyepatch") || matchWord("Spectacle"))
+                return "Glasses";
+
+            // 46. Masks
+            if (matchWord("Mask") || matchWord("Veil") || matchWord("Blindfold") || matchWord("Visage"))
+                return "Masks";
+
+            // 47. Rings (Strict Word Match only: "Ring", "Signet", "Band", excluding Bandit/Bandana/Ringleader/Offering)
+            if ((matchWord("Ring") || matchWord("Signet") || matchWord("Band") || match("Accessory_Ring")) &&
+                !matchWord("Bandit") && !matchWord("Bandana") && !matchWord("Ringleader") && !matchWord("Offering") &&
+                !matchWord("Spring") && !matchWord("String") && !matchWord("Bearing"))
+                return "Rings";
 
             // 48. Metarial Medical
-            if (match("Medical") || match("Medicine") || match("Drug") || match("Herb_Tea") || match("Gallbladder") ||
-                match("Bile") || match("Venom") || match("Poison") || match("Acid"))
+            if (matchWord("Medical") || matchWord("Medicine") || matchWord("Drug") || match("Herb_Tea") || matchWord("Gallbladder") ||
+                matchWord("Bile") || matchWord("Venom") || matchWord("Poison") || matchWord("Acid"))
                 return "Metarial Medical";
 
             // 49. Korean Food
-            if (match("Korea") || match("Soup") || match("Meal") || match("Stew") || match("Roast") || match("Dish") ||
-                match("Cook") || match("Bread") || match("Pie") || match("Cake") || match("Wine") || match("Tea") ||
-                match("Beer") || match("Juice") || match("Ale") || match("Liquor") || match("Coffee") ||
-                match("Sausage") || match("Bacon") || match("Pork") || match("Beef") || match("Chicken") ||
-                match("Poultry") || match("Ration") || (match("Food") && !match("Material")))
+            if (matchWord("Korea") || matchWord("Soup") || matchWord("Meal") || matchWord("Stew") || matchWord("Roast") || matchWord("Dish") ||
+                matchWord("Cook") || matchWord("Bread") || matchWord("Pie") || matchWord("Cake") || matchWord("Wine") || matchWord("Tea") ||
+                matchWord("Beer") || matchWord("Juice") || matchWord("Ale") || matchWord("Liquor") || matchWord("Coffee") ||
+                matchWord("Sausage") || matchWord("Bacon") || matchWord("Pork") || matchWord("Beef") || matchWord("Chicken") ||
+                matchWord("Poultry") || matchWord("Ration") || (matchWord("Food") && !matchWord("Material")))
                 return "Korean Food";
 
             // 50. Food Materials
-            if (match("Ingredient") || match("Crop") || match("Vegetable") || match("Grain") || match("Wheat") ||
-                match("Flour") || match("Apple") || match("Egg") || match("Flax") || match("Ama") || match("Bean") ||
-                match("Berry") || match("Mushroom") || match("Fungus") || match("Fungi") || match("Honey") ||
-                match("Sugar") || match("Salt") || match("Oil") || match("Milk") || match("Butter") || match("Onion") ||
-                match("Garlic") || match("Potato") || match("Carrot") || match("Corn") || match("Rice") || match("Water") ||
-                match("Lemon") || match("Grape") || match("Herb") || match("Plant") || match("Flower") || match("Seed") ||
-                match("Root") || match("Leaf") || match("Nut") || match("Stalk") || match("Fish") || match("Meat"))
+            if (matchWord("Ingredient") || matchWord("Crop") || matchWord("Vegetable") || matchWord("Grain") || matchWord("Wheat") ||
+                matchWord("Flour") || matchWord("Apple") || matchWord("Egg") || matchWord("Flax") || matchWord("Ama") || matchWord("Bean") ||
+                matchWord("Berry") || matchWord("Mushroom") || matchWord("Fungus") || matchWord("Fungi") || matchWord("Honey") ||
+                matchWord("Sugar") || matchWord("Salt") || matchWord("Oil") || matchWord("Milk") || matchWord("Butter") || matchWord("Onion") ||
+                matchWord("Garlic") || matchWord("Potato") || matchWord("Carrot") || matchWord("Corn") || matchWord("Rice") || matchWord("Water") ||
+                matchWord("Lemon") || matchWord("Grape") || matchWord("Herb") || matchWord("Plant") || matchWord("Flower") || matchWord("Seed") ||
+                matchWord("Root") || matchWord("Leaf") || matchWord("Nut") || matchWord("Stalk") || matchWord("Fish") || matchWord("Meat"))
                 return "Food Materials";
 
             // 51. Metarial Object
-            if (match("Ore") || match("Ingot") || match("Wood") || match("Timber") || match("Lumber") || match("Log") ||
-                match("Plank") || match("Branch") || match("Leather") || match("Hide") || match("Pelt") || match("Fur") ||
-                match("Skin") || match("Cloth") || match("Silk") || match("Fabric") || match("Thread") || match("Fiber") ||
-                match("Stone") || match("Rock") || match("Gem") || match("Jewel") || match("Diamond") || match("Ruby") ||
-                match("Sapphire") || match("Emerald") || match("Topaz") || match("Amber") || match("Pearl") || match("Fragment") ||
-                match("Shard") || match("Dust") || match("Powder") || match("Alchemy") || match("Refine") || match("Material") ||
-                match("Mat") || match("Craft") || match("Component") || match("Essence") || match("Extract") || match("Mineral") ||
-                match("Iron") || match("Copper") || match("Steel") || match("Coal") || match("Crystal") || match("Scale") ||
-                match("Bone") || match("Horn") || match("Claw") || match("Fang") || match("Feather") || match("Cell") ||
-                match("Fossil") || match("Shell") || match("Resin") || match("Sap") || match("Wool") || match("Bar") ||
-                match("Chunk") || match("Fluid") || match("Eye") || match("Heart") || match("Liver") || match("Blood") ||
-                match("Tail") || match("Wing") || match("Beak") || match("Carapace") || match("Chitin") || match("Yarn") ||
-                match("Clay") || match("Sand") || match("Glass") || match("Metal") || match("Alloy") || match("Charcoal") ||
-                match("Ash") || match("Sulfur") || match("Mercury") || match("Sphere") || match("Cog") || match("Gear") ||
-                match("Spring") || match("Screw") || match("Wire") || match("Part") || match("Core") || match("Scrap") ||
-                match("Customize") || match("Coupon") || match("Appearance") || match("Deaging") || match("Aging") ||
-                match("Scar") || match("Dye") || match("Palette") || match("Hair") || match("Face") || match("Tattoo"))
+            if (matchWord("Ore") || matchWord("Ingot") || matchWord("Wood") || matchWord("Timber") || matchWord("Lumber") || matchWord("Log") ||
+                matchWord("Plank") || matchWord("Branch") || matchWord("Leather") || matchWord("Hide") || matchWord("Pelt") || matchWord("Fur") ||
+                matchWord("Skin") || matchWord("Cloth") || matchWord("Silk") || matchWord("Fabric") || matchWord("Thread") || matchWord("Fiber") ||
+                matchWord("Stone") || matchWord("Rock") || matchWord("Gem") || matchWord("Jewel") || matchWord("Diamond") || matchWord("Ruby") ||
+                matchWord("Sapphire") || matchWord("Emerald") || matchWord("Topaz") || matchWord("Amber") || matchWord("Pearl") || matchWord("Fragment") ||
+                matchWord("Shard") || matchWord("Dust") || matchWord("Powder") || matchWord("Alchemy") || matchWord("Refine") || matchWord("Material") ||
+                matchWord("Mat") || matchWord("Craft") || matchWord("Component") || matchWord("Essence") || matchWord("Extract") || matchWord("Mineral") ||
+                matchWord("Iron") || matchWord("Copper") || matchWord("Steel") || matchWord("Coal") || matchWord("Crystal") || matchWord("Scale") ||
+                matchWord("Bone") || matchWord("Horn") || matchWord("Claw") || matchWord("Fang") || matchWord("Feather") || matchWord("Cell") ||
+                matchWord("Fossil") || matchWord("Shell") || matchWord("Resin") || matchWord("Sap") || matchWord("Wool") || matchWord("Bar") ||
+                matchWord("Chunk") || matchWord("Fluid") || matchWord("Eye") || matchWord("Heart") || matchWord("Liver") || matchWord("Blood") ||
+                matchWord("Tail") || matchWord("Wing") || matchWord("Beak") || matchWord("Carapace") || matchWord("Chitin") || matchWord("Yarn") ||
+                matchWord("Clay") || matchWord("Sand") || matchWord("Glass") || matchWord("Metal") || matchWord("Alloy") || matchWord("Charcoal") ||
+                matchWord("Ash") || matchWord("Sulfur") || matchWord("Mercury") || matchWord("Sphere") || matchWord("Cog") || matchWord("Gear") ||
+                matchWord("Spring") || matchWord("Screw") || matchWord("Wire") || matchWord("Part") || matchWord("Core") || matchWord("Scrap") ||
+                matchWord("Customize") || matchWord("Coupon") || matchWord("Appearance") || matchWord("Deaging") || matchWord("Aging") ||
+                matchWord("Scar") || matchWord("Dye") || matchWord("Palette") || matchWord("Hair") || matchWord("Face") || matchWord("Tattoo"))
                 return "Metarial Object";
 
             return "Uncategorised";
@@ -1105,8 +1136,19 @@ namespace trinity::game
         std::vector<Storage> g_storages;
         ULONGLONG g_lastRefresh = 0;
 
+        thread_local char t_catNameBuf[128]{};
+
         const char* GetItemCategoryLabel(const Item& it)
         {
+            if (it.cat.row != 0xFFFF && it.cat.row != kNoCategory.row)
+            {
+                char rawGrp[128]{};
+                if (GroupName(it.cat.row, rawGrp, sizeof(rawGrp)) && rawGrp[0] != 0)
+                {
+                    snprintf(t_catNameBuf, sizeof(t_catNameBuf), "%s", rawGrp);
+                    return t_catNameBuf;
+                }
+            }
             return DeduceCategoryFromItem(it.key, it.name);
         }
 
@@ -1448,6 +1490,17 @@ namespace trinity::game
                 realQty = 0;
             }
 
+            static uint16_t s_moneyTid = 0;
+            if (!s_moneyTid)
+            {
+                s_moneyTid = Inventory::FindTypeIdByKey("Money_Copper");
+            }
+            if (s_moneyTid && typeId == s_moneyTid && g_walletSpoofValue != -1)
+            {
+                if (g_walletSpoofValue > realQty)
+                    return g_walletSpoofValue;
+            }
+
             if (g_campSpoofAddedValue > 0)
             {
                 static uint16_t s_tCampMoney = 0, s_tCampFood = 0, s_tCampWeapon = 0, s_tCampTimber = 0, s_tCampStone = 0;
@@ -1705,7 +1758,7 @@ namespace trinity::game
                     ++occ;
                 }
 
-                if (occ < used)
+                if (occ != used)
                     Write16(bucket + kOff_InvBucket_UsedSlots, occ);
             }
         }
@@ -2822,12 +2875,12 @@ namespace trinity::game
 
             // Heal the used-slot accounting that quantity edits bend and reloads
             // detonate (the "inventory full beside empty slots" bug). Always on;
-            // 1 Hz; a strict no-op on buckets the engine's own accounting produced.
+            // 20 Hz (50ms); a strict no-op on buckets the engine's own accounting produced.
             if (Player::Ready())
             {
                 static ULONGLONG s_lastRepair = 0;
                 const ULONGLONG now = GetTickCount64();
-                if (now - s_lastRepair >= 1000)
+                if (now - s_lastRepair >= 50)
                 {
                     s_lastRepair = now;
                     RepairUsedSlots(CurrentHolder());
@@ -2871,17 +2924,13 @@ namespace trinity::game
                     g_stackApplied = false;
             }
 
-            // Unlike the stack-size table above, this is NOT edge-triggered. Slot
-            // caps live on bucket objects that a save load destroys and rebuilds,
-            // so "apply once when the toggle changes" works on the first load and
-            // never again. SetAllSlotSizes skips buckets that already match, so
-            // re-driving it costs a u16 read per bucket and makes the
-            // feature survive reloads (and anything else that recomputes the cap).
+            // Slot caps live on bucket objects that a save load destroys and rebuilds.
+            // SetAllSlotSizes skips buckets that already match, so re-driving it costs a u16 read per bucket.
             if (st.invSlotSize && Player::Ready() && !g_commitActive.load(std::memory_order_acquire))
             {
                 static ULONGLONG s_lastSlotTick = 0;
                 const ULONGLONG now = GetTickCount64();
-                if (now - s_lastSlotTick >= 500)
+                if (now - s_lastSlotTick >= 100)
                 {
                     s_lastSlotTick = now;
                     if (SetAllSlotSizes(true, st.invSlotSizeVal))
@@ -3555,6 +3604,18 @@ namespace trinity::game
             volatile bool built = false, planned = false, excepted = false;
 
             RepairUsedSlots(holder);
+
+            // Auto-expand bucket if full so AddItem never fails due to full container
+            uint16_t used = 0, maxS = 0;
+            if (Read16(bucket + kOff_InvBucket_UsedSlots, &used) &&
+                Read16(bucket + kOff_InvBucket_MaxSlots, &maxS))
+            {
+                if (used >= maxS)
+                {
+                    const uint16_t targetCap = (used + 64 > 700) ? 700 : static_cast<uint16_t>(used + 64);
+                    ApplySlotCapToHolder(holder, true, targetCap);
+                }
+            }
 
             __try
             {

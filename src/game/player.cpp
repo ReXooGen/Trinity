@@ -339,8 +339,14 @@ namespace trinity::game
             return false;
         }
 
+        static ULONGLONG s_lastResolveMs = 0;
+
         void TickResolveSelf()
         {
+            const ULONGLONG now = GetTickCount64();
+            if (now - s_lastResolveMs < 30) return;
+            s_lastResolveMs = now;
+
             if (!g_charMgrGlobal) return;
             uint64_t p = 0, mgr = 0, data = 0;
             if (!Read64(g_charMgrGlobal, &p) || p < kMinPointer) return;                 // P = *slot
@@ -690,10 +696,8 @@ namespace trinity::game
             if (InSet(g_hpEntries, kMaxPlayers, target)) return true;
             for (int i = 0; i < kMaxPartyPlayers; ++i)
             {
-                const uintptr_t act = Player::GetActor(i);
+                const uintptr_t act = g_actors[i].load(std::memory_order_relaxed);
                 if (act && act == target) return true;
-                const uintptr_t cAct = Inventory::CharacterAddr(i);
-                if (cAct && cAct == target) return true;
             }
             return false;
         }

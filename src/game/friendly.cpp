@@ -7,6 +7,7 @@
 #include <MinHook.h>
 
 #include "offsets.h"
+#include "player.h"
 #include "../mem/safe_memory.h"
 #include "../mem/scanner.h"
 #include "../core/logger.h"
@@ -23,24 +24,14 @@ namespace trinity::game
     namespace
     {
         // 1. Direct SetNpc and SetPet Leaf Setters (Prologue level)
-        // Modifying the source record HERE guarantees 1-SHOT MAX TRUST (1x Gift/Feed creates the slot directly at 100)
+        // Modifying the source record HERE guarantees 1-SHOT MAX TRUST (1x Greet/Gift/Feed creates the slot directly at 100)
         using FriendlySet_t = void*(__fastcall*)(void* mapOwner, void* record);
         FriendlySet_t oSetNpc = nullptr;
         FriendlySet_t oSetPet = nullptr;
         void* g_npcTarget = nullptr;
         void* g_petTarget = nullptr;
 
-        // 2. Direct NPC Trust Writer (0x141BDF910): The internal engine function that writes NPC trust points.
-        using NpcTrustWriter_t = void*(__fastcall*)(void* rcx, void* rdx, uint16_t npcId, int32_t trustVal, void* arg5);
-        NpcTrustWriter_t oNpcTrustWriter = nullptr;
-        void* g_npcWriterTarget = nullptr;
-
-        // 3. Faction Relation Alert Dispatcher (0x142759760): UI & Faction toast dispatcher
-        using FactionAlertDisp_t = void*(__fastcall*)(void* pMgr, void* pResult, uint16_t npcId, int32_t delta, void* arg5, void* arg6, void* arg7);
-        FactionAlertDisp_t oFactionAlertDisp = nullptr;
-        void* g_alertDispTarget = nullptr;
-
-        // 4. Inline Memory Trampoline Sites (Cheat Engine CDtrustA / CDtrustB)
+        // 2. Inline Memory Trampoline Sites (Cheat Engine CDtrustA / CDtrustB)
         struct TrustHookSite
         {
             uintptr_t siteAddr = 0;
@@ -55,26 +46,30 @@ namespace trinity::game
 
         void ApplyMaxTrustToRecord(void* record, const char* srcName)
         {
+            if (!Player::Ready()) return; // Never touch records while loading or at main menu
+
             const uintptr_t r = reinterpret_cast<uintptr_t>(record);
             if (r < kMinPointer) return;
 
             uint32_t key = 0;
             if (!Read32(r + kOff_FriendlyRec_Key, &key)) return;
 
-            // key == 0 is the save-loader at login (never overwrite baseline on load)
-            // key != 0 is any active in-game gameplay action (Gift, Greet, Feed, Tame)
-            if (key != 0)
-            {
-                Write32(r + 0x20, 100);
-                Write64(r + 0x28, 100);
-                LOG_OK("friendly: %s source record forced to 100 (1-Shot Max Trust): key=%u", srcName, key);
-            }
+            // key == 0 is the save-loader at login / title screen (never touch baseline on load)
+            // key != 0 is any active in-game gameplay action (Gift, Greet, Dialogue, Feed, Tame)
+            if (key == 0) return;
+
+            // Force 100 (Max Trust) to both 32-bit and 64-bit trust slots (+0x20 and +0x28)
+            Write32(r + 0x20, 100);
+            Write64(r + 0x20, 100);
+            Write32(r + 0x28, 100);
+            Write64(r + 0x28, 100);
+            LOG_OK("friendly: %s source record forced to 100 (1-Shot Max Trust): key=%u", srcName, key);
         }
 
         void* __fastcall hkSetNpc(void* mapOwner, void* record)
         {
             const State& st = State::Get();
-            if (st.trustMult && st.trustMultVal > 1.0f)
+            if (Player::Ready() && st.trustMult && st.trustMultVal > 1.0f)
             {
                 __try
                 {
@@ -88,7 +83,7 @@ namespace trinity::game
         void* __fastcall hkSetPet(void* mapOwner, void* record)
         {
             const State& st = State::Get();
-            if (st.trustMult && st.trustMultVal > 1.0f)
+            if (Player::Ready() && st.trustMult && st.trustMultVal > 1.0f)
             {
                 __try
                 {
@@ -97,50 +92,6 @@ namespace trinity::game
                 __except (EXCEPTION_EXECUTE_HANDLER) {}
             }
             return oSetPet(mapOwner, record);
-        }
-
-        void* __fastcall hkNpcTrustWriter(void* rcx, void* rdx, uint16_t npcId, int32_t trustVal, void* arg5)
-        {
-            const State& st = State::Get();
-            if (st.trustMult && st.trustMultVal > 1.0f && trustVal > 0)
-            {
-                int32_t oldVal = trustVal;
-                trustVal = 100; // Force Max Trust 100 on any interaction
-                LOG_OK("friendly: NpcTrustWriter hooked: npcId=%u, val=%d -> 100 (MAX TRUST APPLIED)", npcId, oldVal);
-            }
-            return oNpcTrustWriter(rcx, rdx, npcId, trustVal, arg5);
-        }
-
-        void* __fastcall hkFactionAlertDisp(
-            void* pMgr,
-            void* pResult,
-            uint16_t npcId,
-            int32_t delta,
-            void* arg5,
-            void* arg6,
-            void* arg7)
-        {
-            const State& st = State::Get();
-            if (st.trustMult && st.trustMultVal > 1.0f)
-            {
-                if (delta > 0)
-                {
-                    delta = 100;
-                }
-
-                uintptr_t u5 = reinterpret_cast<uintptr_t>(arg5);
-                if (u5 > 0 && u5 < 100)
-                {
-                    arg5 = reinterpret_cast<void*>(static_cast<uintptr_t>(100));
-                }
-
-                uintptr_t u6 = reinterpret_cast<uintptr_t>(arg6);
-                if (u6 > 0 && u6 < 100)
-                {
-                    arg6 = reinterpret_cast<void*>(static_cast<uintptr_t>(100));
-                }
-            }
-            return oFactionAlertDisp(pMgr, pResult, npcId, delta, arg5, arg6, arg7);
         }
 
         void BuildTrampoline(uint8_t* trampMem, uintptr_t returnAddr)
@@ -227,39 +178,7 @@ namespace trinity::game
             }
         }
 
-        // 2. Install NpcTrustWriter hook
-        const uintptr_t writerAddr = mem::FindPattern(kSig_FriendlyNpcTrustWriter);
-        if (writerAddr)
-        {
-            g_npcWriterTarget = reinterpret_cast<void*>(writerAddr);
-            if (MH_CreateHook(g_npcWriterTarget, reinterpret_cast<void*>(&hkNpcTrustWriter), reinterpret_cast<void**>(&oNpcTrustWriter)) == MH_OK)
-            {
-                LOG_OK("friendly: NpcTrustWriter hook installed @ 0x%p", g_npcWriterTarget);
-                g_hooksInstalled = true;
-            }
-            else
-            {
-                g_npcWriterTarget = nullptr;
-            }
-        }
-
-        // 3. Install AlertDispatcher hook
-        const uintptr_t alertAddr = mem::FindPattern(kSig_FriendlyAlertDisp);
-        if (alertAddr)
-        {
-            g_alertDispTarget = reinterpret_cast<void*>(alertAddr);
-            if (MH_CreateHook(g_alertDispTarget, reinterpret_cast<void*>(&hkFactionAlertDisp), reinterpret_cast<void**>(&oFactionAlertDisp)) == MH_OK)
-            {
-                LOG_OK("friendly: AlertDispatcher hook installed @ 0x%p", g_alertDispTarget);
-                g_hooksInstalled = true;
-            }
-            else
-            {
-                g_alertDispTarget = nullptr;
-            }
-        }
-
-        // 4. Scan for all inline Trust write sites
+        // 2. Scan for all inline Trust write sites
         std::vector<uintptr_t> foundSites;
         const char* kSig_15ByteSite = "C5 FC 11 49 20 C5 F8 10 47 40 C5 F8 11 41 40";
 
@@ -303,21 +222,6 @@ namespace trinity::game
             }
         }
 
-        const State& st = State::Get();
-        if (st.trustMult && st.trustMultVal > 1.0f)
-        {
-            if (g_npcTarget) MH_EnableHook(g_npcTarget);
-            if (g_petTarget) MH_EnableHook(g_petTarget);
-            if (g_npcWriterTarget) MH_EnableHook(g_npcWriterTarget);
-            if (g_alertDispTarget) MH_EnableHook(g_alertDispTarget);
-            for (const auto& s : g_sites)
-            {
-                WriteHook(s.siteAddr, s.trampMem);
-            }
-            g_hooksEnabled = true;
-            LOG_OK("friendly: 1-Shot 1x Action Max Trust (100) Multi-Tier Injections ENGAGED.");
-        }
-
         return g_hooksInstalled;
     }
 
@@ -326,7 +230,8 @@ namespace trinity::game
         if (!g_hooksInstalled) return;
 
         const State& st = State::Get();
-        const bool wantEnabled = st.trustMult && (st.trustMultVal > 1.0f);
+        // Strict safety guard: ONLY engage when Player is in-world (Player::Ready())
+        const bool wantEnabled = Player::Ready() && st.trustMult && (st.trustMultVal > 1.0f);
 
         if (wantEnabled != g_hooksEnabled)
         {
@@ -334,8 +239,6 @@ namespace trinity::game
             {
                 if (g_npcTarget) MH_EnableHook(g_npcTarget);
                 if (g_petTarget) MH_EnableHook(g_petTarget);
-                if (g_npcWriterTarget) MH_EnableHook(g_npcWriterTarget);
-                if (g_alertDispTarget) MH_EnableHook(g_alertDispTarget);
                 for (const auto& s : g_sites)
                 {
                     WriteHook(s.siteAddr, s.trampMem);
@@ -347,8 +250,6 @@ namespace trinity::game
             {
                 if (g_npcTarget) MH_DisableHook(g_npcTarget);
                 if (g_petTarget) MH_DisableHook(g_petTarget);
-                if (g_npcWriterTarget) MH_DisableHook(g_npcWriterTarget);
-                if (g_alertDispTarget) MH_DisableHook(g_alertDispTarget);
                 for (const auto& s : g_sites)
                 {
                     RestoreHook(s.siteAddr);
@@ -375,28 +276,11 @@ namespace trinity::game
             g_petTarget = nullptr;
         }
 
-        if (g_npcWriterTarget)
+        for (const auto& s : g_sites)
         {
-            MH_DisableHook(g_npcWriterTarget);
-            MH_RemoveHook(g_npcWriterTarget);
-            g_npcWriterTarget = nullptr;
+            RestoreHook(s.siteAddr);
         }
-
-        if (g_alertDispTarget)
-        {
-            MH_DisableHook(g_alertDispTarget);
-            MH_RemoveHook(g_alertDispTarget);
-            g_alertDispTarget = nullptr;
-        }
-
-        if (g_hooksEnabled)
-        {
-            for (const auto& s : g_sites)
-            {
-                RestoreHook(s.siteAddr);
-            }
-            g_hooksEnabled = false;
-        }
+        g_sites.clear();
 
         if (g_trampPool)
         {
@@ -404,8 +288,8 @@ namespace trinity::game
             g_trampPool = nullptr;
         }
 
-        g_sites.clear();
         g_hooksInstalled = false;
+        g_hooksEnabled = false;
     }
 
     bool Friendly::Ready()
