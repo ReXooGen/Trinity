@@ -1,6 +1,6 @@
 # Trinity — Crimson Desert (vTweak by Lian)
 
-Trinity is an in-game DirectX 12 mod menu for **Crimson Desert**, originally created by **XeTrinityz**. This repository provides an enhanced, fully updated build for game version **TU 1.17.00 – 1.18.00+** with critical memory fixes, auto-navigation, and quality-of-life enhancements.
+Trinity is an in-game DirectX 12 mod menu for **Crimson Desert**, originally created by **XeTrinityz**. This repository provides an enhanced, fully updated build for game version **TU 1.17.00 – 2.00.01+** with critical memory fixes, auto-navigation, and quality-of-life enhancements.
 
 > **Single-player use only.** Do not use this project in online or anti-cheat-protected modes. This community project is not affiliated with or endorsed by Pearl Abyss.
 
@@ -24,6 +24,39 @@ Trinity is an in-game DirectX 12 mod menu for **Crimson Desert**, originally cre
 | :---: | :---: |
 | ![Saved Locations](images/image7.png) | ![Storage Editor](images/image8.png) |
 
+---
+
+## What's New in v1.3.1
+
+- **Critical CTD Fixes & Engine Hardening**:
+  - **Fixed NPC Greeting / Interaction Crash (`Trinity.asi+0x19160`)**: Completely replaced inline code patches with SEH-guarded MinHook trampolines and robust pointer validation for quest and transient NPC records.
+  - **Fixed Weapon Swapping Race Condition (`CrimsonDesert.exe+0x121F192`)**: Eliminated multi-threaded race conditions between the DirectX 12 render loop and the engine's internal weapon mesh destructor (`ReleaseRef`) by serializing character and equipment scans on the main game thread.
+  - **Fixed Character Switching Freeze & Crash**: Resolved deadlocks and crashes occurring when switching between characters (e.g., Damiane ↔ Kliff) after equipment edits via direct actor pointers and SEH exception handlers.
+- **Smart Equipped Gear Protection**:
+  - Equipping weapons, armor, or accessories no longer falsely registers them as "Sold / Discarded" in the *Restore Lost & Sold Items* menu.
+  - Automatically filters actively equipped gear on Kliff, Damiane, and Oongka from the buyback list.
+- **Live Self-Healing Item Icons & Side-Panel Tooltips**:
+  - Automatically queries the engine's live item definition tables (`IconForTypeId`) to heal corrupted or truncated icon strings from disk history, restoring full high-resolution artwork for all equipment and quest items.
+  - Side-panel tooltip preview cards now render reliably for every selected item.
+- **Proportional Trust Multiplier Scaling**:
+  - Re-engineered trust scaling calculation to provide smooth, proportional progression (1.0x – 100.0x) instead of instant maxing.
+- **Native Engine Game Speed Scaling (`hkFrameTimerUpdate`)**:
+  - Replaced legacy fixed-timestep overrides with native engine frame timer scaling for smooth 0.1x – 10.0x speed manipulation without FPS drops or physics jitter.
+
+---
+
+## What's New in v1.3.0
+
+- **Crimson Desert TU 2.00.00 – 2.00.01 Full Support**:
+  - Updated memory offsets, structures, and function signatures matching the major Title Update 2.00 overhaul.
+  - Re-anchored item reflection tables (`iteminfo`, `ItemGroupInfo`, `stringinfo`, `Inventory`, and `TrItemValue` constructor) for seamless Add Item spawning.
+- **Expanded Multi-Language Support (9 Languages)**:
+  - Added full native translations for: **English**, **German (Deutsch)**, **Spanish (Español)**, **French (Français)**, **Indonesian (Bahasa Indonesia)**, **Japanese (日本語)**, **Korean (한국어)**, **Portuguese - Brazil (Português - Brasil)**, **Russian (Русский)**, and **Simplified Chinese (简体中文)**.
+- **Enhanced Character Resolution**:
+  - 3-anchor verification for character manager resolution ensuring 100% reliable player detection across transitions.
+
+---
+
 ## What's New in v1.2.4
 
 - **Smart Lost & Sold Items Tracker (Buyback & Recycle Bin)**:
@@ -38,6 +71,8 @@ Trinity is an in-game DirectX 12 mod menu for **Crimson Desert**, originally cre
 - **Dedicated Submenus**: Integrated **Money & Currency**, **Abyss Items & Artifacts**, and **Restore Items** submenus.
 - **Engine Memory Safety Hardening**: Completely eliminated destructive memory writes and wrapped all subsystem refreshes in SEH for 100% crash-free stability.
 
+---
+
 ## What's New in v1.2.3
 
 - **Infinite Mount Stamina TU 1.18+ Fix**: Restored full infinite stamina support for horses, mounts, and dragons while galloping and sprinting.
@@ -45,69 +80,6 @@ Trinity is an in-game DirectX 12 mod menu for **Crimson Desert**, originally cre
 - **Character Spontaneous Combustion Fix**: Completely purged thermal and elemental debuff meters (types 17, 18, 28, 48) from the scanner, permanently resolving the bug where characters caught fire upon spawn.
 - **Native Weather & Environment Controls**: Built-in time of day and weather modifiers under the **WORLD** tab, providing seamless, crash-free environmental control without requiring conflicting external addons.
 - **Protagonist Scanning Stability**: Hardened `TickResolveSelf` vital chain validation to eliminate access violation crashes in crowded NPC areas.
-- **Game Compatibility**: Fully optimized and verified for **Crimson Desert TU 1.18.00 – 1.18.01+**.
-
----
-
-## What's New in v1.2.2
-
-- **Game Compatibility**: Verified and optimized for **Crimson Desert TU 1.18.00 – 1.18.01+**.
-- **Add Item & Equipment System Hotfix**:
-  - **Instant Menu Unlock**: Fixed `"Adding is locked until your save finishes loading"` false positive by validating active client holder immediately upon world load.
-  - **Equipable Spawned Weapons & Armor**: Fixed spawned equipment showing as un-equipable by assigning unique 64-bit instance IDs and full durability (`10000`) on spawn across both server and client authority realms.
-  - **Bucket Capacity Auto-Expansion**: Dynamically expands category capacity up to 2,000+ slots before injection and runs `RepairUsedSlots` to prevent `insert planner refused, err=-771604600 (no slot / bucket full)`.
-  - **Non-Stackable Equipment Protection**: Smart `Max Stack Size` filter that preserves weapons, shields, and armors as single-instance items (`qty = 1`) so they can always be equipped without stack collisions, while materials and consumables stack up to 999,999.
-
----
-
-## What's New in v1.2.1
-
-- **Money & Currency System Overhaul**:
-  - Direct Silver modification with save-and-reload persistence.
-  - Non-blocking background currency scanner (prevents UI freeze/hangs).
-  - Quick Silver Pouch & Gold Chest Spawner (`Silver_Pack`, `Small_Silver_Pack`, `Boss_Reward_BigMoney`).
-  - Added dedicated **Abyss Items & Artifacts** submenu with smart 1-150 Sealed Artifact collection injector, Seeds, Cells, and permanent stat items (+30 HP, +2 MP, +3 SP).
-
----
-
-## What's New in v1.2.0
-
-- **Add Item Engine Fix (TU 1.18.00+ / 18.0.01 Compatibility)**:
-  - Fixed Add Item execution pipeline (`CommitAdd`) and memory signatures matching the latest game executable.
-  - Resolves `"not ready"` error when spawning weapons, armor, materials, or consumables.
-
-- **Multi-Language Support (Localization System)**:
-  - Added in-game language selection with full translations: **English**, **Simplified Chinese (简体中文)**, and **Korean (한국어)**.
-  - Automatically loads and saves language preference to `Trinity.ini`.
-
-- **Updated Subsystem Signatures**:
-  - Re-anchored NPC and pet friendliness modifier signatures (`kSig_FriendlySetNpc`, `kSig_FriendlySetPet`) and inventory holder resolvers for TU 1.18+.
-
----
-
-## What's New in v1.1.0
-
-- **Abyss Socket TU 1.17+ Alignment & Live Socketing**:
-  - Aligned the Abyss socket data array pointer to `+0x60` and implemented accurate unlocked record state decoding.
-  - Fixes the socket editor displaying all slots as empty and enables seamless Abyss Gear socketing.
-
-- **Batch Equipment Enhancer (1-Click)**:
-  - **Repair All Gear**: Instantly restores 100% durability across all equipped weapons and armor.
-  - **Max Refinement (+10) All**: Upgrades all equipped items to maximum refinement level (+10).
-  - **Unlock All Sockets**: Unlocks all 5 Abyss sockets on all equipped gear in one click.
-
-- **Unlimited Dynamic Saved Locations (Bookmarks)**:
-  - Bookmark unlimited custom player coordinates across the world map.
-  - In-place keyboard/controller **Rename** feature for custom labels (e.g. "Base Camp", "Dungeon Entrance").
-  - Instant **Teleport to Bookmark** and direct **Delete (`Del` / `X`)** shortcut key per location.
-  - Fully persisted to `Trinity.ini`.
-
-- **Dynamic Theme Customizer**:
-  - 6 selectable menu color themes: **Crimson Red**, **Cyber Cyan**, **Neon Purple**, **Matrix Emerald**, **Royal Gold**, and **Sunset Orange**.
-
-- **Destination Teleport with Live Coordinates & Safe Landing**:
-  - Re-anchored destination teleport with active coordinate display and robust physics thread synchronization.
-  - Automatic God Mode / invulnerability protection until player touches the ground.
 
 ---
 
