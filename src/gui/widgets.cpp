@@ -317,6 +317,17 @@ namespace trinity::ui
         return RowBase(label, desc, RowKind::Action, icon).activated;
     }
 
+    bool OptionItemWithSubtitle(const char* label, const char* name, const char* icon,
+                                const char* subtitle, const char* desc)
+    {
+        const RowResult r = RowBase(label, desc, RowKind::Action, icon);
+        if (r.selected)
+        {
+            SetTooltipPreview(name ? name : label, (icon && icon[0]) ? icon : "", subtitle, -1, -1, 0, 0, 0);
+        }
+        return r.activated;
+    }
+
     bool OptionItemWithBuff(const char* label, const char* icon, const char* buff, const char* desc)
     {
         char fullDesc[256];

@@ -1974,23 +1974,6 @@ namespace trinity::game
         g_pendingDestZ.store(destination.z, std::memory_order_relaxed);
         g_pendingMarkerTp.store(true, std::memory_order_release);
 
-        // Immediate application fallback
-        __try
-        {
-            if (moveOwner >= kMinPointer)
-            {
-                *reinterpret_cast<Vec3*>(moveOwner + kOff_Player_Dest0) = destination;
-                *reinterpret_cast<Vec3*>(moveOwner + kOff_Player_Dest1) = destination;
-                *reinterpret_cast<Vec3*>(moveOwner + 0xC0) = Vec3{ 0.0f, 0.0f, 0.0f };
-            }
-            if (markerPlayer >= kMinPointer && markerPlayer != moveOwner)
-            {
-                *reinterpret_cast<Vec3*>(markerPlayer + kOff_Player_Dest0) = destination;
-                *reinterpret_cast<Vec3*>(markerPlayer + kOff_Player_Dest1) = destination;
-            }
-        }
-        __except (EXCEPTION_EXECUTE_HANDLER) {}
-
         ClearActiveMarker();
         return MarkerStatus::Success;
     }
@@ -2013,22 +1996,6 @@ namespace trinity::game
         g_pendingDestY.store(destination.y, std::memory_order_relaxed);
         g_pendingDestZ.store(destination.z, std::memory_order_relaxed);
         g_pendingMarkerTp.store(true, std::memory_order_release);
-
-        __try
-        {
-            if (moveOwner >= kMinPointer)
-            {
-                *reinterpret_cast<Vec3*>(moveOwner + kOff_Player_Dest0) = destination;
-                *reinterpret_cast<Vec3*>(moveOwner + kOff_Player_Dest1) = destination;
-                *reinterpret_cast<Vec3*>(moveOwner + 0xC0) = Vec3{ 0.0f, 0.0f, 0.0f };
-            }
-            if (markerPlayer >= kMinPointer && markerPlayer != moveOwner)
-            {
-                *reinterpret_cast<Vec3*>(markerPlayer + kOff_Player_Dest0) = destination;
-                *reinterpret_cast<Vec3*>(markerPlayer + kOff_Player_Dest1) = destination;
-            }
-        }
-        __except (EXCEPTION_EXECUTE_HANDLER) {}
 
         return true;
     }

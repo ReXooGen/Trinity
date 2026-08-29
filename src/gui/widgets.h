@@ -20,6 +20,8 @@ namespace trinity::ui
     // lists aligned.
     bool OptionItem(const char* label, const char* icon,
                     const char* desc = nullptr);
+    bool OptionItemWithSubtitle(const char* label, const char* name, const char* icon,
+                                const char* subtitle, const char* desc = nullptr);
     bool OptionItemWithBuff(const char* label, const char* icon, const char* buff,
                             const char* desc = nullptr);
 

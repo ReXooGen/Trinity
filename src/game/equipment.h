@@ -47,6 +47,7 @@ namespace trinity::game
         static bool        IsItemForCharacter(int charIdx, uint16_t typeId, const char* name = nullptr, const char* key = nullptr);
         static bool        IsItemForSlot(uint16_t slotTag, uint16_t typeId, const char* name = nullptr, const char* key = nullptr);
         static const char* SlotNameForTag(uint16_t tag);
+        static bool        IsItemEquippedOnAnyCharacter(uint16_t typeId);
 
         static constexpr int kMaxSockets = 5;
         static constexpr int kRefineMax  = 10; // refinement caps at level 10

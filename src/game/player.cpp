@@ -344,7 +344,21 @@ namespace trinity::game
         void TickResolveSelf()
         {
             const ULONGLONG now = GetTickCount64();
-            if (now - s_lastResolveMs < 30) return;
+
+            // Fast-path: if we already have a valid resolved protagonist and stat arrays,
+            // verify the existing actor pointer cheaply (1 read) rather than re-scanning 400+ characters every frame.
+            const uintptr_t curActor = g_actors[0].load(std::memory_order_relaxed);
+            const uintptr_t curHp = g_hpEntries[0].load(std::memory_order_relaxed);
+            if (curActor >= kMinPointer && curHp >= kMinPointer && (now - s_lastResolveMs < 200))
+            {
+                uint32_t objType = 0;
+                if (Read32(curActor + kOff_Owner_ObjectType, &objType) && objType == Obj_SelfPlayer)
+                {
+                    return;
+                }
+            }
+
+            if (now - s_lastResolveMs < 50) return;
             s_lastResolveMs = now;
 
             if (!g_charMgrGlobal) return;
@@ -916,11 +930,25 @@ namespace trinity::game
     void Player::Tick()
     {
         TickResolveSelf();
+        const State& st = State::Get();
+        if (st.infStamina || st.infMountStamina)
+        {
+            for (int i = 0; i < kMaxStatEntries; ++i)
+            {
+                if (st.infStamina) PinEntry(g_stamEntries[i].load(std::memory_order_relaxed));
+                if (st.infMountStamina) PinEntry(g_mountStamEntries[i].load(std::memory_order_relaxed));
+            }
+        }
+        if (st.infSpirit)
+        {
+            for (int i = 0; i < kMaxStatEntries; ++i)
+                PinEntry(g_spiritEntries[i].load(std::memory_order_relaxed));
+        }
     }
 
     void Player::RefreshSelf()
     {
-        TickResolveSelf();
+        // Lightweight non-blocking pin on already-resolved atomic pointers without scanning char manager
         const State& st = State::Get();
         if (st.infStamina || st.infMountStamina)
         {

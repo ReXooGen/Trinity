@@ -2476,7 +2476,17 @@ namespace trinity::gui
                      LOC("Status"), owned ? LOC("In Inventory") : LOC("Not in Bag"),
                      LOC("Press to add 1 copy to inventory."));
 
-            if (ui::Option(rowLabel, desc))
+            char subtitle[96];
+            snprintf(subtitle, sizeof(subtitle), "%s  •  %s",
+                     title, owned ? LOC("In Inventory") : LOC("Catalog Item"));
+
+            char iconBuf[96]{};
+            const char* iconToUse = nullptr;
+            uint16_t tid = game::Inventory::FindTypeIdByKey(key);
+            if (tid && game::Inventory::IconForTypeId(tid, iconBuf, sizeof(iconBuf)) && iconBuf[0])
+                iconToUse = iconBuf;
+
+            if (ui::OptionItemWithSubtitle(rowLabel, displayName, iconToUse, subtitle, desc))
             {
                 if (game::Inventory::AddItemByKey(key, 1))
                     ui::Toast(LOC("Added 1x %s"), displayName);
@@ -2606,6 +2616,10 @@ namespace trinity::gui
                     !SearchMatches(rec.source, s_lostSearch))
                     continue;
 
+                // Don't show items that are currently EQUIPPED on Kliff, Damiane, or Oongka!
+                if (rec.typeId && game::Equipment::IsItemEquippedOnAnyCharacter(rec.typeId))
+                    continue;
+
                 char rowLabel[160];
                 snprintf(rowLabel, sizeof(rowLabel), "[%s]  %lldx  %s",
                          LOC("RESTORE"), static_cast<long long>(rec.qty), rec.name);
@@ -2617,7 +2631,29 @@ namespace trinity::gui
                          LOC("Key"), rec.key[0] ? rec.key : "none",
                          LOC("Press to restore into inventory."));
 
-                if (ui::Option(rowLabel, desc))
+                char subtitle[96];
+                snprintf(subtitle, sizeof(subtitle), "%s  •  %s",
+                         rec.source[0] ? rec.source : LOC("Lost & Sold"),
+                         rec.timeStr[0] ? rec.timeStr : "--:--");
+
+                char iconBuf[96]{};
+                const char* iconToUse = nullptr;
+                if (rec.typeId && game::Inventory::IconForTypeId(rec.typeId, iconBuf, sizeof(iconBuf)) && iconBuf[0])
+                {
+                    iconToUse = iconBuf;
+                }
+                else if (rec.icon[0] && strcmp(rec.icon, "none") != 0)
+                {
+                    iconToUse = rec.icon;
+                }
+                else if (rec.key[0])
+                {
+                    uint16_t tid = game::Inventory::FindTypeIdByKey(rec.key);
+                    if (tid && game::Inventory::IconForTypeId(tid, iconBuf, sizeof(iconBuf)) && iconBuf[0])
+                        iconToUse = iconBuf;
+                }
+
+                if (ui::OptionItemWithSubtitle(rowLabel, rec.name, iconToUse, subtitle, desc))
                 {
                     if (game::Inventory::RestoreLostItem(i))
                         ui::Toast(LOC("Restored %lldx %s"), static_cast<long long>(rec.qty), rec.name);

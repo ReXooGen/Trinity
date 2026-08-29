@@ -16,6 +16,7 @@
 
 #include "offsets.h"
 #include "player.h"
+#include "equipment.h"
 #include "dye.h"
 #include "item_names.h"
 #include "../mem/scanner.h"
@@ -2831,8 +2832,14 @@ namespace trinity::game
                 const int64_t curQty = (it != currentItems.end()) ? it->second.qty : 0;
                 if (curQty < old.qty)
                 {
+                    // Do not record as lost/sold if the item was merely equipped on a protagonist!
+                    if (Equipment::IsItemEquippedOnAnyCharacter(old.typeId))
+                    {
+                        continue;
+                    }
+
                     const int64_t diff = old.qty - curQty;
-                    // The item was sold, discarded, or consumed!
+                    // The item was genuinely sold, discarded, or consumed!
                     Inventory::RecordLostItem(old.typeId, diff, old.name, old.key, old.icon, "Sold / Discarded");
                 }
             }
@@ -5048,6 +5055,32 @@ namespace trinity::game
         std::lock_guard<std::mutex> lk(g_lostMutex);
         if (index < 0 || index >= static_cast<int>(g_lostHistory.size())) return false;
         *out = g_lostHistory[index];
+
+        // Self-heal corrupted or truncated icons/names from live item definitions
+        if (out->typeId > 0)
+        {
+            char liveIcon[96]{};
+            if (IconForType(out->typeId, liveIcon, sizeof(liveIcon)) && liveIcon[0])
+            {
+                strcpy_s(out->icon, liveIcon);
+                strcpy_s(g_lostHistory[index].icon, liveIcon);
+            }
+        }
+        else if (out->key[0])
+        {
+            uint16_t tid = FindTypeIdByKey(out->key);
+            if (tid > 0)
+            {
+                out->typeId = tid;
+                g_lostHistory[index].typeId = tid;
+                char liveIcon[96]{};
+                if (IconForType(tid, liveIcon, sizeof(liveIcon)) && liveIcon[0])
+                {
+                    strcpy_s(out->icon, liveIcon);
+                    strcpy_s(g_lostHistory[index].icon, liveIcon);
+                }
+            }
+        }
         return true;
     }
 

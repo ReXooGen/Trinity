@@ -1158,18 +1158,10 @@ namespace trinity::game
     //   match+2 : disp32 of `cmp cs:byte_606B9CE, 1`  (flag; next instr +7)
     //   match+37: `vmovss xmm0, cs:dword_615A4F0`     (value; 8-byte instr)
     // IDB match at 0x8FC348. Unique block.
-    inline constexpr const char* kSig_GameSpeed =
-        "80 3D ?? ?? ?? ?? 01 75 30 48 8B 4F 60 41 8B C7 C5 78 2F 61 64 0F 97 C0 "
-        "85 C0 74 09 80 3D ?? ?? ?? ?? 01 75 14 C5 FA 10 05 ?? ?? ?? ?? C5 FA 11 "
-        "41 64 C6 05 ?? ?? ?? ?? 00";
-    inline constexpr uintptr_t kOff_GameSpeed_FlagDisp    = 2;  // disp32 of cmp cs:byte_606B9CE,1
-    inline constexpr uintptr_t kOff_GameSpeed_FlagEnd     = 7;  // next-instr addr for that cmp
-    inline constexpr uintptr_t kOff_GameSpeed_ValueVmovss = 35; // vmovss xmm0,cs:dword_615A4F0
-    inline constexpr int       kLen_GameSpeed_Vmovss      = 8;  // that vmovss is 8 bytes (disp at end)
-    // Engine fixed-timestep reference: cs:Y (1.0f) / target fps (dword_5E379E0,
-    // default 60.0f) => baseline delta 1/60. A 1.00x multiplier over this is the
-    // 60-FPS-equivalent step; see World::Tick.
-    inline constexpr float     kGameSpeed_BaselineFps     = 60.0f;
+    inline constexpr const char* kSig_FrameTimerBody =
+        "48 8B F9 48 8B 41 60 C5 FA 10 40 64 C5 FA 11 40 60";
+    inline constexpr uintptr_t kOff_TimeStruct_Mode       = 0x50; // u8: 0 = Normal, 1 = Scaled (Time Scale), 2 = Paused
+    inline constexpr uintptr_t kOff_TimeStruct_Multiplier = 0x54; // f32: Time Scale Multiplier (1.0 = Normal, 2.0 = 2x Speed, etc.)
 
     // --- Time of Day: the master field clock (World feature, world.cpp) -------
     // The REAL day/night clock is two BSS globals (client / server realm), each

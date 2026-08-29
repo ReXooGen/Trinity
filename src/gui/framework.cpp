@@ -85,13 +85,16 @@ namespace trinity::ui
                            int maxSockets, int unlockedSockets, int filledSockets)
     {
         g_selectedTooltip = {};
-        if (!name || !icon || !name[0] || !icon[0])
+        if (!name || !name[0])
             return;
 
         g_selectedTooltip.valid           = true;
         g_selectedTooltip.isEquipped      = false;
         snprintf(g_selectedTooltip.name, sizeof(g_selectedTooltip.name), "%s", name);
-        snprintf(g_selectedTooltip.icon, sizeof(g_selectedTooltip.icon), "%s", icon);
+        if (icon && icon[0])
+            snprintf(g_selectedTooltip.icon, sizeof(g_selectedTooltip.icon), "%s", icon);
+        else
+            g_selectedTooltip.icon[0] = 0;
         if (subtitle && subtitle[0])
             snprintf(g_selectedTooltip.subtitle, sizeof(g_selectedTooltip.subtitle), "%s", subtitle);
 
@@ -1203,7 +1206,7 @@ namespace trinity::ui
         // Side-panel Item Tooltip Preview (rich: stats, refinement bars,
         // sockets & abyss gears). Falls back to the plain name+icon preview
         // when only the legacy globals were set.
-        if (State::Get().showItemTooltip && (g_selectedTooltip.valid || (g_selectedItemName[0] != '\0' && g_selectedItemIcon[0] != '\0')))
+        if (State::Get().showItemTooltip && (g_selectedTooltip.valid || g_selectedItemName[0] != '\0'))
         {
             const float s        = g_scale;
             const float imgScale = (State::Get().tooltipImageScale >= 0.5f) ? State::Get().tooltipImageScale : 1.0f;

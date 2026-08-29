@@ -2127,4 +2127,37 @@ namespace trinity::game
             LOG_WARN("equipment: effect refresh faulted - the gear will apply on reload.");
         }
     }
+
+    bool Equipment::IsItemEquippedOnAnyCharacter(uint16_t typeId)
+    {
+        if (typeId == 0 || typeId == kInvSlot_EmptyType) return false;
+
+        __try
+        {
+            for (int c = 0; c < 3; ++c)
+            {
+                const uintptr_t actor = Player::GetActor(c);
+                if (actor < kMinPointer) continue;
+
+                const uintptr_t comp = FindEquipCompFromActor(actor);
+                if (comp < kMinPointer) continue;
+
+                const EquipTableDesc tbl = ReadEquipTableDesc(comp);
+                if (!tbl.valid || tbl.count == 0 || tbl.count > 64) continue;
+
+                for (uint32_t i = 0; i < tbl.count; ++i)
+                {
+                    const uintptr_t entry = tbl.array + static_cast<uintptr_t>(i) * tbl.stride;
+                    uint16_t tid = 0;
+                    if (Read16(entry + kOff_InvSlot_TypeId, &tid) && tid == typeId)
+                        return true;
+                }
+            }
+        }
+        __except (EXCEPTION_EXECUTE_HANDLER)
+        {
+            return false;
+        }
+        return false;
+    }
 }

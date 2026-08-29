@@ -2,7 +2,9 @@
 
 #include <cstdint>
 #include <vector>
+#include <unordered_map>
 #include <cstring>
+#include <algorithm>
 #include <windows.h>
 #include <MinHook.h>
 
@@ -23,30 +25,23 @@ namespace trinity::game
 
     namespace
     {
-        // 1. Direct SetNpc and SetPet Leaf Setters (Prologue level)
-        // Modifying the source record HERE guarantees 1-SHOT MAX TRUST (1x Greet/Gift/Feed creates the slot directly at 100)
+        // Direct SetNpc and SetPet Leaf Setters (Prologue level)
+        // Intercepting here allows proportional scaling of the trust gain (1x .. 100x).
         using FriendlySet_t = void*(__fastcall*)(void* mapOwner, void* record);
         FriendlySet_t oSetNpc = nullptr;
         FriendlySet_t oSetPet = nullptr;
         void* g_npcTarget = nullptr;
         void* g_petTarget = nullptr;
 
-        // 2. Inline Memory Trampoline Sites (Cheat Engine CDtrustA / CDtrustB)
-        struct TrustHookSite
-        {
-            uintptr_t siteAddr = 0;
-            uint8_t*  trampMem = nullptr;
-        };
-
-        std::vector<TrustHookSite> g_sites;
-        uint8_t* g_trampPool = nullptr;
-
         bool g_hooksInstalled = false;
         bool g_hooksEnabled = false;
 
-        void ApplyMaxTrustToRecord(void* record, const char* srcName)
+        // Tracks last known trust value per record key to scale trust gains accurately
+        std::unordered_map<uint32_t, int64_t> s_lastTrustMap;
+
+        void ApplyTrustMultiplierToRecord(void* record, float mult, const char* srcName)
         {
-            if (!Player::Ready()) return; // Never touch records while loading or at main menu
+            if (!Player::Ready() || mult <= 1.0f) return;
 
             const uintptr_t r = reinterpret_cast<uintptr_t>(record);
             if (r < kMinPointer) return;
@@ -54,16 +49,51 @@ namespace trinity::game
             uint32_t key = 0;
             if (!Read32(r + kOff_FriendlyRec_Key, &key)) return;
 
-            // key == 0 is the save-loader at login / title screen (never touch baseline on load)
-            // key != 0 is any active in-game gameplay action (Gift, Greet, Dialogue, Feed, Tame)
+            // key == 0 is the save-loader at login / title screen (never scale baseline on load)
             if (key == 0) return;
 
-            // Force 100 (Max Trust) to both 32-bit and 64-bit trust slots (+0x20 and +0x28)
-            Write32(r + 0x20, 100);
-            Write64(r + 0x20, 100);
-            Write32(r + 0x28, 100);
-            Write64(r + 0x28, 100);
-            LOG_OK("friendly: %s source record forced to 100 (1-Shot Max Trust): key=%u", srcName, key);
+            uint64_t rawVal64 = 0;
+            Read64(r + 0x28, &rawVal64);
+            uint32_t rawVal32 = 0;
+            Read32(r + 0x20, &rawVal32);
+
+            const int64_t currentIncoming = (rawVal64 > 0) ? static_cast<int64_t>(rawVal64) : static_cast<int64_t>(rawVal32);
+
+            int64_t oldVal = 0;
+            auto it = s_lastTrustMap.find(key);
+            if (it != s_lastTrustMap.end())
+            {
+                oldVal = it->second;
+            }
+
+            int64_t gain = currentIncoming - oldVal;
+            if (gain <= 0)
+            {
+                // If initial touch where oldVal wasn't recorded, the gain is the incoming value
+                if (oldVal == 0 && currentIncoming > 0)
+                {
+                    gain = currentIncoming;
+                }
+                else
+                {
+                    s_lastTrustMap[key] = currentIncoming;
+                    return;
+                }
+            }
+
+            const int64_t scaledGain = static_cast<int64_t>(static_cast<float>(gain) * mult);
+            int64_t newTrust = oldVal + scaledGain;
+            if (newTrust > 100) newTrust = 100;
+            if (newTrust < 0) newTrust = 0;
+
+            Write32(r + 0x20, static_cast<uint32_t>(newTrust));
+            Write64(r + 0x20, static_cast<uint64_t>(newTrust));
+            Write32(r + 0x28, static_cast<uint32_t>(newTrust));
+            Write64(r + 0x28, static_cast<uint64_t>(newTrust));
+
+            s_lastTrustMap[key] = newTrust;
+            LOG_OK("friendly: %s trust gain scaled (key=%u, old=%lld, raw=%lld, gain=+%lld -> +%lld => final=%lld/100, mult=%.1fx)",
+                   srcName, key, oldVal, currentIncoming, gain, scaledGain, newTrust, mult);
         }
 
         void* __fastcall hkSetNpc(void* mapOwner, void* record)
@@ -73,7 +103,7 @@ namespace trinity::game
             {
                 __try
                 {
-                    ApplyMaxTrustToRecord(record, "SetNpc");
+                    ApplyTrustMultiplierToRecord(record, st.trustMultVal, "SetNpc");
                 }
                 __except (EXCEPTION_EXECUTE_HANDLER) {}
             }
@@ -87,74 +117,24 @@ namespace trinity::game
             {
                 __try
                 {
-                    ApplyMaxTrustToRecord(record, "SetPet");
+                    ApplyTrustMultiplierToRecord(record, st.trustMultVal, "SetPet");
                 }
                 __except (EXCEPTION_EXECUTE_HANDLER) {}
             }
             return oSetPet(mapOwner, record);
         }
-
-        void BuildTrampoline(uint8_t* trampMem, uintptr_t returnAddr)
-        {
-            // Unconditional write of 100 to both +0x20 (dword) and +0x28 (qword)
-            const uint8_t prefix[] = {
-                0xC5, 0xFC, 0x11, 0x49, 0x20,                               // vmovups [rcx+20h], ymm1
-                0xC7, 0x41, 0x20, 0x64, 0x00, 0x00, 0x00,                   // mov dword ptr [rcx+20h], 100
-                0x48, 0xC7, 0x41, 0x28, 0x64, 0x00, 0x00, 0x00,             // mov qword ptr [rcx+28h], 100
-                0xC5, 0xF8, 0x10, 0x47, 0x40,                               // vmovups xmm0, [rdi+40h]
-                0xC5, 0xF8, 0x11, 0x41, 0x40,                               // vmovups [rcx+40h], xmm0
-                0xFF, 0x25, 0x00, 0x00, 0x00, 0x00                          // jmp qword ptr [rip+0]
-            };
-
-            std::memcpy(trampMem, prefix, sizeof(prefix));
-            std::memcpy(trampMem + sizeof(prefix), &returnAddr, sizeof(returnAddr));
-        }
-
-        void WriteHook(uintptr_t site, uint8_t* trampMem)
-        {
-            if (!site || !trampMem) return;
-
-            DWORD oldProt = 0;
-            if (VirtualProtect(reinterpret_cast<void*>(site), 15, PAGE_EXECUTE_READWRITE, &oldProt))
-            {
-                uint8_t jmpBytes[15] = {
-                    0xFF, 0x25, 0x00, 0x00, 0x00, 0x00, // jmp qword ptr [rip+0]
-                    0, 0, 0, 0, 0, 0, 0, 0,             // 8-byte tramp address
-                    0x90                                // nop
-                };
-                uintptr_t addr = reinterpret_cast<uintptr_t>(trampMem);
-                std::memcpy(&jmpBytes[6], &addr, sizeof(addr));
-
-                std::memcpy(reinterpret_cast<void*>(site), jmpBytes, 15);
-                VirtualProtect(reinterpret_cast<void*>(site), 15, oldProt, &oldProt);
-                FlushInstructionCache(GetCurrentProcess(), reinterpret_cast<void*>(site), 15);
-            }
-        }
-
-        void RestoreHook(uintptr_t site)
-        {
-            if (!site) return;
-
-            DWORD oldProt = 0;
-            if (VirtualProtect(reinterpret_cast<void*>(site), 15, PAGE_EXECUTE_READWRITE, &oldProt))
-            {
-                std::memcpy(reinterpret_cast<void*>(site), kOrig_FriendlyTrustBytes, 15);
-                VirtualProtect(reinterpret_cast<void*>(site), 15, oldProt, &oldProt);
-                FlushInstructionCache(GetCurrentProcess(), reinterpret_cast<void*>(site), 15);
-            }
-        }
     }
 
     bool Friendly::Install()
     {
-        // 1. Install SetNpc and SetPet prologue hooks (1-Shot 1x Action Guarantee)
+        // 1. Install SetNpc prologue hook
         const uintptr_t npcAddr = mem::FindPattern(kSig_FriendlySetNpc);
         if (npcAddr)
         {
             g_npcTarget = reinterpret_cast<void*>(npcAddr);
             if (MH_CreateHook(g_npcTarget, reinterpret_cast<void*>(&hkSetNpc), reinterpret_cast<void**>(&oSetNpc)) == MH_OK)
             {
-                LOG_OK("friendly: SetNpc 1-Shot hook installed @ 0x%p", g_npcTarget);
+                LOG_OK("friendly: SetNpc multiplier hook installed @ 0x%p", g_npcTarget);
                 g_hooksInstalled = true;
             }
             else
@@ -163,62 +143,19 @@ namespace trinity::game
             }
         }
 
+        // 2. Install SetPet prologue hook
         const uintptr_t petAddr = mem::FindPattern(kSig_FriendlySetPet);
         if (petAddr)
         {
             g_petTarget = reinterpret_cast<void*>(petAddr);
             if (MH_CreateHook(g_petTarget, reinterpret_cast<void*>(&hkSetPet), reinterpret_cast<void**>(&oSetPet)) == MH_OK)
             {
-                LOG_OK("friendly: SetPet 1-Shot hook installed @ 0x%p", g_petTarget);
+                LOG_OK("friendly: SetPet multiplier hook installed @ 0x%p", g_petTarget);
                 g_hooksInstalled = true;
             }
             else
             {
                 g_petTarget = nullptr;
-            }
-        }
-
-        // 2. Scan for all inline Trust write sites
-        std::vector<uintptr_t> foundSites;
-        const char* kSig_15ByteSite = "C5 FC 11 49 20 C5 F8 10 47 40 C5 F8 11 41 40";
-
-        uintptr_t sA = mem::FindPattern(kSig_FriendlyTrustSiteA);
-        if (sA) foundSites.push_back(sA + kOff_FriendlyTrustSiteA_Hook);
-
-        uintptr_t sB = mem::FindPattern(kSig_FriendlyTrustSiteB);
-        if (sB) foundSites.push_back(sB + kOff_FriendlyTrustSiteB_Hook);
-
-        uintptr_t sDirect = mem::FindPattern(kSig_15ByteSite);
-        if (sDirect)
-        {
-            bool already = false;
-            for (auto s : foundSites) { if (s == sDirect) { already = true; break; } }
-            if (!already) foundSites.push_back(sDirect);
-        }
-
-        if (!foundSites.empty())
-        {
-            g_trampPool = reinterpret_cast<uint8_t*>(
-                VirtualAlloc(nullptr, 0x1000, MEM_COMMIT | MEM_RESERVE, PAGE_EXECUTE_READWRITE)
-            );
-
-            if (g_trampPool)
-            {
-                g_sites.clear();
-                for (size_t i = 0; i < foundSites.size(); ++i)
-                {
-                    uint8_t* tramp = g_trampPool + (i * 0x80);
-                    BuildTrampoline(tramp, foundSites[i] + 15);
-
-                    TrustHookSite siteInfo;
-                    siteInfo.siteAddr = foundSites[i];
-                    siteInfo.trampMem = tramp;
-                    g_sites.push_back(siteInfo);
-
-                    LOG_OK("friendly: Inline Trust Site #%zu resolved @ 0x%p",
-                           i + 1, reinterpret_cast<void*>(foundSites[i]));
-                }
-                g_hooksInstalled = true;
             }
         }
 
@@ -239,23 +176,15 @@ namespace trinity::game
             {
                 if (g_npcTarget) MH_EnableHook(g_npcTarget);
                 if (g_petTarget) MH_EnableHook(g_petTarget);
-                for (const auto& s : g_sites)
-                {
-                    WriteHook(s.siteAddr, s.trampMem);
-                }
                 g_hooksEnabled = true;
-                LOG_OK("friendly: 1-Shot 1x Action Max Trust (100) Multi-Tier Injections ENGAGED.");
+                LOG_OK("friendly: Trust Multiplier (%.1fx) ENGAGED.", st.trustMultVal);
             }
             else
             {
                 if (g_npcTarget) MH_DisableHook(g_npcTarget);
                 if (g_petTarget) MH_DisableHook(g_petTarget);
-                for (const auto& s : g_sites)
-                {
-                    RestoreHook(s.siteAddr);
-                }
                 g_hooksEnabled = false;
-                LOG("friendly: 1-Shot 1x Action Max Trust (100) Multi-Tier Injections DISENGAGED.");
+                LOG("friendly: Trust Multiplier DISENGAGED.");
             }
         }
     }
@@ -276,18 +205,7 @@ namespace trinity::game
             g_petTarget = nullptr;
         }
 
-        for (const auto& s : g_sites)
-        {
-            RestoreHook(s.siteAddr);
-        }
-        g_sites.clear();
-
-        if (g_trampPool)
-        {
-            VirtualFree(g_trampPool, 0, MEM_RELEASE);
-            g_trampPool = nullptr;
-        }
-
+        s_lastTrustMap.clear();
         g_hooksInstalled = false;
         g_hooksEnabled = false;
     }
