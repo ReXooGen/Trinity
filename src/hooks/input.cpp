@@ -36,55 +36,64 @@ namespace trinity::input
 
     static LRESULT CALLBACK WndProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam)
     {
-        // NOTE: the INSERT / LB+D-Pad Down toggle is polled from the render loop (see
-        // hkPresent -> ui::PollMenuToggle), not handled here. Relying on the
-        // game to deliver WM_KEYUP to this subclass proved unreliable.
-        if (State::Get().menuOpen)
+        __try
         {
-            // While a search row is capturing text - or a SYSTEM-tab row is
-            // listening for a new key bind - EVERY key belongs to the menu:
-            // typing "harbor" (or pressing the key you want to bind) must not
-            // walk the player around.
-            const bool typing = State::Get().textCapture || State::Get().rebindCapture;
-
-            switch (msg)
+            // NOTE: the INSERT / LB+D-Pad Down toggle is polled from the render loop (see
+            // hkPresent -> ui::PollMenuToggle), not handled here. Relying on the
+            // game to deliver WM_KEYUP to this subclass proved unreliable.
+            if (State::Get().menuOpen)
             {
-            case WM_KEYDOWN: case WM_SYSKEYDOWN:
-            case WM_KEYUP:   case WM_SYSKEYUP:
-                if (typing || IsMenuKey(wParam))
+                // While a search row is capturing text - or a SYSTEM-tab row is
+                // listening for a new key bind - EVERY key belongs to the menu:
+                // typing "harbor" (or pressing the key you want to bind) must not
+                // walk the player around.
+                const bool typing = State::Get().textCapture || State::Get().rebindCapture;
+
+                switch (msg)
                 {
-                    // Give the menu its navigation key...
-                    ImGui_ImplWin32_WndProcHandler(hwnd, msg, wParam, lParam);
-                    // ...and swallow the PRESS from the game. Releases still
-                    // fall through so a menu key held across open/close never
-                    // sticks - the classic "walks forward forever" bug.
-                    if (msg == WM_KEYDOWN || msg == WM_SYSKEYDOWN)
+                case WM_KEYDOWN: case WM_SYSKEYDOWN:
+                case WM_KEYUP:   case WM_SYSKEYUP:
+                    if (typing || IsMenuKey(wParam))
+                    {
+                        // Give the menu its navigation key...
+                        ImGui_ImplWin32_WndProcHandler(hwnd, msg, wParam, lParam);
+                        // ...and swallow the PRESS from the game. Releases still
+                        // fall through so a menu key held across open/close never
+                        // sticks - the classic "walks forward forever" bug.
+                        if (msg == WM_KEYDOWN || msg == WM_SYSKEYDOWN)
+                            return TRUE;
+                    }
+                    break; // non-menu keys fall through to the game untouched
+
+                case WM_CHAR:
+                    // Text capture gets every character; otherwise only Enter /
+                    // Backspace produce a WM_CHAR worth hiding (we swallowed
+                    // their WM_KEYDOWN above).
+                    if (typing)
+                    {
+                        ImGui_ImplWin32_WndProcHandler(hwnd, msg, wParam, lParam);
                         return TRUE;
-                }
-                break; // non-menu keys fall through to the game untouched
+                    }
+                    if (wParam == '\r' || wParam == '\b' || wParam == '\t' ||
+                        wParam == 'q' || wParam == 'e' || wParam == 'Q' || wParam == 'E')
+                        return TRUE;
+                    break;
 
-            case WM_CHAR:
-                // Text capture gets every character; otherwise only Enter /
-                // Backspace produce a WM_CHAR worth hiding (we swallowed
-                // their WM_KEYDOWN above).
-                if (typing)
-                {
-                    ImGui_ImplWin32_WndProcHandler(hwnd, msg, wParam, lParam);
-                    return TRUE;
+                // Mouse is deliberately neither forwarded to ImGui nor blocked, so
+                // the player keeps full mouse-look and no ImGui cursor appears.
+                default:
+                    break;
                 }
-                if (wParam == '\r' || wParam == '\b' || wParam == '\t' ||
-                    wParam == 'q' || wParam == 'e' || wParam == 'Q' || wParam == 'E')
-                    return TRUE;
-                break;
-
-            // Mouse is deliberately neither forwarded to ImGui nor blocked, so
-            // the player keeps full mouse-look and no ImGui cursor appears.
-            default:
-                break;
             }
-        }
 
-        return CallWindowProc(g_originalWndProc, hwnd, msg, wParam, lParam);
+            if (g_originalWndProc)
+                return CallWindowProc(g_originalWndProc, hwnd, msg, wParam, lParam);
+            return DefWindowProcW(hwnd, msg, wParam, lParam);
+        }
+        __except (EXCEPTION_EXECUTE_HANDLER)
+        {
+            return DefWindowProcW(hwnd, msg, wParam, lParam);
+        }
     }
 
     void Init(HWND hwnd)

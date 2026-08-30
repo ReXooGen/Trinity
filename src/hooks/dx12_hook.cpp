@@ -465,12 +465,25 @@ namespace trinity::hooks
         const UINT        newH   = desc.BufferDesc.Height;
         const DXGI_FORMAT newFmt = desc.BufferDesc.Format;
 
+        bool buffersValid = !g_frames.empty() && g_rtvHeap != nullptr && g_offscreenTex != nullptr;
+        if (buffersValid)
+        {
+            for (const auto& f : g_frames)
+            {
+                if (!f.renderTarget || !f.commandAllocator)
+                {
+                    buffersValid = false;
+                    break;
+                }
+            }
+        }
+
         // Compare the FULL back-buffer signature, not just pointer + count. A video
         // settings change (resolution, HDR on/off) reallocates the buffers in place
         // with the same swapchain and often the same count - detecting only
         // pointer/count leaves us drawing into freed buffers (ACCESS_DENIED). This
         // is what crashed on entering / applying game settings.
-        if (swapChain == g_swapChain && desc.BufferCount == g_bufferCount &&
+        if (buffersValid && swapChain == g_swapChain && desc.BufferCount == g_bufferCount &&
             newW == g_scWidth && newH == g_scHeight && newFmt == g_scFormat)
             return true; // unchanged - the common path
 
@@ -493,7 +506,7 @@ namespace trinity::hooks
         // Our last submit referenced the old buffers/allocators - retire it first.
         WaitForOverlayIdle();
 
-        if (desc.BufferCount != g_bufferCount)
+        if (desc.BufferCount != g_bufferCount || g_rtvHeap == nullptr || g_frames.size() != desc.BufferCount)
         {
             if (!ResizeFrameResources(desc.BufferCount))
                 return false;
@@ -518,10 +531,13 @@ namespace trinity::hooks
         // ImGui's own DX12 backend is baked for a FIXED SDR format (see
         // InitImGui) and never needs rebuilding here - only the offscreen
         // target it draws into has to track the back buffer's size.
-        if (!CreateOffscreenTarget(g_scWidth, g_scHeight))
+        if (g_scWidth > 0 && g_scHeight > 0)
         {
-            LOG_ERR("ReconcileSwapChain: offscreen target rebuild failed.");
-            return false;
+            if (!CreateOffscreenTarget(g_scWidth, g_scHeight))
+            {
+                LOG_ERR("ReconcileSwapChain: offscreen target rebuild failed.");
+                return false;
+            }
         }
 
         LOG("Swapchain reconciled (%ux%u, %u buffers, fmt %d) - in-place reconfigure.",
@@ -750,6 +766,9 @@ namespace trinity::hooks
             return;
 
         if (!EnsureCompositePipeline(g_scFormat))
+            return;
+
+        if (!g_offscreenTex || !g_offscreenRtvHeap || g_scWidth == 0 || g_scHeight == 0)
             return;
 
         // Hold our own ref on the present queue for the duration of this frame
@@ -1077,23 +1096,21 @@ namespace trinity::hooks
     }
     static void PostResizeRebuild(IDXGISwapChain3* swapChain)
     {
-        if (!g_imguiReady) return;
+        if (!g_imguiReady || !swapChain) return;
         DXGI_SWAP_CHAIN_DESC desc = {};
         if (SUCCEEDED(swapChain->GetDesc(&desc)))
         {
-            if (desc.BufferCount != g_bufferCount)
+            if (desc.BufferCount != g_bufferCount || g_rtvHeap == nullptr || g_frames.size() != desc.BufferCount)
                 ResizeFrameResources(desc.BufferCount);
             g_hwnd      = desc.OutputWindow;
             g_swapChain = swapChain;
             g_scWidth   = desc.BufferDesc.Width;
             g_scHeight  = desc.BufferDesc.Height;
             g_scFormat  = desc.BufferDesc.Format;
+            CreateRenderTargets(swapChain);
+            if (g_scWidth > 0 && g_scHeight > 0)
+                CreateOffscreenTarget(g_scWidth, g_scHeight);
         }
-        CreateRenderTargets(swapChain);
-        // Must follow the g_scWidth/g_scHeight update above (and precede the
-        // next ReconcileSwapChain, which would otherwise see the new signature
-        // as "unchanged" and never resize the offscreen target to match).
-        CreateOffscreenTarget(g_scWidth, g_scHeight);
     }
 
     // Native-swapchain Present/ResizeBuffers byte-detours (from the dummy vtable).
@@ -1116,7 +1133,7 @@ namespace trinity::hooks
             return oResizeBuffers(swapChain, bufferCount, width, height, format, flags);
         PreResizeCleanup();
         const HRESULT hr = oResizeBuffers(swapChain, bufferCount, width, height, format, flags);
-        PostResizeRebuild(swapChain);
+        if (SUCCEEDED(hr)) PostResizeRebuild(swapChain);
         return hr;
     }
 
@@ -1203,7 +1220,7 @@ namespace trinity::hooks
         {
             PreResizeCleanup();
             const HRESULT hr = m_inner->ResizeBuffers(bc, w, h, f, fl);
-            PostResizeRebuild(m_inner);
+            if (SUCCEEDED(hr)) PostResizeRebuild(m_inner);
             return hr;
         }
         HRESULT STDMETHODCALLTYPE ResizeTarget(const DXGI_MODE_DESC* p) override { return m_inner->ResizeTarget(p); }
@@ -1252,7 +1269,7 @@ namespace trinity::hooks
         {
             PreResizeCleanup();
             const HRESULT hr = m_inner->ResizeBuffers1(bc, w, h, f, fl, nodeMask, pQueues);
-            PostResizeRebuild(m_inner);
+            if (SUCCEEDED(hr)) PostResizeRebuild(m_inner);
             return hr;
         }
 

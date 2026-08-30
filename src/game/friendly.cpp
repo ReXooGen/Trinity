@@ -3,6 +3,7 @@
 #include <cstdint>
 #include <vector>
 #include <unordered_map>
+#include <mutex>
 #include <cstring>
 #include <algorithm>
 #include <windows.h>
@@ -36,7 +37,8 @@ namespace trinity::game
         bool g_hooksInstalled = false;
         bool g_hooksEnabled = false;
 
-        // Tracks last known trust value per record key to scale trust gains accurately
+        // Tracks last known trust value per record key to scale trust gains accurately (thread-safe)
+        std::mutex s_trustMutex;
         std::unordered_map<uint32_t, int64_t> s_lastTrustMap;
 
         void ApplyTrustMultiplierToRecord(void* record, float mult, const char* srcName)
@@ -59,6 +61,7 @@ namespace trinity::game
 
             const int64_t currentIncoming = (rawVal64 > 0) ? static_cast<int64_t>(rawVal64) : static_cast<int64_t>(rawVal32);
 
+            std::lock_guard<std::mutex> lock(s_trustMutex);
             int64_t oldVal = 0;
             auto it = s_lastTrustMap.find(key);
             if (it != s_lastTrustMap.end())
@@ -92,14 +95,44 @@ namespace trinity::game
             Write64(r + 0x28, static_cast<uint64_t>(newTrust));
 
             s_lastTrustMap[key] = newTrust;
-            LOG_OK("friendly: %s trust gain scaled (key=%u, old=%lld, raw=%lld, gain=+%lld -> +%lld => final=%lld/100, mult=%.1fx)",
-                   srcName, key, oldVal, currentIncoming, gain, scaledGain, newTrust, mult);
+        }
+
+        using NpcTrustWriter_t = int64_t(__fastcall*)(void* factionMgr, void* targetActor, uint16_t relationGroup, int32_t delta, void* a5, void* a6);
+        NpcTrustWriter_t oNpcTrustWriter = nullptr;
+        void* g_writerTarget = nullptr;
+
+        int64_t __fastcall hkFriendlyNpcTrustWriter(void* factionMgr, void* targetActor, uint16_t relationGroup, int32_t delta, void* a5, void* a6)
+        {
+            const State& st = State::Get();
+            if (st.trustMult && st.trustMultVal > 1.0f && delta > 0)
+            {
+                int64_t scaled = static_cast<int64_t>(static_cast<float>(delta) * st.trustMultVal);
+                if (scaled > 100) scaled = 100;
+                delta = static_cast<int32_t>(scaled);
+            }
+            return oNpcTrustWriter(factionMgr, targetActor, relationGroup, delta, a5, a6);
+        }
+
+        using AlertDisp_t = int64_t(__fastcall*)(void* factionMgr, void* actorCtx, uint16_t relationGroup, int32_t delta, void* a5, void* a6);
+        AlertDisp_t oAlertDisp = nullptr;
+        void* g_alertDispTarget = nullptr;
+
+        int64_t __fastcall hkAlertDisp(void* factionMgr, void* actorCtx, uint16_t relationGroup, int32_t delta, void* a5, void* a6)
+        {
+            const State& st = State::Get();
+            if (st.trustMult && st.trustMultVal > 1.0f && delta > 0)
+            {
+                int64_t scaled = static_cast<int64_t>(static_cast<float>(delta) * st.trustMultVal);
+                if (scaled > 100) scaled = 100;
+                delta = static_cast<int32_t>(scaled);
+            }
+            return oAlertDisp(factionMgr, actorCtx, relationGroup, delta, a5, a6);
         }
 
         void* __fastcall hkSetNpc(void* mapOwner, void* record)
         {
             const State& st = State::Get();
-            if (Player::Ready() && st.trustMult && st.trustMultVal > 1.0f)
+            if (st.trustMult && st.trustMultVal > 1.0f)
             {
                 __try
                 {
@@ -113,7 +146,7 @@ namespace trinity::game
         void* __fastcall hkSetPet(void* mapOwner, void* record)
         {
             const State& st = State::Get();
-            if (Player::Ready() && st.trustMult && st.trustMultVal > 1.0f)
+            if (st.trustMult && st.trustMultVal > 1.0f)
             {
                 __try
                 {
@@ -159,6 +192,38 @@ namespace trinity::game
             }
         }
 
+        // 3. Install NpcTrustWriter direct relation writer hook
+        const uintptr_t writerAddr = mem::FindPattern(kSig_FriendlyNpcTrustWriter);
+        if (writerAddr)
+        {
+            g_writerTarget = reinterpret_cast<void*>(writerAddr);
+            if (MH_CreateHook(g_writerTarget, reinterpret_cast<void*>(&hkFriendlyNpcTrustWriter), reinterpret_cast<void**>(&oNpcTrustWriter)) == MH_OK)
+            {
+                LOG_OK("friendly: NpcTrustWriter multiplier hook installed @ 0x%p", g_writerTarget);
+                g_hooksInstalled = true;
+            }
+            else
+            {
+                g_writerTarget = nullptr;
+            }
+        }
+
+        // 4. Install AlertDispatcher UI & Faction dispatcher hook
+        const uintptr_t alertAddr = mem::FindPattern(kSig_FriendlyAlertDisp);
+        if (alertAddr)
+        {
+            g_alertDispTarget = reinterpret_cast<void*>(alertAddr);
+            if (MH_CreateHook(g_alertDispTarget, reinterpret_cast<void*>(&hkAlertDisp), reinterpret_cast<void**>(&oAlertDisp)) == MH_OK)
+            {
+                LOG_OK("friendly: AlertDispatcher multiplier hook installed @ 0x%p", g_alertDispTarget);
+                g_hooksInstalled = true;
+            }
+            else
+            {
+                g_alertDispTarget = nullptr;
+            }
+        }
+
         return g_hooksInstalled;
     }
 
@@ -167,8 +232,7 @@ namespace trinity::game
         if (!g_hooksInstalled) return;
 
         const State& st = State::Get();
-        // Strict safety guard: ONLY engage when Player is in-world (Player::Ready())
-        const bool wantEnabled = Player::Ready() && st.trustMult && (st.trustMultVal > 1.0f);
+        const bool wantEnabled = st.trustMult && (st.trustMultVal > 1.0f);
 
         if (wantEnabled != g_hooksEnabled)
         {
@@ -176,6 +240,8 @@ namespace trinity::game
             {
                 if (g_npcTarget) MH_EnableHook(g_npcTarget);
                 if (g_petTarget) MH_EnableHook(g_petTarget);
+                if (g_writerTarget) MH_EnableHook(g_writerTarget);
+                if (g_alertDispTarget) MH_EnableHook(g_alertDispTarget);
                 g_hooksEnabled = true;
                 LOG_OK("friendly: Trust Multiplier (%.1fx) ENGAGED.", st.trustMultVal);
             }
@@ -183,8 +249,10 @@ namespace trinity::game
             {
                 if (g_npcTarget) MH_DisableHook(g_npcTarget);
                 if (g_petTarget) MH_DisableHook(g_petTarget);
+                if (g_writerTarget) MH_DisableHook(g_writerTarget);
+                if (g_alertDispTarget) MH_DisableHook(g_alertDispTarget);
                 g_hooksEnabled = false;
-                LOG("friendly: Trust Multiplier DISENGAGED.");
+                LOG("friendly: Trust Multiplier standby.");
             }
         }
     }
@@ -205,9 +273,26 @@ namespace trinity::game
             g_petTarget = nullptr;
         }
 
-        s_lastTrustMap.clear();
+        if (g_writerTarget)
+        {
+            MH_DisableHook(g_writerTarget);
+            MH_RemoveHook(g_writerTarget);
+            g_writerTarget = nullptr;
+        }
+
+        if (g_alertDispTarget)
+        {
+            MH_DisableHook(g_alertDispTarget);
+            MH_RemoveHook(g_alertDispTarget);
+            g_alertDispTarget = nullptr;
+        }
+
         g_hooksInstalled = false;
         g_hooksEnabled = false;
+        {
+            std::lock_guard<std::mutex> lock(s_trustMutex);
+            s_lastTrustMap.clear();
+        }
     }
 
     bool Friendly::Ready()

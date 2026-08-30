@@ -121,13 +121,6 @@ static LONG WINAPI CrashHandler(EXCEPTION_POINTERS* ep)
 static DWORD WINAPI MainThread(LPVOID)
 {
     trinity::Mod::Get().Initialize(g_module);
-    // Record our span once the module is fully mapped and initialized so the
-    // VEH can ignore exceptions raised by our own guarded reads.
-    HMODULE self = g_module;
-    auto* dos = reinterpret_cast<IMAGE_DOS_HEADER*>(self);
-    auto* nt  = reinterpret_cast<IMAGE_NT_HEADERS*>(reinterpret_cast<uint8_t*>(self) + dos->e_lfanew);
-    g_modBase = reinterpret_cast<uintptr_t>(self);
-    g_modEnd  = g_modBase + nt->OptionalHeader.SizeOfImage;
     return 0;
 }
 
@@ -138,6 +131,22 @@ BOOL APIENTRY DllMain(HMODULE module, DWORD reason, LPVOID)
     case DLL_PROCESS_ATTACH:
         g_module = module;
         DisableThreadLibraryCalls(module);
+
+        // Record our module span immediately so the VEH filters out our own guarded SEH reads
+        if (module)
+        {
+            auto* dos = reinterpret_cast<IMAGE_DOS_HEADER*>(module);
+            if (dos && dos->e_magic == IMAGE_DOS_SIGNATURE)
+            {
+                auto* nt = reinterpret_cast<IMAGE_NT_HEADERS*>(reinterpret_cast<uint8_t*>(module) + dos->e_lfanew);
+                if (nt && nt->Signature == IMAGE_NT_SIGNATURE)
+                {
+                    g_modBase = reinterpret_cast<uintptr_t>(module);
+                    g_modEnd  = g_modBase + nt->OptionalHeader.SizeOfImage;
+                }
+            }
+        }
+
         AddVectoredExceptionHandler(0, VectoredCrashLogger); // last-chance
         SetUnhandledExceptionFilter(CrashHandler);
         // Do real work off the loader lock.

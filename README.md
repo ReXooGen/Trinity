@@ -26,6 +26,18 @@ Trinity is an in-game DirectX 12 mod menu for **Crimson Desert**, originally cre
 
 ---
 
+## What's New in v1.3.2
+
+- **New Feature: No Bounty (Dual Table Patching)**:
+  - Crimes no longer accumulate bounty penalties or trigger wanted fines.
+  - Zeroes `_increasePrice` on `WantedInfo` and `_wantedCrimeType` across all 370 factions in `TribeInfo`.
+  - 100% session-only and non-destructive; eliminates NPC dialogue crashes caused by intrusive AI hooks.
+- **Universal Table Resolver for TU 2.00.01 (PE rev >= 2625)**:
+  - Modernized scanner to detect `sub rsp, 50h` table prologue structures and opcode-relative table globals (`WantedInfo`, `tribeinfo`, `iteminfo`, etc.).
+  - Added continuous per-frame upkeep in `World::Tick()` so mod overrides seamlessly persist across fast travel and zone transitions.
+
+---
+
 ## What's New in v1.3.1
 
 - **Critical CTD Fixes & Engine Hardening**:

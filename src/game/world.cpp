@@ -6,6 +6,8 @@
 #include <initializer_list>
 
 #include "offsets.h"
+#include "player.h"
+#include "inventory.h"
 #include "../mem/scanner.h"
 #include "../mem/safe_memory.h"
 #include "../mem/hooks.h"
@@ -37,32 +39,40 @@ namespace trinity::game
         using FrameTimerUpdate_t = void(__fastcall*)(void* appMgr);
         FrameTimerUpdate_t oFrameTimerUpdate = nullptr;
         void* g_frameTimerUpdateTarget = nullptr;
-        uintptr_t g_liveTimeStruct = 0;
 
         void __fastcall hkFrameTimerUpdate(void* appMgr)
         {
-            if (appMgr)
+            if (oFrameTimerUpdate)
+                oFrameTimerUpdate(appMgr);
+
+            if (!appMgr) return;
+
+            const State& st = State::Get();
+            if (st.gameSpeed && std::fabs(st.gameSpeedMult - 1.0f) > 0.01f)
             {
-                uintptr_t app = reinterpret_cast<uintptr_t>(appMgr);
-                uintptr_t timeStruct = 0;
-                if (mem::ReadPtr(app + 0x60, &timeStruct) && timeStruct >= kMinPointer)
+                __try
                 {
-                    g_liveTimeStruct = timeStruct;
-                    const State& st = State::Get();
-                    if (st.gameSpeed)
+                    uintptr_t app = reinterpret_cast<uintptr_t>(appMgr);
+                    uintptr_t timeStruct = 0;
+                    if (mem::ReadPtr(app + 0x60, &timeStruct) && timeStruct >= kMinPointer)
                     {
                         const float mult = Clamp(st.gameSpeedMult, 0.1f, 10.0f);
-                        mem::Write8(timeStruct + kOff_TimeStruct_Mode, 1); // Mode 1: Scaled Time
-                        mem::Write32(timeStruct + kOff_TimeStruct_Multiplier, FloatBits(mult));
-                    }
-                    else
-                    {
-                        mem::Write8(timeStruct + kOff_TimeStruct_Mode, 0); // Mode 0: Normal 1.0x Real Time
-                        mem::Write32(timeStruct + kOff_TimeStruct_Multiplier, FloatBits(1.0f));
+                        float dt = 0.0f;
+                        uint32_t bits = 0;
+                        if (mem::Read32(timeStruct + kOff_TimeStruct_Delta, &bits))
+                        {
+                            std::memcpy(&dt, &bits, sizeof(dt));
+                            if (dt > 0.0001f && dt < 1.0f)
+                            {
+                                const float newDt = dt * mult;
+                                mem::Write32(timeStruct + kOff_TimeStruct_Delta, FloatBits(newDt));
+                                mem::Write32(timeStruct + kOff_TimeStruct_ScaledDelta, FloatBits(newDt));
+                            }
+                        }
                     }
                 }
+                __except (EXCEPTION_EXECUTE_HANDLER) {}
             }
-            oFrameTimerUpdate(appMgr);
         }
 
         // Master field-clock globals (client / server realm), each the base of
@@ -573,6 +583,26 @@ namespace trinity::game
     {
         const State& st = State::Get();
 
+        // Upkeep No Bounty state (apply once Player is in world, and refresh across map loads)
+        static int s_lastNoBounty = -1;
+        static bool s_lastPlayerReady = false;
+        const bool curReady = Player::Ready();
+        const int curNoBounty = st.noBounty ? 1 : 0;
+
+        if (curReady)
+        {
+            if (curNoBounty != s_lastNoBounty || !s_lastPlayerReady)
+            {
+                s_lastNoBounty = curNoBounty;
+                s_lastPlayerReady = true;
+                game::Inventory::SetNoBounty(st.noBounty);
+            }
+        }
+        else
+        {
+            s_lastPlayerReady = false;
+        }
+
         // Game Speed is driven on the game thread inside hkFrameTimerUpdate seamlessly.
 
         // Freeze Time of Day: the field-time tick hook (hkFieldTimeTick) holds
@@ -702,17 +732,11 @@ namespace trinity::game
 
     void World::Remove()
     {
-        // Restore game speed to normal
+        // Restore game speed hook
         if (g_frameTimerUpdateTarget)
         {
-            if (g_liveTimeStruct >= kMinPointer)
-            {
-                Write8(g_liveTimeStruct + kOff_TimeStruct_Mode, 0);
-                Write32(g_liveTimeStruct + kOff_TimeStruct_Multiplier, FloatBits(1.0f));
-            }
             mem::RemoveHook(&g_frameTimerUpdateTarget);
             oFrameTimerUpdate = nullptr;
-            g_liveTimeStruct = 0;
         }
 
         // Restore the render manager's time-of-day limits if we were holding

@@ -1787,24 +1787,21 @@ namespace trinity::game
 
         // The 16-bit-key table-resolver clone prologue (TU 1.10 - 1.15 legacy), ending at the
         // Universal Item Table Resolver Clone Prologue Matcher
-        // Matches 1.14 (0x40 frame) and 1.18 (0x50 frame) table resolver clone prologues
+        // Matches 1.14 (0x40 frame), 1.18 (0x50 frame) and TU 2.00 table resolver clone prologues
         uintptr_t FindItemPrologueAbove(uintptr_t match)
         {
-            for (size_t back = 0x15; back <= 0x80; ++back)
+            for (size_t back = 0x10; back <= 0x120; ++back)
             {
                 const uintptr_t cand = match - back;
                 __try
                 {
                     const uint8_t* p = reinterpret_cast<const uint8_t*>(cand);
-                    // 48 89 5C 24 10 48 89 6C 24 18 56 57 41 56 48 83 EC (40 or 50)
-                    if (p[0] == 0x48 && p[1] == 0x89 && p[2] == 0x5C && p[3] == 0x24 && p[4] == 0x10 &&
-                        p[5] == 0x48 && p[6] == 0x89 && p[7] == 0x6C && p[8] == 0x24 && p[9] == 0x18 &&
-                        p[10] == 0x56 && p[11] == 0x57 && p[12] == 0x41 && p[13] == 0x56 &&
-                        p[14] == 0x48 && p[15] == 0x83 && p[16] == 0xEC &&
-                        (p[17] == 0x40 || p[17] == 0x50))
-                    {
+                    // 1. sub rsp, 50h / 40h (modern TU 2.00 fast table lookup)
+                    if (p[0] == 0x48 && p[1] == 0x83 && p[2] == 0xEC && (p[3] == 0x50 || p[3] == 0x40))
                         return cand;
-                    }
+                    // 2. 48 89 5C 24 10 ...
+                    if (p[0] == 0x48 && p[1] == 0x89 && p[2] == 0x5C && p[3] == 0x24 && p[4] == 0x10)
+                        return cand;
                 }
                 __except (EXCEPTION_EXECUTE_HANDLER) {}
             }
@@ -1842,14 +1839,63 @@ namespace trinity::game
             mem::FindPatternIf(indirect ? kSig_MovR8Rip : kSig_LeaR8Rip, &IsTableRef, &hunt);
             if (hunt.fn)
             {
-                uintptr_t g = mem::ResolveRipAt(hunt.fn + kOff_ItemResolver_MovGlobal, 7);
-                if (g >= kMinPointer)
+                for (uintptr_t p = hunt.fn; p + 7 <= hunt.fn + 0x60; ++p)
                 {
-                    LOG_OK("inventory: table '%s' resolved via string-anchor -> %p",
-                           name, reinterpret_cast<void*>(g));
-                    return g;
+                    __try
+                    {
+                        const uint8_t* b = reinterpret_cast<const uint8_t*>(p);
+                        if (b[0] == 0x48 && b[1] == 0x8B && ((b[2] & 0xC7) == 0x05))
+                        {
+                            uintptr_t g = mem::ResolveRipAt(p, 7);
+                            if (g >= kMinPointer)
+                            {
+                                LOG_OK("inventory: table '%s' resolved via string-anchor -> %p",
+                                       name, reinterpret_cast<void*>(g));
+                                return g;
+                            }
+                        }
+                    }
+                    __except (EXCEPTION_EXECUTE_HANDLER) {}
                 }
             }
+
+            // Fallback for TU 2.00.01 (PE 1.0.0.2625 / 1.0.0.2658) and TU 2.00.00 (PE 1.0.0.2499)
+            uintptr_t gameBase = reinterpret_cast<uintptr_t>(GetModuleHandleA(nullptr));
+            const auto& ver = core::GetGameVersion();
+            if (ver.major >= 2 || ver.revision >= 2400)
+            {
+                if (ver.revision >= 2625) // TU 2.00.01
+                {
+                    if (_stricmp(name, "WantedInfo") == 0)
+                    {
+                        uintptr_t g = gameBase + 0x6350EE8;
+                        LOG_OK("inventory: table 'WantedInfo' resolved via TU 2.00.01 fallback -> %p", reinterpret_cast<void*>(g));
+                        return g;
+                    }
+                    if (_stricmp(name, "tribeinfo") == 0 || _stricmp(name, "TribeInfo") == 0)
+                    {
+                        uintptr_t g = gameBase + 0x63307A8;
+                        LOG_OK("inventory: table 'tribeinfo' resolved via TU 2.00.01 fallback -> %p", reinterpret_cast<void*>(g));
+                        return g;
+                    }
+                }
+                else // TU 2.00.00 (revision 2499)
+                {
+                    if (_stricmp(name, "WantedInfo") == 0)
+                    {
+                        uintptr_t g = gameBase + 0x63519D8;
+                        LOG_OK("inventory: table 'WantedInfo' resolved via TU 2.00.00 fallback -> %p", reinterpret_cast<void*>(g));
+                        return g;
+                    }
+                    if (_stricmp(name, "tribeinfo") == 0 || _stricmp(name, "TribeInfo") == 0)
+                    {
+                        uintptr_t g = gameBase + 0x6331298;
+                        LOG_OK("inventory: table 'tribeinfo' resolved via TU 2.00.00 fallback -> %p", reinterpret_cast<void*>(g));
+                        return g;
+                    }
+                }
+            }
+
             return 0;
         }
 
@@ -1913,10 +1959,29 @@ namespace trinity::game
                 }
             }
         }
+
+        using EvaluateCrimeWantedState_t = uint8_t(__fastcall*)(void* wantedMgr, void* actorCtx);
+        EvaluateCrimeWantedState_t oEvaluateCrimeWantedState = nullptr;
+        void* g_evalWantedTarget = nullptr;
+
+        uint8_t __fastcall hkEvaluateCrimeWantedState(void* wantedMgr, void* actorCtx)
+        {
+            const State& st = State::Get();
+            if (st.noBounty)
+            {
+                // 7 = eWantedState_None (completely blocks Witness, Suspect, Assault, and Pursuit)
+                return 7;
+            }
+            return oEvaluateCrimeWantedState(wantedMgr, actorCtx);
+        }
     }
 
     bool Inventory::Install()
     {
+        mem::InstallHook("world: evaluate-wanted-state", kSig_EvaluateCrimeWantedState,
+                         "Witnessed/Assault crime bypass disabled",
+                         &hkEvaluateCrimeWantedState, &oEvaluateCrimeWantedState, &g_evalWantedTarget, 0);
+
         if (!mem::InstallHook("inventory: item-count accessor", kSig_InvGetItemQty, nullptr,
                               &hkGetItemQty, &oGetItemQty, &g_qtyTarget, 4))
         {
@@ -5388,5 +5453,140 @@ namespace trinity::game
         }
 
         return matched;
+    }
+
+    bool Inventory::SetNoBounty(bool enable)
+    {
+        // Gating safety: Do NOT modify table definitions during startup / main menu.
+        // Wait until player is loaded into world so entity combat flags are not corrupted.
+        if (!Player::Ready() && enable)
+        {
+            return false;
+        }
+
+        static int s_activeState = -1;
+        const int targetState = enable ? 1 : 0;
+        if (s_activeState == targetState) return true;
+        s_activeState = targetState;
+
+        EnsureTablesResolved();
+
+        // 1. WantedInfo Table: Zero increase price on crimes
+        static uintptr_t s_wantedGlobal = 0;
+        static bool      s_wantedLooked = false;
+        if (!s_wantedLooked)
+        {
+            s_wantedLooked = true;
+            s_wantedGlobal = FindTableGlobal(kStr_WantedInfoTable);
+            LOG(s_wantedGlobal ? "world: WantedInfo table @ %p - No Bounty available."
+                               : "world: WantedInfo table not found - bounty price left alone.",
+                reinterpret_cast<void*>(s_wantedGlobal));
+        }
+
+        int changed = 0;
+        uint32_t wantedCount = 0;
+        if (s_wantedGlobal)
+        {
+            uintptr_t table = 0;
+            if (ReadPtr(s_wantedGlobal, &table) && table >= kMinPointer)
+            {
+                if (Read32(table + kOff_ItemTable_Count, &wantedCount) && wantedCount > 0 && wantedCount <= kWantedRows_Max)
+                {
+                    static std::vector<int64_t> s_origPrice;
+                    static std::vector<char>    s_wantedCaptured;
+                    if (s_wantedCaptured.size() != wantedCount)
+                    {
+                        s_origPrice.assign(wantedCount, 0);
+                        s_wantedCaptured.assign(wantedCount, 0);
+                    }
+
+                    for (uint32_t row = 0; row < wantedCount; ++row)
+                    {
+                        uintptr_t def = 0;
+                        if (!DefForRow(s_wantedGlobal, static_cast<uint16_t>(row), &def) || def < kMinPointer) continue;
+
+                        if (enable)
+                        {
+                            if (!s_wantedCaptured[row])
+                            {
+                                int64_t orig = 0;
+                                if (!Read64(def + kOff_WantedDef_IncreasePrice, &orig)) continue;
+                                s_origPrice[row] = orig;
+                                s_wantedCaptured[row] = 1;
+                            }
+                            if (Write64(def + kOff_WantedDef_IncreasePrice, 0)) ++changed;
+                        }
+                        else if (s_wantedCaptured[row])
+                        {
+                            if (Write64(def + kOff_WantedDef_IncreasePrice, static_cast<uint64_t>(s_origPrice[row])))
+                                ++changed;
+                        }
+                    }
+                }
+            }
+        }
+
+        // 2. TribeInfo Table: Clear crime TYPE so hostile aggression isn't classified as a crime
+        static uintptr_t s_tribeGlobal = 0;
+        static bool      s_tribeLooked = false;
+        if (!s_tribeLooked)
+        {
+            s_tribeLooked = true;
+            s_tribeGlobal = FindTableGlobal(kStr_TribeInfoTable);
+            LOG(s_tribeGlobal ? "world: TribeInfo table @ %p - crime type clear available."
+                              : "world: TribeInfo table not found - crime type left alone.",
+                reinterpret_cast<void*>(s_tribeGlobal));
+        }
+
+        int tribes = 0;
+        if (s_tribeGlobal)
+        {
+            uintptr_t ttab = 0;
+            uint32_t  tcount = 0;
+            if (ReadPtr(s_tribeGlobal, &ttab) && ttab >= kMinPointer &&
+                Read32(ttab + kOff_ItemTable_Count, &tcount) &&
+                tcount > 0 && tcount <= kTribeRows_Max)
+            {
+                static std::vector<uint8_t> s_origCrime;
+                static std::vector<char>    s_tribeCaptured;
+                if (s_tribeCaptured.size() != tcount)
+                {
+                    s_origCrime.assign(tcount, 0);
+                    s_tribeCaptured.assign(tcount, 0);
+                }
+                for (uint32_t row = 0; row < tcount; ++row)
+                {
+                    uintptr_t def = 0;
+                    if (!DefForRow(s_tribeGlobal, static_cast<uint16_t>(row), &def) || def < kMinPointer) continue;
+                    if (enable)
+                    {
+                        if (!s_tribeCaptured[row])
+                        {
+                            uint8_t orig = 0;
+                            if (!Read8(def + kOff_TribeDef_WantedCrimeType, &orig)) continue;
+                            s_origCrime[row] = orig;
+                            s_tribeCaptured[row] = 1;
+                        }
+                        if (s_origCrime[row] != 0 &&
+                            Write8(def + kOff_TribeDef_WantedCrimeType, 0))
+                            ++tribes;
+                    }
+                    else if (s_tribeCaptured[row])
+                    {
+                        if (Write8(def + kOff_TribeDef_WantedCrimeType, s_origCrime[row]))
+                            ++tribes;
+                    }
+                }
+            }
+        }
+
+        LOG_OK("world: No Bounty %s - price zeroed on %d/%u wanted row(s), crime type cleared on %d tribe(s).",
+               enable ? "applied" : "reverted", changed, wantedCount, tribes);
+        return changed > 0 || tribes > 0;
+    }
+
+    uintptr_t Inventory::FindTableGlobal(const char* name, bool indirect)
+    {
+        return ::trinity::game::FindTableGlobal(name, indirect);
     }
 }

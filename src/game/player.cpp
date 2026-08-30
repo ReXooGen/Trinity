@@ -121,6 +121,7 @@ namespace trinity::game
         // protagonist is scaled by the incoming multiplier; a hit dealt by any of
         // them is scaled by the outgoing one. See the damage-apply hook below.
         std::atomic<uintptr_t> g_actors[kMaxPlayers]{};
+        std::atomic<uintptr_t> g_owners[kMaxPlayers]{};
         std::atomic<uintptr_t> g_targetOwners[kMaxPlayers]{};
 
         constexpr int kMaxMounts = 4;
@@ -289,6 +290,7 @@ namespace trinity::game
             {
                 g_hpEntries[i].store(0, std::memory_order_release);
                 g_actors[i].store(0, std::memory_order_release);
+                g_owners[i].store(0, std::memory_order_release);
                 g_targetOwners[i].store(0, std::memory_order_release);
             }
             for (int i = 0; i < kMaxMounts; ++i)
@@ -412,6 +414,7 @@ namespace trinity::game
 
             uintptr_t nextHp[kMaxPlayers]{};
             uintptr_t nextActors[kMaxPlayers]{};
+            uintptr_t nextOwners[kMaxPlayers]{};
             uintptr_t nextTargets[kMaxPlayers]{};
             uintptr_t nextStam[kMaxStatEntries]{};
             uintptr_t nextMountStam[kMaxStatEntries]{};
@@ -498,6 +501,7 @@ namespace trinity::game
 
                 nextHp[nPlayers] = c.statArray;
                 nextActors[nPlayers] = c.actor;
+                nextOwners[nPlayers] = owner;
                 nextTargets[nPlayers] = c.targetOwner;
                 ++nPlayers;
 
@@ -584,6 +588,7 @@ namespace trinity::game
             {
                 g_hpEntries[i].store(nextHp[i], std::memory_order_release);
                 g_actors[i].store(nextActors[i], std::memory_order_release);
+                g_owners[i].store(nextOwners[i], std::memory_order_release);
                 g_targetOwners[i].store(nextTargets[i], std::memory_order_release);
             }
             for (int i = 0; i < nStam; ++i)
@@ -607,6 +612,7 @@ namespace trinity::game
             {
                 g_hpEntries[i].store(0, std::memory_order_release);
                 g_actors[i].store(0, std::memory_order_release);
+                g_owners[i].store(0, std::memory_order_release);
                 g_targetOwners[i].store(0, std::memory_order_release);
             }
             for (int i = nStam; i < kMaxStatEntries; ++i) g_stamEntries[i].store(0, std::memory_order_release);
@@ -625,16 +631,15 @@ namespace trinity::game
                 for (int i = 0; i < nSpir; ++i)
                     PinEntry(g_spiritEntries[i].load(std::memory_order_relaxed));
 
-            // Log only when discovery changes, so the console shows whether
-            // the player chain and gauge typing are healthy without frame spam.
-            static int s_lastPlayers = -1, s_lastStam = -1, s_lastMountStam = -1, s_lastSpir = -1;
-            if (nPlayers != s_lastPlayers || nStam != s_lastStam || nMountStam != s_lastMountStam || nSpir != s_lastSpir)
+            // Log only when core player discovery changes, so the console shows whether
+            // the player chain and gauge typing are healthy without ambient mount spam.
+            static int s_lastPlayers = -1, s_lastStam = -1, s_lastSpir = -1;
+            if (nPlayers != s_lastPlayers || nStam != s_lastStam || nSpir != s_lastSpir)
             {
                 LOG("player: stat discovery - players=%d stamina=%d mountStamina=%d spirit=%d flags(stamina=%d mount=%d spirit=%d).",
                     nPlayers, nStam, nMountStam, nSpir, st.infStamina ? 1 : 0, st.infMountStamina ? 1 : 0, st.infSpirit ? 1 : 0);
                 s_lastPlayers = nPlayers;
                 s_lastStam = nStam;
-                s_lastMountStam = nMountStam;
                 s_lastSpir = nSpir;
             }
 
@@ -855,6 +860,61 @@ namespace trinity::game
                                 a6, a7, a8, a9, a10, out);
         }
 
+        static bool IsPlayerHoldingEvade()
+        {
+            if ((GetAsyncKeyState(VK_SPACE) & 0x8000) != 0 ||
+                (GetAsyncKeyState(VK_LSHIFT) & 0x8000) != 0 ||
+                (GetAsyncKeyState(VK_RSHIFT) & 0x8000) != 0 ||
+                (GetAsyncKeyState(VK_SHIFT) & 0x8000) != 0 ||
+                (GetAsyncKeyState('C') & 0x8000) != 0 ||
+                (GetAsyncKeyState(VK_MENU) & 0x8000) != 0) // Alt
+                return true;
+
+            XINPUT_STATE xs{};
+            for (DWORD i = 0; i < 4; ++i)
+            {
+                if (XInputGetState(i, &xs) == ERROR_SUCCESS)
+                {
+                    if ((xs.Gamepad.wButtons & (XINPUT_GAMEPAD_A | XINPUT_GAMEPAD_B)) != 0 ||
+                        xs.Gamepad.bRightTrigger > 30)
+                        return true;
+                }
+            }
+            return false;
+        }
+
+        // --- Combat Timing & Hitbox Evaluator: Perfect Parry & Perfect Dodge (sub_1407219c0) ---
+        using CombatTimingEval_t = bool(__fastcall*)(void* combatComp, void* hitData, float distance, uint8_t isGuardMode, void* outResult);
+        CombatTimingEval_t oCombatTimingEval = nullptr;
+        void* g_combatTimingTarget = nullptr;
+
+        bool __fastcall hkCombatTimingEval(void* combatComp, void* hitData, float distance, uint8_t isGuardMode, void* outResult)
+        {
+            const bool orig = oCombatTimingEval ? oCombatTimingEval(combatComp, hitData, distance, isGuardMode, outResult) : false;
+            const State& st = State::Get();
+
+            // isGuardMode != 0: Perfect Parry (Just Guard) -> ONLY when player is actively holding guard
+            if (isGuardMode && st.easyParry && IsPlayerHoldingGuard())
+            {
+                if (outResult && reinterpret_cast<uintptr_t>(outResult) >= kMinPointer)
+                {
+                    *reinterpret_cast<uint8_t*>(outResult) = 1;
+                }
+                return true;
+            }
+            // isGuardMode == 0: Perfect Dodge (Just Evade) -> ONLY when player is actively dodging
+            if (!isGuardMode && st.easyEvade && IsPlayerHoldingEvade())
+            {
+                if (outResult && reinterpret_cast<uintptr_t>(outResult) >= kMinPointer)
+                {
+                    *reinterpret_cast<uint8_t*>(outResult) = 1;
+                }
+                return true;
+            }
+
+            return orig;
+        }
+
         // --- Just Core: Just Guard (Perfect Parry) & Just Evade (Perfect Dodge) ---
         using JustCore_t = bool(__fastcall*)(__int64 a1, float* a2, float a3, char a4, bool* a5);
         JustCore_t oJustCore = nullptr;
@@ -870,7 +930,8 @@ namespace trinity::game
             const bool isGuard = (a4 != 0);
             const bool isEvade = (a4 == 0);
 
-            if ((isGuard && st.easyParry) || (isEvade && st.easyEvade))
+            if ((isGuard && st.easyParry && IsPlayerHoldingGuard()) ||
+                (isEvade && st.easyEvade && IsPlayerHoldingEvade()))
             {
                 if (a5) *a5 = true;
                 return true;
@@ -924,6 +985,14 @@ namespace trinity::game
             LOG_OK("player: damage-apply hook installed @ %p", g_damageHookTarget);
         }
 
+        // Native Combat Timing Evaluator: Perfect Parry & Perfect Dodge (sub_1407219c0)
+        if (mem::InstallHook("player: combat-timing", kSig_CombatTimingEval,
+                             "Easy Parry & Easy Evade helper timing disabled",
+                             &hkCombatTimingEval, &oCombatTimingEval, &g_combatTimingTarget))
+        {
+            LOG_OK("player: combat-timing hook installed @ %p", g_combatTimingTarget);
+        }
+
         return true;
     }
 
@@ -969,11 +1038,13 @@ namespace trinity::game
     {
         mem::RemoveHook(&g_commitTarget);
         mem::RemoveHook(&g_damageHookTarget);
+        mem::RemoveHook(&g_combatTimingTarget);
         mem::RemoveHook(&g_justCoreTarget);
         for (int i = 0; i < kMaxPlayers; ++i)
         {
             g_hpEntries[i].store(0);
             g_actors[i].store(0);
+            g_owners[i].store(0);
             g_targetOwners[i].store(0);
         }
         for (int i = 0; i < kMaxMounts; ++i)
@@ -1001,6 +1072,12 @@ namespace trinity::game
     {
         if (index < 0 || index >= kMaxPlayers) return 0;
         return g_actors[index].load(std::memory_order_acquire);
+    }
+
+    uintptr_t Player::GetOwner(int index)
+    {
+        if (index < 0 || index >= kMaxPlayers) return 0;
+        return g_owners[index].load(std::memory_order_acquire);
     }
 
     int Player::GetTrackedPlayerCount()
