@@ -53,6 +53,7 @@ namespace trinity::game
 
         // Returns the tracked actor address (0 = Primary/Kliff, 1 = Companion 1, 2 = Companion 2).
         static uintptr_t GetActor(int index);
+        static uintptr_t GetOwner(int index = 0);
         static int GetTrackedPlayerCount();
 
         // Active mount / vehicle actor tracking (Horse, Dragon, Wagon, Mount).

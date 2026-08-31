@@ -121,6 +121,7 @@ namespace trinity::game
         // protagonist is scaled by the incoming multiplier; a hit dealt by any of
         // them is scaled by the outgoing one. See the damage-apply hook below.
         std::atomic<uintptr_t> g_actors[kMaxPlayers]{};
+        std::atomic<uintptr_t> g_owners[kMaxPlayers]{};
         std::atomic<uintptr_t> g_targetOwners[kMaxPlayers]{};
 
         constexpr int kMaxMounts = 4;
@@ -157,6 +158,9 @@ namespace trinity::game
             *type = static_cast<int32_t>(t);
             return true;
         }
+
+        constexpr int kMaxMountStamEntries = kMaxStatEntries;
+        inline bool PlausibleStatType(int32_t t) { return t >= 0 && t < 256; }
 
         bool IsHealthType(int32_t t)  { return t == StatType_Health; }
 
@@ -289,6 +293,7 @@ namespace trinity::game
             {
                 g_hpEntries[i].store(0, std::memory_order_release);
                 g_actors[i].store(0, std::memory_order_release);
+                g_owners[i].store(0, std::memory_order_release);
                 g_targetOwners[i].store(0, std::memory_order_release);
             }
             for (int i = 0; i < kMaxMounts; ++i)
@@ -311,9 +316,10 @@ namespace trinity::game
         // those consume the sets, the whole-character-list walk it does every
         bool AnyStatFeatureActive(const State& st)
         {
+            if (Teleport::IsProtected() || Teleport::GetFlightEngaged()) return true;
             return st.godMode || st.infStamina || st.infMountStamina || st.infSpirit ||
-                   st.dmgInMult != 1.0f || st.dmgOutMult != 1.0f ||
-                   Teleport::IsProtected() || Teleport::GetFlightEngaged();
+                   st.oneHitKill || st.noFallDamage || st.easyParry || st.easyEvade ||
+                   st.dmgInMult != 1.0f || st.dmgOutMult != 1.0f;
         }
 
         static bool IsPlayerHoldingGuard()
@@ -343,24 +349,6 @@ namespace trinity::game
 
         void TickResolveSelf()
         {
-            const ULONGLONG now = GetTickCount64();
-
-            // Fast-path: if we already have a valid resolved protagonist and stat arrays,
-            // verify the existing actor pointer cheaply (1 read) rather than re-scanning 400+ characters every frame.
-            const uintptr_t curActor = g_actors[0].load(std::memory_order_relaxed);
-            const uintptr_t curHp = g_hpEntries[0].load(std::memory_order_relaxed);
-            if (curActor >= kMinPointer && curHp >= kMinPointer && (now - s_lastResolveMs < 200))
-            {
-                uint32_t objType = 0;
-                if (Read32(curActor + kOff_Owner_ObjectType, &objType) && objType == Obj_SelfPlayer)
-                {
-                    return;
-                }
-            }
-
-            if (now - s_lastResolveMs < 50) return;
-            s_lastResolveMs = now;
-
             if (!g_charMgrGlobal) return;
             uint64_t p = 0, mgr = 0, data = 0;
             if (!Read64(g_charMgrGlobal, &p) || p < kMinPointer) return;                 // P = *slot
@@ -373,9 +361,9 @@ namespace trinity::game
                 count == 0 || count > kCharList_MaxCount)
                 return;
 
-            // Derive the current protagonist vtable and possessor from the SelfPlayer slot.
+            // (A) The protagonist class vtable = the vtable of any player-class
+            // character (the SelfPlayer/OtherPlayer pool all share it).
             uint64_t anchorVt = 0;
-            uint64_t playerOwner = 0;
             uint64_t playerPoss = 0;
             for (uint32_t i = 0; i < count; ++i)
             {
@@ -384,7 +372,6 @@ namespace trinity::game
                 if (!IsPlayerClass(static_cast<uintptr_t>(ch))) continue;
                 if (Read64(static_cast<uintptr_t>(ch), &anchorVt) && anchorVt >= kMinPointer)
                 {
-                    playerOwner = ch;
                     Read64(static_cast<uintptr_t>(ch) + kOff_Owner_Possessor, &playerPoss);
                     break;
                 }
@@ -397,31 +384,48 @@ namespace trinity::game
             }
             g_playerPossessor.store(static_cast<uintptr_t>(playerPoss), std::memory_order_release);
 
-            // Active Pawn Riding Check: when riding a mount, the player controller's active pawn (possessor+0xD0)
-            // switches to the mount actor (activePawn != playerOwner).
-            bool ridingActive = false;
-            if (playerPoss >= kMinPointer)
+            int nPlayers = 0, nStam = 0, nMountStam = 0, nSpir = 0, nMounts = 0;
+
+            // (B) Track active protagonist bodies with matching vtable
+            for (uint32_t i = 0; i < count && nPlayers < kMaxPartyPlayers; ++i)
             {
-                uint64_t activePawn = 0;
-                if (Read64(static_cast<uintptr_t>(playerPoss) + kOff_Possessor_Pawn, &activePawn) &&
-                    activePawn >= kMinPointer && activePawn != playerOwner)
+                uint64_t ch = 0;
+                if (!Read64(static_cast<uintptr_t>(data) + 8ull * i, &ch) || ch < kMinPointer) continue;
+                const uintptr_t owner = static_cast<uintptr_t>(ch);
+                uint64_t vt = 0;
+                if (!Read64(owner, &vt) || vt != anchorVt) continue;
+
+                SelfChain c;
+                if (!WalkSelfChain(owner, &c)) continue;
+
+                g_hpEntries[nPlayers].store(c.statArray, std::memory_order_release);
+                g_actors[nPlayers].store(c.actor, std::memory_order_release);
+                g_targetOwners[nPlayers].store(c.targetOwner, std::memory_order_release);
+                g_owners[nPlayers].store(owner, std::memory_order_release);
+                ++nPlayers;
+
+                // Scan stat array for stamina (17, 19, 20, 22) and spirit (18, 21, 23)
+                for (int k = 1; k < kStatArray_ScanEntries; ++k)
                 {
-                    ridingActive = true;
+                    const uintptr_t e = c.statArray + k * kSizeof_StatEntry;
+                    int32_t stt = 0;
+                    if (!StatEntryType(e, &stt)) break;
+                    if (!PlausibleStatType(stt)) break;
+                    if (IsStaminaType(stt))
+                    {
+                        if (nStam < kMaxStatEntries)
+                            g_stamEntries[nStam++].store(e, std::memory_order_release);
+                    }
+                    else if (IsSpiritType(stt))
+                    {
+                        if (nSpir < kMaxStatEntries)
+                            g_spiritEntries[nSpir++].store(e, std::memory_order_release);
+                    }
                 }
             }
 
-            uintptr_t nextHp[kMaxPlayers]{};
-            uintptr_t nextActors[kMaxPlayers]{};
-            uintptr_t nextTargets[kMaxPlayers]{};
-            uintptr_t nextStam[kMaxStatEntries]{};
-            uintptr_t nextMountStam[kMaxStatEntries]{};
-            uintptr_t nextSpir[kMaxStatEntries]{};
-            uintptr_t nextMounts[kMaxMounts]{};
-            uintptr_t nextMountTargets[kMaxMounts]{};
-            uintptr_t nextMountOwners[kMaxMounts]{};
-            int nPlayers = 0, nStam = 0, nMountStam = 0, nSpir = 0, nMounts = 0;
-
-            for (uint32_t i = 0; i < count; ++i)
+            // Mount stamina discovery
+            for (uint32_t i = 0; i < count && nMountStam < kMaxMountStamEntries; ++i)
             {
                 uint64_t ch = 0;
                 if (!Read64(static_cast<uintptr_t>(data) + 8ull * i, &ch) || ch < kMinPointer) continue;
@@ -429,222 +433,86 @@ namespace trinity::game
 
                 uint32_t objType = 0;
                 Read32(owner + kOff_Owner_ObjectType, &objType);
-                uint64_t td = 0;
-                uint8_t tag = 0;
-                if (Read64(owner + kOff_Owner_TypeDesc, &td) && td >= kMinPointer)
-                    Read8(static_cast<uintptr_t>(td) + 1, &tag);
+                if (objType != Obj_Vehicle && objType != Obj_Pet) continue;
 
-                uint64_t vt = 0;
-                Read64(owner, &vt);
-                const bool isHumanoid = (anchorVt != 0 && vt == anchorVt);
-
-                // Mount discovery: ONLY inspect entities that are genuine mounts / vehicles / pets
-                if (!isHumanoid && (objType == Obj_Vehicle || tag == 5 || objType == Obj_Pet ||
-                    (objType != Obj_SelfPlayer && objType != Obj_OtherPlayer && objType != 0 && objType < 16)))
+                uintptr_t mountStatArray = 0, mountTarget = 0, mountAct = 0;
+                if (WalkMountVitalChain(owner, &mountStatArray, &mountTarget, &mountAct) && mountStatArray >= kMinPointer)
                 {
-                    uint64_t mountActor = 0;
-                    Read64(owner + kOff_Owner_Actor, &mountActor);
-                    const uintptr_t act = (mountActor >= kMinPointer) ? static_cast<uintptr_t>(mountActor) : owner;
-
-                    // Fallback check: check if mount possessor matches player
-                    uint64_t mountPoss = 0;
-                    if (playerPoss >= kMinPointer)
+                    if (nMounts < kMaxMounts)
                     {
-                        if ((Read64(owner + kOff_Owner_Possessor, &mountPoss) && mountPoss == playerPoss) ||
-                            (Read64(act + kOff_Owner_Possessor, &mountPoss) && mountPoss == playerPoss))
-                        {
-                            // ridingActive remains detected by pawn check
-                        }
+                        g_mountActors[nMounts].store(mountAct ? mountAct : owner, std::memory_order_release);
+                        g_mountTargetOwners[nMounts].store(mountTarget, std::memory_order_release);
+                        g_mountOwners[nMounts].store(owner, std::memory_order_release);
+                        ++nMounts;
                     }
-
-                    uintptr_t mountStatArray = 0;
-                    uintptr_t mountTarget = 0;
-                    uintptr_t mountResolvedActor = 0;
-                    if (WalkMountVitalChain(owner, &mountStatArray, &mountTarget, &mountResolvedActor) && mountStatArray >= kMinPointer)
+                    for (int k = 0; k < kStatArray_ScanEntries; ++k)
                     {
-                        for (int k = 0; k < kStatArray_ScanEntries; ++k)
-                        {
-                            const uintptr_t e = mountStatArray + k * kSizeof_StatEntry;
-                            int32_t stt = 0;
-                            if (!StatEntryType(e, &stt)) continue;
-                            if (stt == StatType_MountSprint || stt == 19 || stt == StatType_SprintSt || stt == 20 || stt == StatType_StaminaPool117 || stt == 22)
-                            {
-                                if (nMountStam < kMaxStatEntries)
-                                    nextMountStam[nMountStam++] = e;
-                                if (nMounts < kMaxMounts)
-                                {
-                                    bool alreadyAdded = false;
-                                    for (int m = 0; m < nMounts; ++m)
-                                    {
-                                        if (nextMounts[m] == act || (mountTarget && nextMountTargets[m] == mountTarget)) { alreadyAdded = true; break; }
-                                    }
-                                    if (!alreadyAdded)
-                                    {
-                                        nextMounts[nMounts] = act;
-                                        nextMountTargets[nMounts] = mountTarget;
-                                        nextMountOwners[nMounts] = owner;
-                                        ++nMounts;
-                                    }
-                                }
-                            }
-                        }
-                    }
-                }
-
-                if (nPlayers >= kMaxPlayers) continue;
-                if (!isHumanoid || vt != anchorVt) continue;
-                SelfChain c;
-                if (!WalkSelfChain(owner, &c)) continue;
-
-                nextHp[nPlayers] = c.statArray;
-                nextActors[nPlayers] = c.actor;
-                nextTargets[nPlayers] = c.targetOwner;
-                ++nPlayers;
-
-                // Scan protagonist stat array for mount sprint (19), player stamina (20/22), and spirit (21/23)
-                for (int k = 1; k < kStatArray_ScanEntries; ++k)
-                {
-                    const uintptr_t e = c.statArray + k * kSizeof_StatEntry;
-                    int32_t stt = 0;
-                    if (!StatEntryType(e, &stt)) continue;
-                    if (stt == StatType_MountSprint || stt == 19)
-                    {
-                        if (nMountStam < kMaxStatEntries) nextMountStam[nMountStam++] = e;
-                    }
-                    else if (stt == StatType_SprintSt || stt == StatType_StaminaPool117 || stt == 20 || stt == 22)
-                    {
-                        if (nStam < kMaxStatEntries) nextStam[nStam++] = e;
-                    }
-                    else if (IsSpiritType(stt))
-                    {
-                        if (nSpir < kMaxStatEntries) nextSpir[nSpir++] = e;
-                    }
-                }
-            }
-
-            if (nPlayers > kMaxPartyPlayers)
-            {
-                nPlayers = kMaxPartyPlayers;
-                nStam = 0;
-                nSpir = 0;
-                for (int i = 0; i < nPlayers; ++i)
-                {
-                    const uintptr_t statArray = nextHp[i];
-                    for (int k = 1; k < kStatArray_ScanEntries; ++k)
-                    {
-                        const uintptr_t e = statArray + k * kSizeof_StatEntry;
+                        const uintptr_t e = mountStatArray + k * kSizeof_StatEntry;
                         int32_t stt = 0;
-                        if (!StatEntryType(e, &stt)) continue;
-                        if (stt == StatType_SprintSt || stt == StatType_StaminaPool117 || stt == 20 || stt == 22)
-                        {
-                            if (nStam < kMaxStatEntries) nextStam[nStam++] = e;
-                        }
-                        else if (IsSpiritType(stt))
-                        {
-                            if (nSpir < kMaxStatEntries) nextSpir[nSpir++] = e;
-                        }
+                        if (!StatEntryType(e, &stt)) break;
+                        if (!PlausibleStatType(stt)) break;
+                        if (IsStaminaType(stt) && nMountStam < kMaxMountStamEntries)
+                            g_mountStamEntries[nMountStam++].store(e, std::memory_order_release);
                     }
                 }
-
-                static bool s_previewLogged = false;
-                if (!s_previewLogged)
-                {
-                    LOG_WARN("player: extra player-class bodies detected - using the first %d "
-                             "stable party bodies for stat writes.", kMaxPartyPlayers);
-                    s_previewLogged = true;
-                }
-            }
-
-            // Require the exact candidate identity set to survive three game
-            // ticks. Transient menu/swap bodies disappear before they can ever
-            // become writable; normal gameplay resumes a few frames later.
-            static uintptr_t s_candidateHp[kMaxPartyPlayers]{};
-            static int s_candidateCount = 0;
-            static int s_stableTicks = 0;
-            bool same = nPlayers == s_candidateCount;
-            for (int i = 0; same && i < nPlayers; ++i)
-                same = nextHp[i] == s_candidateHp[i];
-            if (!same)
-            {
-                s_candidateCount = nPlayers;
-                for (int i = 0; i < kMaxPartyPlayers; ++i)
-                    s_candidateHp[i] = (i < nPlayers) ? nextHp[i] : 0;
-                s_stableTicks = 1;
-                ClearPlayerSets();
-                return;
-            }
-            if (s_stableTicks < 3)
-            {
-                ++s_stableTicks;
-                ClearPlayerSets();
-                return;
-            }
-
-            for (int i = 0; i < nPlayers; ++i)
-            {
-                g_hpEntries[i].store(nextHp[i], std::memory_order_release);
-                g_actors[i].store(nextActors[i], std::memory_order_release);
-                g_targetOwners[i].store(nextTargets[i], std::memory_order_release);
-            }
-            for (int i = 0; i < nStam; ++i)
-                g_stamEntries[i].store(nextStam[i], std::memory_order_release);
-            for (int i = 0; i < nMountStam; ++i)
-                g_mountStamEntries[i].store(nextMountStam[i], std::memory_order_release);
-            for (int i = 0; i < nSpir; ++i)
-                g_spiritEntries[i].store(nextSpir[i], std::memory_order_release);
-
-            for (int i = 0; i < kMaxMounts; ++i)
-            {
-                g_mountActors[i].store((i < nMounts) ? nextMounts[i] : 0, std::memory_order_release);
-                g_mountTargetOwners[i].store((i < nMounts) ? nextMountTargets[i] : 0, std::memory_order_release);
-                g_mountOwners[i].store((i < nMounts) ? nextMountOwners[i] : 0, std::memory_order_release);
             }
             g_mountCount.store(nMounts, std::memory_order_release);
 
-            // Clear any trailing slots from a previous tick so a stale entry
-            // pointer can never accidentally match after a transition/swap.
+            // Clear trailing slots
             for (int i = nPlayers; i < kMaxPlayers; ++i)
             {
                 g_hpEntries[i].store(0, std::memory_order_release);
                 g_actors[i].store(0, std::memory_order_release);
+                g_owners[i].store(0, std::memory_order_release);
                 g_targetOwners[i].store(0, std::memory_order_release);
             }
-            for (int i = nStam; i < kMaxStatEntries; ++i) g_stamEntries[i].store(0, std::memory_order_release);
-            for (int i = nMountStam; i < kMaxStatEntries; ++i) g_mountStamEntries[i].store(0, std::memory_order_release);
-            for (int i = nSpir; i < kMaxStatEntries; ++i) g_spiritEntries[i].store(0, std::memory_order_release);
+            for (int i = nStam; i < kMaxStatEntries; ++i)
+                g_stamEntries[i].store(0, std::memory_order_release);
+            for (int i = nMountStam; i < kMaxMountStamEntries; ++i)
+                g_mountStamEntries[i].store(0, std::memory_order_release);
+            for (int i = nSpir; i < kMaxStatEntries; ++i)
+                g_spiritEntries[i].store(0, std::memory_order_release);
+            for (int i = nMounts; i < kMaxMounts; ++i)
+            {
+                g_mountActors[i].store(0, std::memory_order_release);
+                g_mountTargetOwners[i].store(0, std::memory_order_release);
+                g_mountOwners[i].store(0, std::memory_order_release);
+            }
 
+            // Immediately pin stats each frame when active
             const State& st = State::Get();
-            if (st.infStamina || st.infMountStamina)
+            if (st.godMode)
+            {
+                for (int i = 0; i < nPlayers; ++i)
+                {
+                    const uintptr_t e = g_hpEntries[i].load(std::memory_order_relaxed);
+                    if (e >= kMinPointer) PinEntry(e);
+                }
+            }
+            if (st.infStamina)
             {
                 for (int i = 0; i < nStam; ++i)
-                    PinEntry(g_stamEntries[i].load(std::memory_order_relaxed));
+                {
+                    const uintptr_t e = g_stamEntries[i].load(std::memory_order_relaxed);
+                    if (e >= kMinPointer) PinEntry(e);
+                }
+            }
+            if (st.infMountStamina)
+            {
                 for (int i = 0; i < nMountStam; ++i)
-                    PinEntry(g_mountStamEntries[i].load(std::memory_order_relaxed));
+                {
+                    const uintptr_t e = g_mountStamEntries[i].load(std::memory_order_relaxed);
+                    if (e >= kMinPointer) PinEntry(e);
+                }
             }
             if (st.infSpirit)
-                for (int i = 0; i < nSpir; ++i)
-                    PinEntry(g_spiritEntries[i].load(std::memory_order_relaxed));
-
-            // Log only when discovery changes, so the console shows whether
-            // the player chain and gauge typing are healthy without frame spam.
-            static int s_lastPlayers = -1, s_lastStam = -1, s_lastMountStam = -1, s_lastSpir = -1;
-            if (nPlayers != s_lastPlayers || nStam != s_lastStam || nMountStam != s_lastMountStam || nSpir != s_lastSpir)
             {
-                LOG("player: stat discovery - players=%d stamina=%d mountStamina=%d spirit=%d flags(stamina=%d mount=%d spirit=%d).",
-                    nPlayers, nStam, nMountStam, nSpir, st.infStamina ? 1 : 0, st.infMountStamina ? 1 : 0, st.infSpirit ? 1 : 0);
-                s_lastPlayers = nPlayers;
-                s_lastStam = nStam;
-                s_lastMountStam = nMountStam;
-                s_lastSpir = nSpir;
+                for (int i = 0; i < nSpir; ++i)
+                {
+                    const uintptr_t e = g_spiritEntries[i].load(std::memory_order_relaxed);
+                    if (e >= kMinPointer) PinEntry(e);
+                }
             }
-
-            // Easy Parry pulsing lives ONLY in Player::Tick() now - see there.
-            // (Previously this function also pulsed on its own 120ms timer,
-            // racing Tick()'s 80ms timer over the same s_lastParryPulse
-            // timestamp; since Tick() calls this function immediately after
-            // its own pulse, the 120ms branch here almost never actually won,
-            // it just made the pulse cadence unpredictable and the code
-            // confusing to reason about.)
         }
 
         // --- God Mode / Infinite Stamina / Infinite Mount Stamina / Infinite Spirit: guard the stat-
@@ -654,28 +522,14 @@ namespace trinity::game
             const uintptr_t e = reinterpret_cast<uintptr_t>(entry);
             const State& st = State::Get();
 
-            bool isPlayerHp = InSet(g_hpEntries, kMaxPlayers, e);
+            const bool isPlayerHp   = InSet(g_hpEntries, kMaxPlayers, e);
+            const bool isStam       = InSet(g_stamEntries, kMaxStatEntries, e);
+            const bool isMountStam  = InSet(g_mountStamEntries, kMaxMountStamEntries, e);
+            const bool isSpirit     = InSet(g_spiritEntries, kMaxStatEntries, e);
 
-            int32_t entryType = -1;
-            StatEntryType(e, &entryType);
-
-            // God Mode strictly locks player HP only when godMode toggle is ON
-            const bool isGodModeHp = st.godMode && isPlayerHp;
-
-            // Stamina lock (Player on-foot sprint, stamina pool, and horse/mount gallop):
-            const bool isStaminaEntry = InSet(g_stamEntries, kMaxStatEntries, e) ||
-                                        InSet(g_mountStamEntries, kMaxStatEntries, e) ||
-                                        entryType == StatType_MountSprint || entryType == 19 ||
-                                        entryType == StatType_SprintSt || entryType == 20 ||
-                                        entryType == StatType_StaminaPool117 || entryType == 22;
-
-            const bool isStamLocked = (st.infStamina || st.infMountStamina) && isStaminaEntry;
-
-            const bool isPlayerSpir = st.infSpirit && InSet(g_spiritEntries, kMaxStatEntries, e);
-
-            const bool shouldLock = isGodModeHp ||
-                                    isStamLocked ||
-                                    isPlayerSpir;
+            const bool shouldLock = (st.godMode && isPlayerHp) ||
+                                    ((st.infStamina && isStam) || (st.infMountStamina && isMountStam)) ||
+                                    (st.infSpirit && isSpirit);
 
             int64_t fullTarget = target;
             if (shouldLock)
@@ -695,9 +549,8 @@ namespace trinity::game
 
             const int64_t result = oStatCommit(entry, time, target, flag);
 
-            if (isGodModeHp) PinEntry(e);
-            if (isStamLocked) PinEntry(e);
-            if (isPlayerSpir) PinEntry(e);
+            if (shouldLock)
+                PinEntry(e);
 
             return shouldLock ? fullTarget : result;
         }
@@ -708,10 +561,15 @@ namespace trinity::game
             if (InSet(g_targetOwners, kMaxPlayers, target)) return true;
             if (InSet(g_actors, kMaxPlayers, target)) return true;
             if (InSet(g_hpEntries, kMaxPlayers, target)) return true;
+            if (InSet(g_owners, kMaxPlayers, target)) return true;
             for (int i = 0; i < kMaxPartyPlayers; ++i)
             {
                 const uintptr_t act = g_actors[i].load(std::memory_order_relaxed);
                 if (act && act == target) return true;
+                const uintptr_t own = g_owners[i].load(std::memory_order_relaxed);
+                if (own && own == target) return true;
+                const uintptr_t tgt = g_targetOwners[i].load(std::memory_order_relaxed);
+                if (tgt && tgt == target) return true;
             }
             return false;
         }
@@ -749,7 +607,7 @@ namespace trinity::game
             bool isPlayerAttacker = false;
             if (sourceCtx >= kMinPointer)
             {
-                if (IsPlayerEntity(sourceCtx))
+                if (IsPlayerEntity(sourceCtx) || IsMountEntity(sourceCtx))
                 {
                     isPlayerAttacker = true;
                 }
@@ -758,15 +616,36 @@ namespace trinity::game
                     uint64_t actor = 0;
                     if (Read64(sourceCtx + kOff_Owner_Actor, &actor) && actor >= kMinPointer)
                     {
-                        if (IsPlayerEntity(static_cast<uintptr_t>(actor)))
+                        if (IsPlayerEntity(static_cast<uintptr_t>(actor)) || IsMountEntity(static_cast<uintptr_t>(actor)))
                             isPlayerAttacker = true;
+                    }
+                    
+                    if (!isPlayerAttacker)
+                    {
+                        uint64_t marker = 0;
+                        if (Read64(sourceCtx + kOff_Actor_StatusMarker, &marker) && marker >= kMinPointer)
+                        {
+                            if (IsPlayerEntity(static_cast<uintptr_t>(marker)))
+                                isPlayerAttacker = true;
+                        }
+                    }
+
+                    if (!isPlayerAttacker)
+                    {
+                        uint64_t poss = 0;
+                        if (Read64(sourceCtx + kOff_Owner_Possessor, &poss) && poss >= kMinPointer)
+                        {
+                            const uintptr_t pposs = g_playerPossessor.load(std::memory_order_relaxed);
+                            if (pposs && poss == pposs)
+                                isPlayerAttacker = true;
+                        }
                     }
                 }
             }
 
             if (isPlayerAttacker)
             {
-                float mult = st.oneHitKill ? 1000.0f : st.dmgOutMult;
+                float mult = st.oneHitKill ? 10000.0f : st.dmgOutMult;
                 if (mult != 1.0f)
                 {
                     const double scaled = static_cast<double>(delta) * static_cast<double>(mult);
@@ -816,11 +695,11 @@ namespace trinity::game
             }
             else if (delta < 0)
             {
-                if (statusId == StatType_Health)
+                if (statusId == StatType_Health || statusId == 0)
                 {
-                    if (st.godMode && (isPlayerTarget || (st.infMountStamina && isMountTarget)))
+                    if (st.godMode && (isPlayerTarget || isMountTarget))
                     {
-                        delta = 0; // complete damage immunity
+                        delta = 0; // complete damage immunity for player & mount
                     }
                     else if ((st.noFallDamage || Teleport::IsProtected() || Teleport::GetFlightEngaged()) &&
                              isPlayerTarget && !isEnemyAttacker)
@@ -833,26 +712,80 @@ namespace trinity::game
                         delta = ScaleDamage(owner, sourceCtx, delta);
                     }
                 }
-                else if (statusId == StatType_MountSprint || statusId == 19 ||
-                         ((st.infMountStamina || Teleport::GetFlightEngaged()) && (isMountTarget || !isEnemyAttacker)))
+                else if (IsStaminaType(statusId))
                 {
-                    delta = 0; // zero-out mount stamina drain instantly
-                }
-                else if ((st.infStamina || Teleport::GetFlightEngaged()) &&
-                         (isPlayerTarget || !isEnemyAttacker) &&
-                         (IsStaminaType(statusId) || statusId == StatType_SprintSt || statusId == 20 ||
-                          statusId == StatType_StaminaPool117 || statusId == 22 || statusId != StatType_Health))
-                {
-                    delta = 0; // zero-out player stamina drain instantly
+                    if (isPlayerTarget && (st.infStamina || Teleport::GetFlightEngaged()))
+                    {
+                        delta = 0; // zero-out player stamina drain
+                    }
+                    else if (isMountTarget && (st.infMountStamina || Teleport::GetFlightEngaged()))
+                    {
+                        delta = 0; // zero-out mount stamina drain
+                    }
                 }
                 else if (isPlayerTarget && IsSpiritType(statusId) && st.infSpirit)
                 {
-                    delta = 0; // zero-out spirit drain instantly
+                    delta = 0; // zero-out spirit drain
                 }
             }
 
             return oDamageApply(targetOwner, statusId, time, delta, sourceCtx,
                                 a6, a7, a8, a9, a10, out);
+        }
+
+        static bool IsPlayerHoldingEvade()
+        {
+            if ((GetAsyncKeyState(VK_SPACE) & 0x8000) != 0 ||
+                (GetAsyncKeyState(VK_LSHIFT) & 0x8000) != 0 ||
+                (GetAsyncKeyState(VK_RSHIFT) & 0x8000) != 0 ||
+                (GetAsyncKeyState(VK_SHIFT) & 0x8000) != 0 ||
+                (GetAsyncKeyState('C') & 0x8000) != 0 ||
+                (GetAsyncKeyState(VK_MENU) & 0x8000) != 0) // Alt
+                return true;
+
+            XINPUT_STATE xs{};
+            for (DWORD i = 0; i < 4; ++i)
+            {
+                if (XInputGetState(i, &xs) == ERROR_SUCCESS)
+                {
+                    if ((xs.Gamepad.wButtons & (XINPUT_GAMEPAD_A | XINPUT_GAMEPAD_B)) != 0 ||
+                        xs.Gamepad.bRightTrigger > 30)
+                        return true;
+                }
+            }
+            return false;
+        }
+
+        // --- Combat Timing & Hitbox Evaluator: Perfect Parry & Perfect Dodge (sub_1407219c0) ---
+        using CombatTimingEval_t = bool(__fastcall*)(void* combatComp, void* hitData, float distance, uint8_t isGuardMode, void* outResult);
+        CombatTimingEval_t oCombatTimingEval = nullptr;
+        void* g_combatTimingTarget = nullptr;
+
+        bool __fastcall hkCombatTimingEval(void* combatComp, void* hitData, float distance, uint8_t isGuardMode, void* outResult)
+        {
+            const bool orig = oCombatTimingEval ? oCombatTimingEval(combatComp, hitData, distance, isGuardMode, outResult) : false;
+            const State& st = State::Get();
+
+            // isGuardMode != 0: Perfect Parry (Just Guard) -> ONLY when player is actively holding guard
+            if (isGuardMode && st.easyParry && IsPlayerHoldingGuard())
+            {
+                if (outResult && reinterpret_cast<uintptr_t>(outResult) >= kMinPointer)
+                {
+                    *reinterpret_cast<uint8_t*>(outResult) = 1;
+                }
+                return true;
+            }
+            // isGuardMode == 0: Perfect Dodge (Just Evade) -> ONLY when player is actively dodging
+            if (!isGuardMode && st.easyEvade && IsPlayerHoldingEvade())
+            {
+                if (outResult && reinterpret_cast<uintptr_t>(outResult) >= kMinPointer)
+                {
+                    *reinterpret_cast<uint8_t*>(outResult) = 1;
+                }
+                return true;
+            }
+
+            return orig;
         }
 
         // --- Just Core: Just Guard (Perfect Parry) & Just Evade (Perfect Dodge) ---
@@ -870,7 +803,8 @@ namespace trinity::game
             const bool isGuard = (a4 != 0);
             const bool isEvade = (a4 == 0);
 
-            if ((isGuard && st.easyParry) || (isEvade && st.easyEvade))
+            if ((isGuard && st.easyParry && IsPlayerHoldingGuard()) ||
+                (isEvade && st.easyEvade && IsPlayerHoldingEvade()))
             {
                 if (a5) *a5 = true;
                 return true;
@@ -924,13 +858,23 @@ namespace trinity::game
             LOG_OK("player: damage-apply hook installed @ %p", g_damageHookTarget);
         }
 
+        // Native Combat Timing Evaluator: Perfect Parry & Perfect Dodge (sub_1407219c0)
+        if (mem::InstallHook("player: combat-timing", kSig_CombatTimingEval,
+                             "Easy Parry & Easy Evade helper timing disabled",
+                             &hkCombatTimingEval, &oCombatTimingEval, &g_combatTimingTarget))
+        {
+            LOG_OK("player: combat-timing hook installed @ %p", g_combatTimingTarget);
+        }
+
         return true;
     }
 
     void Player::Tick()
     {
-        TickResolveSelf();
         const State& st = State::Get();
+        if (!AnyStatFeatureActive(st)) return;
+
+        TickResolveSelf();
         if (st.infStamina || st.infMountStamina)
         {
             for (int i = 0; i < kMaxStatEntries; ++i)
@@ -969,11 +913,13 @@ namespace trinity::game
     {
         mem::RemoveHook(&g_commitTarget);
         mem::RemoveHook(&g_damageHookTarget);
+        mem::RemoveHook(&g_combatTimingTarget);
         mem::RemoveHook(&g_justCoreTarget);
         for (int i = 0; i < kMaxPlayers; ++i)
         {
             g_hpEntries[i].store(0);
             g_actors[i].store(0);
+            g_owners[i].store(0);
             g_targetOwners[i].store(0);
         }
         for (int i = 0; i < kMaxMounts; ++i)
@@ -1001,6 +947,12 @@ namespace trinity::game
     {
         if (index < 0 || index >= kMaxPlayers) return 0;
         return g_actors[index].load(std::memory_order_acquire);
+    }
+
+    uintptr_t Player::GetOwner(int index)
+    {
+        if (index < 0 || index >= kMaxPlayers) return 0;
+        return g_owners[index].load(std::memory_order_acquire);
     }
 
     int Player::GetTrackedPlayerCount()

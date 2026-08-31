@@ -669,159 +669,130 @@ namespace trinity::game
                 matchWord("Grindstone") || matchWord("Anvil") || matchWord("Scissors") || matchWord("Spade"))
                 return "Tools";
 
-            // 29. Ammunition
-            if (matchWord("Ammo") || matchWord("Arrow") || matchWord("Bolt") || matchWord("Bullet") || matchWord("Shell") ||
-                matchWord("Projectile") || matchWord("Cartridge") || matchWord("Pellet") || matchWord("Quiver"))
-                return "Ammunition";
-
-            // 30. Keys
-            if (matchWord("Key") || matchWord("Lockpick") || matchWord("Token") || matchWord("Pass") || matchWord("Emblem") ||
-                matchWord("Crest") || matchWord("Badge") || matchWord("Seal") || matchWord("Sigil") || matchWord("Permission") ||
-                matchWord("Ticket") || matchWord("Stamp") || matchWord("License") || matchWord("Permit"))
-                return "Keys";
-
-            // 31. Housing
-            if (matchWord("Housing") || match("House_Seed") || match("Furniture_Seed") || matchWord("Seed"))
-                return "Housing";
-
-            // 32. Currency
-            if (matchWord("Money") || matchWord("Coin") || matchWord("Silver") || matchWord("Gold") || matchWord("Copper") ||
-                matchWord("Cash") || matchWord("Bill") || matchWord("Currency") || matchWord("Credit") || matchWord("Tribute") ||
-                matchWord("Price") || matchWord("Wallet") || matchWord("Funds"))
-                return "Currency";
-
-            // --- WEARABLE EQUIPMENT (Helmets, Cloaks, Gloves, Boots, Armor, Weapons) ---
-            // Must be tested BEFORE Accessories / Rings to prevent "Bandit Armor", "Cloth Armor", etc. from becoming Rings!
-
-            // 33. Helmets
+            // --- WEARABLE EQUIPMENT & WEAPONS (Prioritized first before Ammunition/Materials) ---
+            // 29. Helmets
             if (matchWord("Helm") || matchWord("Helmet") || matchWord("Hat") || matchWord("Cap") || matchWord("Crown") ||
                 matchWord("Hood") || matchWord("Tiara") || matchWord("Circlet") || matchWord("Visor") || matchWord("Headgear") ||
                 matchWord("Turban") || matchWord("Bonnet") || match("Player_Helm"))
                 return "Helmets";
 
-            // 34. Cloaks
+            // 30. Cloaks
             if (matchWord("Cloak") || matchWord("Cape") || matchWord("Mantle") || matchWord("Shawl") || matchWord("Poncho") ||
                 matchWord("Scarf") || match("Player_Cloak"))
                 return "Cloaks";
 
-            // 35. Gloves
+            // 31. Gloves
             if (matchWord("Glove") || matchWord("Gloves") || matchWord("Gauntlet") || matchWord("Bracer") || matchWord("Vambrace") ||
                 matchWord("Mitt") || matchWord("Cuff") || match("Player_Gloves"))
                 return "Gloves";
 
-            // 36. Boots
+            // 32. Boots
             if (matchWord("Boot") || matchWord("Boots") || matchWord("Shoe") || matchWord("Shoes") || matchWord("Greave") ||
                 matchWord("Sabaton") || matchWord("Sandal") || matchWord("Slipper") || match("Player_Boots"))
                 return "Boots";
 
-            // 37. Body Armor / Clothing (Chest, Tunics, Robes, Cloth Armor, Leather Armor, Plate Armor)
+            // 33. Body Armor / Clothing (Chest, Tunics, Robes, Cloth Armor, Leather Armor, Plate Armor)
             if (matchWord("Armor") || matchWord("Plate") || matchWord("Robe") || matchWord("Coat") || matchWord("Chest") ||
                 matchWord("ChainMail") || matchWord("Tunic") || matchWord("Mail") || matchWord("Cuirass") ||
                 matchWord("Vest") || matchWord("Shirt") || matchWord("Breastplate") || matchWord("Hauberk") || matchWord("Doublet") ||
                 matchWord("Outfit") || matchWord("Costume") || matchWord("Garment") || matchWord("Attire") ||
                 matchWord("Dress") || matchWord("Trousers") || matchWord("Pants") || match("Player_Armor") ||
                 match("Cloth_Armor") || match("Leather_Armor") || match("Plate_Armor") ||
-                (match("Cloth") && match("Armor")) || (match("Leather") && match("Armor")))
+                matchWord("Cloth") || matchWord("Leather") || matchWord("Suit") || matchWord("Garb") || matchWord("Uniform") ||
+                matchWord("Corset") || matchWord("Jerkin") || matchWord("Tabard") || matchWord("Surcoat") || matchWord("Gambeson") ||
+                matchWord("Brigandine") || matchWord("Chausses") || matchWord("Breeches") || matchWord("Apparel") || matchWord("Clothing"))
                 return "Armor";
 
-            // 38. Daggers
-            if (match("OneHandDagger") || match("OneHand_Dagger") || matchWord("Dagger") || matchWord("Dirk"))
+            // 34. Necklaces & Bracelets
+            if (matchWord("Necklace") || matchWord("Amulet") || matchWord("Pendant") || matchWord("Choker") || matchWord("Locket") ||
+                matchWord("Talisman") || matchWord("Collar") || matchWord("Bracelet") || matchWord("Bangle") || matchWord("Wristband") ||
+                matchWord("Torc") || match("Accessory_Necklace"))
+                return "Necklaces";
+
+            // 35. Earrings
+            if (matchWord("Earring") || matchWord("Earrings") || matchWord("Stud") || match("Accessory_Earring"))
+                return "Equip Accessory Earring";
+
+            // 36. Glasses
+            if (matchWord("Glasses") || matchWord("Monocle") || matchWord("Goggle") || matchWord("Eyepatch") || matchWord("Spectacle") || match("Accessory_Glasses"))
+                return "Glasses";
+
+            // 37. Masks
+            if (matchWord("Mask") || matchWord("Veil") || matchWord("Blindfold") || matchWord("Visage") || match("Accessory_Mask"))
+                return "Masks";
+
+            // 38. Rings (Strict Word Match only: "Ring", "Signet", "Band", excluding Bandit/Bandana/Ringleader/Offering)
+            if ((matchWord("Ring") || matchWord("Signet") || matchWord("Band") || match("Accessory_Ring")) &&
+                !matchWord("Bandit") && !matchWord("Bandana") && !matchWord("Ringleader") && !matchWord("Offering") &&
+                !matchWord("Spring") && !matchWord("String") && !matchWord("Bearing"))
+                return "Rings";
+
+            // 39. Daggers
+            if (match("OneHandDagger") || match("OneHand_Dagger") || matchWord("Dagger") || matchWord("Dirk") || matchWord("Stiletto") || matchWord("Tanto"))
                 return "Daggers";
 
-            // 39. Shields
+            // 40. Shields
             if (match("OneHandShield") || match("OneHandTowerShield") || match("TowerShield") || matchWord("Shield") ||
                 matchWord("Targe") || matchWord("Buckler") || matchWord("Pavise") || matchWord("Aegis"))
                 return "Shields";
 
-            // 40. Ranged Weapons
+            // 41. Ranged Weapons
             if ((matchWord("Bow") || matchWord("Crossbow") || matchWord("Musket") || matchWord("Pistol") || matchWord("Shotgun") ||
                  matchWord("Cannon") || matchWord("Gun") || matchWord("Rifle") || matchWord("Blaster") || matchWord("Slingshot") ||
                  matchWord("Rocket") || matchWord("Launcher") || matchWord("Arbalest") || match("Range_Weapon") || match("OneHandRange")) &&
                 !matchWord("Arrow") && !matchWord("Bullet") && !matchWord("Ammo") && !matchWord("Shell"))
                 return "Ranged Weapons";
 
-            // 41. Two-Handed Weapons
+            // 42. Two-Handed Weapons
             if (match("TwoHand") || matchWord("Greatsword") || matchWord("GreatSword") || matchWord("GiantHammer") || matchWord("GreatHammer") ||
                 matchWord("Spear") || matchWord("Lance") || matchWord("Polearm") || matchWord("Halberd") || matchWord("Glaive") ||
-                matchWord("Greataxe") || matchWord("BattleAxe") || matchWord("Scythe") || matchWord("Claymore") || matchWord("Sledge") || matchWord("Pike"))
+                matchWord("Greataxe") || matchWord("BattleAxe") || matchWord("Scythe") || matchWord("Claymore") || matchWord("Sledge") || matchWord("Pike") ||
+                matchWord("Guisarme") || matchWord("Partisan"))
                 return "Two-Handed Weapons";
 
-            // 42. One-Handed Weapons
+            // 43. One-Handed Weapons
             if ((match("OneHand") || matchWord("Sword") || matchWord("Mace") || matchWord("Axe") || matchWord("Rapier") ||
                  matchWord("Hwando") || matchWord("Blade") || matchWord("Cutlass") || matchWord("Sabre") || matchWord("Scimitar") ||
-                 matchWord("Wand") || matchWord("Hammer") || matchWord("Weapon") || matchWord("Drill") || matchWord("Katana")) &&
+                 matchWord("Wand") || matchWord("Hammer") || matchWord("Weapon") || matchWord("Drill") || matchWord("Katana") ||
+                 matchWord("Staff") || matchWord("Cane") || matchWord("Club") || matchWord("Flail") || matchWord("Morningstar") ||
+                 matchWord("Shortsword") || matchWord("Broadsword") || matchWord("Longsword") || matchWord("Saber") || matchWord("Falchion") ||
+                 matchWord("Estoc") || matchWord("Gladius") || match("Equip_Weapon")) &&
                 !matchWord("Pickaxe") && !match("Hammer_Craft") && !matchWord("Saw"))
                 return "One-Handed Weapons";
 
-            // --- ACCESSORIES (Necklaces, Earrings, Rings, Glasses, Masks) ---
+            // 44. Ammunition (Tested safely AFTER gear and rings!)
+            if (matchWord("Ammo") || matchWord("Arrow") || matchWord("Bolt") || matchWord("Bullet") || matchWord("Shell") ||
+                matchWord("Projectile") || matchWord("Cartridge") || matchWord("Pellet") || matchWord("Quiver"))
+                return "Ammunition";
 
-            // 43. Necklaces & Bracelets
-            if (matchWord("Necklace") || matchWord("Amulet") || matchWord("Pendant") || matchWord("Choker") || matchWord("Locket") ||
-                matchWord("Talisman") || matchWord("Collar") || matchWord("Bracelet") || matchWord("Bangle") || matchWord("Wristband"))
-                return "Necklaces";
-
-            // 44. Earrings
-            if (matchWord("Earring") || matchWord("Earrings"))
-                return "Equip Accessory Earring";
-
-            // 45. Glasses
-            if (matchWord("Glasses") || matchWord("Monocle") || matchWord("Goggle") || matchWord("Eyepatch") || matchWord("Spectacle"))
-                return "Glasses";
-
-            // 46. Masks
-            if (matchWord("Mask") || matchWord("Veil") || matchWord("Blindfold") || matchWord("Visage"))
-                return "Masks";
-
-            // 47. Rings (Strict Word Match only: "Ring", "Signet", "Band", excluding Bandit/Bandana/Ringleader/Offering)
-            if ((matchWord("Ring") || matchWord("Signet") || matchWord("Band") || match("Accessory_Ring")) &&
-                !matchWord("Bandit") && !matchWord("Bandana") && !matchWord("Ringleader") && !matchWord("Offering") &&
-                !matchWord("Spring") && !matchWord("String") && !matchWord("Bearing"))
-                return "Rings";
-
-            // 48. Metarial Medical
+            // 45. Metarial Medical
             if (matchWord("Medical") || matchWord("Medicine") || matchWord("Drug") || match("Herb_Tea") || matchWord("Gallbladder") ||
-                matchWord("Bile") || matchWord("Venom") || matchWord("Poison") || matchWord("Acid"))
+                matchWord("Bile") || matchWord("Venom") || matchWord("Poison") || matchWord("Acid") || matchWord("Antidote") ||
+                matchWord("Bandage") || matchWord("Tincture") || matchWord("Toxin"))
                 return "Metarial Medical";
 
-            // 49. Korean Food
+            // 46. Korean Food
             if (matchWord("Korea") || matchWord("Soup") || matchWord("Meal") || matchWord("Stew") || matchWord("Roast") || matchWord("Dish") ||
                 matchWord("Cook") || matchWord("Bread") || matchWord("Pie") || matchWord("Cake") || matchWord("Wine") || matchWord("Tea") ||
                 matchWord("Beer") || matchWord("Juice") || matchWord("Ale") || matchWord("Liquor") || matchWord("Coffee") ||
                 matchWord("Sausage") || matchWord("Bacon") || matchWord("Pork") || matchWord("Beef") || matchWord("Chicken") ||
-                matchWord("Poultry") || matchWord("Ration") || (matchWord("Food") && !matchWord("Material")))
+                matchWord("Poultry") || matchWord("Ration") || matchWord("Fish") || matchWord("Steak") || matchWord("Feast") ||
+                (matchWord("Food") && !matchWord("Material")))
                 return "Korean Food";
 
-            // 50. Food Materials
+            // 47. Food Materials
             if (matchWord("Ingredient") || matchWord("Crop") || matchWord("Vegetable") || matchWord("Grain") || matchWord("Wheat") ||
                 matchWord("Flour") || matchWord("Apple") || matchWord("Egg") || matchWord("Flax") || matchWord("Ama") || matchWord("Bean") ||
                 matchWord("Berry") || matchWord("Mushroom") || matchWord("Fungus") || matchWord("Fungi") || matchWord("Honey") ||
                 matchWord("Sugar") || matchWord("Salt") || matchWord("Oil") || matchWord("Milk") || matchWord("Butter") || matchWord("Onion") ||
                 matchWord("Garlic") || matchWord("Potato") || matchWord("Carrot") || matchWord("Corn") || matchWord("Rice") || matchWord("Water") ||
                 matchWord("Lemon") || matchWord("Grape") || matchWord("Herb") || matchWord("Plant") || matchWord("Flower") || matchWord("Seed") ||
-                matchWord("Root") || matchWord("Leaf") || matchWord("Nut") || matchWord("Stalk") || matchWord("Fish") || matchWord("Meat"))
+                matchWord("Root") || matchWord("Leaf") || matchWord("Nut") || matchWord("Stalk") || matchWord("Meat") || matchWord("Flesh") ||
+                matchWord("Fruit") || matchWord("Grass") || matchWord("Vine") || matchWord("Moss") || matchWord("Petal"))
                 return "Food Materials";
 
-            // 51. Metarial Object
-            if (matchWord("Ore") || matchWord("Ingot") || matchWord("Wood") || matchWord("Timber") || matchWord("Lumber") || matchWord("Log") ||
-                matchWord("Plank") || matchWord("Branch") || matchWord("Leather") || matchWord("Hide") || matchWord("Pelt") || matchWord("Fur") ||
-                matchWord("Skin") || matchWord("Cloth") || matchWord("Silk") || matchWord("Fabric") || matchWord("Thread") || matchWord("Fiber") ||
-                matchWord("Stone") || matchWord("Rock") || matchWord("Gem") || matchWord("Jewel") || matchWord("Diamond") || matchWord("Ruby") ||
-                matchWord("Sapphire") || matchWord("Emerald") || matchWord("Topaz") || matchWord("Amber") || matchWord("Pearl") || matchWord("Fragment") ||
-                matchWord("Shard") || matchWord("Dust") || matchWord("Powder") || matchWord("Alchemy") || matchWord("Refine") || matchWord("Material") ||
-                matchWord("Mat") || matchWord("Craft") || matchWord("Component") || matchWord("Essence") || matchWord("Extract") || matchWord("Mineral") ||
-                matchWord("Iron") || matchWord("Copper") || matchWord("Steel") || matchWord("Coal") || matchWord("Crystal") || matchWord("Scale") ||
-                matchWord("Bone") || matchWord("Horn") || matchWord("Claw") || matchWord("Fang") || matchWord("Feather") || matchWord("Cell") ||
-                matchWord("Fossil") || matchWord("Shell") || matchWord("Resin") || matchWord("Sap") || matchWord("Wool") || matchWord("Bar") ||
-                matchWord("Chunk") || matchWord("Fluid") || matchWord("Eye") || matchWord("Heart") || matchWord("Liver") || matchWord("Blood") ||
-                matchWord("Tail") || matchWord("Wing") || matchWord("Beak") || matchWord("Carapace") || matchWord("Chitin") || matchWord("Yarn") ||
-                matchWord("Clay") || matchWord("Sand") || matchWord("Glass") || matchWord("Metal") || matchWord("Alloy") || matchWord("Charcoal") ||
-                matchWord("Ash") || matchWord("Sulfur") || matchWord("Mercury") || matchWord("Sphere") || matchWord("Cog") || matchWord("Gear") ||
-                matchWord("Spring") || matchWord("Screw") || matchWord("Wire") || matchWord("Part") || matchWord("Core") || matchWord("Scrap") ||
-                matchWord("Customize") || matchWord("Coupon") || matchWord("Appearance") || matchWord("Deaging") || matchWord("Aging") ||
-                matchWord("Scar") || matchWord("Dye") || matchWord("Palette") || matchWord("Hair") || matchWord("Face") || matchWord("Tattoo"))
-                return "Metarial Object";
-
-            return "Uncategorised";
+            // 48. Metarial Object (Universal Crafting & Object Classification)
+            return "Metarial Object";
         }
 
         // --- Category Table Info & Icons (Matching 1.18.0.2 Exactly, 100% verified in pak 12) ---
@@ -1146,8 +1117,15 @@ namespace trinity::game
                 char rawGrp[128]{};
                 if (GroupName(it.cat.row, rawGrp, sizeof(rawGrp)) && rawGrp[0] != 0)
                 {
-                    snprintf(t_catNameBuf, sizeof(t_catNameBuf), "%s", rawGrp);
-                    return t_catNameBuf;
+                    uint16_t testOrder = 0;
+                    // Only accept the engine group name if it matches a genuine, validated category.
+                    // If it returns a corrupted string (e.g. "Kliff", "liff", raw item names, quest triggers),
+                    // reject it and fall back to DeduceCategoryFromItem so it sorts cleanly with proper icons.
+                    if (GetCategoryInfoByName(rawGrp, &testOrder, nullptr, 0))
+                    {
+                        snprintf(t_catNameBuf, sizeof(t_catNameBuf), "%s", rawGrp);
+                        return t_catNameBuf;
+                    }
                 }
             }
             return DeduceCategoryFromItem(it.key, it.name);
@@ -1787,24 +1765,21 @@ namespace trinity::game
 
         // The 16-bit-key table-resolver clone prologue (TU 1.10 - 1.15 legacy), ending at the
         // Universal Item Table Resolver Clone Prologue Matcher
-        // Matches 1.14 (0x40 frame) and 1.18 (0x50 frame) table resolver clone prologues
+        // Matches 1.14 (0x40 frame), 1.18 (0x50 frame) and TU 2.00 table resolver clone prologues
         uintptr_t FindItemPrologueAbove(uintptr_t match)
         {
-            for (size_t back = 0x15; back <= 0x80; ++back)
+            for (size_t back = 0x10; back <= 0x120; ++back)
             {
                 const uintptr_t cand = match - back;
                 __try
                 {
                     const uint8_t* p = reinterpret_cast<const uint8_t*>(cand);
-                    // 48 89 5C 24 10 48 89 6C 24 18 56 57 41 56 48 83 EC (40 or 50)
-                    if (p[0] == 0x48 && p[1] == 0x89 && p[2] == 0x5C && p[3] == 0x24 && p[4] == 0x10 &&
-                        p[5] == 0x48 && p[6] == 0x89 && p[7] == 0x6C && p[8] == 0x24 && p[9] == 0x18 &&
-                        p[10] == 0x56 && p[11] == 0x57 && p[12] == 0x41 && p[13] == 0x56 &&
-                        p[14] == 0x48 && p[15] == 0x83 && p[16] == 0xEC &&
-                        (p[17] == 0x40 || p[17] == 0x50))
-                    {
+                    // 1. sub rsp, 50h / 40h (modern TU 2.00 fast table lookup)
+                    if (p[0] == 0x48 && p[1] == 0x83 && p[2] == 0xEC && (p[3] == 0x50 || p[3] == 0x40))
                         return cand;
-                    }
+                    // 2. 48 89 5C 24 10 ...
+                    if (p[0] == 0x48 && p[1] == 0x89 && p[2] == 0x5C && p[3] == 0x24 && p[4] == 0x10)
+                        return cand;
                 }
                 __except (EXCEPTION_EXECUTE_HANDLER) {}
             }
@@ -1842,14 +1817,44 @@ namespace trinity::game
             mem::FindPatternIf(indirect ? kSig_MovR8Rip : kSig_LeaR8Rip, &IsTableRef, &hunt);
             if (hunt.fn)
             {
-                uintptr_t g = mem::ResolveRipAt(hunt.fn + kOff_ItemResolver_MovGlobal, 7);
-                if (g >= kMinPointer)
+                for (uintptr_t p = hunt.fn; p + 7 <= hunt.fn + 0x60; ++p)
                 {
-                    LOG_OK("inventory: table '%s' resolved via string-anchor -> %p",
-                           name, reinterpret_cast<void*>(g));
+                    __try
+                    {
+                        const uint8_t* b = reinterpret_cast<const uint8_t*>(p);
+                        if (b[0] == 0x48 && b[1] == 0x8B && ((b[2] & 0xC7) == 0x05))
+                        {
+                            uintptr_t g = mem::ResolveRipAt(p, 7);
+                            if (g >= kMinPointer)
+                            {
+                                LOG_OK("inventory: table '%s' resolved via string-anchor -> %p",
+                                       name, reinterpret_cast<void*>(g));
+                                return g;
+                            }
+                        }
+                    }
+                    __except (EXCEPTION_EXECUTE_HANDLER) {}
+                }
+            }
+
+            // Fallback for TU 2.00.01 (PE 1.0.0.2625 / 1.0.0.2658)
+            uintptr_t gameBase = reinterpret_cast<uintptr_t>(GetModuleHandleA(nullptr));
+            if (core::GetGameVersion().revision >= 2625)
+            {
+                if (_stricmp(name, "WantedInfo") == 0)
+                {
+                    uintptr_t g = gameBase + 0x6350EE8;
+                    LOG_OK("inventory: table 'WantedInfo' resolved via TU 2.00 fallback -> %p", reinterpret_cast<void*>(g));
+                    return g;
+                }
+                if (_stricmp(name, "tribeinfo") == 0)
+                {
+                    uintptr_t g = gameBase + 0x63307A8;
+                    LOG_OK("inventory: table 'tribeinfo' resolved via TU 2.00 fallback -> %p", reinterpret_cast<void*>(g));
                     return g;
                 }
             }
+
             return 0;
         }
 
@@ -1913,10 +1918,50 @@ namespace trinity::game
                 }
             }
         }
+
+        using EvaluateCrimeWantedState_t = uint8_t(__fastcall*)(void* wantedMgr, void* actorCtx);
+        EvaluateCrimeWantedState_t oEvaluateCrimeWantedState = nullptr;
+        void* g_evalWantedTarget = nullptr;
+
+        uint8_t __fastcall hkEvaluateCrimeWantedState(void* wantedMgr, void* actorCtx)
+        {
+            const State& st = State::Get();
+            if (st.noBounty)
+            {
+                // 7 = eWantedState_None (completely blocks Witness, Suspect, Assault, and Pursuit)
+                return 7;
+            }
+            return oEvaluateCrimeWantedState ? oEvaluateCrimeWantedState(wantedMgr, actorCtx) : 0;
+        }
+
+        using RegisterCrimeEvent_t = uint8_t(__fastcall*)(void* wantedMgr, uint32_t crimeId, void* outInfo, void* a4);
+        RegisterCrimeEvent_t oRegisterCrimeEvent = nullptr;
+        void* g_registerCrimeTarget = nullptr;
+
+        uint8_t __fastcall hkRegisterCrimeEvent(void* wantedMgr, uint32_t crimeId, void* outInfo, void* a4)
+        {
+            const State& st = State::Get();
+            if (st.noBounty)
+            {
+                // Completely suppress Murder, Assault, Theft, and Property Destruction:
+                // Prevents the on-screen "Crime: Murder" / "Crime: Assault" banner,
+                // prevents the minimap red wanted circle, and keeps guards 100% peaceful!
+                return 0;
+            }
+            return oRegisterCrimeEvent ? oRegisterCrimeEvent(wantedMgr, crimeId, outInfo, a4) : 0;
+        }
     }
 
     bool Inventory::Install()
     {
+        mem::InstallHook("world: evaluate-wanted-state", kSig_EvaluateCrimeWantedState,
+                         "Witnessed/Assault crime bypass disabled",
+                         &hkEvaluateCrimeWantedState, &oEvaluateCrimeWantedState, &g_evalWantedTarget, 0);
+
+        mem::InstallHook("world: register-crime-event", kSig_RegisterCrimeEvent,
+                         "Crime event dispatch & UI banner bypass disabled",
+                         &hkRegisterCrimeEvent, &oRegisterCrimeEvent, &g_registerCrimeTarget, 0);
+
         if (!mem::InstallHook("inventory: item-count accessor", kSig_InvGetItemQty, nullptr,
                               &hkGetItemQty, &oGetItemQty, &g_qtyTarget, 4))
         {
@@ -2088,6 +2133,8 @@ namespace trinity::game
         mem::RemoveHook(&g_commitTarget);
         mem::RemoveHook(&g_expandTarget); // after the restore above, which
                                           // still calls its trampoline
+        mem::RemoveHook(&g_evalWantedTarget);
+        mem::RemoveHook(&g_registerCrimeTarget);
         g_holder.store(0);
         g_serverHolder.store(0);
         g_serverContainer.store(0);
@@ -2873,7 +2920,7 @@ namespace trinity::game
             {
                 static ULONGLONG s_lastTrack = 0;
                 const ULONGLONG now = GetTickCount64();
-                if (now - s_lastTrack >= 1500)
+                if (now - s_lastTrack >= 3000)
                 {
                     s_lastTrack = now;
                     TrackInventoryChanges();
@@ -2882,12 +2929,12 @@ namespace trinity::game
 
             // Heal the used-slot accounting that quantity edits bend and reloads
             // detonate (the "inventory full beside empty slots" bug). Always on;
-            // 20 Hz (50ms); a strict no-op on buckets the engine's own accounting produced.
+            // throttled to 2000ms (0.5 Hz) to keep game-thread overhead near zero; a strict no-op on buckets the engine's own accounting produced.
             if (Player::Ready())
             {
                 static ULONGLONG s_lastRepair = 0;
                 const ULONGLONG now = GetTickCount64();
-                if (now - s_lastRepair >= 50)
+                if (now - s_lastRepair >= 2000)
                 {
                     s_lastRepair = now;
                     RepairUsedSlots(CurrentHolder());
@@ -5388,5 +5435,86 @@ namespace trinity::game
         }
 
         return matched;
+    }
+
+    bool Inventory::SetNoBounty(bool enable)
+    {
+        // Gating safety: Do NOT modify table definitions during startup / main menu.
+        // Wait until player is loaded into world so entity combat flags are not corrupted.
+        if (!Player::Ready() && enable)
+        {
+            return false;
+        }
+
+        static int s_activeState = -1;
+        const int targetState = enable ? 1 : 0;
+        if (s_activeState == targetState) return true;
+        s_activeState = targetState;
+
+        EnsureTablesResolved();
+
+        // 1. WantedInfo Table: Zero increase price on crimes
+        static uintptr_t s_wantedGlobal = 0;
+        static bool      s_wantedLooked = false;
+        if (!s_wantedLooked)
+        {
+            s_wantedLooked = true;
+            s_wantedGlobal = FindTableGlobal(kStr_WantedInfoTable);
+            LOG(s_wantedGlobal ? "world: WantedInfo table @ %p - No Bounty available."
+                               : "world: WantedInfo table not found - bounty price left alone.",
+                reinterpret_cast<void*>(s_wantedGlobal));
+        }
+
+        int changed = 0;
+        uint32_t wantedCount = 0;
+        if (s_wantedGlobal)
+        {
+            uintptr_t table = 0;
+            if (ReadPtr(s_wantedGlobal, &table) && table >= kMinPointer)
+            {
+                if (Read32(table + kOff_ItemTable_Count, &wantedCount) && wantedCount > 0 && wantedCount <= kWantedRows_Max)
+                {
+                    static std::vector<int64_t> s_origPrice;
+                    static std::vector<char>    s_wantedCaptured;
+                    if (s_wantedCaptured.size() != wantedCount)
+                    {
+                        s_origPrice.assign(wantedCount, 0);
+                        s_wantedCaptured.assign(wantedCount, 0);
+                    }
+
+                    for (uint32_t row = 0; row < wantedCount; ++row)
+                    {
+                        uintptr_t def = 0;
+                        if (!DefForRow(s_wantedGlobal, static_cast<uint16_t>(row), &def) || def < kMinPointer) continue;
+
+                        if (enable)
+                        {
+                            if (!s_wantedCaptured[row])
+                            {
+                                int64_t orig = 0;
+                                if (!Read64(def + kOff_WantedDef_IncreasePrice, &orig)) continue;
+                                s_origPrice[row] = orig;
+                                s_wantedCaptured[row] = 1;
+                            }
+                            if (Write64(def + kOff_WantedDef_IncreasePrice, 0)) ++changed;
+                        }
+                        else if (s_wantedCaptured[row])
+                        {
+                            if (Write64(def + kOff_WantedDef_IncreasePrice, static_cast<uint64_t>(s_origPrice[row])))
+                                ++changed;
+                        }
+                    }
+                }
+            }
+        }
+
+        LOG_OK("world: No Bounty %s - price zeroed on %d/%u wanted row(s).",
+               enable ? "applied" : "reverted", changed, wantedCount);
+        return changed > 0;
+    }
+
+    uintptr_t Inventory::FindTableGlobal(const char* name, bool indirect)
+    {
+        return ::trinity::game::FindTableGlobal(name, indirect);
     }
 }

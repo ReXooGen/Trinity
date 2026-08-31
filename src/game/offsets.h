@@ -169,6 +169,12 @@ namespace trinity::game
     inline constexpr const char* kSig_DamageApply_Alt =
         "48 89 5C 24 ?? 48 89 6C 24 ?? 48 89 74 24 ?? 57 48 83 EC ?? 49 8B C1 49 8B E8 0F B7 DA 48 8B F1 4D 85 C9";
 
+    // --- Combat Timing & Hitbox Evaluator: Perfect Parry & Perfect Dodge (sub_1407219c0) ---
+    // Evaluates incoming attack timing windows for Perfect Parry (r9b == 1) and Perfect Dodge (r9b == 0).
+    // Returning true and setting *outResult = 1 natively triggers deflect/counter reactions and slow-motion.
+    inline constexpr const char* kSig_CombatTimingEval =
+        "48 8B C4 41 55 41 56 41 57 48 83 EC 70 C5 78 29 40 A8";
+
     // --- Just Core: Just Guard (Perfect Parry) & Just Evade (Perfect Dodge) ---
     // Evaluates timing windows for Perfect Parry (a4 != 0) and Perfect Dodge (a4 == 0).
     // Overriding returns true and *a5 = true, triggering native slow-mo and counters.
@@ -1077,6 +1083,23 @@ namespace trinity::game
     inline constexpr uintptr_t kOff_GrpDef_Icon    = 0x6C; // u16 -> stringinfo row
     inline constexpr uint16_t  kIconPath_None      = 0xFFFF;
 
+    // --- Wanted level & Bounty (WantedInfo table & Crime Evaluator hook) ----
+    // _increasePrice is how much a crime adds to your bounty (WantedInfo+0x18).
+    inline constexpr const char* kStr_WantedInfoTable = "WantedInfo";
+    inline constexpr uintptr_t kOff_WantedDef_IncreasePrice = 0x18; // i64
+    inline constexpr uintptr_t kOff_WantedDef_IsBlocked     = 0x10; // u8
+    inline constexpr uint32_t  kWantedRows_Max = 4096;
+
+    // Evaluates crime records on actors; returning 7 (eWantedState_None) blocks Witness/Pursuit/Bounty
+    inline constexpr const char* kSig_EvaluateCrimeWantedState =
+        "48 89 5C 24 08 48 8B 41 40 45 33 D2 8B 49 48 48 8B DA 4C 6B D9 38 41 B0 07";
+
+    // Central Crime Event Dispatcher & Territory Wanted State Register (sub_141595BC0):
+    // Intercepts and completely suppresses Murder, Assault, Theft, and Property Destruction events.
+    // Suppresses the on-screen "Crime: Murder / Assault" UI banner, minimap red wanted circle, and guard hostility.
+    inline constexpr const char* kSig_RegisterCrimeEvent =
+        "48 89 5C 24 10 55 56 57 41 54 41 55 41 56 41 57 48 8D 6C 24 D9 48 81 EC C0 00 00 00 4D 8B F0";
+
     // --- Category icons the game ships but never names ------------------------
     // A handful of displayed categories have NO usable _iconPath: the sprite
     // name they would need is simply absent from `stringinfo`, so no row can
@@ -1160,8 +1183,8 @@ namespace trinity::game
     // IDB match at 0x8FC348. Unique block.
     inline constexpr const char* kSig_FrameTimerBody =
         "48 8B F9 48 8B 41 60 C5 FA 10 40 64 C5 FA 11 40 60";
-    inline constexpr uintptr_t kOff_TimeStruct_Mode       = 0x50; // u8: 0 = Normal, 1 = Scaled (Time Scale), 2 = Paused
-    inline constexpr uintptr_t kOff_TimeStruct_Multiplier = 0x54; // f32: Time Scale Multiplier (1.0 = Normal, 2.0 = 2x Speed, etc.)
+    inline constexpr uintptr_t kOff_TimeStruct_Delta       = 0x64; // f32: Frame Delta (seconds)
+    inline constexpr uintptr_t kOff_TimeStruct_ScaledDelta = 0x68; // f32: Scaled Frame Delta (seconds)
 
     // --- Time of Day: the master field clock (World feature, world.cpp) -------
     // The REAL day/night clock is two BSS globals (client / server realm), each

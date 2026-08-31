@@ -231,10 +231,15 @@ namespace trinity::ui
 
     int CurrentTab() { return g_tab; }
 
+    void SetScale(float scale)
+    {
+        g_scale = scale < 0.5f ? 0.5f : (scale > 2.5f ? 2.5f : scale);
+    }
+
     // --- Fonts / style --------------------------------------------------------
     void InitStyle(float uiScale)
     {
-        g_scale = uiScale < 0.5f ? 0.5f : uiScale;
+        g_scale = uiScale < 0.5f ? 0.5f : (uiScale > 2.5f ? 2.5f : uiScale);
 
         ImGuiIO& io = ImGui::GetIO();
         io.Fonts->Clear(); // Allow runtime rebuilding by clearing existing fonts
@@ -562,6 +567,15 @@ namespace trinity::ui
     static bool PadHeldOver(int slot, ULONGLONG ms)
     {
         return g_padDownAt[slot] != 0 && GetTickCount64() - g_padDownAt[slot] > ms;
+    }
+
+    void ResetNavRepeat()
+    {
+        for (int i = 0; i < 4; ++i)
+        {
+            g_padDownAt[i] = 0;
+        }
+        g_nav = {};
     }
 
     // --- Input gathering --------------------------------------------------------

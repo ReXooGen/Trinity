@@ -26,6 +26,22 @@ Trinity is an in-game DirectX 12 mod menu for **Crimson Desert**, originally cre
 
 ---
 
+## What's New in v1.3.2
+
+- **New Combat Feature: Easy Parry (Just Guard)**:
+  - Automatically executes Perfect Parry, deflects, and posture break counters on any block against incoming enemy attacks.
+- **New Combat Feature: Easy Evade (Just Evade)**:
+  - Natively triggers Perfect Dodge with cinematic slow-motion evasion counters during combat maneuvers.
+- **New Feature: No Bounty (Crime & Bounty Neutralizer)**:
+  - Crimes and theft stop adding bounty penalties, regional fines, or triggering guard pursuit (session-only, save-safe).
+  - Preserves full vanilla combat behavior and mortality so NPCs and enemies can still be fought and defeated normally.
+
+- **Universal Table Resolver for TU 2.00.01 (PE rev >= 2625)**:
+  - Modernized scanner to detect `sub rsp, 50h` table prologue structures and opcode-relative table globals (`WantedInfo`, `tribeinfo`, `iteminfo`, etc.).
+  - Added continuous per-frame upkeep so mod overrides seamlessly persist across fast travel and zone transitions.
+
+---
+
 ## What's New in v1.3.1
 
 - **Critical CTD Fixes & Engine Hardening**:
@@ -85,21 +101,24 @@ Trinity is an in-game DirectX 12 mod menu for **Crimson Desert**, originally cre
 
 ## Features
 
-- **Player**: God Mode, Infinite Stamina, Infinite Spirit, Super Jump, Super Run, Free Flight, Damage Multipliers, and Trust Multipliers.
+- **Player & Combat**: God Mode, Infinite Stamina, Infinite Spirit, Easy Parry (Just Guard), Easy Evade (Just Evade), Super Jump, Super Run, Free Flight, One-Hit Kill, No Fall Damage, Damage Multipliers, and Trust Multipliers.
 - **Travel**: 
   - One-Click **Teleport to Map Marker**.
   - Fast Travel database grouped by region and POI type (fast-travel nodes, chests, ores, shops, dungeons).
-- **Inventory**:
+- **Inventory & Bounty**:
+  - **No Bounty**: Free crime & theft without accumulating bounty, regional penalties, or guard pursuit.
   - Live Inventory Editor with storage & category filters, full-text search, and Set All quantities.
-  - Add Item catalog to spawn any weapon, armor, or consumable in the game.
+  - Add Item catalog across 51 categories to spawn any weapon, armor, consumable, or quest item in the game.
+  - Smart Lost & Sold Items Tracker (Recycle Bin / Buyback) with one-click restore.
   - Max Bag Space & Max Stack Size overrides.
 - **Equipment & Customization**:
   - Live Dye Editor with RGB sliders and save persistence.
   - Abyss Gear socket editor and item refinement level modifiers.
 - **World & System**:
-  - Time of day and game speed scaling.
+  - Time of day, weather, and game speed scaling.
   - Full Controller (XInput) and Keyboard/Mouse navigation with custom keybinds.
   - Clean DirectX 12 Dear ImGui overlay with decoded `.paz` item icons.
+  - Version-agnostic DX12 swapchain hook supporting DLSS (including DLSS 3 / 4+ Frame Generation) and OptiScaler.
 
 ---
 

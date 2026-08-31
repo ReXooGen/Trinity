@@ -2188,7 +2188,7 @@ namespace trinity::game
         // Validates Item TypeID to ensure dye colors do not bleed onto different items equipped in the same slot.
         static ULONGLONG s_lastRestore = 0;
         const ULONGLONG now = GetTickCount64();
-        if (now - s_lastRestore > 1200)
+        if (now - s_lastRestore > 2500)
         {
             s_lastRestore = now;
 

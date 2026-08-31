@@ -3,6 +3,7 @@
 #include <cstdint>
 #include <vector>
 #include <unordered_map>
+#include <mutex>
 #include <cstring>
 #include <algorithm>
 #include <windows.h>
@@ -36,7 +37,8 @@ namespace trinity::game
         bool g_hooksInstalled = false;
         bool g_hooksEnabled = false;
 
-        // Tracks last known trust value per record key to scale trust gains accurately
+        // Tracks last known trust value per record key to scale trust gains accurately (thread-safe)
+        std::mutex s_trustMutex;
         std::unordered_map<uint32_t, int64_t> s_lastTrustMap;
 
         void ApplyTrustMultiplierToRecord(void* record, float mult, const char* srcName)
@@ -59,6 +61,7 @@ namespace trinity::game
 
             const int64_t currentIncoming = (rawVal64 > 0) ? static_cast<int64_t>(rawVal64) : static_cast<int64_t>(rawVal32);
 
+            std::lock_guard<std::mutex> lock(s_trustMutex);
             int64_t oldVal = 0;
             auto it = s_lastTrustMap.find(key);
             if (it != s_lastTrustMap.end())
@@ -92,8 +95,6 @@ namespace trinity::game
             Write64(r + 0x28, static_cast<uint64_t>(newTrust));
 
             s_lastTrustMap[key] = newTrust;
-            LOG_OK("friendly: %s trust gain scaled (key=%u, old=%lld, raw=%lld, gain=+%lld -> +%lld => final=%lld/100, mult=%.1fx)",
-                   srcName, key, oldVal, currentIncoming, gain, scaledGain, newTrust, mult);
         }
 
         void* __fastcall hkSetNpc(void* mapOwner, void* record)

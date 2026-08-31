@@ -24,6 +24,8 @@ namespace trinity::ui
     // Loads fonts and sets the UI scale. Call once, right after
     // ImGui::CreateContext and before the first NewFrame.
     void InitStyle(float uiScale);
+    void SetScale(float scale);
+    void ResetNavRepeat();
     extern bool g_needFontRebuild;
 
     // Rising edge of the configured controller open combo on pad 0

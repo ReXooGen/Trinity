@@ -120,6 +120,16 @@ namespace trinity::gui
         }
         changed |= ui::Toggle(LOC("Infinite Spirit"), &st.infSpirit,
                    LOC("Keeps your spirit / special ability gauge full."));
+        changed |= ui::Toggle(LOC("Easy Parry (Just Guard)"), &st.easyParry,
+                   LOC("Natively triggers Perfect Parry and deflect counters whenever you guard against enemy attacks."));
+        changed |= ui::Toggle(LOC("Easy Evade (Just Evade)"), &st.easyEvade,
+                   LOC("Natively triggers Perfect Dodge slow-motion counters whenever you dodge in combat."));
+        if (ui::Toggle(LOC("No Bounty"), &st.noBounty,
+                       LOC("Crimes stop adding to your bounty or alerting faction guards (session-only, safe for save files).")))
+        {
+            game::Inventory::SetNoBounty(st.noBounty);
+            changed = true;
+        }
         changed |= ui::FloatOption(LOC("Outgoing Damage"), &st.dmgOutMult, 0.0f, 20.0f, 0.25f, 1.0f, "%.2fx",
                         LOC("Adjusts how much damage you deal to enemies."));
         changed |= ui::FloatOption(LOC("Incoming Damage"), &st.dmgInMult, 0.0f, 10.0f, 0.25f, 1.0f, "%.2fx",
@@ -3039,12 +3049,25 @@ namespace trinity::gui
         ui::Begin();
 
         bool save = false;
+        static ULONGLONG s_lastScaleChange = 0;
+        static float s_appliedScale = st.menuScale;
 
         if (ui::FloatOption(LOC("Menu Scale"), &st.menuScale, 0.5f, 2.5f, 0.1f, 1.0f, "%.1fx",
                             LOC("Increases or decreases the size of the entire mod menu.")))
         {
             save = true;
-            ui::g_needFontRebuild = true;
+            s_lastScaleChange = GetTickCount64();
+            ui::SetScale(st.menuScale);
+        }
+
+        if (s_lastScaleChange != 0 && GetTickCount64() - s_lastScaleChange > 300)
+        {
+            s_lastScaleChange = 0;
+            if (fabsf(s_appliedScale - st.menuScale) > 0.01f)
+            {
+                s_appliedScale = st.menuScale;
+                ui::g_needFontRebuild = true;
+            }
         }
 
         save |= ui::Toggle(LOC("Show Item Tooltip"), &st.showItemTooltip,

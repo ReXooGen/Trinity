@@ -2008,7 +2008,7 @@ namespace trinity::game
         {
             static ULONGLONG s_lastRepair = 0;
             const ULONGLONG now = GetTickCount64();
-            if (now - s_lastRepair >= 500)
+            if (now - s_lastRepair >= 1500)
             {
                 RepairAll();
                 s_lastRepair = now;
@@ -2021,7 +2021,7 @@ namespace trinity::game
         // to avoid corrupting container metadata and triggering Error 298648703.
         static ULONGLONG s_lastEquipRestore = 0;
         const ULONGLONG nowEquipRestore = GetTickCount64();
-        if (nowEquipRestore - s_lastEquipRestore >= 500 && !Inventory::IsTransactionActive())
+        if (nowEquipRestore - s_lastEquipRestore >= 1500 && !Inventory::IsTransactionActive())
         {
             s_lastEquipRestore = nowEquipRestore;
 
