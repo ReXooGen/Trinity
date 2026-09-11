@@ -14,6 +14,7 @@
 #include "xinput_hook.h"
 #include "hdr_composite_shader.h"
 #include "../core/logger.h"
+#include "../core/localization.h"
 #include "../core/settings.h"
 #include "../core/state.h"
 #include "../game/player.h"
@@ -949,6 +950,15 @@ namespace trinity::hooks
         if (ui::PollMenuToggle())
             st.menuOpen = !st.menuOpen;
 
+        game::Teleport::MarkerStatus markerResult{};
+        if (game::Teleport::ConsumeMarkerResult(&markerResult))
+        {
+            if (markerResult == game::Teleport::MarkerStatus::Success)
+                ui::Toast(LOC("Teleported to destination"));
+            else
+                ui::Toast(LOC("Destination teleport failed"));
+        }
+
         // Marker Teleport hotkey (polled when menu and text captures are not active)
         if (!st.menuOpen && !st.textCapture && !st.rebindCapture)
         {
@@ -978,6 +988,8 @@ namespace trinity::hooks
                 const auto res = game::Teleport::TeleportToMarker(st.markerFallbackHeight);
                 switch (res)
                 {
+                case game::Teleport::MarkerStatus::Queued:
+                    break;
                 case game::Teleport::MarkerStatus::Success:
                     ui::Toast("Teleported to destination");
                     break;

@@ -3,6 +3,7 @@
 #include <vector>
 
 #include "../core/logger.h"
+#include "section_filter.h"
 
 namespace trinity::mem
 {
@@ -85,10 +86,10 @@ namespace trinity::mem
         // Merging adjacent regions lets a pattern straddle a page-protection
         // boundary (e.g. across two .text sub-ranges) without being missed.
         //
-        // TU 2.00.00: the image ships a huge `.debug$P` section flagged
-        // code+execute that contains STALE machine code from an older build -
-        // matching it pointed hooks at debug leftovers. Exclude ".debug*"
-        // sections from scanning entirely.
+        // Some builds ship a non-executable `.debug` data section containing
+        // stale machine-code bytes. Some modern builds instead put the live
+        // main code image in an executable section with a nonstandard name.
+        // Filter by characteristics, never by the section name alone.
         std::vector<std::pair<uintptr_t, uintptr_t>> ReadableSpans(const ModuleRegion& mod)
         {
             std::vector<std::pair<uintptr_t, uintptr_t>> spans;
@@ -105,8 +106,7 @@ namespace trinity::mem
             {
                 char name[9] = {};
                 memcpy(name, sec->Name, 8);
-                // Exclude only the non-code .debug data section (preserves .debug$P which holds pa_StatCommit in TU 2.00)
-                if (strcmp(name, ".debug") == 0) continue;
+                if (!ShouldScanSection(name, sec->Characteristics)) continue;
 
                 const uintptr_t begin = base + sec->VirtualAddress;
                 const uintptr_t vsz   = sec->Misc.VirtualSize ? sec->Misc.VirtualSize : 1;

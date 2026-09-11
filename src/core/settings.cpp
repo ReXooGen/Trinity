@@ -83,8 +83,6 @@ namespace trinity
             else if (!strcmp(key, "infStamina"))          vals.infStamina          = atoi(val) != 0;
             else if (!strcmp(key, "infMountStamina"))     vals.infMountStamina     = atoi(val) != 0;
             else if (!strcmp(key, "infSpirit"))           vals.infSpirit           = atoi(val) != 0;
-            else if (!strcmp(key, "easyParry"))           vals.easyParry           = atoi(val) != 0;
-            else if (!strcmp(key, "easyEvade"))           vals.easyEvade           = atoi(val) != 0;
             else if (!strcmp(key, "noBounty"))            vals.noBounty            = atoi(val) != 0;
             else if (!strcmp(key, "dmgOutMult"))          vals.dmgOutMult          = strtof(val, nullptr);
             else if (!strcmp(key, "dmgInMult"))           vals.dmgInMult           = strtof(val, nullptr);
@@ -232,8 +230,6 @@ namespace trinity
         st.infStamina      = vals.infStamina;
         st.infMountStamina = vals.infMountStamina || vals.infStamina;
         st.infSpirit       = vals.infSpirit;
-        st.easyParry       = vals.easyParry;
-        st.easyEvade       = vals.easyEvade;
         st.noBounty        = vals.noBounty;
         st.dmgOutMult    = ClampF(vals.dmgOutMult, 0.0f, 20.0f);
         st.dmgInMult     = ClampF(vals.dmgInMult, 0.0f, 10.0f);
@@ -313,8 +309,6 @@ namespace trinity
                 "infStamina=%d\n"
                 "infMountStamina=%d\n"
                 "infSpirit=%d\n"
-                "easyParry=%d\n"
-                "easyEvade=%d\n"
                 "noBounty=%d\n"
                 "dmgOutMult=%.3f\n"
                 "dmgInMult=%.3f\n"
@@ -378,8 +372,6 @@ namespace trinity
                 st.infStamina ? 1 : 0,
                 st.infMountStamina ? 1 : 0,
                 st.infSpirit ? 1 : 0,
-                st.easyParry ? 1 : 0,
-                st.easyEvade ? 1 : 0,
                 st.noBounty ? 1 : 0,
                 st.dmgOutMult,
                 st.dmgInMult,
@@ -463,8 +455,6 @@ namespace trinity
         st.infStamina           = def.infStamina;
         st.infMountStamina      = def.infMountStamina;
         st.infSpirit            = def.infSpirit;
-        st.easyParry            = def.easyParry;
-        st.easyEvade            = def.easyEvade;
         st.noBounty             = def.noBounty;
         st.dmgOutMult           = def.dmgOutMult;
         st.dmgInMult            = def.dmgInMult;

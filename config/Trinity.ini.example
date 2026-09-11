@@ -29,8 +29,6 @@ noFallDamage=1
 infStamina=0
 infMountStamina=0
 infSpirit=0
-easyParry=0
-easyEvade=0
 dmgOutMult=1.000
 dmgInMult=1.000
 gameSpeed=0
@@ -47,7 +45,7 @@ trustMultVal=20.000
 
 ; Inventory Overrides
 invSlotSize=0
-invSlotSizeVal=2000
+invSlotSizeVal=700
 invStackSize=0
 invStackSizeVal=999999
 

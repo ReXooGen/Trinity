@@ -67,6 +67,7 @@ namespace trinity::game
         enum class MarkerStatus
         {
             Success,
+            Queued,
             NotReady,
             NoPlayer,
             NoMarker,
@@ -95,6 +96,11 @@ namespace trinity::game
         // Uses fallbackHeight (default 1200.0f) if the marker altitude is 0.
         // Activates safe landing / fall protection.
         static MarkerStatus TeleportToMarker(float fallbackHeight = 1200.0f);
+
+        // Returns a completed asynchronous marker-teleport result once. A
+        // queued request is not reported as successful until its position
+        // write has survived the game's movement update and read-back check.
+        static bool ConsumeMarkerResult(MarkerStatus* status);
 
         // Returns true if safe landing / fall damage protection is actively protecting the player.
         static bool IsProtected();

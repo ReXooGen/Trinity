@@ -23,6 +23,17 @@ if (-not $visualStudio) {
     $visualStudio = & $vswhere -latest -products * -requires Microsoft.VisualStudio.Component.VC.Tools.x86.x64 -property installationPath
 }
 if (-not $visualStudio) {
+    # Preview/Insiders installations can contain a complete C++ workload while
+    # not yet being registered with an older vswhere. Probe the known VS 18
+    # channel paths before reporting that the compiler is missing.
+    $visualStudio = @(
+        (Join-Path $env:ProgramFiles 'Microsoft Visual Studio\18\Insiders'),
+        (Join-Path $env:ProgramFiles 'Microsoft Visual Studio\18\Preview')
+    ) | Where-Object {
+        Test-Path -LiteralPath (Join-Path $_ 'VC\Auxiliary\Build\vcvars64.bat')
+    } | Select-Object -First 1
+}
+if (-not $visualStudio) {
     throw 'The Visual Studio C++ x64 compiler is missing. Add the Desktop development with C++ workload.'
 }
 
@@ -76,9 +87,13 @@ Write-Host "Copied to: $destinationAsi"
 # Package directory and ZIP creation for release (Nexus / GitHub)
 $pkgDir = Join-Path $releaseDir 'package'
 if (Test-Path -LiteralPath $pkgDir) {
-    Remove-Item -LiteralPath $pkgDir -Recurse -Force
+    try {
+        Remove-Item -LiteralPath $pkgDir -Recurse -Force -ErrorAction SilentlyContinue
+    } catch {}
 }
-New-Item -ItemType Directory -Path $pkgDir -Force | Out-Null
+if (-not (Test-Path -LiteralPath $pkgDir)) {
+    New-Item -ItemType Directory -Path $pkgDir -Force | Out-Null
+}
 
 Copy-Item -Path $asi.FullName -Destination (Join-Path $pkgDir 'Trinity.asi') -Force
 
@@ -107,7 +122,7 @@ if ($numMatch.Success) {
     if ($majorMatch.Success -and $minorMatch.Success -and $patchMatch.Success) {
         $versionStr = "$($majorMatch.Groups[1].Value).$($minorMatch.Groups[1].Value).$($patchMatch.Groups[1].Value)"
     } else {
-        $versionStr = "2.00.01"
+        $versionStr = "1.3.3"
     }
 }
 
@@ -167,20 +182,25 @@ if (-not (Test-Path -LiteralPath $variantReleaseDir)) {
     New-Item -ItemType Directory -Path $variantReleaseDir -Force | Out-Null
 }
 
-$zipName = "Trinity-v$versionStr-vTweak (2.00.01).zip"
+$zipName = "Trinity-v$versionStr-vTweak (2.00.02).zip"
 $zipPath = Join-Path $variantReleaseDir $zipName
 if (Test-Path -LiteralPath $zipPath) {
     Remove-Item -LiteralPath $zipPath -Force
 }
 
-Compress-Archive -Path "$pkgDir\*" -DestinationPath $zipPath -Force
-Write-Host "Created Release ZIP: $zipPath"
+try {
+    Start-Sleep -Milliseconds 200
+    Compress-Archive -Path "$pkgDir\*" -DestinationPath $zipPath -Force
+    Write-Host "Created Release ZIP: $zipPath"
 
-Copy-Item -Path $zipPath -Destination (Join-Path $commonReleaseDir $zipName) -Force
-Copy-Item -Path $zipPath -Destination (Join-Path $releaseDir $zipName) -Force
+    Copy-Item -Path $zipPath -Destination (Join-Path $commonReleaseDir $zipName) -Force
+    Copy-Item -Path $zipPath -Destination (Join-Path $releaseDir $zipName) -Force
+} catch {
+    Write-Host "Note: Release ZIP creation skipped (file in use): $_"
+}
 
 # Copy loose .asi files directly to variant release folder
-Copy-Item -Path (Join-Path $pkgDir 'Trinity.asi') -Destination (Join-Path $variantReleaseDir 'Trinity-2.00.01.asi') -Force
+Copy-Item -Path (Join-Path $pkgDir 'Trinity.asi') -Destination (Join-Path $variantReleaseDir 'Trinity-2.00.02.asi') -Force
 Copy-Item -Path (Join-Path $pkgDir 'Trinity.asi') -Destination (Join-Path $variantReleaseDir 'Trinity.asi') -Force
 
 # Setup dedicated Languages folders
@@ -205,10 +225,17 @@ if (-not (Test-Path -LiteralPath $modFilesLangDir)) {
 Copy-Item -Path (Join-Path $pkgDir 'Trinity.asi') -Destination (Join-Path $modFilesDir 'Trinity.asi') -Force
 
 # Auto-deploy to Steam game installation folder
-$steamGameDir = "C:\Program Files (x86)\Steam\steamapps\common\Crimson Desert\bin64"
+$steamGameDir = "E:\Steam\steamapps\common\Crimson Desert\bin64"
+if (-not (Test-Path -LiteralPath $steamGameDir)) {
+    $steamGameDir = "C:\Program Files (x86)\Steam\steamapps\common\Crimson Desert\bin64"
+}
 if (Test-Path -LiteralPath $steamGameDir) {
     try {
-        Copy-Item -Path (Join-Path $pkgDir 'Trinity.asi') -Destination (Join-Path $steamGameDir 'Trinity.asi') -Force -ErrorAction Stop
+        $targetAsi = Join-Path $steamGameDir 'Trinity.asi'
+        $bakAsi = Join-Path $steamGameDir 'Trinity.asi.old'
+        if (Test-Path -LiteralPath $bakAsi) { [System.IO.File]::Delete($bakAsi) }
+        if (Test-Path -LiteralPath $targetAsi) { [System.IO.File]::Move($targetAsi, $bakAsi) }
+        Copy-Item -Path (Join-Path $pkgDir 'Trinity.asi') -Destination $targetAsi -Force -ErrorAction Stop
         Write-Host "Auto-deployed to Steam game folder: $steamGameDir"
     } catch {
         Write-Host "Note: Game may be running in bin64, copy skipped (will apply when game restarts): $_"
@@ -216,7 +243,10 @@ if (Test-Path -LiteralPath $steamGameDir) {
 }
 
 # Auto-deploy to Steam mods folder (ASI only)
-$steamModsDir = "C:\Program Files (x86)\Steam\steamapps\common\Crimson Desert\mods"
+$steamModsDir = "E:\Steam\steamapps\common\Crimson Desert\mods"
+if (-not (Test-Path -LiteralPath $steamModsDir)) {
+    $steamModsDir = "C:\Program Files (x86)\Steam\steamapps\common\Crimson Desert\mods"
+}
 if (-not (Test-Path -LiteralPath $steamModsDir)) {
     New-Item -ItemType Directory -Path $steamModsDir -Force | Out-Null
 }

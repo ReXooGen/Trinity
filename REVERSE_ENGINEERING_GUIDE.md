@@ -1,7 +1,13 @@
-# Complete Reverse Engineering & Binary Architecture Guide: Trinity Mod Menu
+# Historical Reverse Engineering & Binary Architecture Guide: Trinity Mod Menu
+> **Architecture background, not a current compatibility declaration.** This
+> guide contains design rationale, but its header version, title-update coverage,
+> offsets and code examples predate the current TU 2.x maintenance work. For a
+> game update, begin with [GAME_UPDATE_PLAYBOOK.md](GAME_UPDATE_PLAYBOOK.md),
+> then corroborate each fact against current source and the exact initialized
+> executable.
+> **Historical baseline**: Trinity Native ASI Mod (v1.2.4); Title Update 1.10 –
+> 1.18+ observations. These are not universal current-compatibility claims.
 > **Target Game**: Crimson Desert (BlackSpace Engine)  
-> **Mod Base**: Trinity Native ASI Mod (v1.2.4)  
-> **Cross-Version Coverage**: Title Update 1.10 – 1.18+ (Universal Backwards Compatibility)  
 > **Author / Reference**: Lian
 
 ---

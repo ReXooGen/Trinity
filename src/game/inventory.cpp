@@ -1,4 +1,5 @@
 #include "inventory.h"
+#include "inventory_logic.h"
 
 #include <Windows.h>
 #include <atomic>
@@ -15,6 +16,8 @@
 #include <MinHook.h>
 
 #include "offsets.h"
+#include "crime_hook_contract.h"
+#include "inventory_hook_contract.h"
 #include "player.h"
 #include "equipment.h"
 #include "dye.h"
@@ -25,6 +28,7 @@
 #include "../core/logger.h"
 #include "../core/text.h"
 #include "../core/state.h"
+#include "../core/version_mapping.h"
 #include "../core/version_detect.h"
 
 namespace trinity::game
@@ -77,21 +81,27 @@ namespace trinity::game
         using ItemValueCtor_t   = void*(__fastcall*)(void* itemVal, uint16_t* typeId, int64_t qty);
         using CommitPlacement_t = void*(__fastcall*)(void* holder, int* err, void* unused,
                                                      void* placement, uint16_t slotIdx);
+        using CommitPlacement201_t = void*(__fastcall*)(void* holder, int* err,
+                                                        void* placement, uint16_t slotIdx);
         using FreePlacements_t  = void(__fastcall*)(void* vec);
         using ItemValueDtor_t   = void(__fastcall*)(void* itemVal);
         GetItemQty_t      oGetItemQty      = nullptr;
         GetHolder_t       oGetHolder       = nullptr;
         HolderInsert_t    oHolderInsert    = nullptr;
         Commit_t          oCommit          = nullptr;
+        InventoryCommit201_t oCommit201    = nullptr;
         SetExpandSlots_t  oSetExpandSlots  = nullptr;
         ItemValueCtor_t   oItemValueCtor   = nullptr;
         CommitPlacement_t oCommitPlacement = nullptr;
+        CommitPlacement201_t oCommitPlacement201 = nullptr;
         FreePlacements_t  oFreePlacements  = nullptr;
         ItemValueDtor_t   oItemValueDtor   = nullptr;
         void*          g_qtyTarget   = nullptr;
         void*          g_insTarget   = nullptr;
         void*          g_commitTarget = nullptr;
+        void*          g_commit201Target = nullptr;
         void*          g_expandTarget = nullptr;
+        void*          g_holderTarget = nullptr;
 
         std::atomic<uintptr_t> g_holder{0};
         std::atomic<ULONGLONG> g_holderTick{0};
@@ -1189,11 +1199,21 @@ namespace trinity::game
             return HolderForContainer(container);
         }
 
+        bool IsLiveCharacter(uintptr_t c);
+        uintptr_t CurrentHolder(); // defined below; used by ServerHolder()
+
         // The client inventory CONTAINER (one step short of the holder): core
         // global -> +0x30 -> +0x50. Used to tell the client container apart
         // from the server one in the holder-insert hook.
         uintptr_t ResolveClientContainer()
         {
+            const uintptr_t h = g_holder.load(std::memory_order_relaxed);
+            if (h >= kMinPointer)
+            {
+                uintptr_t owner = 0;
+                if (ReadPtr(h + 8, &owner) && IsLiveCharacter(owner))
+                    return owner;
+            }
             if (!g_coreGlobal) return 0;
             uintptr_t g = 0, mid = 0, container = 0;
             if (!ReadPtr(g_coreGlobal, &g) || g < kMinPointer) return 0;
@@ -1201,8 +1221,6 @@ namespace trinity::game
             if (!ReadPtr(mid + kOff_Mid_Container, &container) || container < kMinPointer) return 0;
             return container;
         }
-
-        uintptr_t CurrentHolder(); // defined below; used by ServerHolder()
         bool ApplySlotCapToHolder(uintptr_t holder, bool enable, uint16_t value);
 
         // Bucket count of a holder, or 0 if it does not read back sanely. Used
@@ -1274,7 +1292,8 @@ namespace trinity::game
             uintptr_t tlsArray = 0, tls = 0;
             if (!RawReadPtr(teb + kOff_Teb_TlsPointer, &tlsArray) || !tlsArray) return 0;
             if (!RawReadPtr(tlsArray, &tls) || !tls) return 0;
-            const uintptr_t addr = tls + kTls_RealmFlag;
+            const uintptr_t addr = tls +
+                core::RealmFlagOffsetForRevision(core::GetGameVersion().revision);
             uint8_t v = 0;
             if (!RawRead8(addr, &v)) return 0;
             if (outVal) *outVal = v;
@@ -1356,8 +1375,11 @@ namespace trinity::game
 
             const ULONGLONG now     = GetTickCount64();
             const uintptr_t cached  = g_serverHolder.load(std::memory_order_acquire);
+            const uintptr_t cachedC = g_serverContainer.load(std::memory_order_acquire);
             // 1. Fast path: if cached holder is valid and mirrors client buckets
-            if (cached && cached != clientH && HolderLooksValid(cached) && HolderBucketCount(cached) == want)
+            if (IsAuthoritativeHolderCandidate(clientC, clientH, cachedC, cached,
+                                               IsLiveCharacter(cachedC), want,
+                                               HolderBucketCount(cached)))
             {
                 g_serverTick.store(now, std::memory_order_relaxed);
                 return cached;
@@ -1373,33 +1395,14 @@ namespace trinity::game
 
                 uintptr_t h = HolderForContainer(c);
                 if (!h) h = snap[i].holder; // walk did not apply; captured pair is all we have
-                if (!h || h == clientH) continue;
-                if (!HolderLooksValid(h)) continue;
-                if (HolderBucketCount(h) != want && HolderBucketCount(h) < 1) continue;
+                if (!IsAuthoritativeHolderCandidate(clientC, clientH, c, h,
+                                                    IsLiveCharacter(c), want,
+                                                    HolderBucketCount(h)))
+                    continue;
                 g_serverHolder.store(h, std::memory_order_release);
                 g_serverContainer.store(c, std::memory_order_release);
                 g_serverTick.store(now, std::memory_order_relaxed);
                 return h;
-            }
-
-            // 3. Fallback: if cached holder is still valid in memory, keep it!
-            if (cached && cached != clientH && HolderLooksValid(cached))
-            {
-                return cached;
-            }
-
-            // 4. Any valid candidate holder distinct from client
-            for (int i = 0; i < n; ++i)
-            {
-                const uintptr_t c = snap[i].container;
-                if (!c || c == clientC) continue;
-                uintptr_t h = snap[i].holder ? snap[i].holder : HolderForContainer(c);
-                if (h && h != clientH && HolderLooksValid(h))
-                {
-                    g_serverHolder.store(h, std::memory_order_release);
-                    g_serverContainer.store(c, std::memory_order_release);
-                    return h;
-                }
             }
 
             // Nothing usable yet
@@ -1529,17 +1532,23 @@ namespace trinity::game
             g_candCount.store(keep, std::memory_order_release);
         }
 
-        void NoteContainer(void* container)
+        void NoteContainer(void* container, void* knownHolder = nullptr)
         {
             const uintptr_t c = reinterpret_cast<uintptr_t>(container);
-            if (c < kMinPointer || !oGetHolder || !g_candLockInit) return;
+            if (c < kMinPointer || !g_candLockInit) return;
 
-            // Resolving a container mid-construction can fault - never let that
-            // take the process down (this runs during load, by definition).
-            void* h = nullptr;
-            __try { h = oGetHolder(container); }
-            __except (EXCEPTION_EXECUTE_HANDLER) { h = nullptr; }
-            if (reinterpret_cast<uintptr_t>(h) < kMinPointer) return;
+            // TU 2.01's transaction commit already supplies the authoritative
+            // holder in rcx and its container at [holder+8]. Preserve that
+            // exact pair; resolving the container again can return a different
+            // realm's holder and was why server capture stayed empty.
+            void* h = knownHolder;
+            if (reinterpret_cast<uintptr_t>(h) < kMinPointer && oGetHolder)
+            {
+                __try { h = oGetHolder(container); }
+                __except (EXCEPTION_EXECUTE_HANDLER) { h = nullptr; }
+            }
+            const uintptr_t holder = reinterpret_cast<uintptr_t>(h);
+            if (holder < kMinPointer || !HolderLooksValid(holder)) return;
 
             const ULONGLONG now = GetTickCount64();
             EnterCriticalSection(&g_candLock);
@@ -1555,12 +1564,38 @@ namespace trinity::game
             if (at < 0 && cnt < kMaxCandidates) at = cnt;
             if (at >= 0)
             {
+                const bool isNewPair = at >= cnt || g_cand[at].holder != holder;
                 g_cand[at].container = c;
-                g_cand[at].holder    = reinterpret_cast<uintptr_t>(h);
+                g_cand[at].holder    = holder;
                 g_cand[at].tick      = now;
                 if (at >= cnt) g_candCount.store(at + 1, std::memory_order_release); // publish last
+                if (isNewPair)
+                    LOG("inventory: captured transaction holder=%p container=%p.",
+                        reinterpret_cast<void*>(holder), reinterpret_cast<void*>(c));
             }
             LeaveCriticalSection(&g_candLock);
+        }
+
+        // Observe the game's own holder lookup after it completes. This does
+        // not manufacture a transaction or invoke any extra game code: it only
+        // records containers the engine already resolved while loading a
+        // character or opening the inventory. ServerHolder() still performs
+        // the live-player and bucket-shape checks before any write is allowed.
+        void* __fastcall hkGetHolder(void* container)
+        {
+            if (!oGetHolder) return nullptr;
+            void* holder = nullptr;
+            __try
+            {
+                holder = oGetHolder(container);
+                if (container && holder)
+                    NoteContainer(container, holder);
+            }
+            __except (EXCEPTION_EXECUTE_HANDLER)
+            {
+                holder = nullptr;
+            }
+            return holder;
         }
 
         // --- The commit hook: where the server container shows up at load ---
@@ -1571,6 +1606,25 @@ namespace trinity::game
             __try { NoteContainer(container); } __except (EXCEPTION_EXECUTE_HANDLER) {}
             g_commitActive.store(true, std::memory_order_release);
             void* ret = oCommit(holder, err, container, items, out, a6, a7);
+            g_commitActive.store(false, std::memory_order_release);
+            return ret;
+        }
+
+        void* __fastcall hkCommit201(void* holder, void* err, void* placements,
+                                     uint16_t mode, void* outEvents, uint8_t notify,
+                                     uint8_t reconcile, uint8_t replicate)
+        {
+            if (!oCommit201) return nullptr;
+            uintptr_t container = 0;
+            __try
+            {
+                if (holder && ReadPtr(reinterpret_cast<uintptr_t>(holder) + 8, &container))
+                    NoteContainer(reinterpret_cast<void*>(container), holder);
+            }
+            __except (EXCEPTION_EXECUTE_HANDLER) {}
+            g_commitActive.store(true, std::memory_order_release);
+            void* ret = oCommit201(holder, err, placements, mode, outEvents,
+                                   notify, reconcile, replicate);
             g_commitActive.store(false, std::memory_order_release);
             return ret;
         }
@@ -1934,11 +1988,11 @@ namespace trinity::game
             return oEvaluateCrimeWantedState ? oEvaluateCrimeWantedState(wantedMgr, actorCtx) : 0;
         }
 
-        using RegisterCrimeEvent_t = uint8_t(__fastcall*)(void* wantedMgr, uint32_t crimeId, void* outInfo, void* a4);
         RegisterCrimeEvent_t oRegisterCrimeEvent = nullptr;
         void* g_registerCrimeTarget = nullptr;
 
-        uint8_t __fastcall hkRegisterCrimeEvent(void* wantedMgr, uint32_t crimeId, void* outInfo, void* a4)
+        void __fastcall hkRegisterCrimeEvent(void* dispatcher, const char* eventName,
+                                             void* eventData, void* eventContext)
         {
             const State& st = State::Get();
             if (st.noBounty)
@@ -1946,9 +2000,10 @@ namespace trinity::game
                 // Completely suppress Murder, Assault, Theft, and Property Destruction:
                 // Prevents the on-screen "Crime: Murder" / "Crime: Assault" banner,
                 // prevents the minimap red wanted circle, and keeps guards 100% peaceful!
-                return 0;
+                return;
             }
-            return oRegisterCrimeEvent ? oRegisterCrimeEvent(wantedMgr, crimeId, outInfo, a4) : 0;
+            if (oRegisterCrimeEvent)
+                oRegisterCrimeEvent(dispatcher, eventName, eventData, eventContext);
         }
     }
 
@@ -1996,35 +2051,58 @@ namespace trinity::game
         // Item is refused, and every other inventory feature still works).
         // These are CALLED, not hooked. The insert planner is oHolderInsert,
         // resolved by the hook above - same function.
-        static const char* kCtorSigs[] = {
-            kSig_TrItemValueCtor,
+        const uint16_t revision = core::GetGameVersion().revision;
+        const bool usesTu201CompatibleAbi = core::UsesTu201CompatibleRevision(revision);
+        const bool allowLegacyFuzzy = core::MayUseLegacyFuzzySignaturesForRevision(revision);
+        static const char* kLegacyCtorSigs[] = {
+            kSig_TrItemValueCtor_Pre201,
             "48 89 5C 24 ? 48 89 4C 24 ? 55 56 57 41 54 41 55 41 56 41 57 48 8B EC 48 83 EC ? 4C 8B",
             "48 89 5C 24 ? 48 89 4C 24 ? 55 56 57 41 54 41 55 41 56 41 57 48 8B EC",
             "48 89 5C 24 ? 48 89 4C 24 ? 55 56 57 41 54 41 55 41 56 41 57 48 83 EC",
             "48 89 5C 24 ? 48 89 74 24 ? 57 48 83 EC 20 48 8B D9 48 8B 09",
             "48 89 5C 24 ? 55 56 57 41 54 41 55 41 56 41 57 48 83 EC",
         };
-        for (const char* sig : kCtorSigs)
+        const uintptr_t currentCtor = mem::FindPattern(kSig_TrItemValueCtor);
+        const size_t currentMatches = mem::CountMatches(kSig_TrItemValueCtor, 2);
+        if (currentCtor && currentMatches == 1)
         {
-            const uintptr_t addr = mem::FindPattern(sig);
-            const size_t matches = mem::CountMatches(sig, 4);
-            if (addr && (matches == 1 || matches == 2))
+            oItemValueCtor = reinterpret_cast<ItemValueCtor_t>(currentCtor);
+            LOG_OK("inventory: TrItemValue modern native ctor resolved at %p",
+                   reinterpret_cast<void*>(currentCtor));
+        }
+        else if (allowLegacyFuzzy)
+        {
+            for (const char* sig : kLegacyCtorSigs)
             {
-                oItemValueCtor = reinterpret_cast<ItemValueCtor_t>(addr);
-                LOG_OK("inventory: TrItemValue native ctor resolved at %p (matches=%zu)", reinterpret_cast<void*>(addr), matches);
-                break;
+                const uintptr_t addr = mem::FindPattern(sig);
+                const size_t matches = mem::CountMatches(sig, 4);
+                if (addr && (matches == 1 || matches == 2))
+                {
+                    oItemValueCtor = reinterpret_cast<ItemValueCtor_t>(addr);
+                    LOG_OK("inventory: TrItemValue legacy native ctor resolved at %p (matches=%zu)",
+                           reinterpret_cast<void*>(addr), matches);
+                    break;
+                }
             }
         }
         if (!oItemValueCtor)
         {
-            LOG("inventory: using synthetic TrItemValue constructor for cross-version compatibility.");
+            LOG_WARN("inventory: native TrItemValue constructor unavailable - Add Item will be refused.");
         }
 
-        const uintptr_t commitAddr = mem::FindPattern(kSig_InvCommitPlacement);
-        const uintptr_t freeAddr   = mem::FindPattern(kSig_InvFreePlacements);
+        const uintptr_t commitAddr = mem::FindPattern(
+            usesTu201CompatibleAbi ? kSig_InvCommitPlacement201 : kSig_InvCommitPlacement);
+        const uintptr_t freeAddr   = mem::FindPattern(
+            usesTu201CompatibleAbi ? kSig_InvFreePlacements201 : kSig_InvFreePlacements);
         const uintptr_t dtorAddr   = mem::FindPattern(kSig_TrItemValueDtor);
 
-        if (commitAddr) oCommitPlacement = reinterpret_cast<CommitPlacement_t>(commitAddr);
+        if (commitAddr)
+        {
+            if (usesTu201CompatibleAbi)
+                oCommitPlacement201 = reinterpret_cast<CommitPlacement201_t>(commitAddr);
+            else
+                oCommitPlacement = reinterpret_cast<CommitPlacement_t>(commitAddr);
+        }
         if (freeAddr)   oFreePlacements  = reinterpret_cast<FreePlacements_t>(freeAddr);
         if (dtorAddr)   oItemValueDtor   = reinterpret_cast<ItemValueDtor_t>(dtorAddr);
         // The TEB lookup for the realm flag. Deliberately NtQueryInformationThread
@@ -2034,12 +2112,6 @@ namespace trinity::game
         if (const HMODULE ntdll = GetModuleHandleW(L"ntdll.dll"))
             oNtQueryInfoThread = reinterpret_cast<NtQueryInformationThread_t>(
                 GetProcAddress(ntdll, "NtQueryInformationThread"));
-        if (!oCommitPlacement || !oFreePlacements || !oNtQueryInfoThread)
-            LOG_WARN("inventory: add-item path incomplete (commit=%d free=%d teb=%d)"
-                     " - Add Item will be refused.",
-                     oCommitPlacement ? 1 : 0, oFreePlacements ? 1 : 0,
-                     oNtQueryInfoThread ? 1 : 0);
-
         if (!g_candLockInit)
         {
             InitializeCriticalSection(&g_candLock);
@@ -2051,6 +2123,10 @@ namespace trinity::game
             g_capLockInit = true;
         }
 
+        // Note: We deliberately do NOT hook GetHolder passively: hooking it
+        // on high-frequency engine worker threads causes lock contention and
+        // concurrency interference. oGetHolder resolved above is called directly.
+
         // The game's own slot-expansion setter, HOOKED rather than just
         // resolved: the engine re-stamps every storage's VANILLA expansion
         // through it on ordinary inventory events, in both realms (see
@@ -2060,9 +2136,16 @@ namespace trinity::game
         // hook cannot be installed but the address resolves, fall back to
         // call-only: the toggle still applies from Tick(), it just re-fights
         // the engine's stamps (the old, racy behaviour).
-        if (!mem::InstallHook("inventory: slot-expansion setter", kSig_InvSetExpandSlots,
-                              "Slot Size will not apply",
-                              &hkSetExpandSlots, &oSetExpandSlots, &g_expandTarget, 4))
+        if (usesTu201CompatibleAbi)
+        {
+            // TU 2.01 removed the old five-argument setter ABI.  Apply the
+            // complete bucket state every game tick instead; this updates the
+            // expansion, delta, and derived-cap fields on both realms.
+            LOG_OK("inventory: modern continuous slot-expansion guard active.");
+        }
+        else if (!mem::InstallHook("inventory: slot-expansion setter", kSig_InvSetExpandSlots,
+                                   "Slot Size will not apply",
+                                   &hkSetExpandSlots, &oSetExpandSlots, &g_expandTarget, 4))
         {
             const uintptr_t expandAddr = mem::FindPattern(kSig_InvSetExpandSlots);
             if (expandAddr)
@@ -2080,26 +2163,63 @@ namespace trinity::game
         // before the save loads, which an ASI at process start always is.
         // Optional: without it, edits still apply to the client mirror but the
         // reconcile reverts them (the menu still lists/reads fine).
-        mem::InstallHook("inventory: transaction commit", kSig_InvCommit,
-                         "quantity edits will not persist (revert on reconcile)",
-                         &hkCommit, &oCommit, &g_commitTarget, 4);
+        if (usesTu201CompatibleAbi)
+        {
+            if (mem::InstallHook("inventory: modern transaction commit", kSig_InvCommit,
+                                 "quantity edits will not persist (revert on reconcile)",
+                                 &hkCommit201, &oCommit201, &g_commit201Target, 2))
+                LOG_OK("inventory: modern transaction commit hook installed @ %p",
+                       g_commit201Target);
+        }
+        else
+        {
+            mem::InstallHook("inventory: transaction commit", kSig_InvCommit_Pre201,
+                             "quantity edits will not persist (revert on reconcile)",
+                             &hkCommit, &oCommit, &g_commitTarget, 4);
+        }
 
         // Secondary capture path: fires on a real add/drop/buy, not at load.
         // Catches containers that only appear later (e.g. character swap).
-        if (!mem::InstallHook("inventory: holder-insert", kSig_InvHolderInsert, nullptr,
-                              &hkHolderInsert, &oHolderInsert, &g_insTarget, 2))
+        if (usesTu201CompatibleAbi)
+        {
+            mem::InstallHook("inventory: modern holder-insert", kSig_InvHolderInsert201,
+                             "Add Item will be refused and server holder capture is limited",
+                             &hkHolderInsert, &oHolderInsert, &g_insTarget, 2);
+        }
+        else if (!mem::InstallHook("inventory: holder-insert", kSig_InvHolderInsert, nullptr,
+                                   &hkHolderInsert, &oHolderInsert, &g_insTarget, 2))
         {
             mem::InstallHook("inventory: holder-insert legacy", kSig_InvHolderInsert_Legacy,
                              "server holder relies on the commit hook alone",
                              &hkHolderInsert, &oHolderInsert, &g_insTarget, 2);
         }
 
+        const bool addItemReady = oItemValueCtor && oHolderInsert &&
+            (oCommitPlacement || oCommitPlacement201) && oFreePlacements && oNtQueryInfoThread;
+        if (addItemReady)
+            LOG_OK("inventory: native Add Item path ready (ctor=%p planner=%p commit=%p free=%p).",
+                   reinterpret_cast<void*>(oItemValueCtor), reinterpret_cast<void*>(oHolderInsert),
+                   reinterpret_cast<void*>(oCommitPlacement201 ?
+                       reinterpret_cast<uintptr_t>(oCommitPlacement201) :
+                       reinterpret_cast<uintptr_t>(oCommitPlacement)),
+                   reinterpret_cast<void*>(oFreePlacements));
+        else
+            LOG_WARN("inventory: add-item path incomplete (ctor=%d planner=%d commit=%d free=%d teb=%d)"
+                     " - Add Item will be refused.",
+                     oItemValueCtor ? 1 : 0, oHolderInsert ? 1 : 0,
+                     (oCommitPlacement || oCommitPlacement201) ? 1 : 0,
+                     oFreePlacements ? 1 : 0, oNtQueryInfoThread ? 1 : 0);
+
         // Durable container walk (optional but preferred - without it the
         // list only appears once the game happens to query an item count,
         // which is hit-or-miss at load).
-        const uintptr_t globAnchor = mem::FindPattern(kSig_InvCoreGlobal);
+        const char* coreGlobalSig = usesTu201CompatibleAbi
+            ? kSig_InvCoreGlobal
+            : kSig_InvCoreGlobal_Pre201;
+        const uintptr_t globAnchor = mem::FindPattern(coreGlobalSig);
         if (globAnchor)
-            g_coreGlobal = mem::ResolveRipAt(globAnchor + kOff_InvCoreGlobal_Mov, 7);
+            g_coreGlobal = mem::ResolveRipAt(
+                globAnchor + core::InventoryCoreGlobalMovOffsetForRevision(revision), 7);
 
         // Item defs (optional - resolved lazily when inventory is opened).
         g_itemTableGlobal = FindTableGlobal(kStr_ItemInfoTable);
@@ -2131,6 +2251,8 @@ namespace trinity::game
         mem::RemoveHook(&g_qtyTarget);
         mem::RemoveHook(&g_insTarget);
         mem::RemoveHook(&g_commitTarget);
+        mem::RemoveHook(&g_commit201Target);
+        mem::RemoveHook(&g_holderTarget);
         mem::RemoveHook(&g_expandTarget); // after the restore above, which
                                           // still calls its trampoline
         mem::RemoveHook(&g_evalWantedTarget);
@@ -2638,7 +2760,8 @@ namespace trinity::game
         // Free-Space Gate to reject all vendor purchases. See XeTrinityz-reference.
         bool ApplySlotCapToHolder(uintptr_t holder, bool enable, uint16_t value)
         {
-            if (!oSetExpandSlots) return false;
+            if (!oSetExpandSlots &&
+                !core::UsesTu201CompatibleRevision(core::GetGameVersion().revision)) return false;
             if (!HolderLooksValid(holder)) return false;
             uintptr_t buckets = 0;
             uint32_t  bcount  = 0;
@@ -2760,6 +2883,9 @@ namespace trinity::game
                 uintptr_t def = 0;
                 if (!DefForRow(g_invTableGlobal, static_cast<uint16_t>(row), &def)) continue;
                 const uint16_t finalM = enable ? ((targetM > s_origTableMax[row]) ? targetM : s_origTableMax[row]) : s_origTableMax[row];
+                uint16_t curM = 0;
+                if (Read16(def + kOff_InvDef_MaxSlots, &curM) && curM == finalM)
+                    continue;
                 if (Write16(def + kOff_InvDef_MaxSlots, finalM))
                     any = true;
             }
@@ -3178,14 +3304,30 @@ namespace trinity::game
     uintptr_t Inventory::ClientCharacterAddr()
     {
         const uintptr_t c = ResolveClientContainer();
-        return IsLiveCharacter(c) ? c : 0;
+        if (IsLiveCharacter(c)) return c;
+        const uintptr_t h = CurrentHolder();
+        if (h)
+        {
+            uintptr_t owner = 0;
+            if (ReadPtr(h + 8, &owner) && IsLiveCharacter(owner))
+                return owner;
+        }
+        return 0;
     }
 
     uintptr_t Inventory::ServerCharacterAddr()
     {
         ServerHolder(); // resolves/re-validates g_serverContainer as a side effect
         const uintptr_t c = g_serverContainer.load(std::memory_order_acquire);
-        return IsLiveCharacter(c) ? c : 0;
+        if (IsLiveCharacter(c)) return c;
+        const uintptr_t h = ServerHolder();
+        if (h)
+        {
+            uintptr_t owner = 0;
+            if (ReadPtr(h + 8, &owner) && IsLiveCharacter(owner))
+                return owner;
+        }
+        return 0;
     }
 
     // Identify character identity from a raw EQUIP COMPONENT's equipped items.
@@ -3216,7 +3358,14 @@ namespace trinity::game
         uint32_t count = 0;
         uintptr_t stride = 0xD0;
 
-        if (ReadPtr(comp + 0x80, &desc) && desc >= kMinPointer &&
+        // TU 2.01+ (+0x90) Priority
+        if (ReadPtr(comp + 0x90, &desc) && desc >= kMinPointer &&
+            ReadPtr(desc + kOff_EquipTable_Array, &array) && array >= kMinPointer &&
+            Read32(desc + kOff_EquipTable_Count, &count) && count >= 1 && count <= 64)
+        {
+            stride = 0xD0;
+        }
+        else if (ReadPtr(comp + 0x80, &desc) && desc >= kMinPointer &&
             ReadPtr(desc + kOff_EquipTable_Array, &array) && array >= kMinPointer &&
             Read32(desc + kOff_EquipTable_Count, &count) && count >= 1 && count <= 64)
         {
@@ -3439,39 +3588,21 @@ namespace trinity::game
             if (candCount < 64) candidates[candCount++] = c;
         };
 
-        // 1. Container manager array
-        if (clientC)
-        {
-            uintptr_t sub = 0, holder = 0;
-            if (ReadPtr(clientC + kOff_Container_Sub, &sub) && sub >= kMinPointer &&
-                ReadPtr(sub + kOff_Sub_Holder, &holder) && holder >= kMinPointer)
-            {
-                uintptr_t arr = 0;
-                uint32_t count = 0;
-                if (ReadPtr(holder + 0x18, &arr) && arr >= kMinPointer &&
-                    Read32(holder + 0x20, &count) && count > 1 && count <= 64)
-                {
-                    for (uint32_t i = 0; i < count; ++i)
-                    {
-                        uintptr_t c = 0;
-                        if (ReadPtr(arr + static_cast<uintptr_t>(i) * 8, &c) && c >= kMinPointer)
-                            addCand(c);
-                    }
-                }
-            }
-        }
-
-        // 2. Commit-hook snapshot candidates
+        // 1. Commit-hook snapshot candidates
         Candidate snap[kMaxCandidates] = {};
         const int snapN = SnapshotCandidates(snap);
         for (int i = 0; i < snapN; ++i)
             addCand(snap[i].container);
 
-        // 3. Active world party actors (all protagonists, any slot)
-        for (int i = 0; i < 3; ++i)
+        // 2. Active world protagonist containers. Player tracking filters
+        // vehicle/pet entries before applying its three-character limit. The
+        // tracked owner is the inventory container; the actor is only the
+        // gameplay subobject and cannot be walked through the inventory path.
+        const int trackedCount = Player::GetTrackedPlayerCount();
+        for (int i = 0; i < trackedCount; ++i)
         {
-            const uintptr_t act = Player::GetActor(i);
-            if (act) addCand(act);
+            const uintptr_t owner = Player::GetOwner(i);
+            if (owner) addCand(owner);
         }
 
         // Accept only candidates whose equipped gear identifies as `index`
@@ -3479,28 +3610,6 @@ namespace trinity::game
         {
             if (IdentifyCharacterFromEquip(candidates[i]) == index)
                 addMatch(candidates[i]);
-        }
-
-        // Fallback: If no candidate positively identified by gear signature,
-        // use the companion's direct index in the party container manager array!
-        if (n == 0 && clientC)
-        {
-            uintptr_t sub = 0, holder = 0;
-            if (ReadPtr(clientC + kOff_Container_Sub, &sub) && sub >= kMinPointer &&
-                ReadPtr(sub + kOff_Sub_Holder, &holder) && holder >= kMinPointer)
-            {
-                uintptr_t arr = 0;
-                uint32_t count = 0;
-                if (ReadPtr(holder + 0x18, &arr) && arr >= kMinPointer &&
-                    Read32(holder + 0x20, &count) && count > static_cast<uint32_t>(index))
-                {
-                    uintptr_t directC = 0;
-                    if (ReadPtr(arr + static_cast<uintptr_t>(index) * 8, &directC) && directC >= kMinPointer)
-                    {
-                        addMatch(directC);
-                    }
-                }
-            }
         }
 
         return n;
@@ -3514,13 +3623,13 @@ namespace trinity::game
         const int n = CharacterAddrs(index, matches, 16);
         if (n > 0) return matches[0];
 
-        // Fallback: the tracked party actor for a companion. Its gear carried
-        // nothing recognizable anywhere else; companions were always resolved
-        // this way last.
+        // Fallback: the tracked party container for a companion. Its gear may
+        // carry nothing recognizable yet, so use the owner resolved by the
+        // character manager rather than the actor subobject.
         if (index > 0 && index < 3)
         {
-            const uintptr_t partyAct = Player::GetActor(index);
-            if (partyAct >= kMinPointer) return partyAct;
+            const uintptr_t partyOwner = Player::GetOwner(index);
+            if (partyOwner >= kMinPointer) return partyOwner;
         }
 
         return 0;
@@ -3713,8 +3822,12 @@ namespace trinity::game
                         const uint16_t slotIdx =
                             *reinterpret_cast<uint16_t*>(p + slotIdxOffset);
                         int err2 = 0;
-                        oCommitPlacement(reinterpret_cast<void*>(holder), &err2, nullptr,
-                                         reinterpret_cast<void*>(p), slotIdx);
+                        if (oCommitPlacement201)
+                            oCommitPlacement201(reinterpret_cast<void*>(holder), &err2,
+                                                reinterpret_cast<void*>(p), slotIdx);
+                        else
+                            oCommitPlacement(reinterpret_cast<void*>(holder), &err2, nullptr,
+                                             reinterpret_cast<void*>(p), slotIdx);
                         if (err2 == 0) ++committed;
                         else if (!firstErr2) firstErr2 = err2;
                     }
@@ -3818,7 +3931,7 @@ namespace trinity::game
 
         // Pending request queue: the UI runs on the render thread, but this path calls
         // into engine code and must run on the game thread (Tick).
-        struct AddRequest { uint16_t typeId; int64_t qty; };
+        struct AddRequest { uint16_t typeId; int64_t qty; int attempts = 0; };
         std::mutex              g_singleAddMutex;
         std::vector<AddRequest> g_singleAddQueue;
         std::atomic<int>        g_addState{0}; // mirrors Inventory::AddState
@@ -3828,20 +3941,22 @@ namespace trinity::game
         // the server mirror then the client one.
         bool CommitAdd(uint16_t typeId, int64_t qty)
         {
-            const bool ready = oHolderInsert && oCommitPlacement &&
+            const bool ready = oItemValueCtor && oHolderInsert &&
+                               (oCommitPlacement || oCommitPlacement201) &&
                                oFreePlacements && oNtQueryInfoThread;
             uintptr_t def = 0;
             const bool haveDef = DefForRow(g_itemTableGlobal, typeId, &def);
             const uintptr_t clientH = CurrentHolder();
             uintptr_t serverH = ServerHolder();
-            if (!ready || !haveDef || !clientH)
+            if (!CanCommitAuthoritativeAdd(ready, haveDef, clientH, serverH))
             {
-                LOG_WARN("inventory: add item %u x%lld - not ready (ready=%d client=%p server=%p def=%p ctor=%d ins=%d commit=%d free=%d teb=%d)",
+                LOG_WARN("inventory: add item %u x%lld refused - authoritative server holder unavailable (ready=%d client=%p server=%p def=%p ctor=%d ins=%d commit=%d free=%d teb=%d)",
                          typeId, static_cast<long long>(qty),
                          ready ? 1 : 0,
                          reinterpret_cast<void*>(clientH), reinterpret_cast<void*>(serverH),
                          reinterpret_cast<void*>(def),
-                         oItemValueCtor ? 1 : 0, oHolderInsert ? 1 : 0, oCommitPlacement ? 1 : 0,
+                         oItemValueCtor ? 1 : 0, oHolderInsert ? 1 : 0,
+                         (oCommitPlacement || oCommitPlacement201) ? 1 : 0,
                          oFreePlacements ? 1 : 0, oNtQueryInfoThread ? 1 : 0);
                 return false;
             }
@@ -3856,7 +3971,7 @@ namespace trinity::game
             }
 
             // Instance ID allocation
-            uintptr_t authorityH = (serverH && serverH != clientH) ? serverH : clientH;
+            uintptr_t authorityH = serverH;
             uintptr_t serverC = 0;
             if (!ReadPtr(authorityH + kOff_InvHolder_Container, &serverC) || serverC < kMinPointer)
             {
@@ -3897,10 +4012,8 @@ namespace trinity::game
 
             // Server first if available and distinct, then client mirror
             bool okServer = false;
-            if (serverH && serverH != clientH)
-            {
-                okServer = AddIntoHolder(serverH, /*serverRealm=*/true,  typeId, qty, id, def);
-            }
+            bool okClient = false;
+            okServer = AddIntoHolder(serverH, /*serverRealm=*/true, typeId, qty, id, def);
             if (!okServer)
             {
                 Candidate snap[kMaxCandidates] = {};
@@ -3920,9 +4033,12 @@ namespace trinity::game
                     }
                 }
             }
-            const bool okClient = AddIntoHolder(clientH, /*serverRealm=*/false, typeId, qty, id, def);
+            // Never create a client-only mirror. If authority rejects the
+            // transaction, leave the visible inventory untouched.
+            if (okServer)
+                okClient = AddIntoHolder(clientH, /*serverRealm=*/false, typeId, qty, id, def);
 
-            if (okClient || okServer)
+            if (okServer)
             {
                 char itemName[64] = "";
                 if (!DisplayNameForType(typeId, itemName, sizeof(itemName)))
@@ -4039,8 +4155,39 @@ namespace trinity::game
             for (const auto& req : toProcess)
             {
                 const bool ok = CommitAdd(req.typeId, req.qty);
-                g_addState.store(static_cast<int>(ok ? Inventory::AddState::Added : Inventory::AddState::Failed),
-                                 std::memory_order_release);
+                if (ok)
+                {
+                    g_addState.store(static_cast<int>(Inventory::AddState::Added),
+                                     std::memory_order_release);
+                    continue;
+                }
+
+                // The common early-load failure is a missing authoritative
+                // server holder. Keep the request pending briefly so opening
+                // the inventory or the first real transaction can publish it;
+                // never retry an incomplete engine path or a real commit error.
+                const uintptr_t clientH = CurrentHolder();
+                const uintptr_t serverH = ServerHolder();
+                const bool ready = oItemValueCtor && oHolderInsert &&
+                                   (oCommitPlacement || oCommitPlacement201) &&
+                                   oFreePlacements && oNtQueryInfoThread;
+                uintptr_t def = 0;
+                const bool haveDef = DefForRow(g_itemTableGlobal, req.typeId, &def);
+                if (ShouldRetryAuthoritativeAdd(ready, haveDef, clientH, serverH,
+                                                req.attempts, 120))
+                {
+                    AddRequest retry = req;
+                    ++retry.attempts;
+                    std::lock_guard<std::mutex> lk(g_singleAddMutex);
+                    g_singleAddQueue.push_back(retry);
+                    g_addState.store(static_cast<int>(Inventory::AddState::Pending),
+                                     std::memory_order_release);
+                }
+                else
+                {
+                    g_addState.store(static_cast<int>(Inventory::AddState::Failed),
+                                     std::memory_order_release);
+                }
             }
             RunBulkAdd();
         }
@@ -4059,11 +4206,21 @@ namespace trinity::game
         std::vector<Group> g_catalog;
         bool g_catalogBuilt = false;
         int  g_catalogDiagState = 0;
+        uint64_t g_catalogLastResolverAttemptMs = GetTickCount64();
+        constexpr uint64_t kCatalogResolverRetryMs = 1000;
 
         void BuildCatalog()
         {
             if (g_catalogBuilt) return;
             EnsureTablesResolved();
+            const uint64_t now = GetTickCount64();
+            if (ShouldAttemptCatalogResolve(g_itemTableGlobal != 0, now,
+                                            g_catalogLastResolverAttemptMs,
+                                            kCatalogResolverRetryMs))
+            {
+                g_catalogLastResolverAttemptMs = now;
+                g_itemTableGlobal = FindTableGlobal(kStr_ItemInfoTable);
+            }
             if (!g_itemTableGlobal)
             {
                 if (g_catalogDiagState != 1)

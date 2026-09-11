@@ -1,4 +1,5 @@
 #include "equipment.h"
+#include "equipment_logic.h"
 
 #include <Windows.h>
 #include <atomic>
@@ -81,7 +82,24 @@ namespace trinity::game
             uintptr_t d = 0, a = 0;
             uint32_t c = 0;
 
-            // Modern TU 1.17+ table (+0x80) - Priority
+            // TU 2.01+ table (+0x90) - Priority
+            if (ReadPtr(comp + 0x90, &d) && d >= kMinPointer &&
+                ReadPtr(d + kOff_EquipTable_Array, &a) && a >= kMinPointer &&
+                Read32(d + kOff_EquipTable_Count, &c) && c >= 1 && c <= 64)
+            {
+                if (validateTable(a, c, 0xD0, 0xC8))
+                {
+                    out.desc = d;
+                    out.array = a;
+                    out.count = c;
+                    out.stride = 0xD0;
+                    out.tagOffset = 0xC8;
+                    out.valid = true;
+                    return out;
+                }
+            }
+
+            // Modern TU 1.17 - 2.00 table (+0x80)
             if (ReadPtr(comp + 0x80, &d) && d >= kMinPointer &&
                 ReadPtr(d + kOff_EquipTable_Array, &a) && a >= kMinPointer &&
                 Read32(d + kOff_EquipTable_Count, &c) && c >= 1 && c <= 64)
@@ -115,8 +133,8 @@ namespace trinity::game
                 }
             }
 
-            // Alternate table offsets (+0x50, +0x38, +0x40, +0x48, +0x60, +0x70)
-            const uintptr_t tableOffsets[] = { 0x50, 0x38, 0x40, 0x48, 0x60, 0x70 };
+            // Alternate table offsets (+0x90, +0x80, +0x50, +0x38, +0x40, +0x48, +0x60, +0x70)
+            const uintptr_t tableOffsets[] = { 0x90, 0x80, 0x50, 0x38, 0x40, 0x48, 0x60, 0x70 };
             for (uintptr_t tOff : tableOffsets)
             {
                 if (!ReadPtr(comp + tOff, &d) || d < kMinPointer) continue;
@@ -197,6 +215,30 @@ namespace trinity::game
             comp = FindEquipCompFromActor(actor);
             if (comp && CompValid(comp))
                 return comp;
+            // If actor is an owner object, inspect its inner actor (+0x68)
+            uintptr_t innerAct = 0;
+            if (ReadPtr(actor + kOff_Owner_Actor, &innerAct) && innerAct >= kMinPointer)
+            {
+                comp = FindEquipCompFromActor(innerAct);
+                if (comp && CompValid(comp))
+                    return comp;
+            }
+            return 0;
+        }
+
+        uintptr_t FindTrackedCharacterComp(int targetIdx)
+        {
+            const int count = Player::GetTrackedPlayerCount();
+            for (int p = 0; p < count; ++p)
+            {
+                const uintptr_t root = PreferEquipmentOwner(
+                    Player::GetOwner(p), Player::GetActor(p));
+                const uintptr_t comp = CompForCharacter(root);
+                if (!comp) continue;
+                const int id = Inventory::IdentifyCharacterFromComp(comp);
+                if (AcceptCharacterComponent(targetIdx, id, -1))
+                    return comp;
+            }
             return 0;
         }
 
@@ -226,7 +268,25 @@ namespace trinity::game
                 if (liveChar)
                 {
                     const uintptr_t comp = CompForCharacter(liveChar);
-                    if (comp) return comp;
+                    if (comp && AcceptCharacterComponent(targetIdx,
+                                                         Inventory::IdentifyCharacterFromComp(comp),
+                                                         liveIdx))
+                        return comp;
+                }
+
+                // Fallback: resolve from live inventory holder's owner
+                const uintptr_t h = Inventory::ClientHolderAddr();
+                if (h)
+                {
+                    uintptr_t owner = 0;
+                    if (ReadPtr(h + 8, &owner) && owner >= kMinPointer)
+                    {
+                        const uintptr_t comp = CompForCharacter(owner);
+                        if (comp && AcceptCharacterComponent(targetIdx,
+                                                             Inventory::IdentifyCharacterFromComp(comp),
+                                                             liveIdx))
+                            return comp;
+                    }
                 }
 
                 const uintptr_t hooked = Dye::HookedClientComp();
@@ -242,15 +302,8 @@ namespace trinity::game
                     }
                 }
 
-                if (liveIdx > 0 && liveIdx < 3)
-                {
-                    const uintptr_t liveActor = Player::GetActor(liveIdx);
-                    if (liveActor)
-                    {
-                        const uintptr_t comp = CompForCharacter(liveActor);
-                        if (comp) return comp;
-                    }
-                }
+                if (const uintptr_t comp = FindTrackedCharacterComp(targetIdx))
+                    return comp;
                 return 0; // never another character's component
             }
 
@@ -262,26 +315,11 @@ namespace trinity::game
                 if (comp)
                 {
                     const int id = Inventory::IdentifyCharacterFromComp(comp);
-                    if (id < 0 || id == targetIdx) return comp;
+                    if (AcceptCharacterComponent(targetIdx, id, targetIdx)) return comp;
                 }
             }
-            if (targetIdx > 0 && targetIdx < 3)
-            {
-                for (int p = 0; p < 3; ++p)
-                {
-                    const uintptr_t directActor = Player::GetActor(p);
-                    if (directActor)
-                    {
-                        const uintptr_t comp = CompForCharacter(directActor);
-                        if (comp)
-                        {
-                            const int id = Inventory::IdentifyCharacterFromComp(comp);
-                            if (id == targetIdx || (p == targetIdx && id < 0))
-                                return comp;
-                        }
-                    }
-                }
-            }
+            if (const uintptr_t comp = FindTrackedCharacterComp(targetIdx))
+                return comp;
             return 0;
         }
 
@@ -297,7 +335,10 @@ namespace trinity::game
                 if (serverChar)
                 {
                     const uintptr_t comp = CompForCharacter(serverChar);
-                    if (comp) return comp;
+                    if (comp && AcceptCharacterComponent(targetIdx,
+                                                         Inventory::IdentifyCharacterFromComp(comp),
+                                                         liveIdx))
+                        return comp;
                 }
             }
 
@@ -308,26 +349,11 @@ namespace trinity::game
                 if (comp)
                 {
                     const int id = Inventory::IdentifyCharacterFromComp(comp);
-                    if (id < 0 || id == targetIdx) return comp;
+                    if (AcceptCharacterComponent(targetIdx, id, targetIdx)) return comp;
                 }
             }
-            if (targetIdx > 0 && targetIdx < 3)
-            {
-                for (int p = 0; p < 3; ++p)
-                {
-                    const uintptr_t directActor = Player::GetActor(p);
-                    if (directActor && directActor != actor)
-                    {
-                        const uintptr_t comp = CompForCharacter(directActor);
-                        if (comp)
-                        {
-                            const int id = Inventory::IdentifyCharacterFromComp(comp);
-                            if (id == targetIdx || (p == targetIdx && id < 0))
-                                return comp;
-                        }
-                    }
-                }
-            }
+            if (const uintptr_t comp = FindTrackedCharacterComp(targetIdx))
+                return comp;
             return 0;
         }
 
@@ -2036,22 +2062,15 @@ namespace trinity::game
                     // different character than `c`.
                     const uintptr_t liveChar = Inventory::ClientCharacterAddr();
                     if (liveChar) comp = CompForCharacter(liveChar);
-                    if (!comp && c > 0 && c < 3)
-                    {
-                        const uintptr_t liveActor = Player::GetActor(c);
-                        if (liveActor) comp = CompForCharacter(liveActor);
-                    }
+                    if (comp && Inventory::IdentifyCharacterFromComp(comp) != c)
+                        comp = 0;
                 }
                 if (!comp)
                 {
                     const uintptr_t act = Inventory::CharacterAddr(c);
                     if (act) comp = CompForCharacter(act);
-                    if (!comp)
-                    {
-                        const uintptr_t directAct = Player::GetActor(c);
-                        if (directAct) comp = CompForCharacter(directAct);
-                    }
                 }
+                if (!comp) comp = FindTrackedCharacterComp(c);
 
                 if (!comp || !CompValid(comp)) continue;
 
@@ -2136,7 +2155,8 @@ namespace trinity::game
         {
             for (int c = 0; c < 3; ++c)
             {
-                const uintptr_t actor = Player::GetActor(c);
+                const uintptr_t actor = PreferEquipmentOwner(
+                    Player::GetOwner(c), Player::GetActor(c));
                 if (actor < kMinPointer) continue;
 
                 const uintptr_t comp = FindEquipCompFromActor(actor);

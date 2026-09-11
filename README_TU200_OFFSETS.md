@@ -1,17 +1,27 @@
-# Trinity — Title Update 2.00.00 Offset & Data Reference (PE 1.0.0.2625)
+# Trinity — Historical Title Update 2.00.00 Offset & Data Reference (PE 1.0.0.2625)
+
+> **Historical archive, not the current compatibility reference.** This document
+> records observations for one TU 2.00.00 executable only. Its VAs, offsets,
+> section names, tool references and feature-status statements must not be used
+> for a later game build. Start maintenance from
+> [GAME_UPDATE_PLAYBOOK.md](GAME_UPDATE_PLAYBOOK.md), `src/game/offsets.h`, and
+> the exact initialized game process.
 
 > **Game Build**: Steam Build ID `24934353` · PE Revision **`1.0.0.2625`**  
 > **Image Base**: `0x140000000` · Live Code Section: **`.xpdata`** (VA `0x140001000`–`0x14496C000`)  
-> ⚠️ **Critical Notice**: The `.debug$P` section (~256 MB, flagged code+execute) contains **legacy build code** — NEVER scan or hook inside this section.
+> ⚠️ **Historical section observation.** In this specific TU 2.00.00 capture,
+> `.debug$P` was assessed as legacy code. This is not a global exclusion rule:
+> current scanner policy must be based on the new executable's PE characteristics
+> and `src/mem/section_filter.*`. Do not reuse this section decision after an update.
 
 ---
 
 ## 1. Array of Bytes (AOB) Signatures — Status vs 1.18.02
 
-### Still Matching (37 Signatures) — Unchanged
+### Historical status: matching signatures in this capture
 `DamageApply`, `DyeApplyBatch`, `DyeApplySlot`, `DyeUpsert`, `DyeVisualSet`/`Clear`, `DyeRecordRemove`, `EquipBatch`, `EquipEffectRefresh`, `FieldTimeRealm`/`Tick`, `FriendlySetPet`, `InvCommit`, `InvCommitPlacement`, `InvCoreGlobal`, `InvFreePlacements`, `InvGetHolder`, `InvGetItemQty` (+Legacy), `InvHolderInsert`, `InvSetExpandSlots`, `LocoStepper`, `MarkerPattern`/`Player`/`OriginPrefix`, `MovR8Rip`, `LeaR8Rip`, `MoveUpdate`, `TableResolverPrologue`, `TrItemValueCtor`, `TravelToNode`, `WeatherRain`/`Snow`/`Dust`, `WindPack`.
 
-### NEW Signatures (Required for Title Update 2.00)
+### Historical new signatures for this executable
 | Signature Name | Virtual Address (VA) | Pattern & Analysis |
 |---|---|---|
 | `kSig_GameSpeed` | `0x140948158` (Unique) | `80 3D ?? ?? ?? ?? 01 75 30 48 8B 4F 60 41 8B C7 C5 78 2F 61 64 0F 97 C0 85 C0 74 09 80 3D ?? ?? ?? ?? 01 75 14 C5 FA 10 05 ?? ?? ?? ?? C5 FA 11 41 64 C6 05 ?? ?? ?? ?? 00` — `vmovss` value is now at **match+35** (formerly 37). |
@@ -20,7 +30,7 @@
 | `kSig_LocStringGet` | `0x1410D5200` (Unique) | `8B 41 18 48 8B 0D ? ? ? ? 3B 41 60 72 08 48 8D 05 ? ? ? ? C3 48 03 41 58 C3` |
 | `kSig_JustCore` | `0x140AC0FB0` (Unique, live test) | `48 8B C4 55 41 56 48 81 EC ?? ?? ?? ?? C5 FC 10 89` |
 
-### Deprecated / Relocated in 2.00
+### Historical relocations observed in 2.00
 | Name | Impact | Technical Notes |
 |---|---|---|
 | `pa_StatCommit` | God Mode / Infinite Stamina / Spirit OFF | Legacy pattern completely eliminated across all executable sections. |
@@ -90,7 +100,8 @@ name = (off < size) ? (data + off) : "";
    - *Fix*: Updated to `+0x428` (binary-confirmed).
 3. **Scanner False Positives**:
    - *Cause*: `.debug$P` section contained stale build code.
-   - *Fix*: Scanner explicitly excludes `.debug*` sections.
+   - *Historical fix*: the then-current scanner excluded `.debug*` sections for
+     this capture. The current scanner may make a different evidence-based choice.
 4. **EnvManager Off-by-3 Pointer**:
    - *Cause*: Legacy `ResolveRipAt(envSig+3)` returned garbage addresses.
    - *Fix*: Corrected to `ResolveRipAt(envSig, 7)`.
@@ -107,6 +118,10 @@ name = (off < size) ? (data + off) : "";
 
 ## 8. Safe Mode Diagnostic Flags (`Trinity_SafeMode.txt` in `bin64`)
 
+This is a historical diagnostic mechanism. `Trinity_SafeMode.txt` is not part of
+the current source tree, so first verify that the active build still implements
+it before relying on any bit value below.
+
 ```
 1: Player Subsystem      | 2: Teleport Subsystem   | 4: Inventory Subsystem
 8: World Subsystem       | 16: Dye Subsystem       | 32: Equipment Subsystem
@@ -117,7 +132,11 @@ name = (off < size) ? (data + off) : "";
 
 ---
 
-## 9. Reverse Engineering & Binary Inspection Tools
+## 9. Historical reverse-engineering tool references
+
+The listed scripts are not present in this checkout. Do not treat these paths as
+an available workflow. Use the current scanner and the playbook's evidence record
+instead; recreate a diagnostic tool only when it is needed for the exact new EXE.
 
 - `tools/scan_signatures_200.py`: Audits all `kSig_*` patterns against the binary.
 - `tools/audit_live_200.py`: Audits `.xpdata` execution section and verifies RIP targets.

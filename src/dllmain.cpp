@@ -264,7 +264,7 @@ static LONG WINAPI VectoredCrashLogger(PEXCEPTION_POINTERS ep)
     snprintf(stateBuf, sizeof(stateBuf),
         "\n--- ACTIVE MOD FEATURES ---\n"
         "  GodMode: %s | InfStamina: %s | InfMountStamina: %s | InfSpirit: %s\n"
-        "  OneHitKill: %s | EasyParry: %s | NoBounty: %s | NoFallDamage: %s\n"
+        "  OneHitKill: %s | NoBounty: %s | NoFallDamage: %s\n"
         "  Damage Mult Out: %.1fx | Damage Mult In: %.1fx\n"
         "================================================================================\n\n",
         st.godMode ? "ON" : "OFF",
@@ -272,7 +272,6 @@ static LONG WINAPI VectoredCrashLogger(PEXCEPTION_POINTERS ep)
         st.infMountStamina ? "ON" : "OFF",
         st.infSpirit ? "ON" : "OFF",
         st.oneHitKill ? "ON" : "OFF",
-        st.easyParry ? "ON" : "OFF",
         st.noBounty ? "ON" : "OFF",
         st.noFallDamage ? "ON" : "OFF",
         st.dmgOutMult,

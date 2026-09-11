@@ -20,7 +20,7 @@
 #include "../game/inventory.h"
 #include "../game/world.h"
 #include "../game/dye.h"
-#include "../game/dye_data.h" // the game's dye families / preset shades (generated)
+#include "../game/dye_data.h" // legacy implementation retained out of startup/menu entry points
 #include "../game/equipment.h"
 #include "../game/friendly.h"
 #include "../game/item_names.h"
@@ -81,12 +81,6 @@ namespace trinity::gui
         ui::Begin(LOC("Mount & Horse Options"));
 
         bool changed = false;
-        if (ui::Submenu(LOC("Mount Equipment Dye"), "dyeslots",
-                    LOC("Recolor and customize equipment on your active horse or mount.")))
-        {
-            game::Dye::SetTargetMode(1);
-        }
-
         if (changed && st.autoSave)
             Settings::Save();
 
@@ -120,10 +114,6 @@ namespace trinity::gui
         }
         changed |= ui::Toggle(LOC("Infinite Spirit"), &st.infSpirit,
                    LOC("Keeps your spirit / special ability gauge full."));
-        changed |= ui::Toggle(LOC("Easy Parry (Just Guard)"), &st.easyParry,
-                   LOC("Natively triggers Perfect Parry and deflect counters whenever you guard against enemy attacks."));
-        changed |= ui::Toggle(LOC("Easy Evade (Just Evade)"), &st.easyEvade,
-                   LOC("Natively triggers Perfect Dodge slow-motion counters whenever you dodge in combat."));
         if (ui::Toggle(LOC("No Bounty"), &st.noBounty,
                        LOC("Crimes stop adding to your bounty or alerting faction guards (session-only, safe for save files).")))
         {
@@ -147,14 +137,6 @@ namespace trinity::gui
 
         ui::Submenu(LOC("Combat & Gameplay Options"), "combat_options",
                     LOC("One-Hit Kill, God Mode, Durability, and damage multipliers."));
-
-        if (ui::Submenu(LOC("Dye Equipment"), "dyeslots",
-                    game::Dye::Ready()
-                        ? LOC("Recolor your equipped gear.")
-                        : LOC("Recolor your equipped gear. Load into the world first.")))
-        {
-            game::Dye::SetTargetMode(0);
-        }
 
         ui::Submenu(LOC("Edit Equipment"), "equipslots",
                     game::Equipment::Ready()
@@ -687,7 +669,14 @@ namespace trinity::gui
                 snprintf(label, sizeof(label), "%s - %s  (%s)",
                          LOC(si.slotName), si.itemName, LOC("no sockets"));
 
-            if (ui::SubmenuEquipItem(label, si.icon[0] ? si.icon : nullptr, "equipedit", si,
+            // Keep the engine TypeID visible while editing a character's
+            // equipment. This makes companion-specific item diagnosis and
+            // user reports reproducible instead of name-only.
+            char labelWithId[208];
+            snprintf(labelWithId, sizeof(labelWithId), "%s [TypeID %u]",
+                     label, static_cast<unsigned>(si.typeId));
+
+            if (ui::SubmenuEquipItem(labelWithId, si.icon[0] ? si.icon : nullptr, "equipedit", si,
                                      LOC("Refine this piece and edit its abyss-gear sockets.")))
             {
                 // A different piece gets a fresh picker page.
@@ -903,11 +892,21 @@ namespace trinity::gui
 
                 char desc[192];
                 const char* catName = game::Inventory::CatalogCategoryName(c);
+                char itemLabel[160];
+                snprintf(itemLabel, sizeof(itemLabel), "%s [TypeID %u]",
+                         it.name, static_cast<unsigned>(it.typeId));
+                if (it.key[0])
+                {
+                    const size_t used = strlen(itemLabel);
+                    if (used < sizeof(itemLabel))
+                        snprintf(itemLabel + used, sizeof(itemLabel) - used,
+                                 " {%s}", it.key);
+                }
                 snprintf(desc, sizeof(desc), "%s [%s]",
                          LOC("Equip to active slot - bypasses quest & class lock"),
                          catName ? LOC(catName) : "");
 
-                if (ui::OptionItem(it.name, it.icon[0] ? it.icon : nullptr, desc))
+                if (ui::OptionItem(itemLabel, it.icon[0] ? it.icon : nullptr, desc))
                 {
                     if (game::Equipment::EquipItemToSlot(s_eqTag, it.typeId))
                     {
@@ -1209,6 +1208,8 @@ namespace trinity::gui
             const auto res = game::Teleport::TeleportToMarker(st.markerFallbackHeight);
             switch (res)
             {
+            case game::Teleport::MarkerStatus::Queued:
+                break;
             case game::Teleport::MarkerStatus::Success:
                 ui::Toast(LOC("Teleported to destination"));
                 break;
@@ -3191,7 +3192,6 @@ namespace trinity::gui
         // A queued dye apply finishes on the game thread; report it wherever
         // the user is (the "Applying dye..." toast keeps this path drawing
         // even if they closed the menu right after).
-        ReportPendingDye();
 
         if (st.showFps)
             DrawFpsCounter();
@@ -3229,9 +3229,6 @@ namespace trinity::gui
         else if (!strcmp(cur, "loc_manage")) RenderSavedLocationManage();
         else if (!strcmp(cur, "ftcats"))   RenderFastTravelCats();
         else if (!strcmp(cur, "ftnodes"))  RenderFastTravelNodes();
-        else if (!strcmp(cur, "dyeslots"))  RenderDyeSlots();
-        else if (!strcmp(cur, "dyeedit"))   RenderDyeEdit();
-        else if (!strcmp(cur, "dyecustom")) RenderDyeCustom();
         else if (!strcmp(cur, "equipslots")) RenderEquipSlots();
         else if (!strcmp(cur, "equipedit"))  RenderEquipEdit();
         else if (!strcmp(cur, "equipgear"))  RenderEquipGear();

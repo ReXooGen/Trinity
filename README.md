@@ -1,8 +1,16 @@
 # Trinity — Crimson Desert (vTweak by Lian)
 
-Trinity is an in-game DirectX 12 mod menu for **Crimson Desert**, originally created by **XeTrinityz**. This repository provides an enhanced, fully updated build for game version **TU 1.17.00 – 2.00.01+** with critical memory fixes, auto-navigation, and quality-of-life enhancements.
+Trinity is an in-game DirectX 12 mod menu for **Crimson Desert**, originally created by **XeTrinityz**. This repository contains the current source for the maintained build, including version-dependent game interfaces, auto-navigation, and quality-of-life enhancements.
 
 > **Single-player use only.** Do not use this project in online or anti-cheat-protected modes. This community project is not affiliated with or endorsed by Pearl Abyss.
+
+> **Maintenance status.** A game update can change AOBs, object layouts and hook
+> contracts. The source may recognize a revision without every feature having
+> been revalidated in the live game. For post-update work, start with
+> [GAME_UPDATE_PLAYBOOK.md](GAME_UPDATE_PLAYBOOK.md), then use the exact current
+> executable and installed `Trinity.asi` as evidence. Older changelog entries
+> describe their release at the time; they are not compatibility claims for a
+> later game build.
 
 ---
 
@@ -23,6 +31,23 @@ Trinity is an in-game DirectX 12 mod menu for **Crimson Desert**, originally cre
 | Unlimited Custom Bookmarks | Storage Filters & Item Editor |
 | :---: | :---: |
 | ![Saved Locations](images/image7.png) | ![Storage Editor](images/image8.png) |
+
+---
+
+## What's New in v1.3.3
+
+- **Crimson Desert TU 2.00.02 Hotfix**:
+  - Waits for delayed gameplay-code regions before resolving hooks, preventing valid features from being disabled by early startup scans.
+  - Scans TU 2.00.02's executable `.debug` section instead of mistaking the live game code for stale debug data.
+  - Detects PE revision `1.0.0.2692` as TU 2.00.02.
+
+## Current version-detection baseline
+
+The current source maps PE revisions `2625`, `2658`, `2692` and `2760` to title
+updates `2.00.00`, `2.00.01`, `2.00.02` and `2.01.00` respectively. This is a
+source-level recognition map, not a blanket live-support promise. Verify the
+current executable hash, AOB match counts, hook contracts and the affected
+in-game action after every title update.
 
 ---
 
@@ -161,6 +186,11 @@ Keybindings can be customized under **SYSTEM > Keybinds**.
 powershell -ExecutionPolicy Bypass -File .\Build_Trinity.ps1
 ```
 The compiled mod will be located at `build/Release/Trinity.asi`.
+
+`Build_Trinity.ps1` also refreshes the build timestamp and assembles release
+files. For a compile/test-only maintenance build, use the direct CMake commands
+in [GAME_UPDATE_PLAYBOOK.md](GAME_UPDATE_PLAYBOOK.md) instead. Before replacing
+an installed ASI, close the game and compare the build and destination SHA-256.
 
 ---
 

@@ -18,6 +18,9 @@
 #include "../mem/hooks.h"
 #include "../core/logger.h"
 #include "../core/state.h"
+#include "../core/version_mapping.h"
+#include "../core/version_detect.h"
+#include "player_logic.h"
 
 namespace trinity::game
 {
@@ -50,6 +53,7 @@ namespace trinity::game
         // *(*g_charMgrGlobal). Zero if no anchor resolved, in which case every
         // stat feature below is inert (RefreshSelf no-ops).
         uintptr_t g_charMgrGlobal = 0;
+        std::atomic<bool> g_currentFallbackLogged{false};
 
         // Resolve the char-manager global by consensus across kCharMgrAnchors.
         // Each anchor is an independent call site that RIP-resolves the same
@@ -131,6 +135,8 @@ namespace trinity::game
         std::atomic<int>       g_mountCount{0};
         std::atomic<bool>      g_isRidingMount{false};
         std::atomic<uintptr_t> g_playerPossessor{0};
+        std::atomic<uint64_t>  g_characterTrackingRequestedUntilMs{0};
+        constexpr uint64_t     kCharacterTrackingDemandMs = 2000;
 
         // Stat commit (pa_StatCommit / IDB sub_BED7820) - the single funnel every
         // HP/Stamina/Spirit write passes through. God Mode, Infinite Stamina
@@ -318,38 +324,69 @@ namespace trinity::game
         {
             if (Teleport::IsProtected() || Teleport::GetFlightEngaged()) return true;
             return st.godMode || st.infStamina || st.infMountStamina || st.infSpirit ||
-                   st.oneHitKill || st.noFallDamage || st.easyParry || st.easyEvade ||
+                   st.oneHitKill || st.noFallDamage ||
                    st.dmgInMult != 1.0f || st.dmgOutMult != 1.0f;
-        }
-
-        static bool IsPlayerHoldingGuard()
-        {
-            if ((GetAsyncKeyState(VK_CONTROL) & 0x8000) != 0 ||
-                (GetAsyncKeyState(VK_LCONTROL) & 0x8000) != 0 ||
-                (GetAsyncKeyState(VK_RCONTROL) & 0x8000) != 0 ||
-                (GetAsyncKeyState(VK_RBUTTON) & 0x8000) != 0 ||
-                (GetAsyncKeyState('Q') & 0x8000) != 0 ||
-                (GetAsyncKeyState('F') & 0x8000) != 0)
-                return true;
-
-            XINPUT_STATE xs{};
-            for (DWORD i = 0; i < 4; ++i)
-            {
-                if (XInputGetState(i, &xs) == ERROR_SUCCESS)
-                {
-                    if ((xs.Gamepad.wButtons & XINPUT_GAMEPAD_LEFT_SHOULDER) != 0 ||
-                        xs.Gamepad.bLeftTrigger > 30)
-                        return true;
-                }
-            }
-            return false;
         }
 
         static ULONGLONG s_lastResolveMs = 0;
 
+        // TU 2.01.00 no longer exposes the gameplay-character manager through
+        // any of the pre-2.01 call-site anchors.  The inventory subsystem does,
+        // however, resolve the currently controlled live character through a
+        // separately validated client-realm root.  Use that owner as a narrow
+        // fallback so the active player's stat features remain available while
+        // deliberately leaving party-wide and mount discovery disabled.
+        void TickResolveCurrentPlayerFallback()
+        {
+            ClearPlayerSets();
+            g_playerPossessor.store(0, std::memory_order_release);
+
+            const uintptr_t owner = Inventory::ClientCharacterAddr();
+            SelfChain c{};
+            if (owner < kMinPointer || !WalkSelfChain(owner, &c)) return;
+
+            if (!g_currentFallbackLogged.exchange(true, std::memory_order_acq_rel))
+                LOG_OK("player: current-character fallback resolved @ %p (active player only).",
+                       reinterpret_cast<void*>(owner));
+
+            g_hpEntries[0].store(c.statArray, std::memory_order_release);
+            g_actors[0].store(c.actor, std::memory_order_release);
+            g_targetOwners[0].store(c.targetOwner, std::memory_order_release);
+            g_owners[0].store(owner, std::memory_order_release);
+
+            uint64_t possessor = 0;
+            if (Read64(owner + kOff_Owner_Possessor, &possessor) && possessor >= kMinPointer)
+                g_playerPossessor.store(static_cast<uintptr_t>(possessor), std::memory_order_release);
+
+            int nStam = 0, nSpir = 0;
+            for (int k = 1; k < kStatArray_ScanEntries; ++k)
+            {
+                const uintptr_t e = c.statArray + k * kSizeof_StatEntry;
+                int32_t statType = 0;
+                if (!StatEntryType(e, &statType) || !PlausibleStatType(statType)) break;
+                if (IsStaminaType(statType) && nStam < kMaxStatEntries)
+                    g_stamEntries[nStam++].store(e, std::memory_order_release);
+                else if (IsSpiritType(statType) && nSpir < kMaxStatEntries)
+                    g_spiritEntries[nSpir++].store(e, std::memory_order_release);
+            }
+
+            const State& st = State::Get();
+            if (st.godMode) PinEntry(c.statArray);
+            if (st.infStamina)
+                for (int i = 0; i < nStam; ++i)
+                    PinEntry(g_stamEntries[i].load(std::memory_order_relaxed));
+            if (st.infSpirit)
+                for (int i = 0; i < nSpir; ++i)
+                    PinEntry(g_spiritEntries[i].load(std::memory_order_relaxed));
+        }
+
         void TickResolveSelf()
         {
-            if (!g_charMgrGlobal) return;
+            if (!g_charMgrGlobal)
+            {
+                TickResolveCurrentPlayerFallback();
+                return;
+            }
             uint64_t p = 0, mgr = 0, data = 0;
             if (!Read64(g_charMgrGlobal, &p) || p < kMinPointer) return;                 // P = *slot
             if (!Read64(static_cast<uintptr_t>(p), &mgr) || mgr < kMinPointer) return;   // mgr = *P
@@ -395,6 +432,13 @@ namespace trinity::game
                 uint64_t vt = 0;
                 if (!Read64(owner, &vt) || vt != anchorVt) continue;
 
+                uint64_t typeDesc = 0;
+                uint8_t typeTag = 0;
+                if (!Read64(owner + kOff_Owner_TypeDesc, &typeDesc) || typeDesc < kMinPointer ||
+                    !Read8(static_cast<uintptr_t>(typeDesc) + 1, &typeTag) ||
+                    !IsTrackedProtagonistTypeTag(typeTag))
+                    continue;
+
                 SelfChain c;
                 if (!WalkSelfChain(owner, &c)) continue;
 
@@ -424,35 +468,46 @@ namespace trinity::game
                 }
             }
 
-            // Mount stamina discovery
-            for (uint32_t i = 0; i < count && nMountStam < kMaxMountStamEntries; ++i)
+            // Mount stamina discovery. TU 2.01 folds state bits into owner+0x48
+            // (live values are 0x10001/0x10002/...); the stable engine type is
+            // the descriptor tag at *(owner+0x88)+1. Prefer Vehicle (5) over
+            // Pet (6), so "Active Mount" resolves the ridden horse before a
+            // summoned pet that happens to appear earlier in the manager.
+            for (uint8_t wantedTag : { static_cast<uint8_t>(Obj_Vehicle),
+                                       static_cast<uint8_t>(Obj_Pet) })
             {
-                uint64_t ch = 0;
-                if (!Read64(static_cast<uintptr_t>(data) + 8ull * i, &ch) || ch < kMinPointer) continue;
-                const uintptr_t owner = static_cast<uintptr_t>(ch);
-
-                uint32_t objType = 0;
-                Read32(owner + kOff_Owner_ObjectType, &objType);
-                if (objType != Obj_Vehicle && objType != Obj_Pet) continue;
-
-                uintptr_t mountStatArray = 0, mountTarget = 0, mountAct = 0;
-                if (WalkMountVitalChain(owner, &mountStatArray, &mountTarget, &mountAct) && mountStatArray >= kMinPointer)
+                for (uint32_t i = 0; i < count && nMountStam < kMaxMountStamEntries; ++i)
                 {
-                    if (nMounts < kMaxMounts)
+                    uint64_t ch = 0;
+                    if (!Read64(static_cast<uintptr_t>(data) + 8ull * i, &ch) || ch < kMinPointer) continue;
+                    const uintptr_t owner = static_cast<uintptr_t>(ch);
+
+                    uint64_t typeDesc = 0;
+                    uint8_t typeTag = 0;
+                    if (!Read64(owner + kOff_Owner_TypeDesc, &typeDesc) || typeDesc < kMinPointer ||
+                        !Read8(static_cast<uintptr_t>(typeDesc) + 1, &typeTag) ||
+                        typeTag != wantedTag || !IsMountTypeTag(typeTag))
+                        continue;
+
+                    uintptr_t mountStatArray = 0, mountTarget = 0, mountAct = 0;
+                    if (WalkMountVitalChain(owner, &mountStatArray, &mountTarget, &mountAct) && mountStatArray >= kMinPointer)
                     {
-                        g_mountActors[nMounts].store(mountAct ? mountAct : owner, std::memory_order_release);
-                        g_mountTargetOwners[nMounts].store(mountTarget, std::memory_order_release);
-                        g_mountOwners[nMounts].store(owner, std::memory_order_release);
-                        ++nMounts;
-                    }
-                    for (int k = 0; k < kStatArray_ScanEntries; ++k)
-                    {
-                        const uintptr_t e = mountStatArray + k * kSizeof_StatEntry;
-                        int32_t stt = 0;
-                        if (!StatEntryType(e, &stt)) break;
-                        if (!PlausibleStatType(stt)) break;
-                        if (IsStaminaType(stt) && nMountStam < kMaxMountStamEntries)
-                            g_mountStamEntries[nMountStam++].store(e, std::memory_order_release);
+                        if (nMounts < kMaxMounts)
+                        {
+                            g_mountActors[nMounts].store(mountAct ? mountAct : owner, std::memory_order_release);
+                            g_mountTargetOwners[nMounts].store(mountTarget, std::memory_order_release);
+                            g_mountOwners[nMounts].store(owner, std::memory_order_release);
+                            ++nMounts;
+                        }
+                        for (int k = 0; k < kStatArray_ScanEntries; ++k)
+                        {
+                            const uintptr_t e = mountStatArray + k * kSizeof_StatEntry;
+                            int32_t stt = 0;
+                            if (!StatEntryType(e, &stt)) break;
+                            if (!PlausibleStatType(stt)) break;
+                            if (IsStaminaType(stt) && nMountStam < kMaxMountStamEntries)
+                                g_mountStamEntries[nMountStam++].store(e, std::memory_order_release);
+                        }
                     }
                 }
             }
@@ -574,6 +629,16 @@ namespace trinity::game
             return false;
         }
 
+        // targetOwner is the victim's strict battle-vital identity. Do not
+        // classify it through broad owner/actor aliases: those aliases are
+        // needed for attacker discovery and can overlap during companion
+        // swaps, which made enemies intermittently look like players.
+        bool IsStrictPlayerTarget(uintptr_t target)
+        {
+            if (target < kMinPointer) return false;
+            return InSet(g_targetOwners, kMaxPlayers, target);
+        }
+
         bool IsMountEntity(uintptr_t target)
         {
             if (target < kMinPointer) return false;
@@ -590,7 +655,7 @@ namespace trinity::game
             const State& st = State::Get();
 
             // Victim is Player (Incoming Hit)
-            if (IsPlayerEntity(targetOwner))
+            if (IsStrictPlayerTarget(targetOwner))
             {
                 if (st.godMode) return 0;
                 if (st.dmgInMult != 1.0f)
@@ -665,7 +730,7 @@ namespace trinity::game
         {
             const State& st = State::Get();
             const uintptr_t owner = reinterpret_cast<uintptr_t>(targetOwner);
-            const bool isPlayerTarget = IsPlayerEntity(owner);
+            const bool isPlayerTarget = IsStrictPlayerTarget(owner);
             const bool isMountTarget  = IsMountEntity(owner);
 
             // Determine if damage source is an active hostile enemy vs environmental/fall impact
@@ -686,18 +751,11 @@ namespace trinity::game
                 }
             }
 
-            if (st.easyParry && isPlayerTarget && isEnemyAttacker && IsPlayerHoldingGuard())
-            {
-                // Force Perfect Deflect / Parry: 0 damage, parry reaction flag (a6 = 2), attacker stagger (a7 = 1)
-                delta = 0;
-                a6 = 2;
-                a7 = 1;
-            }
-            else if (delta < 0)
+            if (delta < 0)
             {
                 if (statusId == StatType_Health || statusId == 0)
                 {
-                    if (st.godMode && (isPlayerTarget || isMountTarget))
+                    if (ShouldBlockPlayerDamage(st.godMode, isPlayerTarget, isMountTarget))
                     {
                         delta = 0; // complete damage immunity for player & mount
                     }
@@ -733,29 +791,6 @@ namespace trinity::game
                                 a6, a7, a8, a9, a10, out);
         }
 
-        static bool IsPlayerHoldingEvade()
-        {
-            if ((GetAsyncKeyState(VK_SPACE) & 0x8000) != 0 ||
-                (GetAsyncKeyState(VK_LSHIFT) & 0x8000) != 0 ||
-                (GetAsyncKeyState(VK_RSHIFT) & 0x8000) != 0 ||
-                (GetAsyncKeyState(VK_SHIFT) & 0x8000) != 0 ||
-                (GetAsyncKeyState('C') & 0x8000) != 0 ||
-                (GetAsyncKeyState(VK_MENU) & 0x8000) != 0) // Alt
-                return true;
-
-            XINPUT_STATE xs{};
-            for (DWORD i = 0; i < 4; ++i)
-            {
-                if (XInputGetState(i, &xs) == ERROR_SUCCESS)
-                {
-                    if ((xs.Gamepad.wButtons & (XINPUT_GAMEPAD_A | XINPUT_GAMEPAD_B)) != 0 ||
-                        xs.Gamepad.bRightTrigger > 30)
-                        return true;
-                }
-            }
-            return false;
-        }
-
         // --- Combat Timing & Hitbox Evaluator: Perfect Parry & Perfect Dodge (sub_1407219c0) ---
         using CombatTimingEval_t = bool(__fastcall*)(void* combatComp, void* hitData, float distance, uint8_t isGuardMode, void* outResult);
         CombatTimingEval_t oCombatTimingEval = nullptr;
@@ -766,64 +801,9 @@ namespace trinity::game
             const bool orig = oCombatTimingEval ? oCombatTimingEval(combatComp, hitData, distance, isGuardMode, outResult) : false;
             const State& st = State::Get();
 
-            // isGuardMode != 0: Perfect Parry (Just Guard) -> ONLY when player is actively holding guard
-            if (isGuardMode && st.easyParry && IsPlayerHoldingGuard())
-            {
-                if (outResult && reinterpret_cast<uintptr_t>(outResult) >= kMinPointer)
-                {
-                    *reinterpret_cast<uint8_t*>(outResult) = 1;
-                }
-                return true;
-            }
-            // isGuardMode == 0: Perfect Dodge (Just Evade) -> ONLY when player is actively dodging
-            if (!isGuardMode && st.easyEvade && IsPlayerHoldingEvade())
-            {
-                if (outResult && reinterpret_cast<uintptr_t>(outResult) >= kMinPointer)
-                {
-                    *reinterpret_cast<uint8_t*>(outResult) = 1;
-                }
-                return true;
-            }
-
             return orig;
         }
 
-        // --- Just Core: Just Guard (Perfect Parry) & Just Evade (Perfect Dodge) ---
-        using JustCore_t = bool(__fastcall*)(__int64 a1, float* a2, float a3, char a4, bool* a5);
-        JustCore_t oJustCore = nullptr;
-        void*      g_justCoreTarget = nullptr;
-
-        bool __fastcall hkJustCore(__int64 a1, float* a2, float a3, char a4, bool* a5)
-        {
-            const bool orig = oJustCore ? oJustCore(a1, a2, a3, a4, a5) : false;
-            const State& st = State::Get();
-
-            // a4 != 0: Just Guard (Perfect Parry)
-            // a4 == 0: Just Evade (Perfect Dodge)
-            const bool isGuard = (a4 != 0);
-            const bool isEvade = (a4 == 0);
-
-            if ((isGuard && st.easyParry && IsPlayerHoldingGuard()) ||
-                (isEvade && st.easyEvade && IsPlayerHoldingEvade()))
-            {
-                if (a5) *a5 = true;
-                return true;
-            }
-
-            if (st.infStamina || st.infMountStamina)
-            {
-                for (int i = 0; i < kMaxStatEntries; ++i)
-                {
-                    PinEntry(g_stamEntries[i].load(std::memory_order_relaxed));
-                    PinEntry(g_mountStamEntries[i].load(std::memory_order_relaxed));
-                }
-            }
-            if (st.infSpirit)
-                for (int i = 0; i < kMaxStatEntries; ++i)
-                    PinEntry(g_spiritEntries[i].load(std::memory_order_relaxed));
-
-            return orig;
-        }
     }
 
     bool Player::Install()
@@ -832,12 +812,22 @@ namespace trinity::game
         if (!g_charMgrGlobal)
         {
             LOG_ERR("player: char-manager global NOT FOUND (no anchor matched) - God Mode / "
-                    "Infinite Stamina / Infinite Spirit / damage multipliers disabled.");
+                    "Infinite Stamina / Infinite Spirit limited to the current-character fallback.");
         }
 
-        mem::InstallHook("player: stat-commit", kSig_StatCommit,
-                         "God Mode / Infinite Stamina / Infinite Spirit disabled",
-                         &hkStatCommit, &oStatCommit, &g_commitTarget);
+        // TU 2.01 removed the old single stat-commit funnel.  The resolved
+        // character manager plus the per-frame entry pins are the current
+        // guard on this build; do not search/hook a stale ABI.
+        if (core::UsesTu201CompatibleRevision(core::GetGameVersion().revision))
+        {
+            LOG_OK("player: modern continuous stat-pin guard active (all resolved characters).");
+        }
+        else
+        {
+            mem::InstallHook("player: stat-commit", kSig_StatCommit,
+                             "direct write guard unavailable; current-character pins remain active",
+                             &hkStatCommit, &oStatCommit, &g_commitTarget);
+        }
 
         // DamageApply: try primary signature first, then Alt (TU 2.00 recompile shifted the prologue).
         if (!mem::InstallHook("player: damage-apply", kSig_DamageApply, "",
@@ -872,7 +862,12 @@ namespace trinity::game
     void Player::Tick()
     {
         const State& st = State::Get();
-        if (!AnyStatFeatureActive(st)) return;
+        const bool statFeatureActive = AnyStatFeatureActive(st);
+        const uint64_t now = GetTickCount64();
+        const uint64_t requestedUntil =
+            g_characterTrackingRequestedUntilMs.load(std::memory_order_acquire);
+        if (!ShouldRefreshTrackedCharacters(statFeatureActive, now, requestedUntil))
+            return;
 
         TickResolveSelf();
         if (st.infStamina || st.infMountStamina)
@@ -914,7 +909,6 @@ namespace trinity::game
         mem::RemoveHook(&g_commitTarget);
         mem::RemoveHook(&g_damageHookTarget);
         mem::RemoveHook(&g_combatTimingTarget);
-        mem::RemoveHook(&g_justCoreTarget);
         for (int i = 0; i < kMaxPlayers; ++i)
         {
             g_hpEntries[i].store(0);
@@ -929,6 +923,7 @@ namespace trinity::game
             g_mountOwners[i].store(0);
         }
         g_mountCount.store(0);
+        g_currentFallbackLogged.store(false, std::memory_order_release);
         for (int i = 0; i < kMaxStatEntries; ++i)
         {
             g_stamEntries[i].store(0);
@@ -957,6 +952,10 @@ namespace trinity::game
 
     int Player::GetTrackedPlayerCount()
     {
+        const uint64_t now = GetTickCount64();
+        g_characterTrackingRequestedUntilMs.store(
+            now + kCharacterTrackingDemandMs, std::memory_order_release);
+
         int count = 0;
         for (int i = 0; i < kMaxPlayers; ++i)
         {
@@ -970,6 +969,12 @@ namespace trinity::game
     {
         if (index < 0 || index >= kMaxMounts) return 0;
         return g_mountActors[index].load(std::memory_order_acquire);
+    }
+
+    uintptr_t Player::GetMountOwner(int index)
+    {
+        if (index < 0 || index >= kMaxMounts) return 0;
+        return g_mountOwners[index].load(std::memory_order_acquire);
     }
 
     int Player::GetTrackedMountCount()

@@ -58,6 +58,9 @@ endif()
 add_library(Trinity SHARED
     src/dllmain.cpp
     src/core/mod.cpp
+    src/core/readiness.cpp
+    src/core/version_mapping.cpp
+    src/mem/section_filter.cpp
     src/core/settings.cpp
     src/core/localization.cpp
     src/core/version_detect.cpp
@@ -65,10 +68,14 @@ add_library(Trinity SHARED
     src/game/player.cpp
     src/game/teleport.cpp
     src/game/inventory.cpp
+    src/game/inventory_logic.cpp
+    src/game/player_logic.cpp
+    src/game/equipment_logic.cpp
     src/game/world.cpp
-    src/game/dye.cpp
     src/game/equipment.cpp
+    src/game/dye.cpp
     src/game/friendly.cpp
+    src/game/friendly_logic.cpp
     ${EXTENDED_SOURCES}
     src/game/item_names.cpp
     src/game/pak.cpp
@@ -108,4 +115,24 @@ if(MSVC)
     target_compile_options(Trinity PRIVATE /guard:cf)
     target_link_options(Trinity PRIVATE
         /DYNAMICBASE /HIGHENTROPYVA /NXCOMPAT /guard:cf)
+endif()
+
+include(CTest)
+if(BUILD_TESTING)
+    add_executable(TrinityMapMarkerTests tests/map_marker_tests.cpp)
+    target_include_directories(TrinityMapMarkerTests PRIVATE src)
+    add_test(NAME TrinityMapMarkerTests COMMAND TrinityMapMarkerTests)
+
+    add_executable(TrinityReadinessTests
+        tests/readiness_tests.cpp
+        src/core/readiness.cpp
+        src/core/version_mapping.cpp
+        src/game/friendly_logic.cpp
+        src/game/inventory_logic.cpp
+        src/game/player_logic.cpp
+        src/game/equipment_logic.cpp
+        src/mem/section_filter.cpp
+    )
+    target_include_directories(TrinityReadinessTests PRIVATE src)
+    add_test(NAME TrinityReadinessTests COMMAND TrinityReadinessTests)
 endif()

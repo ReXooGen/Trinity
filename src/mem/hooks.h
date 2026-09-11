@@ -41,10 +41,21 @@ namespace trinity::mem
             LOG_WARN("%s signature ambiguous (%zu); hooking first.", context, matches);
 
         void* t = reinterpret_cast<void*>(addr);
-        if (MH_CreateHook(t, reinterpret_cast<void*>(detour), reinterpret_cast<void**>(original)) != MH_OK ||
-            MH_EnableHook(t) != MH_OK)
+        const MH_STATUS createStatus = MH_CreateHook(
+            t, reinterpret_cast<void*>(detour), reinterpret_cast<void**>(original));
+        if (createStatus != MH_OK)
         {
-            LOG_ERR("%s: failed to install hook - %s.", context, consequence);
+            LOG_ERR("%s: MH_CreateHook failed (%s) - %s.",
+                    context, MH_StatusToString(createStatus), consequence ? consequence : "");
+            *original = nullptr;
+            return false;
+        }
+
+        const MH_STATUS enableStatus = MH_EnableHook(t);
+        if (enableStatus != MH_OK)
+        {
+            LOG_ERR("%s: MH_EnableHook failed (%s) - %s.",
+                    context, MH_StatusToString(enableStatus), consequence ? consequence : "");
             *original = nullptr;
             return false;
         }

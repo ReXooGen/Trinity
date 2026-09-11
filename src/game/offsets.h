@@ -233,6 +233,10 @@ namespace trinity::game
     };
 
     inline constexpr CharMgrAnchor kCharMgrAnchors[] = {
+        // TU 2.01.00, sub_276B340: shr r8,20h / lea rdx,[rsp+78h] /
+        // mov rcx,cs:G / mov rcx,[rcx] / call.  The global still owns the
+        // manager whose character vector is at +0xB8/+0xC0.
+        {"4D 8B 00 49 C1 E8 20 48 8D 54 24 78 48 8B 0D ?? ?? ?? ?? 48 8B 09 E8", 0x0C},
         // sub_22E6330: mov rax,cs:G / mov rcx,[rax] / mov r8,[r8] / shr r8,20h.
         // Best of the set - pure ABI arg setup plus a literal shift count.
         {"48 8B 05 ?? ?? ?? ?? 48 8B 08 4D 8B 00 49 C1 E8 20", 0},
@@ -390,10 +394,13 @@ namespace trinity::game
     // the floor is for validating pointer CHAINS, not arguments the callee is
     // about to dereference anyway.
     //
-    // Signature = prologue + home-store/push sequence + the exact frame setup
-    // (lea rbp,[rax-798h]; sub rsp,860h). The frame displacements are what
-    // make it unique - 6 same-shaped functions match if they are wildcarded.
+    // PE 2760 keeps the same ABI and body but adds an RCX home store and changes
+    // the frame to lea rbp,[rax-788h] / sub rsp,850h. The full fixed prologue is
+    // unique and was followed through its call to the movement integrator.
     inline constexpr const char* kSig_LocoStepper =
+        "48 8B C4 48 89 58 10 44 88 48 20 48 89 48 08 55 56 57 41 54 41 55 41 56 41 57 "
+        "48 8D A8 78 F8 FF FF 48 81 EC 50 08 00 00";
+    inline constexpr const char* kSig_LocoStepper_Pre201 =
         "48 8B C4 48 89 58 10 44 88 48 20 55 56 57 41 54 41 55 41 56 41 57 "
         "48 8D A8 68 F8 FF FF 48 81 EC 60 08 00 00";
 
@@ -405,9 +412,15 @@ namespace trinity::game
     // sub_5019D0, which pulls the travel manager from a global and ignores it),
     // so we pass nullptr. It validates nodeIndex < nodeCount then triggers travel.
     //   char sub_505140(void* /*ignored*/, int sceneId, unsigned nodeIndex)
-    // Prologue: mov rax,rsp; mov [rax+18],rbx; mov [rax+10],edx; mov [rax+8],rcx;
-    // push rdi; sub rsp,80h. Unique in this build (IDB 0x505140).
+    // PE 2760 keeps the same three-argument ABI and bounds checks, but saves RSI
+    // and carries nodeIndex in ESI. The full TU 2.01 prologue is unique at
+    // 0x1405E2D30.
     inline constexpr const char* kSig_TravelToNode =
+        "48 89 5C 24 18 48 89 74 24 20 89 54 24 10 48 89 4C 24 08 55 57 41 56 "
+        "48 8D 6C 24 B9 48 81 EC B0 00 00 00 41 8B F0 33 DB 83 FA FF";
+
+    // TU 1.16 - TU 2.00.02 fast-travel trigger.
+    inline constexpr const char* kSig_TravelToNode_Pre201 =
         "48 89 5C 24 18 89 54 24 10 48 89 4C 24 08 55 56 57 48 8D 6C 24 B9 "
         "48 81 EC B0 00 00 00 41 8B F8 33 DB 83 FA FF";
 
@@ -618,6 +631,13 @@ namespace trinity::game
         "48 89 5C 24 ? 4C 89 44 24 ? 48 89 54 24 ? 48 89 4C 24 ? 55 56 57 41 54 "
         "41 55 41 56 41 57 48 8D AC 24 ? ? ? ? 48 81 EC 10 03 00 00";
 
+    // TU 2.01.00 per-holder insert planner, unique at VA 0x14234D090.
+    // The 9-argument ABI is unchanged; item values are now 0xC8 bytes and
+    // the produced placement records are 0xE0 bytes.
+    inline constexpr const char* kSig_InvHolderInsert201 =
+        "48 89 5C 24 20 4C 89 44 24 18 48 89 54 24 10 48 89 4C 24 08 "
+        "55 56 57 41 54 41 55 41 56 41 57 48 8D AC 24 00 FE FF FF 48 81 EC 00 03 00 00";
+
     inline constexpr const char* kSig_InvHolderInsert_Legacy =
         "48 89 5C 24 ? 4C 89 44 24 ? 48 89 54 24 ? 48 89 4C 24 ? 55 56 57 41 54 "
         "41 55 41 56 41 57 48 8D AC 24 ? ? ? ? 48 81 EC F0 02 00 00";
@@ -650,8 +670,14 @@ namespace trinity::game
     // (sub_2D889E0, world+0x110) does not contain the player at all. It always
     // lands at arena+0xF0200 in a 16MB-aligned server arena, but nothing
     // reachable points at that arena. Capture-at-load is the route; this is it.
-    // Unique byte signature.
+    // TU 2.01 recompiles the central transaction path with an 8-argument ABI.
+    // Its holder still owns the container at +8. The fixed prologue below is
+    // unique at VA 0x142077730 in PE 2760.
     inline constexpr const char* kSig_InvCommit =
+        "48 89 5C 24 18 66 44 89 4C 24 20 48 89 54 24 10 48 89 4C 24 08 "
+        "55 56 57 41 54 41 55 41 56 41 57 48 8D AC 24 00 FF FF FF 48 81 EC 00 02 00 00";
+    // Unique pre-2.01 byte signature.
+    inline constexpr const char* kSig_InvCommit_Pre201 =
         "4C 89 44 24 ? 48 89 54 24 ? 48 89 4C 24 ? 55 53 56 57 41 54 41 55 41 56 "
         "41 57 48 8D 6C 24 ? 48 81 EC 48 01 00 00 4D 8B D0 48 8B D1";
 
@@ -671,10 +697,13 @@ namespace trinity::game
     // whose body is `mov rax, cs:<global>; mov rdx,[rax+30h]; mov rdx,[rdx+50h]`
     // - the exact chain we walk. Unique match; the mov's RIP operand is at
     // match+0x15 (7-byte instruction).
+    // PE 2760: unique client-realm anchor. The adjacent sibling at
+    // 0x14066FC23 resolves the server/world realm and must not be accepted.
     inline constexpr const char* kSig_InvCoreGlobal =
+        "48 8B 05 ? ? ? ? 48 8B 48 30 48 8B 49 50 48 89 8D E0 02 00 00 48 85 C9";
+    inline constexpr const char* kSig_InvCoreGlobal_Pre201 =
         "48 89 54 24 ? 53 48 83 EC 30 48 8B DA C7 44 24 20 00 00 00 00 "
         "48 8B 05 ? ? ? ? 48 8B 50 30 48 8B 52 50 48 8B CB E8";
-    inline constexpr uintptr_t kOff_InvCoreGlobal_Mov = 0x15; // mov rax, cs:<global>
     inline constexpr uintptr_t kOff_Global_Mid        = 0x30; // global+0x30 -> mid
     inline constexpr uintptr_t kOff_Mid_Container     = 0x50; // mid+0x50 -> container
     inline constexpr uintptr_t kOff_Container_Sub     = 0x68; // container+0x68 -> sub-object
@@ -826,9 +855,13 @@ namespace trinity::game
     // goes anywhere; we hand ours straight to the planner, so ZERO IT FIRST or
     // the holes reach the live slot (live-seen: garbage at +0x0C).
 
-    // TrItemValue ctor (IDB sub_1F86FD0): void f(itemVal, u16* typeId, i64 qty).
-    // Self-contained - fills subtype/durability/flags/sub-lists from the item
+    // TrItemValue ctor: void f(itemVal, u16* typeId, i64 qty). PE 2760 keeps
+    // the ABI but recompiles the function with a different prologue/frame.
+    // The fixed TU 2.01.00 prefix is unique at VA 0x14234F210.
     inline constexpr const char* kSig_TrItemValueCtor =
+        "48 89 5C 24 18 48 89 4C 24 08 55 56 57 41 54 41 55 41 56 41 57 48 8B EC 48 83 EC 70 4C 8B F2 4C 8B E1";
+    // Legacy ctor (IDB sub_1F86FD0), retained for pre-2.01 builds.
+    inline constexpr const char* kSig_TrItemValueCtor_Pre201 =
         "48 89 5C 24 ? 48 89 4C 24 ? 55 56 57 41 54 41 55 41 56 41 57 48 8B EC "
         "48 83 EC 60 4C 8B EA 48 8B F1 48 C7 01 FF FF FF FF 0F B7 02 66 89 41 08";
     // Per-placement COMMIT (IDB sub_1CE1020):
@@ -840,6 +873,12 @@ namespace trinity::game
     // scratch whose low word is immediately overwritten with the typeId.
     inline constexpr const char* kSig_InvCommitPlacement =
         "48 89 5C 24 ? 4C 89 44 24 ? 55 56 57 48 83 EC 30 41 0F B7 59";
+    // TU 2.01.00 per-placement commit, unique at VA 0x142077410.
+    // ABI changed to f(holder, outErr, placement, slotIdx): placement is r8
+    // and the slot index is r9w (there is no longer a don't-care third arg).
+    inline constexpr const char* kSig_InvCommitPlacement201 =
+        "48 89 5C 24 10 48 89 6C 24 20 56 57 41 56 48 83 EC 30 "
+        "41 0F B7 58 08 48 8B F1 48 8D 4C 24 50 66 89 5C 24 50 45 0F B7 F1";
     // Free the planner's placement vector. The pre-1.17 build reached the
     // cleanup target through a 5-byte jmp thunk; 1.17 recompiles the target but
     // keeps the same vector ABI: [vec+0] data, [vec+8] count, [vec+10h] inline
@@ -853,6 +892,12 @@ namespace trinity::game
         "48 89 4C 24 08 53 48 83 EC 20 48 8B D9 48 8B 09 8B 43 08 "
         "48 69 D0 D8 00 00 00 48 03 D1 E8 ? ? ? ? 90 48 8B 0B "
         "48 8D 43 10 48 3B C8";
+    // TU 2.01.00 placement-vector destructor, unique at VA 0x148871300.
+    // It destroys count elements at the new 0xE0 stride, releases the backing
+    // allocation in the active realm, and clears the vector descriptor.
+    inline constexpr const char* kSig_InvFreePlacements201 =
+        "48 89 5C 24 10 57 48 83 EC 20 48 89 CB 48 83 39 00 74 ? 31 FF "
+        "39 79 08 76 ? 66 0F 1F 44 00 00 89 F8 48 69 C8 E0 00 00 00";
     // TrItemValue dtor (IDB sub_ED6DF40, via thunk sub_1F88270). Destroys the
     // sub-objects the ctor allocated; does NOT free the buffer itself.
     inline constexpr const char* kSig_TrItemValueDtor = "";
@@ -918,7 +963,9 @@ namespace trinity::game
     // was tried and fails (bogus TEB, then an access violation on the second
     // call, almost certainly CFG rejecting an indirect call into our own page).
     inline constexpr uintptr_t kOff_Teb_TlsPointer = 0x58; // TEB.ThreadLocalStoragePointer
-    inline constexpr uintptr_t kTls_RealmFlag      = 498;  // u8: 0 = client, 1 = server
+    // Pre-2.01 offset. TU 2.01 moved this byte to +0x1FD; runtime selection is
+    // centralized in core::RealmFlagOffsetForRevision().
+    inline constexpr uintptr_t kTls_RealmFlag      = 0x1F2; // u8: 0 = client, 1 = server
 
     // Item-info table (typeId -> item definition -> item key string, for names).
     // Its resolver is one of ~121 identical 16-bit-key table-resolver clones, so
@@ -1182,6 +1229,8 @@ namespace trinity::game
     //   match+37: `vmovss xmm0, cs:dword_615A4F0`     (value; 8-byte instr)
     // IDB match at 0x8FC348. Unique block.
     inline constexpr const char* kSig_FrameTimerBody =
+        "48 8B F9 48 8B 51 60 8B 42 64 89 42 60";
+    inline constexpr const char* kSig_FrameTimerBody_Pre201 =
         "48 8B F9 48 8B 41 60 C5 FA 10 40 64 C5 FA 11 40 60";
     inline constexpr uintptr_t kOff_TimeStruct_Delta       = 0x64; // f32: Frame Delta (seconds)
     inline constexpr uintptr_t kOff_TimeStruct_ScaledDelta = 0x68; // f32: Scaled Frame Delta (seconds)
@@ -1240,6 +1289,9 @@ namespace trinity::game
     // distinctive accumulator add `vaddss xmm0, xmm1, [rcx+2Ch]`
     // (make_signature_for_function, unique in this build).
     inline constexpr const char* kSig_FieldTimeTick =
+        "48 89 5C 24 08 48 89 74 24 10 48 89 7C 24 18 4C 89 64 24 20 "
+        "55 41 56 41 57 48 8B EC 48 83 EC 70 48 8B F9 C5 F2 58 41 2C";
+    inline constexpr const char* kSig_FieldTimeTick_Pre201 =
         "48 89 5C 24 ?? 48 89 74 24 ?? 48 89 7C 24 ?? 55 41 56 41 57 48 8B EC "
         "48 83 EC 70 48 8B F9 C5 F2 58 41 2C";
 
@@ -1294,11 +1346,18 @@ namespace trinity::game
     inline constexpr const char* kSig_WeatherDust =
         "48 8B 41 ?? 41 B8 40 00 00 00 48 85 C0 41 B9 60 01 00 00 48 8D 50 18 B8 CC 01 00 00 49 0F 44 D0";
 
+    // TU 2.01.00 kept the same two-argument ABI and pack layout, but shrank
+    // the local stack frame from 0x30 to 0x20 bytes.
     inline constexpr const char* kSig_WindPack =
+        "48 89 5C 24 08 57 48 83 EC 20 48 8B 01 48 8B D9 48 85 C0 48 8B FA B9 40 00 00 00 4C 8D 40 18 4C 0F 44 C1";
+    inline constexpr const char* kSig_WindPack_Pre201 =
         "48 89 5C 24 08 57 48 83 EC 30 48 8B 01 48 8B D9 48 85 C0 48 8B FA B9 40 00 00 00 4C 8D 40 18 4C 0F 44 C1";
 
     // Safe EnvManager resolution and cloud/atmosphere nodes in TU 1.18.00+:
     inline constexpr const char* kSig_EnvManager =
+        "48 8B 0D ?? ?? ?? ?? 48 8B 01 FF 50 60 C5 78 2F C7 72 ?? 48 8B 88 E0 0E 00 00 E8 62";
+    // Legacy pre-2.01 fallback:
+    inline constexpr const char* kSig_EnvManager_Legacy =
         "48 8B 0D ?? ?? ?? ?? 48 8B 01 FF 50 40 48 8B D7 48 8B 88 E0 0E 00 00";
     inline constexpr uintptr_t kOff_EnvManager_Mov = 3;
     inline constexpr int       kLen_EnvManager_Mov = 7;
@@ -1690,6 +1749,24 @@ namespace trinity::game
         0xC5, 0xFC, 0x11, 0x49, 0x20, 0xC5, 0xF8, 0x10, 0x47, 0x40, 0xC5, 0xF8, 0x11, 0x41, 0x40
     };
 
+    // TU 2.01.00 relationship-record setters. The record grew to 0x68 while
+    // key/group/trust stayed at +0/+4/+0x28. NPC uses component map +0x38;
+    // pet/vehicle uses +0x18. Both signatures are unique in PE revision 2760.
+    inline constexpr const char* kSig_FriendlySetNpc201 =
+        "4C 8B DC 53 55 56 57 41 56 41 57 48 83 EC 68 48 8B FA 48 8B F1 0F B7 42 04";
+    inline constexpr const char* kSig_FriendlySetPet201 =
+        "49 89 E3 53 55 56 57 41 56 41 57 48 83 EC 68 48 89 D7 48 89 CE 0F B7 42 04 "
+        "66 41 89 43 08 49 8D 4B 08 E8 ? ? ? ? 31 ED 39 6E 1C";
+
+    // TU 2.01 lookup paths for the two relationship maps. Some direct gameplay
+    // updates mutate the returned record in place and therefore never present
+    // a distinct source record to the setters above. These signatures include
+    // the map-layout discriminator (+0x1C for one realm, +0x3C for the other).
+    inline constexpr const char* kSig_FriendlyGetNpc201 =
+        "48 89 5C 24 10 48 89 74 24 18 57 48 83 EC 20 48 8B 42 68 48 8B F9 48 8D 4C 24 30 48 8B F2 4C 8B 40 20 41 0F B7 40 30 66 89 44 24 30 E8 ? ? ? ? 83 7F 1C 00";
+    inline constexpr const char* kSig_FriendlyGetPet201 =
+        "48 89 5C 24 10 48 89 74 24 18 57 48 83 EC 20 48 8B 42 68 48 8B F9 48 8D 4C 24 30 48 8B F2 4C 8B 40 20 41 0F B7 40 30 66 89 44 24 30 E8 ? ? ? ? 83 7F 3C 00";
+
     // Direct SetNpc and SetPet function prologues for TU 2.00:
     inline constexpr const char* kSig_FriendlySetNpc =
         "4C 8B DC 53 55 56 57 41 56 48 83 EC 60 48 8B FA 48 8D 69 38";
@@ -1707,7 +1784,9 @@ namespace trinity::game
 
     inline constexpr uintptr_t kOff_FriendlyRec_Key   = 0x00; // u32 record key
     inline constexpr uintptr_t kOff_FriendlyRec_Group = 0x04; // u16 group/bucket key
-    inline constexpr uintptr_t kOff_FriendlyRec_Value = 0x28; // i64 trust value (confirmed: QWORD @ +0x28 in TU 2.00)
+    // TU 2.01 still stores _varyFriendly in the second 32-byte copy block.
+    // The +0x28 field is a different member; reading it made the multiplier
+    // silently reject every real trust update.
+    inline constexpr uintptr_t kOff_FriendlyRec_Value = 0x20; // i64 trust value
     inline constexpr int64_t   kFriendly_Max          = 100;  // the taming/NPC cap (0..100)
 }
-

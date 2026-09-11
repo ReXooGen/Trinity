@@ -235,8 +235,7 @@ namespace trinity
             if (!s_logFp) return;
             static const char* names[] = { "DEBUG", "INFO", "OK", "WARN", "ERROR" };
             std::fprintf(s_logFp, "%s [TID %lu] [%s] %s\n", l.stamp.c_str(), l.tid, names[l.lvl], l.text.c_str());
-            if (l.lvl >= Warn)
-                std::fflush(s_logFp);
+            std::fflush(s_logFp);
         }
 
         static void Emit(const Line& l)

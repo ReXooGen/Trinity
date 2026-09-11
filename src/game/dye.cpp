@@ -12,6 +12,7 @@
 #include "dye_slots_table.h"
 #include "inventory.h"
 #include "equipment.h"
+#include "equipment_logic.h"
 #include "../core/logger.h"
 #include "../mem/hooks.h"
 #include "../mem/safe_memory.h"
@@ -231,6 +232,20 @@ namespace trinity::game
             uintptr_t desc = 0, array = 0;
             uint32_t count = 0;
 
+            // TU 2.01+ (+0x90) Priority
+            if (ReadPtr(comp + 0x90, &desc) && desc >= kMinPointer &&
+                ReadPtr(desc + kOff_EquipTable_Array, &array) && array >= kMinPointer &&
+                Read32(desc + kOff_EquipTable_Count, &count) && count > 0 && count <= 64)
+            {
+                outArray = array;
+                outCount = count;
+                if (outStride) *outStride = 0xD0;
+                if (outSlotTag) *outSlotTag = 0xC8;
+                if (outDyeData) *outDyeData = 0x78;
+                if (outDyeCount) *outDyeCount = 0x80;
+                return true;
+            }
+
             // Modern TU 1.17+ (+0x80)
             if (ReadPtr(comp + 0x80, &desc) && desc >= kMinPointer &&
                 ReadPtr(desc + kOff_EquipTable_Array, &array) && array >= kMinPointer &&
@@ -381,29 +396,31 @@ namespace trinity::game
         {
             if (index < 0 || index >= 4) return 0;
 
-            // 1. Hooked component captured during equip changes
-            const uintptr_t hooked = g_mountComp.load(std::memory_order_acquire);
-            if (hooked && CompValid(hooked))
+            // 1. Direct lookup by the mount's owning gameplay character. The
+            // equipment component hangs from owner+0x68; GetMountActor returns
+            // the inner actor and is only a compatibility fallback.
+            const uintptr_t root = PreferEquipmentOwner(
+                Player::GetMountOwner(index), Player::GetMountActor(index));
+            if (root)
             {
-                if (index == 0) return hooked;
-            }
-
-            // 2. Direct lookup by mount actor index
-            const uintptr_t act = Player::GetMountActor(index);
-            if (act)
-            {
-                const uintptr_t comp = FindEquipCompFromActor(act);
+                const uintptr_t comp = CompForCharacter(root);
                 if (comp) return comp;
             }
 
-            // 3. Fallback for Active Mount (index == 0): scan all tracked mount actors
+            // 2. Hooked component captured during equip changes.
+            const uintptr_t hooked = g_mountComp.load(std::memory_order_acquire);
+            if (hooked && CompValid(hooked) && index == 0)
+                return hooked;
+
+            // 3. Fallback for Active Mount (index == 0): scan all tracked mounts.
             if (index == 0)
             {
                 for (int m = 0; m < 4; ++m)
                 {
-                    const uintptr_t mAct = Player::GetMountActor(m);
-                    if (!mAct) continue;
-                    const uintptr_t comp = FindEquipCompFromActor(mAct);
+                    const uintptr_t mRoot = PreferEquipmentOwner(
+                        Player::GetMountOwner(m), Player::GetMountActor(m));
+                    if (!mRoot) continue;
+                    const uintptr_t comp = CompForCharacter(mRoot);
                     if (comp) return comp;
                 }
             }
@@ -1623,9 +1640,7 @@ namespace trinity::game
                     const int mountCount = Player::GetTrackedMountCount();
                     for (int m = 0; m < mountCount; ++m)
                     {
-                        const uintptr_t mAct = Player::GetMountActor(m);
-                        if (!mAct) continue;
-                        const uintptr_t mComp = FindEquipCompFromActor(mAct);
+                        const uintptr_t mComp = FindMountComp(m);
                         if (!mComp || mComp == comp) continue;
                         const uintptr_t mEntry = FindEntryByTag(mComp, req.tag);
                         if (mEntry)
@@ -2364,9 +2379,7 @@ namespace trinity::game
             const int mountCount = Player::GetTrackedMountCount();
             for (int m = 0; m < mountCount; ++m)
             {
-                const uintptr_t mAct = Player::GetMountActor(m);
-                if (!mAct) continue;
-                const uintptr_t mComp = FindEquipCompFromActor(mAct);
+                const uintptr_t mComp = FindMountComp(m);
                 if (!mComp) continue;
 
                 for (uint16_t tag = 0; tag < 32; ++tag)
@@ -2523,9 +2536,7 @@ namespace trinity::game
         const int mountCount = Player::GetTrackedMountCount();
         for (int m = 0; m < mountCount; ++m)
         {
-            const uintptr_t mAct = Player::GetMountActor(m);
-            if (!mAct) continue;
-            const uintptr_t mComp = FindEquipCompFromActor(mAct);
+            const uintptr_t mComp = FindMountComp(m);
             if (!mComp) continue;
 
             uintptr_t array = 0;

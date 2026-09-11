@@ -58,6 +58,7 @@ namespace trinity::game
 
         // Active mount / vehicle actor tracking (Horse, Dragon, Wagon, Mount).
         static uintptr_t GetMountActor(int index = 0);
+        static uintptr_t GetMountOwner(int index = 0);
         static int GetTrackedMountCount();
 
         // DEBUG: dump every player-ish character in the manager vector to the

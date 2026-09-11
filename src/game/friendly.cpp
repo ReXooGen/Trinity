@@ -1,11 +1,9 @@
 #include "friendly.h"
+#include "friendly_logic.h"
 
 #include <cstdint>
-#include <vector>
 #include <unordered_map>
 #include <mutex>
-#include <cstring>
-#include <algorithm>
 #include <windows.h>
 #include <MinHook.h>
 
@@ -21,173 +19,297 @@ namespace trinity::game
     using mem::Read16;
     using mem::Read32;
     using mem::Read64;
-    using mem::Write32;
     using mem::Write64;
 
     namespace
     {
-        // Direct SetNpc and SetPet Leaf Setters (Prologue level)
-        // Intercepting here allows proportional scaling of the trust gain (1x .. 100x).
         using FriendlySet_t = void*(__fastcall*)(void* mapOwner, void* record);
         FriendlySet_t oSetNpc = nullptr;
         FriendlySet_t oSetPet = nullptr;
+        using FriendlyGet_t = void*(__fastcall*)(void* mapOwner, void* actor);
+        FriendlyGet_t oGetNpc = nullptr;
+        FriendlyGet_t oGetPet = nullptr;
         void* g_npcTarget = nullptr;
         void* g_petTarget = nullptr;
+        void* g_npcGetTarget = nullptr;
+        void* g_petGetTarget = nullptr;
 
         bool g_hooksInstalled = false;
         bool g_hooksEnabled = false;
+        bool g_featureReportedEnabled = false;
 
-        // Tracks last known trust value per record key to scale trust gains accurately (thread-safe)
+        // Keep observing while the option is off so load/update calls establish
+        // an unscaled baseline before the first multiplied gameplay gain.
         std::mutex s_trustMutex;
-        std::unordered_map<uint32_t, int64_t> s_lastTrustMap;
+        std::unordered_map<uint64_t, int64_t> s_lastTrustMap;
 
-        void ApplyTrustMultiplierToRecord(void* record, float mult, const char* srcName)
+        uint64_t TrustCacheKey(void* mapOwner, uint16_t group, uint32_t key)
         {
-            if (!Player::Ready() || mult <= 1.0f) return;
+            const uint64_t owner = static_cast<uint64_t>(reinterpret_cast<uintptr_t>(mapOwner));
+            return (owner >> 4) ^ (static_cast<uint64_t>(group) << 48) ^ key;
+        }
 
+        // The setter receives the replacement record before copying it into
+        // the map. Recover the old value from that map so the very first event
+        // after enabling the option has a real baseline instead of being
+        // mistaken for one. TU 2.01's setter at 0x141E2AD40 uses exactly this
+        // layout: 0x100-byte hash buckets at +0x48 and node pointers at +0x50;
+        // each node owns a 0x68-stride relationship-record vector at +0x08.
+        bool FindStoredTrust(void* mapOwner, uint16_t group, uint32_t key,
+                             int64_t* outValue)
+        {
+            const uintptr_t owner = reinterpret_cast<uintptr_t>(mapOwner);
+            if (owner < kMinPointer || !outValue) return false;
+
+            uint32_t bucketCount = 0;
+            uintptr_t buckets = 0, nodes = 0;
+            if (!Read32(owner + 0x3C, &bucketCount) || bucketCount == 0 || bucketCount > 4096)
+                return false;
+            if (!mem::ReadPtr(owner + 0x48, &buckets) || buckets < kMinPointer)
+                return false;
+            if (!mem::ReadPtr(owner + 0x50, &nodes) || nodes < kMinPointer)
+                return false;
+
+            for (uint32_t bucketIndex = 0; bucketIndex < bucketCount; ++bucketIndex)
+            {
+                const uintptr_t bucket = buckets + static_cast<uintptr_t>(bucketIndex) * 0x100;
+                uint32_t entryCount = 0;
+                if (!Read32(bucket, &entryCount) || entryCount > 31) continue;
+
+                for (uint32_t entryIndex = 0; entryIndex < entryCount; ++entryIndex)
+                {
+                    uint32_t nodeIndex = 0;
+                    if (!Read32(bucket + 0x0C + static_cast<uintptr_t>(entryIndex) * 8,
+                                &nodeIndex) || nodeIndex > 0xFFFF)
+                        continue;
+
+                    uintptr_t node = 0, records = 0;
+                    uint32_t recordCount = 0;
+                    if (!mem::ReadPtr(nodes + static_cast<uintptr_t>(nodeIndex) * 8, &node) ||
+                        node < kMinPointer)
+                        continue;
+                    if (!mem::ReadPtr(node + 0x08, &records) || records < kMinPointer)
+                        continue;
+                    if (!Read32(node + 0x10, &recordCount) || recordCount > 4096)
+                        continue;
+
+                    for (uint32_t i = 0; i < recordCount; ++i)
+                    {
+                        const uintptr_t existing = records + static_cast<uintptr_t>(i) * 0x68;
+                        uint32_t existingKey = 0;
+                        uint16_t existingGroup = 0;
+                        uint64_t existingValue = 0;
+                        if (Read32(existing + kOff_FriendlyRec_Key, &existingKey) &&
+                            Read16(existing + kOff_FriendlyRec_Group, &existingGroup) &&
+                            existingKey == key && existingGroup == group &&
+                            Read64(existing + kOff_FriendlyRec_Value, &existingValue) &&
+                            static_cast<int64_t>(existingValue) >= 0 &&
+                            static_cast<int64_t>(existingValue) <= kFriendly_Max)
+                        {
+                            *outValue = static_cast<int64_t>(existingValue);
+                            return true;
+                        }
+                    }
+                }
+            }
+            return false;
+        }
+
+        void ObserveAndScaleTrust(void* mapOwner, void* record)
+        {
             const uintptr_t r = reinterpret_cast<uintptr_t>(record);
             if (r < kMinPointer) return;
 
             uint32_t key = 0;
-            if (!Read32(r + kOff_FriendlyRec_Key, &key)) return;
+            uint16_t group = 0;
+            uint64_t rawValue = 0;
+            if (!Read32(r + kOff_FriendlyRec_Key, &key) || key == 0) return;
+            if (!Read16(r + kOff_FriendlyRec_Group, &group)) return;
+            if (!Read64(r + kOff_FriendlyRec_Value, &rawValue)) return;
 
-            // key == 0 is the save-loader at login / title screen (never scale baseline on load)
-            if (key == 0) return;
+            const int64_t incoming = static_cast<int64_t>(rawValue);
+            if (incoming < 0 || incoming > kFriendly_Max) return;
 
-            uint64_t rawVal64 = 0;
-            Read64(r + 0x28, &rawVal64);
-            uint32_t rawVal32 = 0;
-            Read32(r + 0x20, &rawVal32);
-
-            const int64_t currentIncoming = (rawVal64 > 0) ? static_cast<int64_t>(rawVal64) : static_cast<int64_t>(rawVal32);
+            const uint64_t cacheKey = TrustCacheKey(mapOwner, group, key);
+            const State& st = State::Get();
+            const bool scale = Player::Ready() && st.trustMult && st.trustMultVal > 1.0f;
 
             std::lock_guard<std::mutex> lock(s_trustMutex);
-            int64_t oldVal = 0;
-            auto it = s_lastTrustMap.find(key);
-            if (it != s_lastTrustMap.end())
+            const auto found = s_lastTrustMap.find(cacheKey);
+            int64_t storedValue = 0;
+            const bool hasStoredValue = FindStoredTrust(
+                mapOwner, group, key, &storedValue);
+            int64_t oldValue = 0;
+            const bool hasOldValue = SelectTrustBaseline(
+                storedValue, hasStoredValue,
+                found != s_lastTrustMap.end() ? found->second : 0,
+                found != s_lastTrustMap.end(), &oldValue);
+
+            const int64_t newValue = ScaleTrustValue(
+                oldValue, hasOldValue, incoming, st.trustMultVal, scale);
+            s_lastTrustMap[cacheKey] = newValue;
+            if (newValue == incoming) return;
+
+            Write64(r + kOff_FriendlyRec_Value, static_cast<uint64_t>(newValue));
+        }
+
+        // TU 2.01 can mutate a record returned by the lookup directly, without
+        // passing a replacement record through either setter. Observe those
+        // records as a secondary path. The first read only seeds a baseline;
+        // this deliberately avoids turning pre-existing trust into a gain.
+        void ObserveLiveTrust(void* mapOwner, void* record)
+        {
+            const uintptr_t r = reinterpret_cast<uintptr_t>(record);
+            if (r < kMinPointer) return;
+
+            uint32_t key = 0;
+            uint16_t group = 0;
+            uint64_t rawValue = 0;
+            if (!Read32(r + kOff_FriendlyRec_Key, &key) || key == 0 ||
+                !Read16(r + kOff_FriendlyRec_Group, &group) ||
+                !Read64(r + kOff_FriendlyRec_Value, &rawValue))
+                return;
+
+            const int64_t incoming = static_cast<int64_t>(rawValue);
+            if (incoming < 0 || incoming > kFriendly_Max) return;
+
+            const uint64_t cacheKey = TrustCacheKey(mapOwner, group, key);
+            const State& st = State::Get();
+            const bool scale = Player::Ready() && st.trustMult && st.trustMultVal > 1.0f;
+
+            std::lock_guard<std::mutex> lock(s_trustMutex);
+            const auto found = s_lastTrustMap.find(cacheKey);
+            if (found == s_lastTrustMap.end())
             {
-                oldVal = it->second;
+                s_lastTrustMap[cacheKey] = incoming;
+                return;
             }
 
-            int64_t gain = currentIncoming - oldVal;
-            if (gain <= 0)
-            {
-                // If initial touch where oldVal wasn't recorded, the gain is the incoming value
-                if (oldVal == 0 && currentIncoming > 0)
-                {
-                    gain = currentIncoming;
-                }
-                else
-                {
-                    s_lastTrustMap[key] = currentIncoming;
-                    return;
-                }
-            }
+            const int64_t oldValue = found->second;
+            const int64_t newValue = ScaleTrustValue(
+                oldValue, true, incoming, st.trustMultVal, scale);
+            s_lastTrustMap[cacheKey] = newValue;
+            if (newValue == incoming) return;
 
-            const int64_t scaledGain = static_cast<int64_t>(static_cast<float>(gain) * mult);
-            int64_t newTrust = oldVal + scaledGain;
-            if (newTrust > 100) newTrust = 100;
-            if (newTrust < 0) newTrust = 0;
-
-            Write32(r + 0x20, static_cast<uint32_t>(newTrust));
-            Write64(r + 0x20, static_cast<uint64_t>(newTrust));
-            Write32(r + 0x28, static_cast<uint32_t>(newTrust));
-            Write64(r + 0x28, static_cast<uint64_t>(newTrust));
-
-            s_lastTrustMap[key] = newTrust;
+            Write64(r + kOff_FriendlyRec_Value, static_cast<uint64_t>(newValue));
         }
 
         void* __fastcall hkSetNpc(void* mapOwner, void* record)
         {
-            const State& st = State::Get();
-            if (Player::Ready() && st.trustMult && st.trustMultVal > 1.0f)
-            {
-                __try
-                {
-                    ApplyTrustMultiplierToRecord(record, st.trustMultVal, "SetNpc");
-                }
-                __except (EXCEPTION_EXECUTE_HANDLER) {}
-            }
+            __try { ObserveAndScaleTrust(mapOwner, record); }
+            __except (EXCEPTION_EXECUTE_HANDLER) {}
             return oSetNpc(mapOwner, record);
         }
 
         void* __fastcall hkSetPet(void* mapOwner, void* record)
         {
-            const State& st = State::Get();
-            if (Player::Ready() && st.trustMult && st.trustMultVal > 1.0f)
-            {
-                __try
-                {
-                    ApplyTrustMultiplierToRecord(record, st.trustMultVal, "SetPet");
-                }
-                __except (EXCEPTION_EXECUTE_HANDLER) {}
-            }
+            __try { ObserveAndScaleTrust(mapOwner, record); }
+            __except (EXCEPTION_EXECUTE_HANDLER) {}
             return oSetPet(mapOwner, record);
+        }
+
+        void* __fastcall hkGetNpc(void* mapOwner, void* actor)
+        {
+            void* record = oGetNpc(mapOwner, actor);
+            __try { ObserveLiveTrust(mapOwner, record); }
+            __except (EXCEPTION_EXECUTE_HANDLER) {}
+            return record;
+        }
+
+        void* __fastcall hkGetPet(void* mapOwner, void* actor)
+        {
+            void* record = oGetPet(mapOwner, actor);
+            __try { ObserveLiveTrust(mapOwner, record); }
+            __except (EXCEPTION_EXECUTE_HANDLER) {}
+            return record;
+        }
+
+        bool CreateAndEnable(void* target, void* detour, void** original)
+        {
+            if (MH_CreateHook(target, detour, original) != MH_OK) return false;
+            if (MH_EnableHook(target) == MH_OK) return true;
+            MH_RemoveHook(target);
+            *original = nullptr;
+            return false;
         }
     }
 
     bool Friendly::Install()
     {
-        // 1. Install SetNpc prologue hook
-        const uintptr_t npcAddr = mem::FindPattern(kSig_FriendlySetNpc);
+        uintptr_t npcAddr = mem::FindPattern(kSig_FriendlySetNpc201);
+        uintptr_t petAddr = mem::FindPattern(kSig_FriendlySetPet201);
+        if (!npcAddr && !petAddr)
+        {
+            npcAddr = mem::FindPattern(kSig_FriendlySetNpc);
+            petAddr = mem::FindPattern(kSig_FriendlySetPet);
+        }
+
         if (npcAddr)
         {
             g_npcTarget = reinterpret_cast<void*>(npcAddr);
-            if (MH_CreateHook(g_npcTarget, reinterpret_cast<void*>(&hkSetNpc), reinterpret_cast<void**>(&oSetNpc)) == MH_OK)
+            if (CreateAndEnable(g_npcTarget, reinterpret_cast<void*>(&hkSetNpc),
+                                reinterpret_cast<void**>(&oSetNpc)))
             {
-                LOG_OK("friendly: SetNpc multiplier hook installed @ 0x%p", g_npcTarget);
+                LOG_OK("friendly: NPC Trust Multiplier observer installed @ %p", g_npcTarget);
                 g_hooksInstalled = true;
             }
-            else
-            {
-                g_npcTarget = nullptr;
-            }
+            else g_npcTarget = nullptr;
         }
 
-        // 2. Install SetPet prologue hook
-        const uintptr_t petAddr = mem::FindPattern(kSig_FriendlySetPet);
         if (petAddr)
         {
             g_petTarget = reinterpret_cast<void*>(petAddr);
-            if (MH_CreateHook(g_petTarget, reinterpret_cast<void*>(&hkSetPet), reinterpret_cast<void**>(&oSetPet)) == MH_OK)
+            if (CreateAndEnable(g_petTarget, reinterpret_cast<void*>(&hkSetPet),
+                                reinterpret_cast<void**>(&oSetPet)))
             {
-                LOG_OK("friendly: SetPet multiplier hook installed @ 0x%p", g_petTarget);
+                LOG_OK("friendly: pet/mount Trust Multiplier observer installed @ %p", g_petTarget);
                 g_hooksInstalled = true;
             }
-            else
-            {
-                g_petTarget = nullptr;
-            }
+            else g_petTarget = nullptr;
         }
 
+        const uintptr_t npcGetAddr = mem::FindPattern(kSig_FriendlyGetNpc201);
+        const uintptr_t petGetAddr = mem::FindPattern(kSig_FriendlyGetPet201);
+        if (npcGetAddr)
+        {
+            g_npcGetTarget = reinterpret_cast<void*>(npcGetAddr);
+            if (CreateAndEnable(g_npcGetTarget, reinterpret_cast<void*>(&hkGetNpc),
+                                reinterpret_cast<void**>(&oGetNpc)))
+            {
+                LOG_OK("friendly: NPC in-place trust observer installed @ %p", g_npcGetTarget);
+                g_hooksInstalled = true;
+            }
+            else g_npcGetTarget = nullptr;
+        }
+        if (petGetAddr)
+        {
+            g_petGetTarget = reinterpret_cast<void*>(petGetAddr);
+            if (CreateAndEnable(g_petGetTarget, reinterpret_cast<void*>(&hkGetPet),
+                                reinterpret_cast<void**>(&oGetPet)))
+            {
+                LOG_OK("friendly: pet/mount in-place trust observer installed @ %p", g_petGetTarget);
+                g_hooksInstalled = true;
+            }
+            else g_petGetTarget = nullptr;
+        }
+
+        g_hooksEnabled = g_hooksInstalled;
+        if (!g_hooksInstalled)
+            LOG_ERR("friendly: Trust Multiplier setters NOT FOUND - feature disabled.");
         return g_hooksInstalled;
     }
 
     void Friendly::Tick()
     {
         if (!g_hooksInstalled) return;
-
         const State& st = State::Get();
-        // Strict safety guard: ONLY engage when Player is in-world (Player::Ready())
-        const bool wantEnabled = Player::Ready() && st.trustMult && (st.trustMultVal > 1.0f);
-
-        if (wantEnabled != g_hooksEnabled)
-        {
-            if (wantEnabled)
-            {
-                if (g_npcTarget) MH_EnableHook(g_npcTarget);
-                if (g_petTarget) MH_EnableHook(g_petTarget);
-                g_hooksEnabled = true;
-                LOG_OK("friendly: Trust Multiplier (%.1fx) ENGAGED.", st.trustMultVal);
-            }
-            else
-            {
-                if (g_npcTarget) MH_DisableHook(g_npcTarget);
-                if (g_petTarget) MH_DisableHook(g_petTarget);
-                g_hooksEnabled = false;
-                LOG("friendly: Trust Multiplier DISENGAGED.");
-            }
-        }
+        const bool active = Player::Ready() && st.trustMult && st.trustMultVal > 1.0f;
+        if (active == g_featureReportedEnabled) return;
+        g_featureReportedEnabled = active;
+        if (active)
+            LOG_OK("friendly: Trust Multiplier (%.1fx) ENGAGED.", st.trustMultVal);
+        else
+            LOG("friendly: Trust Multiplier DISENGAGED.");
     }
 
     void Friendly::Remove()
@@ -198,17 +320,31 @@ namespace trinity::game
             MH_RemoveHook(g_npcTarget);
             g_npcTarget = nullptr;
         }
-
         if (g_petTarget)
         {
             MH_DisableHook(g_petTarget);
             MH_RemoveHook(g_petTarget);
             g_petTarget = nullptr;
         }
-
+        if (g_npcGetTarget)
+        {
+            MH_DisableHook(g_npcGetTarget);
+            MH_RemoveHook(g_npcGetTarget);
+            g_npcGetTarget = nullptr;
+        }
+        if (g_petGetTarget)
+        {
+            MH_DisableHook(g_petGetTarget);
+            MH_RemoveHook(g_petGetTarget);
+            g_petGetTarget = nullptr;
+        }
+        std::lock_guard<std::mutex> lock(s_trustMutex);
         s_lastTrustMap.clear();
+        oSetNpc = nullptr;
+        oSetPet = nullptr;
         g_hooksInstalled = false;
         g_hooksEnabled = false;
+        g_featureReportedEnabled = false;
     }
 
     bool Friendly::Ready()

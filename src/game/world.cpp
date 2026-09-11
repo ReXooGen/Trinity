@@ -389,13 +389,26 @@ namespace trinity::game
                 if (!vt || reinterpret_cast<uintptr_t>(vt) < kMinPointer)
                     return env;
 
-                auto getEntity = reinterpret_cast<uintptr_t(__fastcall*)(uintptr_t)>(vt[0x40 / 8]);
-                if (!getEntity || reinterpret_cast<uintptr_t>(getEntity) < kMinPointer)
+                // In modern TU 2.01+ and PE 2850, the entity getter is at vt[0x60 / 8]
+                // (which directly returns [envMgr + 0x68]).
+                // Direct read is completely crash-safe and avoids unnecessary virtual dispatch.
+                uintptr_t entity = 0;
+                if (!mem::ReadPtr(envMgr + 0x68, &entity) || entity < kMinPointer)
+                {
+                    auto getEntity60 = reinterpret_cast<uintptr_t(__fastcall*)(uintptr_t)>(vt[0x60 / 8]);
+                    if (getEntity60 && reinterpret_cast<uintptr_t>(getEntity60) >= kMinPointer)
+                        entity = getEntity60(envMgr);
+                    if (entity < kMinPointer)
+                    {
+                        auto getEntity40 = reinterpret_cast<uintptr_t(__fastcall*)(uintptr_t)>(vt[0x40 / 8]);
+                        if (getEntity40 && reinterpret_cast<uintptr_t>(getEntity40) >= kMinPointer)
+                            entity = getEntity40(envMgr);
+                    }
+                }
+                if (entity < kMinPointer)
                     return env;
 
-                env.entity = getEntity(envMgr);
-                if (env.entity < kMinPointer)
-                    return env;
+                env.entity = entity;
 
                 uintptr_t ws = 0;
                 if (!mem::ReadPtr(env.entity + 0xEF0, &ws) || ws < kMinPointer)
@@ -452,7 +465,9 @@ namespace trinity::game
     {
         bool ok = true;
 
-        const uintptr_t bodyAddr = mem::FindPattern(kSig_FrameTimerBody);
+        uintptr_t bodyAddr = mem::FindPattern(kSig_FrameTimerBody);
+        if (!bodyAddr)
+            bodyAddr = mem::FindPattern(kSig_FrameTimerBody_Pre201);
         if (bodyAddr)
         {
             uintptr_t funcEntry = 0;
@@ -508,10 +523,14 @@ namespace trinity::game
         // which holds the numeric clock)...
         // Independent of both the globals above and Game Speed - each can drift
         // without disabling the others.
-        if (!mem::InstallHook("world: field-time tick", kSig_FieldTimeTick,
-                              "Freeze Time of Day disabled", hkFieldTimeTick,
-                              &oFieldTimeTick, &g_fieldTimeTickTarget))
-            ok = false;
+        if (!mem::InstallHook("world: field-time tick", kSig_FieldTimeTick, "",
+                              hkFieldTimeTick, &oFieldTimeTick, &g_fieldTimeTickTarget))
+        {
+            if (!mem::InstallHook("world: field-time tick (pre-2.01)", kSig_FieldTimeTick_Pre201,
+                                  "Freeze Time of Day disabled", hkFieldTimeTick,
+                                  &oFieldTimeTick, &g_fieldTimeTickTarget))
+                ok = false;
+        }
 
         // ...and the render-manager clamp holds the visible SUN (the field-time
         // tick alone does not - the sun rides its own accumulator). Resolve the
@@ -552,13 +571,19 @@ namespace trinity::game
         mem::InstallHook("world: dust intensity", kSig_WeatherDust,
                          "Dust control disabled", hkGetDustIntensity,
                          &oGetDustIntensity, &g_dustIntensityTarget);
-        mem::InstallHook("world: wind pack", kSig_WindPack,
-                         "Cloud and Fog control disabled", hkWindPack,
-                         &oWindPack, &g_windPackTarget);
+        if (!mem::InstallHook("world: wind pack", kSig_WindPack, nullptr,
+                              hkWindPack, &oWindPack, &g_windPackTarget))
+        {
+            mem::InstallHook("world: wind pack (pre-2.01)", kSig_WindPack_Pre201,
+                             "Cloud and Fog control disabled", hkWindPack,
+                             &oWindPack, &g_windPackTarget);
+        }
 
         // Safe EnvManager pointer resolution for Atmosphere & Weather (Zero hooks)
         {
-            const uintptr_t envSig = mem::FindPattern(kSig_EnvManager);
+            uintptr_t envSig = mem::FindPattern(kSig_EnvManager);
+            if (!envSig)
+                envSig = mem::FindPattern(kSig_EnvManager_Legacy);
             if (envSig)
             {
                 // The `mov rcx, cs:<pEnvManager>` IS the first instruction of

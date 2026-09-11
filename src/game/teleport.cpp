@@ -21,6 +21,8 @@
 #include <MinHook.h>
 
 #include "offsets.h"
+#include "map_marker.h"
+#include "marker_teleport_logic.h"
 #include "player.h"
 #include "world.h"
 #include "inventory.h"
@@ -33,6 +35,8 @@
 #include "../hooks/xinput_hook.h"
 #include "../core/logger.h"
 #include "../core/state.h"
+#include "../core/version_detect.h"
+#include "../core/version_mapping.h"
 
 namespace trinity::game
 {
@@ -145,17 +149,20 @@ namespace trinity::game
 
         alignas(8) std::atomic<uintptr_t> g_markerPlayer{0};
         std::atomic<uintptr_t> g_playerMoveOwner{0};
-        constexpr uintptr_t    kOff_MoveComp_MoveOwner = 0x298;
 
         std::array<CandidateSlot, kExpected_MarkerMatches> g_markerCandidates{};
         std::atomic<uint64_t> g_markerProtectFlag{0};
         std::atomic<uint64_t> g_markerProtectDeadline{0};
         std::atomic<uint64_t> g_protectionStartTime{0};
         std::atomic<bool> g_pendingMarkerTp{false};
+        std::atomic<bool> g_pendingMarkerNotify{false};
+        std::atomic<bool> g_pendingFromMapMarker{false};
+        std::atomic<unsigned int> g_pendingMarkerAttempts{0};
         std::atomic<float> g_pendingDestX{0.0f};
         std::atomic<float> g_pendingDestY{0.0f};
         std::atomic<float> g_pendingDestZ{0.0f};
         uintptr_t g_markerOriginAddress = 0;
+        uintptr_t g_markerDestinationGlobal = 0;
         int g_markerCachedCandidate = -1;
         bool g_markerReady = false;
         bool g_markerProtectionReady = false;
@@ -448,43 +455,13 @@ namespace trinity::game
             return true;
         }
 
-        bool InstallMarkerProtectionHook(uintptr_t target)
+        bool InstallMarkerProtectionHook(uintptr_t /*target*/)
         {
-            static const uint8_t kExpected[7] = { 0x48, 0x8B, 0x46, 0x08, 0x48, 0x89, 0xF1 };
-            InlineHook hook{ target, 7 };
-            if (memcmp(reinterpret_cast<const void*>(target), kExpected, hook.length) != 0)
-                return false;
-
-            hook.stub = AllocateNear(target, 160);
-            if (hook.stub == nullptr) return false;
-
-            const auto stubBase = reinterpret_cast<uintptr_t>(hook.stub);
-            std::vector<uint8_t> code;
-            code.push_back(0x9C);                                         // pushfq
-            AppendBytes(code, { 0x48, 0xA1 });                            // mov rax, [abs]
-            AppendVal(code, reinterpret_cast<uintptr_t>(&g_markerProtectFlag));
-            AppendBytes(code, { 0x48, 0x85, 0xC0 });                      // test rax, rax
-            const size_t jumpIfOff = code.size();
-            AppendBytes(code, { 0x74, 0x00 });                            // jz replay
-            AppendBytes(code, { 0x80, 0x3E, 0x00 });                      // cmp byte ptr [rsi], 0
-            const size_t jumpIfBusy = code.size();
-            AppendBytes(code, { 0x75, 0x00 });                            // jne replay
-            AppendBytes(code, { 0x48, 0x8B, 0x46, 0x18 });                // mov rax, [rsi+18]
-            AppendBytes(code, { 0x48, 0x89, 0x46, 0x08 });                // mov [rsi+8], rax
-            const size_t replay = code.size();
-            code[jumpIfOff + 1] = static_cast<uint8_t>(replay - (jumpIfOff + 2));
-            code[jumpIfBusy + 1] = static_cast<uint8_t>(replay - (jumpIfBusy + 2));
-            code.push_back(0x9D);                                         // popfq
-            AppendBytes(code, { 0x48, 0x8B, 0x46, 0x08 });                // original: mov rax, [rsi+8]
-            AppendBytes(code, { 0x48, 0x89, 0xF1 });                      // original: mov rcx, rsi
-            if (!AppendRel32Jump(code, stubBase, target + hook.length) ||
-                !PatchTarget(hook, code, kExpected))
-            {
-                VirtualFree(hook.stub, 0, MEM_RELEASE);
-                return false;
-            }
-            g_markerHooks.push_back(hook);
-            return true;
+            // Disabled: target at 0x14C4542E2 is an internal engine streaming/task
+            // queue ring buffer, NOT player collision. Overwriting [rsi+8] with [rsi+0x18]
+            // actively corrupts engine heap pool allocation, causing crashes in SceneObjectServer@pa (0x14040BCCC).
+            // Player fall damage protection is handled safely via Player::SetNoFallDamage.
+            return false;
         }
 
         void RemoveMarkerHooks()
@@ -533,6 +510,7 @@ namespace trinity::game
             g_markerProtectFlag.store(0, std::memory_order_relaxed);
             g_protectionStartTime.store(0, std::memory_order_relaxed);
             g_markerCachedCandidate = -1;
+            g_markerDestinationGlobal = 0;
             for (auto& slot : g_markerCandidates)
             {
                 slot.writer.store(0, std::memory_order_relaxed);
@@ -543,6 +521,11 @@ namespace trinity::game
             const auto markers = mem::FindAllMatches(kSig_MarkerPattern, 16);
             const auto origins = mem::FindAllMatches(kSig_MarkerOriginPrefix, 32);
             const auto protections = mem::FindAllMatches(kSig_MarkerProtection, 2);
+            const auto destinationRefs = mem::FindAllMatches(
+                "48 8B 05 ?? ?? ?? ?? 48 8B 98 A8 00 00 00 C4 C1 78 10 04 24", 2);
+
+            if (destinationRefs.size() == 1)
+                g_markerDestinationGlobal = mem::ResolveRipAt(destinationRefs.front(), 7);
 
             if (markers.size() != kExpected_MarkerMatches || origins.size() < 6)
             {
@@ -632,6 +615,37 @@ namespace trinity::game
             return FiniteCoordinate(value) && (value.x != 0.0f || value.y != 0.0f || value.z != 0.0f);
         }
 
+        bool ReadMarkerPointer(uintptr_t address, uintptr_t* out)
+        {
+            return mem::ReadPtr(address, out);
+        }
+
+        bool ReadMarkerPosition(uintptr_t address, float* out)
+        {
+            return mem::ReadVec3(address, out);
+        }
+
+        bool WriteTeleportPosition(void*, uintptr_t address, const MapMarkerPosition& value)
+        {
+            __try
+            {
+                *reinterpret_cast<Vec3*>(address) = {value.x, value.y, value.z};
+                return true;
+            }
+            __except (EXCEPTION_EXECUTE_HANDLER)
+            {
+                return false;
+            }
+        }
+
+        bool ReadTeleportPosition(void*, uintptr_t address, MapMarkerPosition& value)
+        {
+            return mem::ReadVec3(address, &value.x);
+        }
+
+        std::atomic<Teleport::MarkerStatus> g_markerResult{Teleport::MarkerStatus::WriteFailed};
+        std::atomic<bool> g_markerResultReady{false};
+
         bool ReadMarkerCandidate(size_t index, Vec3& value, uint64_t& outSeq)
         {
             if (index >= g_markerCandidates.size()) return false;
@@ -652,6 +666,17 @@ namespace trinity::game
 
         bool FindActiveMarker(Vec3& marker)
         {
+            if (g_markerDestinationGlobal != 0)
+            {
+                MapMarkerPosition current{};
+                if (ReadCurrentMapMarker(g_markerDestinationGlobal, &ReadMarkerPointer,
+                                         &ReadMarkerPosition, current))
+                {
+                    marker = {current.x, current.y, current.z};
+                    return true;
+                }
+            }
+
             uint64_t bestSeq = 0;
             Vec3 bestMarker{};
             bool found = false;
@@ -1293,7 +1318,9 @@ namespace trinity::game
             {
                 const uintptr_t player = g_playerMoveOwner.load(std::memory_order_relaxed);
                 uintptr_t owner = 0;
-                if (player >= kMinPointer && ReadPtr(comp + kOff_MoveComp_MoveOwner, &owner))
+                const uintptr_t moveOwnerOffset = core::MoveComponentOwnerOffsetForRevision(
+                    core::GetGameVersion().revision);
+                if (player >= kMinPointer && ReadPtr(comp + moveOwnerOffset, &owner))
                     isPlayer = (owner == player);
             }
 
@@ -1510,32 +1537,52 @@ namespace trinity::game
             // reads it (+0xC0). (Super Run lives upstream, in hkLocoStep.)
             ApplyJumpScaling(owner);
 
+            const uint64_t result = oMoveUpdate(moveOwner, a2, a3, a4, a5, a6, a7);
+
+            // The engine updates +0x90 inside oMoveUpdate. Apply a queued
+            // teleport afterwards so the same frame cannot overwrite it.
             if (g_pendingMarkerTp.load(std::memory_order_acquire))
             {
-                const Vec3 dest{
+                const MapMarkerPosition destination{
                     g_pendingDestX.load(std::memory_order_relaxed),
                     g_pendingDestY.load(std::memory_order_relaxed),
                     g_pendingDestZ.load(std::memory_order_relaxed)
                 };
-                g_pendingMarkerTp.store(false, std::memory_order_release);
+                const uintptr_t markerPlayer = g_markerPlayer.load(std::memory_order_relaxed);
+                const bool applied = ApplyMarkerTeleportDestination(
+                    owner, markerPlayer >= kMinPointer ? markerPlayer : 0, destination, nullptr,
+                    &WriteTeleportPosition, &ReadTeleportPosition);
 
-                __try
+                if (applied)
                 {
-                    *reinterpret_cast<Vec3*>(owner + kOff_Player_Dest0) = dest;
-                    *reinterpret_cast<Vec3*>(owner + kOff_Player_Dest1) = dest;
-                    *reinterpret_cast<Vec3*>(owner + 0xC0) = Vec3{ 0.0f, 0.0f, 0.0f };
-
-                    const uintptr_t mp = g_markerPlayer.load(std::memory_order_relaxed);
-                    if (mp >= kMinPointer && mp != owner)
+                    g_pendingMarkerAttempts.store(0, std::memory_order_relaxed);
+                    Teleport::ActivateProtection(120000);
+                    if (g_pendingFromMapMarker.exchange(false, std::memory_order_relaxed))
+                        ClearActiveMarker();
+                    if (g_pendingMarkerNotify.exchange(false, std::memory_order_relaxed))
                     {
-                        *reinterpret_cast<Vec3*>(mp + kOff_Player_Dest0) = dest;
-                        *reinterpret_cast<Vec3*>(mp + kOff_Player_Dest1) = dest;
+                        LOG_OK("teleport: map marker applied and verified at (%.2f, %.2f, %.2f).",
+                               destination.x, destination.y, destination.z);
+                        g_markerResult.store(Teleport::MarkerStatus::Success, std::memory_order_relaxed);
+                        g_markerResultReady.store(true, std::memory_order_release);
                     }
+                    // Publish availability last so a render-thread request
+                    // cannot replace this transaction while it is finalized.
+                    g_pendingMarkerTp.store(false, std::memory_order_release);
                 }
-                __except (EXCEPTION_EXECUTE_HANDLER) {}
+                else if (g_pendingMarkerAttempts.fetch_add(1, std::memory_order_relaxed) + 1 >= 3)
+                {
+                    g_pendingMarkerAttempts.store(0, std::memory_order_relaxed);
+                    g_pendingFromMapMarker.store(false, std::memory_order_relaxed);
+                    if (g_pendingMarkerNotify.exchange(false, std::memory_order_relaxed))
+                    {
+                        LOG_WARN("teleport: map marker write failed verification after 3 attempts.");
+                        g_markerResult.store(Teleport::MarkerStatus::WriteFailed, std::memory_order_relaxed);
+                        g_markerResultReady.store(true, std::memory_order_release);
+                    }
+                    g_pendingMarkerTp.store(false, std::memory_order_release);
+                }
             }
-
-            const uint64_t result = oMoveUpdate(moveOwner, a2, a3, a4, a5, a6, a7);
 
             // Per-frame, game-thread driver for the churn-proof player resolve:
             // refresh the current-player stat entries from a fresh char-manager
@@ -1731,6 +1778,8 @@ namespace trinity::game
         // menu just stays empty (logged).
         uintptr_t travel = mem::FindPattern(kSig_TravelToNode);
         if (!travel)
+            travel = mem::FindPattern(kSig_TravelToNode_Pre201);
+        if (!travel)
             travel = mem::FindPattern(kSig_TravelToNode_Legacy);
 
         if (travel)
@@ -1759,8 +1808,12 @@ namespace trinity::game
 
         // Locomotion sub-step driver for Super Run (optional - Super Jump and
         // everything else still works without it).
-        mem::InstallHook("teleport: locomotion-stepper", kSig_LocoStepper, "Super Run disabled",
-                         &hkLocoStep, &oLocoStep, &g_locoStepTarget);
+        if (!mem::InstallHook("teleport: locomotion-stepper", kSig_LocoStepper, "",
+                              &hkLocoStep, &oLocoStep, &g_locoStepTarget))
+        {
+            mem::InstallHook("teleport: locomotion-stepper (pre-2.01)", kSig_LocoStepper_Pre201,
+                             "Super Run disabled", &hkLocoStep, &oLocoStep, &g_locoStepTarget);
+        }
 
         // Map Marker Teleport subsystem (clean-room marker capture from crimsondesert-main).
         InitMarkerSubsystem();
@@ -1919,12 +1972,12 @@ namespace trinity::game
         return (deadline != 0 && GetTickCount64() < deadline);
     }
 
-    void Teleport::ActivateProtection(uint64_t initialDurationMs)
+    void Teleport::ActivateProtection(uint64_t /*initialDurationMs*/)
     {
-        const uint64_t now = GetTickCount64();
-        g_protectionStartTime.store(now, std::memory_order_relaxed);
-        g_markerProtectDeadline.store(now + initialDurationMs, std::memory_order_release);
-        g_markerProtectFlag.store(1, std::memory_order_release);
+        // Safe no-op: legacy hook at 0x14C4542E2 is disabled to prevent
+        // engine streaming/task queue corruption and heap pool access violations.
+        g_markerProtectFlag.store(0, std::memory_order_release);
+        g_markerProtectDeadline.store(0, std::memory_order_release);
     }
 
     Teleport::MarkerStatus Teleport::TeleportToMarker(float fallbackHeight)
@@ -1936,6 +1989,8 @@ namespace trinity::game
         const uintptr_t markerPlayer = g_markerPlayer.load(std::memory_order_acquire);
         if (moveOwner < kMinPointer && markerPlayer < kMinPointer)
             return MarkerStatus::NoPlayer;
+        if (g_pendingMarkerTp.load(std::memory_order_acquire))
+            return MarkerStatus::UnsafeContext;
 
         Vec3 marker{};
         if (!FindActiveMarker(marker))
@@ -1975,17 +2030,26 @@ namespace trinity::game
         if (!FiniteCoordinate(destination))
             return MarkerStatus::InvalidCoordinates;
 
-        // Activate God Mode protection (held while in the air and for 120s after sky teleport)
-        ActivateProtection(120000);
-
         // Queue on game thread for frame-perfect physics sync
         g_pendingDestX.store(destination.x, std::memory_order_relaxed);
         g_pendingDestY.store(destination.y, std::memory_order_relaxed);
         g_pendingDestZ.store(destination.z, std::memory_order_relaxed);
+        g_pendingMarkerAttempts.store(0, std::memory_order_relaxed);
+        g_pendingFromMapMarker.store(true, std::memory_order_relaxed);
+        g_pendingMarkerNotify.store(true, std::memory_order_relaxed);
+        g_markerResultReady.store(false, std::memory_order_relaxed);
         g_pendingMarkerTp.store(true, std::memory_order_release);
+        LOG("teleport: map marker queued for (%.2f, %.2f, %.2f).",
+            destination.x, destination.y, destination.z);
+        return MarkerStatus::Queued;
+    }
 
-        ClearActiveMarker();
-        return MarkerStatus::Success;
+    bool Teleport::ConsumeMarkerResult(MarkerStatus* status)
+    {
+        if (!status || !g_markerResultReady.exchange(false, std::memory_order_acq_rel))
+            return false;
+        *status = g_markerResult.load(std::memory_order_relaxed);
+        return true;
     }
 
     bool Teleport::TeleportToCoordinates(float x, float y, float z)
@@ -1994,17 +2058,19 @@ namespace trinity::game
         const uintptr_t markerPlayer = g_markerPlayer.load(std::memory_order_acquire);
         if (moveOwner < kMinPointer && markerPlayer < kMinPointer)
             return false;
+        if (g_pendingMarkerTp.load(std::memory_order_acquire))
+            return false;
 
         const Vec3 destination{ x, y, z };
         if (!FiniteCoordinate(destination))
             return false;
 
-        // Activate God Mode protection (held while in the air and for 120s after sky teleport)
-        ActivateProtection(120000);
-
         g_pendingDestX.store(destination.x, std::memory_order_relaxed);
         g_pendingDestY.store(destination.y, std::memory_order_relaxed);
         g_pendingDestZ.store(destination.z, std::memory_order_relaxed);
+        g_pendingMarkerAttempts.store(0, std::memory_order_relaxed);
+        g_pendingFromMapMarker.store(false, std::memory_order_relaxed);
+        g_pendingMarkerNotify.store(false, std::memory_order_relaxed);
         g_pendingMarkerTp.store(true, std::memory_order_release);
 
         return true;

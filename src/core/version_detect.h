@@ -31,7 +31,7 @@ namespace trinity::core
     // Detects and caches the Crimson Desert game executable version.
     const GameVersionInfo& GetGameVersion();
 
-    // Returns a friendly display string e.g. "Crimson Desert TU 1.18.01" or "TU 1.17.00"
+    // Returns a friendly display string e.g. "Crimson Desert 1.18.01" or "Crimson Desert 1.17.00"
     const char* GetGameVersionDisplay();
 
     // True if running on TU 1.18 or newer

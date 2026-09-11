@@ -1,8 +1,16 @@
-# Title Update 2.00.00 (PE 1.0.0.2625) Reverse-Engineering Notes
+# Historical Title Update 2.00.00 (PE 1.0.0.2625) Reverse-Engineering Notes
+
+> **Historical archive, not current implementation guidance.** Every VA, AOB,
+> offset, section decision and "safe/fixed" statement below belongs to the one
+> TU 2.00.00 capture named in the heading. Use
+> [GAME_UPDATE_PLAYBOOK.md](GAME_UPDATE_PLAYBOOK.md), current source and the
+> initialized game process for a later build.
 
 > **Steam Build ID**: `24934353`  
 > **Binary Memory**: Live code resides in `.xpdata` section (VA `0x140001000`–`0x14496C000`).  
-> ⚠️ **Warning**: `.debug$P` section contains stale, legacy build code (NEVER scan this section).  
+> ⚠️ **Historical observation**: `.debug$P` appeared stale in this capture. It is
+> not a permanent rule. Re-evaluate PE section characteristics and current
+> `section_filter` behavior for every updated executable.
 > **Image Base**: `0x140000000`.
 
 ---
@@ -15,11 +23,12 @@
 - **World::Tick**: **SAFE** (Tested and verified in isolation).
 - **Player::Tick**: **SAFE**.
 - **Inventory::Tick**: **SAFE** (Protected with version gates).
-- **Pattern Scanner**: **SAFE** — Exclusively scans executable sections and `.link`; `.debug*` sections are strictly ignored.
+- **Historical scanner behavior**: this revision's scanner excluded `.debug*`.
+  Current section scanning is governed by current source and live PE evidence.
 
 ---
 
-## 2. New 2.00 Signatures (Integrated into `offsets.h`)
+## 2. Historical 2.00 signatures
 
 - **`kSig_GameSpeed`** `@ 0x140948158` (Unique): `vmovss` value offset shifted from 37 $\rightarrow$ 35; item field shifted from `+0x58` $\rightarrow$ `+0x60`.
 - **`kSig_TodEngineGlobal`** `@ 0x14282011A` (Unique).
@@ -69,7 +78,11 @@
 
 ---
 
-## 6. Analysis & Reverse Engineering Tools
+## 6. Historical analysis and reverse-engineering tool references
+
+The paths listed below are absent from the current checkout. They document the
+former workflow only; do not expect them to scan a current build or use their old
+assumptions without revalidation.
 
 - `tools/scan_signatures_200.py`: Audits all `kSig_*` patterns against the game binary.
 - `tools/audit_live_200.py`: Audits `.xpdata` execution section and verifies RIP targets.
@@ -80,6 +93,10 @@
 ---
 
 ## 7. Safe Mode Diagnostics (`Trinity_SafeMode.txt` in `bin64`)
+
+This is a historical diagnostic mechanism. `Trinity_SafeMode.txt` is not part of
+the current source tree, so first verify that the active build still implements
+it before relying on any bit value below.
 
 ```
 Subsystem Bits:
