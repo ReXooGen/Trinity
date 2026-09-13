@@ -21,6 +21,8 @@
 #include <MinHook.h>
 
 #include "offsets.h"
+#include "map_marker.h"
+#include "marker_teleport_logic.h"
 #include "player.h"
 #include "world.h"
 #include "inventory.h"
@@ -39,7 +41,11 @@ namespace trinity::game
     using mem::ReadPtr;
     using mem::Read32;
     using mem::Read8;
+    using mem::ReadFloat;
+    using mem::Write8;
+    using mem::Write16;
     using mem::Write32;
+    using mem::WriteFloat;
     using mem::ReadCString;
     using mem::ReadVec3;
     using mem::ReadEngineString;
@@ -72,15 +78,13 @@ namespace trinity::game
         TableResolve_t g_lvlResolver = nullptr;   // FieldLevelNameTableInfo (area names)
         uintptr_t      g_lvlRegistryGlobal = 0;
 
-        // Locomotion sub-step driver (IDB sub_2F49550) - Super Run's hook
-        // point. arg3 (r8) is the drive velocity (f32 x,y,z) the movement
-        // servo is about to feed physics; dt rides in xmm1 as a float, so the
-        // prototype must declare it to keep the register intact through the
-        // trampoline. Everything else is passed through untouched.
-        using LocoStep_t = void(__fastcall*)(uintptr_t comp, float dt, float* vel,
-                                             uint64_t a4, uint64_t a5, uint64_t a6, uint64_t a7);
+        // Locomotion sub-step driver (IDB sub_1435C1EE0 / 0x1435C1EE0) - Super Run's hook point.
+        // Prototype: void __fastcall hkLocoStep(uintptr_t comp, float* pDt)
+        // RCX = comp, RDX = pDt (sub-step delta time pointer, [rdx] = dt0, [rdx+4] = dt1).
+        using LocoStep_t = void(__fastcall*)(uintptr_t comp, float* pDt);
         LocoStep_t oLocoStep = nullptr;
         void* g_locoStepTarget = nullptr;
+
 
         // A travel request queued from the menu thread, fired once on the game
         // thread inside hkMoveUpdate (matching how the game itself calls it).
@@ -139,27 +143,161 @@ namespace trinity::game
         {
             uintptr_t target = 0;
             size_t length = 0;
-            std::array<uint8_t, 16> original{};
+            std::array<uint8_t, 32> original{};
             void* stub = nullptr;
         };
 
         alignas(8) std::atomic<uintptr_t> g_markerPlayer{0};
         std::atomic<uintptr_t> g_playerMoveOwner{0};
-        constexpr uintptr_t    kOff_MoveComp_MoveOwner = 0x298;
+        constexpr uintptr_t    kOff_MoveComp_MoveOwner       = 0x298; // TU 2.00
+        constexpr uintptr_t    kOff_MoveComp_MoveOwner_TU201 = 0x2B8; // TU 2.01
 
         std::array<CandidateSlot, kExpected_MarkerMatches> g_markerCandidates{};
         std::atomic<uint64_t> g_markerProtectFlag{0};
         std::atomic<uint64_t> g_markerProtectDeadline{0};
         std::atomic<uint64_t> g_protectionStartTime{0};
         std::atomic<bool> g_pendingMarkerTp{false};
+        std::atomic<bool> g_pendingMarkerNotify{false};
+        std::atomic<bool> g_pendingFromMapMarker{false};
+        std::atomic<unsigned int> g_pendingMarkerAttempts{0};
         std::atomic<float> g_pendingDestX{0.0f};
         std::atomic<float> g_pendingDestY{0.0f};
         std::atomic<float> g_pendingDestZ{0.0f};
+        std::atomic<Teleport::MarkerStatus> g_markerResult{Teleport::MarkerStatus::WriteFailed};
+        std::atomic<bool> g_markerResultReady{false};
+
+        bool WriteTeleportPosition(void*, uintptr_t address, const MapMarkerPosition& value)
+        {
+            __try
+            {
+                *reinterpret_cast<Vec3*>(address) = {value.x, value.y, value.z};
+                return true;
+            }
+            __except (EXCEPTION_EXECUTE_HANDLER)
+            {
+                return false;
+            }
+        }
+
+        bool ReadTeleportPosition(void*, uintptr_t address, MapMarkerPosition& value)
+        {
+            return mem::ReadVec3(address, &value.x);
+        }
+
+        bool ReadMarkerPointer(uintptr_t address, uintptr_t* out)
+        {
+            return mem::ReadPtr(address, out);
+        }
+
+        bool ReadMarkerPosition(uintptr_t address, float* out)
+        {
+            return mem::ReadVec3(address, out);
+        }
+
+        bool ReadMarkerByte(uintptr_t address, uint8_t* out)
+        {
+            return mem::Read8(address, out);
+        }
+
         uintptr_t g_markerOriginAddress = 0;
+        uintptr_t g_markerDestinationGlobal = 0;
         int g_markerCachedCandidate = -1;
         bool g_markerReady = false;
         bool g_markerProtectionReady = false;
         std::vector<InlineHook> g_markerHooks;
+
+        // Native SetDestinationMarker hook (sub_140D63C90)
+        using SetDestinationMarker_t = void(__fastcall*)(uintptr_t, const float*);
+        SetDestinationMarker_t oSetDestinationMarker = nullptr;
+        void* g_setDestMarkerTarget = nullptr;
+        uintptr_t g_destMarkerExpectedRet = 0;
+        std::atomic<uintptr_t> g_destMarkerController{ 0 };
+        alignas(8) std::atomic<uint64_t> g_destMarkerXY{ 0 };
+        std::atomic<uint32_t> g_destMarkerZ{ 0 };
+        std::atomic<bool> g_destMarkerHasCoords{ false };
+        bool g_authoritativeHooksInstalled = false;
+        alignas(8) std::atomic<uint8_t> g_destMarkerPinLogged{ 0 };
+        alignas(8) std::atomic<uint8_t> g_destMarkerClearLogged{ 0 };
+
+        void __fastcall hkSetDestinationMarker(uintptr_t controller, const float* coords)
+        {
+            const uintptr_t authCtrl = g_destMarkerController.load(std::memory_order_acquire);
+            if (authCtrl != 0)
+            {
+                // Authoritative destination pin is active:
+                // ONLY allow updates if controller is the authoritative controller.
+                // This completely eliminates route particle / breadcrumb spam from overwriting our pin!
+                if (controller != authCtrl)
+                {
+                    if (oSetDestinationMarker)
+                        oSetDestinationMarker(controller, coords);
+                    return;
+                }
+            }
+            else if (g_authoritativeHooksInstalled)
+            {
+                // If authoritative hooks are active and authCtrl is 0, no destination pin is active.
+                // Ignore any generic icon / route updates.
+                if (oSetDestinationMarker)
+                    oSetDestinationMarker(controller, coords);
+                return;
+            }
+
+            // Fallback for legacy builds or if controller matches authCtrl:
+            const uintptr_t retAddr = reinterpret_cast<uintptr_t>(_ReturnAddress());
+            bool isTargetCaller = false;
+            if (g_destMarkerExpectedRet != 0)
+            {
+                if (retAddr == g_destMarkerExpectedRet)
+                    isTargetCaller = true;
+            }
+            else if (retAddr >= kMinPointer)
+            {
+                // Confirmation bytes at return site in WorldMapManager destination dispatcher:
+                // 48 8B 5C 24 58 48 83 C4 30 5E C3
+                // (mov rbx, [rsp+0x58]; add rsp, 0x30; pop rsi; ret)
+                static const uint8_t kExpectedRetBytes[11] = {
+                    0x48, 0x8B, 0x5C, 0x24, 0x58, 0x48, 0x83, 0xC4, 0x30, 0x5E, 0xC3
+                };
+                if (memcmp(reinterpret_cast<const void*>(retAddr), kExpectedRetBytes, sizeof(kExpectedRetBytes)) == 0)
+                {
+                    isTargetCaller = true;
+                }
+            }
+
+            if (isTargetCaller && coords)
+            {
+                // Ignore dummy / map-center reset coordinates (e.g. 0.0, 1000.15, 0.0)
+                // Real world destination pins have absolute coordinates far from (0, 0).
+                if (std::abs(coords[0]) >= 2.0f || std::abs(coords[2]) >= 2.0f)
+                {
+                    g_destMarkerController.store(controller, std::memory_order_release);
+                    uint64_t xy = 0;
+                    uint32_t z = 0;
+                    memcpy(&xy, coords, 8);
+                    memcpy(&z, coords + 2, 4);
+                    g_destMarkerXY.store(xy, std::memory_order_release);
+                    g_destMarkerZ.store(z, std::memory_order_release);
+                    g_destMarkerHasCoords.store(true, std::memory_order_release);
+
+                    static float s_lastLoggedX = 0.0f;
+                    static float s_lastLoggedZ = 0.0f;
+                    if (std::abs(coords[0] - s_lastLoggedX) > 1.0f || std::abs(coords[2] - s_lastLoggedZ) > 1.0f)
+                    {
+                        s_lastLoggedX = coords[0];
+                        s_lastLoggedZ = coords[2];
+                        LOG_OK("teleport: destination marker pin set! ctrl=0x%p coords=(%.2f, %.2f, %.2f)",
+                               reinterpret_cast<void*>(controller), coords[0], coords[1], coords[2]);
+                    }
+                }
+            }
+
+            if (oSetDestinationMarker)
+            {
+                oSetDestinationMarker(controller, coords);
+            }
+        }
+
 
         class ThreadSuspender final
         {
@@ -423,6 +561,8 @@ namespace trinity::game
             return true;
         }
 
+
+
         bool InstallMarkerPlayerHook(uintptr_t target)
         {
             static const uint8_t kExpected[8] = { 0xC5, 0xF8, 0x11, 0x88, 0xB0, 0x01, 0x00, 0x00 };
@@ -487,8 +627,148 @@ namespace trinity::game
             return true;
         }
 
+        bool InstallAuthoritativeSetPinHook(uintptr_t target)
+        {
+            static const uint8_t kExpected[16] = {
+                0xC5, 0xF8, 0x10, 0x87, 0xF0, 0x05, 0x00, 0x00,
+                0xC5, 0xF8, 0x11, 0x83, 0xF8, 0x01, 0x00, 0x00
+            };
+            InlineHook hook{ target, 16 };
+            if (memcmp(reinterpret_cast<const void*>(target), kExpected, hook.length) != 0)
+                return false;
+
+            hook.stub = AllocateNear(target, 160);
+            if (hook.stub == nullptr) return false;
+
+            const auto stubBase = reinterpret_cast<uintptr_t>(hook.stub);
+            std::vector<uint8_t> code;
+
+            // pushfq, push rax, push rcx, push rdx
+            code.push_back(0x9C);
+            code.push_back(0x50);
+            code.push_back(0x51);
+            code.push_back(0x52);
+
+            // mov rax, rbx (authoritative destination marker controller)
+            AppendBytes(code, { 0x48, 0x89, 0xD8 });
+
+            // mov rcx, &g_destMarkerController; mov [rcx], rax
+            AppendBytes(code, { 0x48, 0xB9 });
+            AppendVal(code, reinterpret_cast<uintptr_t>(&g_destMarkerController));
+            AppendBytes(code, { 0x48, 0x89, 0x01 });
+
+            // mov rax, [rdi + 0x5F0] (X, Y floats)
+            AppendBytes(code, { 0x48, 0x8B, 0x87, 0xF0, 0x05, 0x00, 0x00 });
+
+            // mov rcx, &g_destMarkerXY; mov [rcx], rax
+            AppendBytes(code, { 0x48, 0xB9 });
+            AppendVal(code, reinterpret_cast<uintptr_t>(&g_destMarkerXY));
+            AppendBytes(code, { 0x48, 0x89, 0x01 });
+
+            // mov eax, [rdi + 0x5F8] (Z float)
+            AppendBytes(code, { 0x8B, 0x87, 0xF8, 0x05, 0x00, 0x00 });
+
+            // mov rcx, &g_destMarkerZ; mov [rcx], eax
+            AppendBytes(code, { 0x48, 0xB9 });
+            AppendVal(code, reinterpret_cast<uintptr_t>(&g_destMarkerZ));
+            AppendBytes(code, { 0x89, 0x01 });
+
+            // mov rcx, &g_destMarkerHasCoords; mov byte ptr [rcx], 1
+            AppendBytes(code, { 0x48, 0xB9 });
+            AppendVal(code, reinterpret_cast<uintptr_t>(&g_destMarkerHasCoords));
+            AppendBytes(code, { 0xC6, 0x01, 0x01 });
+
+            // mov rcx, &g_destMarkerPinLogged; mov byte ptr [rcx], 1
+            AppendBytes(code, { 0x48, 0xB9 });
+            AppendVal(code, reinterpret_cast<uintptr_t>(&g_destMarkerPinLogged));
+            AppendBytes(code, { 0xC6, 0x01, 0x01 });
+
+            // pop rdx, pop rcx, pop rax, popfq
+            code.push_back(0x5A);
+            code.push_back(0x59);
+            code.push_back(0x58);
+            code.push_back(0x9D);
+
+            // original instructions:
+            // vmovups xmm0, [rdi + 0x5F0]
+            AppendBytes(code, { 0xC5, 0xF8, 0x10, 0x87, 0xF0, 0x05, 0x00, 0x00 });
+            // vmovups [rbx + 0x1F8], xmm0
+            AppendBytes(code, { 0xC5, 0xF8, 0x11, 0x83, 0xF8, 0x01, 0x00, 0x00 });
+
+            if (!AppendRel32Jump(code, stubBase, target + hook.length) ||
+                !PatchTarget(hook, code, kExpected))
+            {
+                VirtualFree(hook.stub, 0, MEM_RELEASE);
+                return false;
+            }
+            g_markerHooks.push_back(hook);
+            return true;
+        }
+
+        bool InstallAuthoritativeClearPinHook(uintptr_t target)
+        {
+            static const uint8_t kExpected[16] = {
+                0x66, 0xC7, 0x87, 0xED, 0x01, 0x00, 0x00, 0x00, 0x03,
+                0xC6, 0x87, 0xEF, 0x01, 0x00, 0x00, 0x00
+            };
+            InlineHook hook{ target, 16 };
+            if (memcmp(reinterpret_cast<const void*>(target), kExpected, hook.length) != 0)
+                return false;
+
+            hook.stub = AllocateNear(target, 128);
+            if (hook.stub == nullptr) return false;
+
+            const auto stubBase = reinterpret_cast<uintptr_t>(hook.stub);
+            std::vector<uint8_t> code;
+
+            // pushfq, push rax, push rcx
+            code.push_back(0x9C);
+            code.push_back(0x50);
+            code.push_back(0x51);
+
+            // mov rcx, &g_destMarkerController; mov qword ptr [rcx], 0
+            AppendBytes(code, { 0x48, 0xB9 });
+            AppendVal(code, reinterpret_cast<uintptr_t>(&g_destMarkerController));
+            AppendBytes(code, { 0x48, 0xC7, 0x01, 0x00, 0x00, 0x00, 0x00 });
+
+            // mov rcx, &g_destMarkerHasCoords; mov byte ptr [rcx], 0
+            AppendBytes(code, { 0x48, 0xB9 });
+            AppendVal(code, reinterpret_cast<uintptr_t>(&g_destMarkerHasCoords));
+            AppendBytes(code, { 0xC6, 0x01, 0x00 });
+
+            // mov rcx, &g_destMarkerClearLogged; mov byte ptr [rcx], 1
+            AppendBytes(code, { 0x48, 0xB9 });
+            AppendVal(code, reinterpret_cast<uintptr_t>(&g_destMarkerClearLogged));
+            AppendBytes(code, { 0xC6, 0x01, 0x01 });
+
+            // pop rcx, pop rax, popfq
+            code.push_back(0x59);
+            code.push_back(0x58);
+            code.push_back(0x9D);
+
+            // original instructions:
+            // mov word ptr [rdi + 0x1ED], 0x300
+            AppendBytes(code, { 0x66, 0xC7, 0x87, 0xED, 0x01, 0x00, 0x00, 0x00, 0x03 });
+            // mov byte ptr [rdi + 0x1EF], 0
+            AppendBytes(code, { 0xC6, 0x87, 0xEF, 0x01, 0x00, 0x00, 0x00 });
+
+            if (!AppendRel32Jump(code, stubBase, target + hook.length) ||
+                !PatchTarget(hook, code, kExpected))
+            {
+                VirtualFree(hook.stub, 0, MEM_RELEASE);
+                return false;
+            }
+            g_markerHooks.push_back(hook);
+            return true;
+        }
+
         void RemoveMarkerHooks()
         {
+            mem::RemoveHook(&g_setDestMarkerTarget);
+            g_destMarkerController.store(0, std::memory_order_relaxed);
+            g_destMarkerHasCoords.store(false, std::memory_order_relaxed);
+            g_authoritativeHooksInstalled = false;
+
             for (auto it = g_markerHooks.rbegin(); it != g_markerHooks.rend(); ++it)
             {
                 ThreadSuspender suspension;
@@ -510,6 +790,11 @@ namespace trinity::game
                     DWORD ignored = 0;
                     VirtualProtect(reinterpret_cast<void*>(it->target), it->length, oldProtect, &ignored);
                 }
+                if (it->stub)
+                {
+                    VirtualFree(it->stub, 0, MEM_RELEASE);
+                    it->stub = nullptr;
+                }
             }
             g_markerHooks.clear();
         }
@@ -522,64 +807,138 @@ namespace trinity::game
                 g_markerProtectFlag.store(0, std::memory_order_release);
                 g_markerProtectDeadline.store(0, std::memory_order_relaxed);
             }
+
+            if (g_destMarkerPinLogged.exchange(0, std::memory_order_acq_rel) != 0)
+            {
+                float x = 0.0f, y = 0.0f, z = 0.0f;
+                uint64_t xy = g_destMarkerXY.load(std::memory_order_acquire);
+                uint32_t zBits = g_destMarkerZ.load(std::memory_order_acquire);
+                memcpy(&x, &xy, 4);
+                memcpy(&y, reinterpret_cast<const char*>(&xy) + 4, 4);
+                memcpy(&z, &zBits, 4);
+                const uintptr_t ctrl = g_destMarkerController.load(std::memory_order_acquire);
+                LOG_OK("teleport: destination marker pin set (authoritative)! ctrl=0x%p coords=(%.2f, %.2f, %.2f)",
+                       reinterpret_cast<void*>(ctrl), x, y, z);
+            }
+
+            if (g_destMarkerClearLogged.exchange(0, std::memory_order_acq_rel) != 0)
+            {
+                LOG_INFO("teleport: destination marker pin cleared.");
+            }
         }
 
         bool InitMarkerSubsystem()
         {
             g_markerReady = false;
             g_markerProtectionReady = false;
+            g_authoritativeHooksInstalled = false;
             g_markerProtectDeadline.store(0, std::memory_order_relaxed);
             g_markerPlayer.store(0, std::memory_order_relaxed);
             g_markerProtectFlag.store(0, std::memory_order_relaxed);
             g_protectionStartTime.store(0, std::memory_order_relaxed);
             g_markerCachedCandidate = -1;
+            g_destMarkerController.store(0, std::memory_order_relaxed);
+            g_destMarkerHasCoords.store(false, std::memory_order_relaxed);
+            g_destMarkerPinLogged.store(0, std::memory_order_relaxed);
+            g_destMarkerClearLogged.store(0, std::memory_order_relaxed);
+            g_destMarkerExpectedRet = 0;
+            g_markerOriginAddress = 0;
+
             for (auto& slot : g_markerCandidates)
             {
                 slot.writer.store(0, std::memory_order_relaxed);
                 slot.valid.store(0, std::memory_order_relaxed);
             }
 
+            // 0. Resolve Destination Marker UI Global (authoritative map waypoint read from UI state)
+            g_markerDestinationGlobal = 0;
+            const auto destinationRefs = mem::FindAllMatches(kSig_DestinationMarker_GlobalRef, 2);
+            if (!destinationRefs.empty())
+            {
+                g_markerDestinationGlobal = mem::ResolveRipAt(destinationRefs.front(), 7);
+                LOG_OK("teleport: destination marker UI global resolved to 0x%p (from %s).",
+                       reinterpret_cast<void*>(g_markerDestinationGlobal), kSig_DestinationMarker_GlobalRef);
+            }
+
+            // 1. Install Authoritative Destination Marker Set Hook (sub_14374FA00)
+            const uintptr_t authSetPin = mem::FindPattern(kSig_Authoritative_SetPin);
+            if (authSetPin)
+            {
+                if (InstallAuthoritativeSetPinHook(authSetPin))
+                {
+                    g_authoritativeHooksInstalled = true;
+                    LOG_OK("teleport: authoritative destination pin setter hooked @ 0x%p.",
+                           reinterpret_cast<void*>(authSetPin));
+                }
+                else
+                {
+                    LOG_WARN("teleport: authoritative destination pin setter hook failed.");
+                }
+            }
+
+            // 1. Resolve Destination Marker Dispatcher to identify the specific return address
+            const uintptr_t dispMatch = mem::FindPattern(kSig_SetDestinationMarker_Dispatcher);
+            if (dispMatch)
+            {
+                // In dispatcher: C6 44 24 28 0C FF 90 48 05 00 00 48 85 C0 0F 84 ?? ?? ?? ?? 48 8B D6 48 8B C8 E8
+                // Offset of E8 (call 0xd63c90) is +26. Return address is +26 + 5 = +31 (0x1F).
+                g_destMarkerExpectedRet = dispMatch + 31;
+                LOG_OK("teleport: destination marker dispatcher resolved (call at 0x%p, expectedRet=0x%p).",
+                       reinterpret_cast<void*>(dispMatch + 26), reinterpret_cast<void*>(g_destMarkerExpectedRet));
+            }
+            else
+            {
+                LOG_WARN("teleport: destination marker dispatcher signature not found.");
+            }
+
+            // 2. Hook SetDestinationMarker (sub_140D63C90)
+            if (!mem::InstallHook("teleport: destination-marker-setter", kSig_SetDestinationMarker_Fn,
+                                  "native destination marker hook failed",
+                                  &hkSetDestinationMarker, &oSetDestinationMarker, &g_setDestMarkerTarget))
+            {
+                mem::InstallHook("teleport: destination-marker-setter legacy", kSig_SetDestinationMarker_Legacy,
+                                 "legacy native destination marker hook failed",
+                                 &hkSetDestinationMarker, &oSetDestinationMarker, &g_setDestMarkerTarget);
+            }
+
+            // 3. Resolve marker origins for candidate fallback
+            const auto origins = mem::FindAllMatches(kSig_MarkerOriginPrefix, 64);
+            if (!origins.empty())
+            {
+                std::unordered_map<uintptr_t, size_t> originVotes;
+                for (const uintptr_t hit : origins)
+                {
+                    int32_t displacement = 0;
+                    memcpy(&displacement, reinterpret_cast<const void*>(hit + 4), sizeof(displacement));
+                    const uintptr_t resolved = hit + 8 + displacement;
+                    if (resolved >= kMinPointer)
+                    {
+                        originVotes[resolved]++;
+                    }
+                }
+
+                uintptr_t origin = 0;
+                size_t maxVotes = 0;
+                for (const auto& [cand, count] : originVotes)
+                {
+                    if (count > maxVotes)
+                    {
+                        maxVotes = count;
+                        origin = cand;
+                    }
+                }
+                g_markerOriginAddress = origin;
+                if (g_markerOriginAddress)
+                {
+                    LOG_OK("teleport: marker origin address resolved to 0x%p (%zu votes).",
+                           reinterpret_cast<void*>(g_markerOriginAddress), maxVotes);
+                }
+            }
+
+            // 4. Install candidate inline hooks
             const auto players = mem::FindAllMatches(kSig_MarkerPlayer, 2);
             const auto markers = mem::FindAllMatches(kSig_MarkerPattern, 16);
-            const auto origins = mem::FindAllMatches(kSig_MarkerOriginPrefix, 32);
             const auto protections = mem::FindAllMatches(kSig_MarkerProtection, 2);
-
-            if (markers.size() != kExpected_MarkerMatches || origins.size() < 6)
-            {
-                LOG_WARN("teleport: marker signatures count mismatch (markers=%zu exp=%zu, origins=%zu)",
-                         markers.size(), kExpected_MarkerMatches, origins.size());
-                return false;
-            }
-
-            std::unordered_map<uintptr_t, size_t> originVotes;
-            for (const uintptr_t hit : origins)
-            {
-                int32_t displacement = 0;
-                memcpy(&displacement, reinterpret_cast<const void*>(hit + 4), sizeof(displacement));
-                const uintptr_t resolved = hit + 8 + displacement;
-                if (resolved >= kMinPointer)
-                {
-                    originVotes[resolved]++;
-                }
-            }
-
-            uintptr_t origin = 0;
-            size_t maxVotes = 0;
-            for (const auto& [cand, count] : originVotes)
-            {
-                if (count > maxVotes)
-                {
-                    maxVotes = count;
-                    origin = cand;
-                }
-            }
-
-            if (origin == 0)
-            {
-                LOG_ERR("teleport: origin address could not be resolved from prefix matches.");
-                return false;
-            }
-            g_markerOriginAddress = origin;
 
             if (players.size() == 1)
             {
@@ -600,21 +959,17 @@ namespace trinity::game
                 }
             }
 
-            if (installedHooks == 0)
-            {
-                LOG_WARN("teleport: no marker hooks could be installed.");
-                RemoveMarkerHooks();
-                return false;
-            }
-
             if (protections.size() == 1)
                 g_markerProtectionReady = InstallMarkerProtectionHook(protections.front());
 
-            g_markerReady = true;
-            LOG_OK("teleport: map marker teleport subsystem initialized (origin=0x%p, hooks=%zu/%zu, protection=%s).",
-                   reinterpret_cast<void*>(g_markerOriginAddress), installedHooks, markers.size(),
-                   g_markerProtectionReady ? "yes" : "no");
-            return true;
+            g_markerReady = (g_markerDestinationGlobal != 0 || g_authoritativeHooksInstalled || g_setDestMarkerTarget != nullptr || installedHooks > 0);
+            LOG_OK("teleport: map marker teleport subsystem initialized (destUI=0x%p, authHooks=%s, destMarkerHook=%s, hooks=%zu/%zu, ready=%s).",
+                   reinterpret_cast<void*>(g_markerDestinationGlobal),
+                   g_authoritativeHooksInstalled ? "yes" : "no",
+                   g_setDestMarkerTarget ? "yes" : "no",
+                   installedHooks, markers.size(),
+                   g_markerReady ? "yes" : "no");
+            return g_markerReady;
         }
 
         bool FiniteCoordinate(const Vec3& value)
@@ -652,6 +1007,70 @@ namespace trinity::game
 
         bool FindActiveMarker(Vec3& marker)
         {
+            if (g_markerDestinationGlobal != 0)
+            {
+                MapMarkerPosition current{};
+                if (ReadCurrentMapMarker(g_markerDestinationGlobal, &ReadMarkerPointer,
+                                         &ReadMarkerPosition, current))
+                {
+                    marker = { current.x, current.y, current.z };
+                    return true;
+                }
+            }
+
+            const uintptr_t ctrl = g_destMarkerController.load(std::memory_order_acquire);
+            if (ctrl >= kMinPointer)
+            {
+                uint8_t active = 0;
+                const bool hasActiveFlag = (Read8(ctrl + kOff_DestMarker_Active, &active) && active != 0);
+                const bool hasCoords = g_destMarkerHasCoords.load(std::memory_order_acquire);
+                if (hasActiveFlag || hasCoords)
+                {
+                    if (hasCoords)
+                    {
+                        uint64_t xy = g_destMarkerXY.load(std::memory_order_acquire);
+                        uint32_t zBits = g_destMarkerZ.load(std::memory_order_acquire);
+                        memcpy(&marker.x, &xy, 8);
+                        memcpy(&marker.z, &zBits, 4);
+                        if (ValidMarker(marker) && (std::abs(marker.x) >= 2.0f || std::abs(marker.z) >= 2.0f))
+                            return true;
+                    }
+                    float x = 0.0f, y = 0.0f, z = 0.0f;
+                    if (ReadFloat(ctrl + kOff_DestMarker_Coord3D, &x) &&
+                        ReadFloat(ctrl + kOff_DestMarker_Coord3D + 4, &y) &&
+                        ReadFloat(ctrl + kOff_DestMarker_Coord3D + 8, &z))
+                    {
+                        Vec3 v{ x, y, z };
+                        if (ValidMarker(v) && (std::abs(v.x) >= 2.0f || std::abs(v.z) >= 2.0f))
+                        {
+                            marker = v;
+                            return true;
+                        }
+                    }
+                    if (ReadFloat(ctrl + kOff_DestMarker_X, &x) &&
+                        ReadFloat(ctrl + kOff_DestMarker_Y, &y) &&
+                        ReadFloat(ctrl + kOff_DestMarker_Z, &z))
+                    {
+                        Vec3 v{ x, y, z };
+                        if (ValidMarker(v) && (std::abs(v.x) >= 2.0f || std::abs(v.z) >= 2.0f))
+                        {
+                            marker = v;
+                            return true;
+                        }
+                    }
+                }
+            }
+            else if (g_destMarkerHasCoords.load(std::memory_order_acquire))
+            {
+                uint64_t xy = g_destMarkerXY.load(std::memory_order_acquire);
+                uint32_t zBits = g_destMarkerZ.load(std::memory_order_acquire);
+                memcpy(&marker.x, &xy, 8);
+                memcpy(&marker.z, &zBits, 4);
+                if (ValidMarker(marker) && (std::abs(marker.x) >= 2.0f || std::abs(marker.z) >= 2.0f))
+                    return true;
+            }
+
+            // Candidate fallback (navigation route capture)
             uint64_t bestSeq = 0;
             Vec3 bestMarker{};
             bool found = false;
@@ -1269,230 +1688,237 @@ namespace trinity::game
             return in;
         }
 
-        void __fastcall hkLocoStep(uintptr_t comp, float dt, float* vel,
-                                   uint64_t a4, uint64_t a5, uint64_t a6, uint64_t a7)
+        void ApplyRunAndFlight(uintptr_t moveOwner)
+        {
+            const State& st = State::Get();
+            const bool isProtected = Teleport::IsProtected();
+            const uintptr_t vel = moveOwner + kOff_MoveOwner_DesiredVel;
+            float v[3];
+            if (!ReadVec3(vel, v)) return;
+
+            // Safe Landing cushion after teleport
+            if (isProtected)
+            {
+                if (v[kIdx_MoveOwner_Up] < -45.0f)
+                {
+                    WriteFloat(vel + 4u * kIdx_MoveOwner_Up, -45.0f);
+                }
+                if (std::abs(v[kIdx_MoveOwner_Up]) < 0.5f)
+                {
+                    static int s_landedTicks = 0;
+                    if (++s_landedTicks > 20)
+                    {
+                        g_markerProtectDeadline.store(0, std::memory_order_relaxed);
+                        g_markerProtectFlag.store(0, std::memory_order_release);
+                        s_landedTicks = 0;
+                    }
+                }
+            }
+
+            // Free Flight
+            static bool s_flightAscended = false;
+            static float s_lastFlightY = 0.0f;
+            static int s_groundedFrames = 0;
+            static int s_forceLandFrames = 0;
+            bool flyingNow = false;
+
+            if (st.freeFlight)
+            {
+                const FlyInputState in = PollFlyInputs(st);
+                const bool hasHoriz = (std::abs(in.moveX) > 0.05f || std::abs(in.moveZ) > 0.05f);
+
+                if (in.up)
+                {
+                    s_flightAscended = true;
+                    s_groundedFrames = 0;
+                }
+
+                if (s_flightAscended && in.down)
+                {
+                    const float curY = g_posY.load(std::memory_order_relaxed);
+                    if (std::abs(curY - s_lastFlightY) < 0.05f)
+                    {
+                        if (++s_groundedFrames > 10)
+                        {
+                            s_flightAscended = false;
+                            s_groundedFrames = 0;
+                            s_forceLandFrames = 2;
+                        }
+                    }
+                    else
+                    {
+                        s_groundedFrames = 0;
+                    }
+                    s_lastFlightY = curY;
+                }
+
+                static uint64_t s_hover = 0;
+                const float hoverLift = ((++s_hover % 2) == 0) ? 0.004f : -0.004f;
+
+                if (s_flightAscended)
+                {
+                    constexpr float kMaxSafeVerticalSpeed = 35.0f;
+                    const float safeSpeed = (st.flightSpeed > kMaxSafeVerticalSpeed) ? kMaxSafeVerticalSpeed : st.flightSpeed;
+
+                    if (st.menuOpen || st.textCapture)
+                    {
+                        WriteFloat(vel, 0.0f);
+                        WriteFloat(vel + 4, hoverLift);
+                        WriteFloat(vel + 8, 0.0f);
+                        flyingNow = true;
+                    }
+                    else
+                    {
+                        if (in.up && !in.down)
+                        {
+                            WriteFloat(vel + 4, safeSpeed);
+                            flyingNow = true;
+                        }
+                        else if (in.down && !in.up)
+                        {
+                            WriteFloat(vel + 4, -safeSpeed);
+                            flyingNow = true;
+                        }
+                        else
+                        {
+                            WriteFloat(vel + 4, hoverLift);
+                            flyingNow = true;
+                        }
+
+                        if (hasHoriz)
+                        {
+                            const float horizMult = (st.flightSpeed >= 1.0f) ? (st.flightSpeed * 0.75f + 1.0f) : 1.0f;
+                            const float speedMult = (st.superRun && st.superRunMult > 1.0f) ? st.superRunMult : 1.0f;
+                            float targetX = v[0] * horizMult * speedMult;
+                            float targetZ = v[2] * horizMult * speedMult;
+                            constexpr float kMaxSafeFlightSpeed = 35.0f;
+                            const float targetSpeed = std::sqrt(targetX * targetX + targetZ * targetZ);
+                            if (targetSpeed > kMaxSafeFlightSpeed)
+                            {
+                                const float scale = kMaxSafeFlightSpeed / targetSpeed;
+                                targetX *= scale;
+                                targetZ *= scale;
+                            }
+                            WriteFloat(vel, targetX);
+                            WriteFloat(vel + 8, targetZ);
+                            flyingNow = true;
+                        }
+                        else
+                        {
+                            WriteFloat(vel, 0.0f);
+                            WriteFloat(vel + 8, 0.0f);
+                        }
+                    }
+                }
+            }
+            else
+            {
+                if (s_flightAscended) s_forceLandFrames = 2;
+                s_flightAscended = false;
+                s_groundedFrames = 0;
+            }
+
+            g_flightEngaged.store(flyingNow, std::memory_order_relaxed);
+
+            if (s_forceLandFrames > 0)
+            {
+                WriteFloat(vel, 0.0f);
+                WriteFloat(vel + 4, -4.0f);
+                WriteFloat(vel + 8, 0.0f);
+                s_forceLandFrames--;
+            }
+
+            // Super Run is handled smoothly inside hkLocoStep directly on the drive velocity vector.
+        }
+
+        void __fastcall hkLocoStep(uintptr_t comp, float* pDt)
         {
             const State& st = State::Get();
             const bool isProtected = Teleport::IsProtected();
 
-            // This stepper fires for EVERY character every frame (the mod's
-            // highest-frequency hook). Both features it drives are off in the
-            // common case, so bail before the player-identity chase when neither
-            // is on - NPCs then cost nothing.
             if (!st.superRun && !st.freeFlight && !isProtected)
             {
-                oLocoStep(comp, dt, vel, a4, a5, a6, a7);
+                if (oLocoStep) oLocoStep(comp, pDt);
                 return;
             }
 
-            // Is this the local player? The stepper also fires for NPCs, so
-            // everything state-gated below must be isolated to the player or it
-            // reads/writes the wrong character.
             bool isPlayer = false;
             if (comp)
             {
                 const uintptr_t player = g_playerMoveOwner.load(std::memory_order_relaxed);
                 uintptr_t owner = 0;
-                if (player >= kMinPointer && ReadPtr(comp + kOff_MoveComp_MoveOwner, &owner))
-                    isPlayer = (owner == player);
-            }
-
-            // Automatic Safe Landing cushion after teleport
-            if (isPlayer && isProtected)
-            {
-                // Cushion terminal downward velocity to prevent ground clipping
-                if (vel)
+                if (player >= kMinPointer)
                 {
-                    float vy = 0.0f;
-                    if (RawReadFloat(vel + 1, &vy) && vy < -45.0f)
-                    {
-                        RawWriteFloat(vel + 1, -45.0f);
-                    }
+                    if (ReadPtr(comp + kOff_MoveComp_MoveOwner_TU201, &owner) && owner == player)
+                        isPlayer = true;
+                    else if (ReadPtr(comp + kOff_MoveComp_MoveOwner, &owner) && owner == player)
+                        isPlayer = true;
                 }
-            }
-
-            // --- Free Flight: Full 3D directional propulsion & hover suspension ---
-            static bool s_flightAscended = false;
-            static float s_lastFlightY = 0.0f;
-            static int s_groundedFrames = 0;
-            static int s_forceLandFrames = 0; // Trigger Havok engine ground impact
-
-            bool flyingNow = false;
-            bool hasHorizInput = false;
-
-            if (isPlayer && (st.freeFlight || st.superRun) && vel)
-            {
-                const FlyInputState in = PollFlyInputs(st);
-                hasHorizInput = (std::abs(in.moveX) > 0.05f || std::abs(in.moveZ) > 0.05f);
-
-                if (st.freeFlight)
+                if (!isPlayer)
                 {
-                    // Ascend input activates airborne flight mode
-                    if (in.up)
+                    for (int p = 0; p < 3; ++p)
                     {
-                        s_flightAscended = true;
-                        s_groundedFrames = 0;
-                    }
-
-                    // If user is holding down to descend, detect ground contact and return to walking
-                    if (s_flightAscended && in.down)
-                    {
-                        const float curY = g_posY.load(std::memory_order_relaxed);
-                        if (std::abs(curY - s_lastFlightY) < 0.05f)
+                        const uintptr_t act = Player::GetActor(p);
+                        if (act >= kMinPointer)
                         {
-                            if (++s_groundedFrames > 10)
+                            if (ReadPtr(comp + kOff_MoveComp_MoveOwner_TU201, &owner) && owner == act)
                             {
-                                s_flightAscended = false;
-                                s_groundedFrames = 0;
-                                s_forceLandFrames = 2; // Force ground impact to restore friction
+                                isPlayer = true;
+                                break;
                             }
-                        }
-                        else
-                        {
-                            s_groundedFrames = 0;
-                        }
-                        s_lastFlightY = curY;
-                    }
-
-                    // Buoyant micro-oscillation: keeps the Havok character velocity active so the engine
-                    // fall-watchdog timer (void recovery / infinite fall reset) never triggers when hovering.
-                    static uint64_t s_hoverCounter = 0;
-                    ++s_hoverCounter;
-                    const float hoverMicroLift = ((s_hoverCounter % 2) == 0) ? 0.004f : -0.004f;
-
-                    if (s_flightAscended)
-                    {
-                        // When mod menu is open or text is being captured while airborne, hover in place
-                        if (st.menuOpen || st.textCapture)
-                        {
-                            RawWriteFloat(vel,     0.0f);
-                            RawWriteFloat(vel + 1, hoverMicroLift);
-                            RawWriteFloat(vel + 2, 0.0f);
-                            flyingNow = true;
-                        }
-                        else
-                        {
-                            // Vertical flight: Up (ascend), Down (descend), or Hover (stay aloft)
-                            constexpr float kMaxSafeVerticalSpeed = 35.0f;
-                            const float safeFlightSpeed = (st.flightSpeed > kMaxSafeVerticalSpeed) ? kMaxSafeVerticalSpeed : st.flightSpeed;
-
-                            if (in.up && !in.down)
+                            else if (ReadPtr(comp + kOff_MoveComp_MoveOwner, &owner) && owner == act)
                             {
-                                RawWriteFloat(vel + 1, safeFlightSpeed);
-                                flyingNow = true;
-                            }
-                            else if (in.down && !in.up)
-                            {
-                                RawWriteFloat(vel + 1, -safeFlightSpeed);
-                                flyingNow = true;
-                            }
-                            else
-                            {
-                                // Hover in air: buoyant lift holds altitude
-                                RawWriteFloat(vel + 1, hoverMicroLift);
-                                flyingNow = true;
-                            }
-
-                            // Horizontal Flight: Scale native camera-relative movement smoothly with hard safety ceiling
-                            float vx = 0.0f, vz = 0.0f;
-                            RawReadFloat(vel, &vx);
-                            RawReadFloat(vel + 2, &vz);
-                            const float curSpeedSq = vx * vx + vz * vz;
-
-                            if (curSpeedSq > 0.0001f && hasHorizInput)
-                            {
-                                const float horizMult = (st.flightSpeed >= 1.0f) ? (st.flightSpeed * 0.75f + 1.0f) : 1.0f;
-                                const float speedMult = (st.superRun && st.superRunMult > 1.0f) ? st.superRunMult : 1.0f;
-                                float targetVx = vx * horizMult * speedMult;
-                                float targetVz = vz * horizMult * speedMult;
-
-                                // BlackSpace Engine Havok character controller safe maximum speed limit (35.0f m/s)
-                                // Speeds beyond ~35.0f-40.0f while Gliding cause physics broadphase overflow, wing glider stall, and CTD.
-                                constexpr float kMaxSafeFlightSpeed = 35.0f;
-                                const float targetSpeed = std::sqrt(targetVx * targetVx + targetVz * targetVz);
-                                if (targetSpeed > kMaxSafeFlightSpeed)
-                                {
-                                    const float scale = kMaxSafeFlightSpeed / targetSpeed;
-                                    targetVx *= scale;
-                                    targetVz *= scale;
-                                }
-
-                                RawWriteFloat(vel,     targetVx);
-                                RawWriteFloat(vel + 2, targetVz);
-                                flyingNow = true;
-                            }
-                            else if (!hasHorizInput)
-                            {
-                                // No movement input: dampen horizontal momentum to hover cleanly in place
-                                RawWriteFloat(vel,     0.0f);
-                                RawWriteFloat(vel + 2, 0.0f);
+                                isPlayer = true;
+                                break;
                             }
                         }
                     }
                 }
-                else
+                if (!isPlayer && owner >= kMinPointer)
                 {
-                    if (s_flightAscended)
+                    float compPos[3];
+                    if (ReadVec3(owner + kOff_MoveOwner_Position, compPos))
                     {
-                        s_forceLandFrames = 2; // Force ground impact if disabled while flying
-                    }
-                    s_flightAscended = false;
-                    s_groundedFrames = 0;
-                }
-            }
-
-            if (isPlayer)
-            {
-                g_flightEngaged.store(flyingNow, std::memory_order_relaxed);
-                
-                // Force a gentle downward spike so the physics engine registers a soft landing
-                // and kill horizontal momentum so they don't air-dash into the ground.
-                if (s_forceLandFrames > 0 && vel)
-                {
-                    RawWriteFloat(vel, 0.0f);
-                    RawWriteFloat(vel + 1, -4.0f);
-                    RawWriteFloat(vel + 2, 0.0f);
-                    s_forceLandFrames--;
-                }
-            }
-
-            // Ground locomotion: Super Run applies ONLY when player is actively providing directional movement input!
-            // When stationary or during stationary animations (picking up items, gathering, looting, dialogue),
-            // do NOT multiply root-motion velocity to prevent the character from being catapulted into the air.
-            if (isPlayer && st.superRun && !flyingNow && st.superRunMult != 1.0f && vel && hasHorizInput && !st.menuOpen && !st.textCapture)
-            {
-                float x = 0.0f, z = 0.0f; // vel[0]=x, vel[1]=up, vel[2]=z
-                if (RawReadFloat(vel, &x) && RawReadFloat(vel + 2, &z))
-                {
-                    const float curHorizSpeed = std::sqrt(x * x + z * z);
-                    // Only scale if the base movement velocity is above minimum walking threshold (> 0.15 m/s)
-                    // This strictly filters out pickup / gathering / looting root-motion micro-displacements.
-                    if (curHorizSpeed > 0.15f)
-                    {
-                        float targetX = x * st.superRunMult;
-                        float targetZ = z * st.superRunMult;
-                        constexpr float kMaxSafeGroundSpeed = 50.0f;
-                        const float groundSpeed = std::sqrt(targetX * targetX + targetZ * targetZ);
-                        if (groundSpeed > kMaxSafeGroundSpeed)
+                        const float dx = compPos[0] - g_posX.load(std::memory_order_relaxed);
+                        const float dy = compPos[1] - g_posY.load(std::memory_order_relaxed);
+                        const float dz = compPos[2] - g_posZ.load(std::memory_order_relaxed);
+                        if ((dx * dx + dy * dy + dz * dz) < 4.0f) // within 2m
                         {
-                            const float scale = kMaxSafeGroundSpeed / groundSpeed;
-                            targetX *= scale;
-                            targetZ *= scale;
+                            isPlayer = true;
                         }
-                        RawWriteFloat(vel,     targetX);
-                        RawWriteFloat(vel + 2, targetZ);
                     }
+                }
+            }
+
+            // Super Run: scale sub-step delta time (dt) in-place during the call
+            if (isPlayer && st.superRun && st.superRunMult > 1.0f && pDt && !st.menuOpen && !st.textCapture)
+            {
+                float origDt0 = 0.0f, origDt1 = 0.0f;
+                if (RawReadFloat(pDt, &origDt0) && origDt0 > 0.0001f && origDt0 < 0.5f)
+                {
+                    RawReadFloat(pDt + 1, &origDt1);
+                    RawWriteFloat(pDt, origDt0 * st.superRunMult);
+                    if (origDt1 > 0.0001f && origDt1 < 0.5f)
+                        RawWriteFloat(pDt + 1, origDt1 * st.superRunMult);
+
+                    __try
+                    {
+                        if (oLocoStep) oLocoStep(comp, pDt);
+                    }
+                    __except (EXCEPTION_EXECUTE_HANDLER) {}
+
+                    RawWriteFloat(pDt, origDt0);
+                    if (origDt1 > 0.0001f && origDt1 < 0.5f)
+                        RawWriteFloat(pDt + 1, origDt1);
+                    return;
                 }
             }
 
             __try
             {
-                oLocoStep(comp, dt, vel, a4, a5, a6, a7);
+                if (oLocoStep) oLocoStep(comp, pDt);
             }
-            __except (EXCEPTION_EXECUTE_HANDLER)
-            {
-                // Catch potential Havok physics engine exceptions at extreme coordinates/speeds
-            }
+            __except (EXCEPTION_EXECUTE_HANDLER) {}
         }
 
         uint64_t __fastcall hkMoveUpdate(uint64_t moveOwner, uint64_t a2, uint64_t a3, uint64_t a4,
@@ -1507,35 +1933,59 @@ namespace trinity::game
             g_playerMoveOwner.store(owner, std::memory_order_relaxed);
 
             // Super Jump scales the desired velocity before the integrator
-            // reads it (+0xC0). (Super Run lives upstream, in hkLocoStep.)
+            // reads it (+0xC0).
             ApplyJumpScaling(owner);
 
+            // Super Run and Free Flight safely scale velocity at moveOwner+0xC0
+            // without any risky sub-step detours.
+            ApplyRunAndFlight(owner);
+
+            const uint64_t result = oMoveUpdate(moveOwner, a2, a3, a4, a5, a6, a7);
+
+            // The engine updates +0x90 inside oMoveUpdate. Apply a queued
+            // teleport afterwards so the same frame cannot overwrite it.
             if (g_pendingMarkerTp.load(std::memory_order_acquire))
             {
-                const Vec3 dest{
+                const MapMarkerPosition destination{
                     g_pendingDestX.load(std::memory_order_relaxed),
                     g_pendingDestY.load(std::memory_order_relaxed),
                     g_pendingDestZ.load(std::memory_order_relaxed)
                 };
-                g_pendingMarkerTp.store(false, std::memory_order_release);
+                const uintptr_t markerPlayer = g_markerPlayer.load(std::memory_order_relaxed);
+                const bool applied = ApplyMarkerTeleportDestination(
+                    owner, markerPlayer >= kMinPointer ? markerPlayer : 0, destination, nullptr,
+                    &WriteTeleportPosition, &ReadTeleportPosition);
 
-                __try
+                if (applied)
                 {
-                    *reinterpret_cast<Vec3*>(owner + kOff_Player_Dest0) = dest;
-                    *reinterpret_cast<Vec3*>(owner + kOff_Player_Dest1) = dest;
-                    *reinterpret_cast<Vec3*>(owner + 0xC0) = Vec3{ 0.0f, 0.0f, 0.0f };
-
-                    const uintptr_t mp = g_markerPlayer.load(std::memory_order_relaxed);
-                    if (mp >= kMinPointer && mp != owner)
+                    g_pendingMarkerAttempts.store(0, std::memory_order_relaxed);
+                    Teleport::ActivateProtection(120000);
+                    if (g_pendingFromMapMarker.exchange(false, std::memory_order_relaxed))
+                        ClearActiveMarker();
+                    if (g_pendingMarkerNotify.exchange(false, std::memory_order_relaxed))
                     {
-                        *reinterpret_cast<Vec3*>(mp + kOff_Player_Dest0) = dest;
-                        *reinterpret_cast<Vec3*>(mp + kOff_Player_Dest1) = dest;
+                        LOG_OK("teleport: map marker applied and verified at (%.2f, %.2f, %.2f).",
+                               destination.x, destination.y, destination.z);
+                        g_markerResult.store(Teleport::MarkerStatus::Success, std::memory_order_relaxed);
+                        g_markerResultReady.store(true, std::memory_order_release);
                     }
+                    // Publish availability last so a render-thread request
+                    // cannot replace this transaction while it is finalized.
+                    g_pendingMarkerTp.store(false, std::memory_order_release);
                 }
-                __except (EXCEPTION_EXECUTE_HANDLER) {}
+                else if (g_pendingMarkerAttempts.fetch_add(1, std::memory_order_relaxed) + 1 >= 3)
+                {
+                    g_pendingMarkerAttempts.store(0, std::memory_order_relaxed);
+                    g_pendingFromMapMarker.store(false, std::memory_order_relaxed);
+                    if (g_pendingMarkerNotify.exchange(false, std::memory_order_relaxed))
+                    {
+                        LOG_WARN("teleport: map marker write failed verification after 3 attempts.");
+                        g_markerResult.store(Teleport::MarkerStatus::WriteFailed, std::memory_order_relaxed);
+                        g_markerResultReady.store(true, std::memory_order_release);
+                    }
+                    g_pendingMarkerTp.store(false, std::memory_order_release);
+                }
             }
-
-            const uint64_t result = oMoveUpdate(moveOwner, a2, a3, a4, a5, a6, a7);
 
             // Per-frame, game-thread driver for the churn-proof player resolve:
             // refresh the current-player stat entries from a fresh char-manager
@@ -1731,6 +2181,8 @@ namespace trinity::game
         // menu just stays empty (logged).
         uintptr_t travel = mem::FindPattern(kSig_TravelToNode);
         if (!travel)
+            travel = mem::FindPattern(kSig_TravelToNode_TU200);
+        if (!travel)
             travel = mem::FindPattern(kSig_TravelToNode_Legacy);
 
         if (travel)
@@ -1757,10 +2209,14 @@ namespace trinity::game
             }
         }
 
-        // Locomotion sub-step driver for Super Run (optional - Super Jump and
-        // everything else still works without it).
-        mem::InstallHook("teleport: locomotion-stepper", kSig_LocoStepper, "Super Run disabled",
-                         &hkLocoStep, &oLocoStep, &g_locoStepTarget);
+        // Locomotion sub-step driver (Super Run & horizontal drive velocity scaling).
+        if (!mem::InstallHook("teleport: loco-stepper", kSig_LocoStepper, nullptr,
+                              &hkLocoStep, &oLocoStep, &g_locoStepTarget))
+        {
+            mem::InstallHook("teleport: loco-stepper legacy", kSig_LocoStepper_Legacy, nullptr,
+                             &hkLocoStep, &oLocoStep, &g_locoStepTarget);
+        }
+
 
         // Map Marker Teleport subsystem (clean-room marker capture from crimsondesert-main).
         InitMarkerSubsystem();
@@ -1789,6 +2245,11 @@ namespace trinity::game
     bool Teleport::GetFlightEngaged()
     {
         return g_flightEngaged.load(std::memory_order_relaxed);
+    }
+
+    uintptr_t Teleport::GetMoveOwner()
+    {
+        return g_playerMoveOwner.load(std::memory_order_acquire);
     }
 
     bool Teleport::CopyPositionToClipboard()
@@ -1889,27 +2350,54 @@ namespace trinity::game
     // --- Map Marker Teleport ------------------------------------------------
     bool Teleport::MarkerReady()
     {
-        return g_markerReady;
+        return g_markerReady || g_authoritativeHooksInstalled || (g_setDestMarkerTarget != nullptr) || (g_destMarkerController.load(std::memory_order_relaxed) != 0);
     }
 
     bool Teleport::HasMarker()
     {
-        Vec3 marker{};
-        return FindActiveMarker(marker);
+        float x = 0.0f, y = 0.0f, z = 0.0f;
+        return GetMarkerPosition(&x, &y, &z);
     }
 
     bool Teleport::GetMarkerPosition(float* x, float* y, float* z)
     {
         Vec3 marker{};
         if (!FindActiveMarker(marker)) return false;
+
+        // Apply the same origin offset that TeleportToMarker uses so the
+        // coordinates shown in the menu exactly match the actual landing spot.
+        Vec3 origin{};
+        if (g_markerOriginAddress != 0 && mem::ReadVec3(g_markerOriginAddress, &origin.x) && FiniteCoordinate(origin))
+        {
+            marker.x -= origin.x;
+            marker.z -= origin.z;
+        }
+
+        float my = marker.y;
+        const auto& st = State::Get();
+        if (st.markerFallbackHeight > 0.0f)
+            my = st.markerFallbackHeight;
+        else if (my == 0.0f || std::abs(my) < 1.0f)
+            my = 800.0f;
+
         if (x) *x = marker.x;
-        if (y) *y = marker.y;
+        if (y) *y = my;
         if (z) *z = marker.z;
         return true;
     }
 
     void Teleport::ClearMarker()
     {
+        const uintptr_t ctrl = g_destMarkerController.load(std::memory_order_acquire);
+        if (ctrl >= kMinPointer)
+        {
+            Write8(ctrl + kOff_DestMarker_Active, 0);
+            Write16(ctrl + 0x1ED, 0x300);
+        }
+        g_destMarkerHasCoords.store(false, std::memory_order_release);
+        g_destMarkerController.store(0, std::memory_order_release);
+        g_destMarkerXY.store(0, std::memory_order_release);
+        g_destMarkerZ.store(0, std::memory_order_release);
         ClearActiveMarker();
     }
 
@@ -1929,38 +2417,50 @@ namespace trinity::game
 
     Teleport::MarkerStatus Teleport::TeleportToMarker(float fallbackHeight)
     {
-        if (!g_markerReady)
+        if (!MarkerReady())
             return MarkerStatus::NotReady;
 
         const uintptr_t moveOwner = g_playerMoveOwner.load(std::memory_order_acquire);
         const uintptr_t markerPlayer = g_markerPlayer.load(std::memory_order_acquire);
         if (moveOwner < kMinPointer && markerPlayer < kMinPointer)
             return MarkerStatus::NoPlayer;
+        if (g_pendingMarkerTp.load(std::memory_order_acquire))
+            return MarkerStatus::UnsafeContext;
 
         Vec3 marker{};
         if (!FindActiveMarker(marker))
             return MarkerStatus::NoMarker;
 
+        LOG_OK("teleport: TeleportToMarker -> dest world=(%.2f, %.2f, %.2f)", marker.x, marker.y, marker.z);
+
         Vec3 origin{};
-        if (g_markerOriginAddress == 0 || !mem::ReadVec3(g_markerOriginAddress, &origin.x) || !FiniteCoordinate(origin))
-            return MarkerStatus::InvalidCoordinates;
+        if (g_markerOriginAddress != 0 && mem::ReadVec3(g_markerOriginAddress, &origin.x) && FiniteCoordinate(origin))
+        {
+            // Valid origin resolved
+        }
+        else
+        {
+            origin = { 0.0f, 0.0f, 0.0f };
+        }
 
         const bool usesFallbackHeight = (marker.y == 0.0f || std::abs(marker.y) < 1.0f);
         float height = marker.y;
-        if (usesFallbackHeight)
+        const auto& st = State::Get();
+        if (fallbackHeight > 0.0f)
         {
-            if (fallbackHeight > 0.0f)
-            {
-                height = fallbackHeight;
-            }
+            height = fallbackHeight;
+        }
+        else if (st.markerFallbackHeight > 0.0f)
+        {
+            height = st.markerFallbackHeight;
+        }
+        else if (usesFallbackHeight)
+        {
+            const float curY = g_posY.load(std::memory_order_relaxed);
+            if (curY > 200.0f && curY < 3000.0f)
+                height = curY + 25.0f;
             else
-            {
-                const float curY = g_posY.load(std::memory_order_relaxed);
-                if (curY > 200.0f && curY < 3000.0f)
-                    height = curY + 25.0f;
-                else
-                    height = 850.0f;
-            }
+                height = 850.0f;
         }
         else
         {
@@ -1975,17 +2475,28 @@ namespace trinity::game
         if (!FiniteCoordinate(destination))
             return MarkerStatus::InvalidCoordinates;
 
-        // Activate God Mode protection (held while in the air and for 120s after sky teleport)
-        ActivateProtection(120000);
+        LOG_OK("teleport: TeleportToMarker -> final destination (%.2f, %.2f, %.2f) [origin=(%.2f, %.2f, %.2f) height=%.2f lift=%.2f]",
+            destination.x, destination.y, destination.z, origin.x, origin.y, origin.z, height, kMarker_DestLift);
 
-        // Queue on game thread for frame-perfect physics sync
         g_pendingDestX.store(destination.x, std::memory_order_relaxed);
         g_pendingDestY.store(destination.y, std::memory_order_relaxed);
         g_pendingDestZ.store(destination.z, std::memory_order_relaxed);
+        g_pendingMarkerAttempts.store(0, std::memory_order_relaxed);
+        g_pendingFromMapMarker.store(true, std::memory_order_relaxed);
+        g_pendingMarkerNotify.store(true, std::memory_order_relaxed);
+        g_markerResultReady.store(false, std::memory_order_relaxed);
         g_pendingMarkerTp.store(true, std::memory_order_release);
+        LOG("teleport: map marker queued for (%.2f, %.2f, %.2f).",
+            destination.x, destination.y, destination.z);
+        return MarkerStatus::Queued;
+    }
 
-        ClearActiveMarker();
-        return MarkerStatus::Success;
+    bool Teleport::ConsumeMarkerResult(MarkerStatus* status)
+    {
+        if (!status || !g_markerResultReady.exchange(false, std::memory_order_acq_rel))
+            return false;
+        *status = g_markerResult.load(std::memory_order_relaxed);
+        return true;
     }
 
     bool Teleport::TeleportToCoordinates(float x, float y, float z)
@@ -1994,19 +2505,22 @@ namespace trinity::game
         const uintptr_t markerPlayer = g_markerPlayer.load(std::memory_order_acquire);
         if (moveOwner < kMinPointer && markerPlayer < kMinPointer)
             return false;
+        if (g_pendingMarkerTp.load(std::memory_order_acquire))
+            return false;
 
         const Vec3 destination{ x, y, z };
         if (!FiniteCoordinate(destination))
             return false;
 
-        // Activate God Mode protection (held while in the air and for 120s after sky teleport)
-        ActivateProtection(120000);
-
         g_pendingDestX.store(destination.x, std::memory_order_relaxed);
         g_pendingDestY.store(destination.y, std::memory_order_relaxed);
         g_pendingDestZ.store(destination.z, std::memory_order_relaxed);
+        g_pendingMarkerAttempts.store(0, std::memory_order_relaxed);
+        g_pendingFromMapMarker.store(false, std::memory_order_relaxed);
+        g_pendingMarkerNotify.store(false, std::memory_order_relaxed);
         g_pendingMarkerTp.store(true, std::memory_order_release);
 
         return true;
     }
 }
+

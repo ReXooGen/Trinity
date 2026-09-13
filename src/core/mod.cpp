@@ -27,6 +27,7 @@ namespace trinity
             return;
 
         m_module = module;
+        Logger::InitFileLogging(module);
         LOG("Trinity v%s initializing (built %s).", TRINITY_VERSION, TRINITY_BUILD_TIME);
 
         // Detect and log game version on startup

@@ -178,4 +178,22 @@ namespace trinity::mem
         FlushInstructionCache(GetCurrentProcess(), reinterpret_cast<void*>(addr), size);
         return true;
     }
+
+    inline bool ReadBytes(uintptr_t addr, void* out, size_t n)
+    {
+        if (!IsValidUserPtr(addr) || !out || n == 0) return false;
+        __try
+        {
+            memcpy(out, reinterpret_cast<const void*>(addr), n);
+            return true;
+        }
+        __except (EXCEPTION_EXECUTE_HANDLER) { return false; }
+    }
+
+    inline bool RawWrite8(uintptr_t addr, uint8_t val)
+    {
+        if (!IsValidUserPtr(addr)) return false;
+        __try { *reinterpret_cast<volatile uint8_t*>(addr) = val; return true; }
+        __except (EXCEPTION_EXECUTE_HANDLER) { return false; }
+    }
 }

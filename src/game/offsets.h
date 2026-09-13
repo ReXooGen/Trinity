@@ -77,6 +77,7 @@ namespace trinity::game
     inline constexpr uintptr_t kOff_StatEntry_Cap     = 0x30; // int64 max / cap
     inline constexpr uintptr_t kSizeof_StatEntry      = 0x90; // stride between entries
 
+
     // A character's stat entries form ONE contiguous 0x90-stride array with
     // health first (the pointer at root+0x58, i.e. [component+0x58]; entry i =
     // base + 0x90*i). The fresh player resolve reaches this health entry from
@@ -110,7 +111,8 @@ namespace trinity::game
         // entries remain full and are internal/secondary gauges on this build.
         StatType_StaminaPool117 = 22,
         StatType_SpiritPool117  = 23,
-        StatType_MountAbility   = 48, // Wyvern/Dragon fire breath and mount special ability gauge
+        StatType_HeatBurn       = 48, // Heat/Fire/Burn accumulation gauge (Base 400000). NEVER pin as stamina or player catches fire!
+        StatType_ColdFrost      = 49, // Cold/Frost accumulation gauge (Base 400000).
     };
     // NOTE (movement speed): the player stat array also carries two "rate"
     // entries (type 30 and type 74) that rest at 100000 == 1.0x, but writing
@@ -141,8 +143,13 @@ namespace trinity::game
     // pa_StatCommit lives in the .link section (not .text); the scanner walks
     // the whole committed image, so that is fine. Prologue: mov [rsp+10],rbx;
     // push rbp/rsi/rdi; sub rsp,20; mov rbx,[rcx+18]; movzx ebp,r9w;
-    // add rbx,[rcx+20] (base+norm); ... Unique match.
+    // TU 2.01+ pa_StatCommit (IDB sub_14C4E6A80): unique match.
     inline constexpr const char* kSig_StatCommit =
+        "66 44 89 4C 24 20 48 89 54 24 10 53 55 56 57 41 56 48 83 EC 40 4C 8D 71 18 48 89 CF 48 8B 49 20";
+
+    // Legacy (TU 2.00) pa_StatCommit
+    // OBSOLETE in TU 2.02.00 (0 hits in final scan; kept for reference).
+    inline constexpr const char* kSig_StatCommit_Legacy =
         "48 89 5C 24 10 55 56 57 48 83 EC 20 48 8B 59 18 41 0F B7 E9 48 03 59 20 48 89 D6 48 89 CF 4C 39 C3";
 
     // --- Damage multipliers: hook the damage-apply dispatcher ---------------
@@ -175,9 +182,30 @@ namespace trinity::game
     inline constexpr const char* kSig_CombatTimingEval =
         "48 8B C4 41 55 41 56 41 57 48 83 EC 70 C5 78 29 40 A8";
 
+    // --- Just-window evaluator, TU 2.02.00 verified @ 0x1407FCC80 (1 hit) ------
+    // This is the SAME function kSig_CombatTimingEval hunted (its 2.01 anchor),
+    // extended past the ambiguous 17-byte head with the body that makes it
+    // unique: `mov r8d,2; cmp [global],r8d` + the AVX save block. Contract
+    // (live-verified from its two call sites @ 0x1409B5CDA / 0x1409B5D50):
+    //     uint8_t f(void* mgr, void* buf, float aux /*xmm2*/, uint8_t isGuard /*r9b: 1=guard, 0=evade*/,
+    //               bool* outWindows /*stack arg5*/);
+    // Returns al = "Just success". Caller (guard site) on al==1 sets the perfect-
+    // guard event (enemy stagger + counter window); the evade site reads a
+    // window byte from outWindows. Forcing return 1 + *outWindows=true promotes
+    // a normal guard/dodge into a native perfect parry/evade with counters.
+    inline constexpr const char* kSig_JustWindowEval =
+        "48 8B C4 41 55 41 56 41 57 48 83 EC 70 C5 78 29 40 A8 48 89 58 08 "
+        "4C 8D 2D ? ? ? ? 48 89 68 10 41 B8 02 00 00 00 44 39 05 ? ? ? ? "
+        "4C 8B FA 48 89 70 18 4C 8B F1";
+
     // --- Just Core: Just Guard (Perfect Parry) & Just Evade (Perfect Dodge) ---
     // Evaluates timing windows for Perfect Parry (a4 != 0) and Perfect Dodge (a4 == 0).
     // Overriding returns true and *a5 = true, triggering native slow-mo and counters.
+    // OBSOLETE in TU 2.02.00 (both forms FAIL): the "mov rax,rsp; push rbp;
+    // push r14" prologue family is gone from the 2.02 build and no
+    // replacement was found that is byte-distinguishable (30 generic
+    // "vmovups xmm1,[rcx+0xB8]" sites share the old body anchor). The sig is
+    // ALSO unreferenced by any .cpp in this mod - left as documentation.
     inline constexpr const char* kSig_JustCore =
         "48 8B C4 55 41 56 48 81 EC ?? ?? ?? ?? C5 FC 10 89";
     inline constexpr const char* kSig_JustCore_Alt =
@@ -233,31 +261,48 @@ namespace trinity::game
     };
 
     inline constexpr CharMgrAnchor kCharMgrAnchors[] = {
-        // sub_22E6330: mov rax,cs:G / mov rcx,[rax] / mov r8,[r8] / shr r8,20h.
-        // Best of the set - pure ABI arg setup plus a literal shift count.
-        {"48 8B 05 ?? ?? ?? ?? 48 8B 08 4D 8B 00 49 C1 E8 20", 0},
-        // sub_251E3B0: mov r8d,[rdx+90h] / lea rdx,[rsp+..] / mov rcx,[rax] / call.
-        // rdx is the incoming arg2 at entry; 0x90 is a struct offset.
-        {"48 8B 05 ?? ?? ?? ?? 44 8B 82 90 00 00 00 48 8D 54 24 ?? 48 8B 08 E8", 0},
-        // 1.17+: this caller now reads +0x158 before the same manager call.
-        {"48 8B 05 ?? ?? ?? ?? 44 8B 81 58 01 00 00 48 8D 55 ?? 48 8B 08 E8", 0},
-        // 1.14-1.16 (Legacy): this caller read +0x160 before the manager call.
-        {"48 8B 05 ?? ?? ?? ?? 44 8B 81 60 01 00 00 48 8D 55 ?? 48 8B 08 E8", 0},
-        // sub_2514EB0 / sub_22EBC00: mov r8d,[rdi] / lea rdx,[rsp+..] / mov rcx,[rax] / call.
-        // Weakest of the set (rdi is allocator-chosen) and it matches BOTH of
-        // those sites - but both resolve to the same global, so it still votes
-        // correctly. Kept as a fallback.
-        {"48 8B 05 ?? ?? ?? ?? 44 8B 07 48 8D 54 24 ?? 48 8B 08 E8", 0},
+        // TU 2.01.00+ consensus anchors (all 9 uniquely verified against qword_146C29C88):
+        // Anchor 0: sub call with ABI setup and shift count
+        {"4D 8B 00 49 C1 E8 20 48 8D 54 24 ?? 48 8B 0D ?? ?? ?? ?? 48 8B 09 E8", 12},
+        // Anchor 1: struct offset +0x90 setup before manager call
+        {"44 8B 82 90 00 00 00 48 8D 54 24 ?? 48 8B 0D ?? ?? ?? ?? 48 8B 09 E8", 12},
+        // Anchor 2: struct offset +0x180 setup (RBP frame)
+        {"44 8B 81 80 01 00 00 48 8D 55 ?? 48 8B 0D ?? ?? ?? ?? 48 8B 09 E8", 11},
+        // Anchor 3: mov r8d,[rdi] setup before manager call
+        {"45 8B 07 48 8D 55 ?? 48 8B 0D ?? ?? ?? ?? 48 8B 09 E8", 7},
+        // Anchor 4: struct offset +0xC0 setup
+        {"44 8B 45 C0 48 8D 55 C8 48 8B 0D ?? ?? ?? ?? 48 8B 09 E8", 8},
+        // Anchor 5: struct offset +0x58 setup
+        {"44 8B C3 48 8D 54 24 58 48 8B 0D ?? ?? ?? ?? 48 8B 09 E8", 8},
+        // Anchor 6: mov r8d,[rsi] with RSP+0x30 frame
+        {"45 8B 06 48 8D 54 24 30 48 8B 0D ?? ?? ?? ?? 48 8B 09 E8", 8},
+        // Anchor 7: mov r8d,[rbx] with RSP+0x30 frame
+        {"44 8B 03 48 8D 54 24 30 48 8B 0D ?? ?? ?? ?? 48 8B 09 E8", 8},
+        // Anchor 8: shift count with RSP+0x78 frame
+        {"C1 E8 20 48 8D 54 24 78 48 8B 0D ?? ?? ?? ?? 48 8B 09 E8", 8},
     };
+    // TU 2.02.00: the old 11-byte form ("48 8B 0D ?? ?? ?? ?? 48 8B 49 58 E8")
+    // matches 2 sites (one false positive elsewhere). Pinned to the true site
+    // @ 0x14035C0BB by the tail "90 40 38 74 24 40" (nop; cmp byte[rsp+0x40],sil)
+    // that follows the call. Rip target = 0x146C2D9F0 == charMgr(0x146C2DF18)
+    // - 0x528, exactly the relationship the TU 2.01 IDB recorded, so the
+    // [rcx+0x58] deref + rip-resolve contract is unchanged.
+    inline constexpr const char* kSig_GameCoreGlobal =
+        "48 8B 0D ?? ?? ?? ?? 48 8B 49 58 E8 ?? ?? ?? ?? 90 40 38 74 24 40";
+    // TU 2.02.00 status: MULTI(2) on this build (true site 0x14035C0BB + false
+    // positive 0x140663A49). Superseded by the pinned 22-byte kSig_GameCoreGlobal
+    // above, which is UNIQUE (1 hit). Kept for reference; not referenced by any .cpp.
+    inline constexpr const char* kSig_GameCoreGlobal_TU201 = "48 8B 0D ?? ?? ?? ?? 48 8B 49 58 E8";
 
     // Character manager -> the vector of all gameplay characters. It is the
     // engine's custom pa vector (data ptr, then u32 size, u32 capacity);
     // element i is a character* at data + 8*i. Confirmed against the character
     // factory sub_24AA890 (registers each new character via
     // sub_589D00(mgr+0xB8, &char)) and the append helper sub_589D00.
-    inline constexpr uintptr_t kOff_CharMgr_ListData  = 0xB8; // character*[] data ptr
-    inline constexpr uintptr_t kOff_CharMgr_ListCount = 0xC0; // u32 count
-    inline constexpr uint32_t  kCharList_MaxCount     = 8192; // sanity bound (live ~388)
+    // Also confirmed on TU 2.01.00 (build 1.0.0.2760) by Cheat Engine Table v5.0.
+    inline constexpr uintptr_t kOff_CharMgr_ListData       = 0xB8; // character*[] data ptr (TU 2.00 / TU 2.01)
+    inline constexpr uintptr_t kOff_CharMgr_ListCount      = 0xC0; // u32 count (TU 2.00 / TU 2.01)
+    inline constexpr uint32_t  kCharList_MaxCount          = 8192; // sanity bound (live ~388)
 
     // Selecting the ONE controlled body among SelfPlayer-typed characters.
     // objType==1 is unique only AT REST (live-confirmed: 388 chars, exactly one
@@ -287,7 +332,8 @@ namespace trinity::game
     // with ((tag - 1) & 0xF7) == 0, i.e. tag 1 (SelfPlayer) or 9 (OtherPlayer)
     // = a player-class character (see also sub_30DF50, the same tag switch).
     // This tag reads a stable 1 on the player. It is the ONLY type read used.
-    inline constexpr uintptr_t kOff_Owner_TypeDesc = 0x88; // -> type descriptor (tag byte at +1)
+    inline constexpr uintptr_t kOff_Owner_TypeDesc   = 0x88; // -> type descriptor (tag byte at +1)
+    inline constexpr uintptr_t kOff_Owner_PartyIndex = 0x50; // u32 party/entity ID (1=Kliff, 2=Damiane, 3=Oongka, 5=Mount)
 
     // A resolved character IS the god-mode "owner" object (vtable 0x50B9A10):
     // its ObjectType is at +0x48 (kOff_Owner_ObjectType) and its vital chain is
@@ -393,9 +439,15 @@ namespace trinity::game
     // Signature = prologue + home-store/push sequence + the exact frame setup
     // (lea rbp,[rax-798h]; sub rsp,860h). The frame displacements are what
     // make it unique - 6 same-shaped functions match if they are wildcarded.
+    // TU 2.01+ LocoStepper: sub-step driver @ 0x1435C1EE0 (unique match)
     inline constexpr const char* kSig_LocoStepper =
+        "48 8B C4 48 89 58 10 55 56 57 41 54 41 55 41 56 41 57 48 8D A8 A8 F7 FF FF 48 81 EC 20 09 00 00 C5 F8 29 70 B8";
+
+    // Legacy (TU 2.00) LocoStepper
+    // OBSOLETE in TU 2.02.00 (0 hits in final scan; kept for reference).
+    inline constexpr const char* kSig_LocoStepper_Legacy =
         "48 8B C4 48 89 58 10 44 88 48 20 55 56 57 41 54 41 55 41 56 41 57 "
-        "48 8D A8 68 F8 FF FF 48 81 EC 60 08 00 00";
+        "48 8D A8 68 F8 FF FF 48 81 EC 60 08 00 00 C5 F8 29 70";
 
     // --- Fast travel / map-gimmick teleport --------------------------------
     // The world map fast-travels through sub_505140(ignored, sceneId, nodeIndex)
@@ -405,13 +457,19 @@ namespace trinity::game
     // sub_5019D0, which pulls the travel manager from a global and ignores it),
     // so we pass nullptr. It validates nodeIndex < nodeCount then triggers travel.
     //   char sub_505140(void* /*ignored*/, int sceneId, unsigned nodeIndex)
-    // Prologue: mov rax,rsp; mov [rax+18],rbx; mov [rax+10],edx; mov [rax+8],rcx;
-    // push rdi; sub rsp,80h. Unique in this build (IDB 0x505140).
+    // TU 2.01.00 Fast Travel trigger (unique match):
     inline constexpr const char* kSig_TravelToNode =
+        "48 89 5C 24 18 48 89 74 24 20 89 54 24 10 48 89 4C 24 08 55 57 41 56 "
+        "48 8D 6C 24 B9 48 81 EC B0 00 00 00 41 8B F0 33 DB 83 FA FF";
+
+    // TU 2.00 Fast Travel trigger
+    // OBSOLETE in TU 2.02.00 (0 hits in final scan; kept for reference).
+    inline constexpr const char* kSig_TravelToNode_TU200 =
         "48 89 5C 24 18 89 54 24 10 48 89 4C 24 08 55 56 57 48 8D 6C 24 B9 "
         "48 81 EC B0 00 00 00 41 8B F8 33 DB 83 FA FF";
 
     // Legacy (TU 1.14 - 1.15) Fast Travel trigger
+    // OBSOLETE in TU 2.02.00 (0 hits in final scan; kept for reference).
     inline constexpr const char* kSig_TravelToNode_Legacy =
         "48 8B C4 48 89 58 18 89 50 10 48 89 48 08 57 48 81 EC 80 00 00 00";
 
@@ -488,6 +546,11 @@ namespace trinity::game
     //   3. scan BACK from that lea for the resolver's prologue below; the
     //      registry global is the RIP-relative `mov rbx` inside it.
     inline constexpr const char* kStr_LevelNameTable = "FieldLevelNameTableInfo";
+    // TU 2.02.00 re-verified: both are MULTI by design and are consumed ONLY via
+    // FindPatternIf + IsTableRef anchor-hunt (inventory.cpp:2229), never as a
+    // unique pattern. Image-wide exact counts: LeaR8Rip = 150637, TableResolver
+    // prologue = 24. The FieldLevelNameTableInfo site resolves correctly
+    // (prologue at d=0x58, registry global 0x146C4C4B8); do not pin these.
     inline constexpr const char* kSig_LeaR8Rip       = "4C 8D 05 ?? ?? ?? ??";
     inline constexpr const char* kSig_TableResolverPrologue =
         "48 89 5C 24 10 48 89 6C 24 18 56 57 41 56 48 83 EC 50 8B 39 48 8B 1D";
@@ -513,23 +576,80 @@ namespace trinity::game
     inline constexpr uintptr_t kOff_LvlEntry_IsSector  = 0x18; // bool (_isSectorLevel)
     inline constexpr uintptr_t kOff_LvlEntry_Box       = 0x1C; // f32 min xyz, max xyz
 
-    // --- Map Marker Teleport (clean-room marker capture from crimsondesert-main) ---
+    // --- Map Marker Teleport (clean-room marker capture from crimsondesert-main / mul0095/Trinity) ---
+    inline constexpr const char* kSig_DestinationMarker_GlobalRef =
+        "48 8B 05 ?? ?? ?? ?? 48 8B 98 A8 00 00 00 C4 C1 78 10 04 24";
+
+    // TU 2.02.00 verified: exactly 5 hits == kExpected_MarkerMatches
+    // (0x140A29475, 0x14170602D, 0x141764AF3, 0x141E4EB47, 0x141E4EC5A).
     inline constexpr const char* kSig_MarkerPattern =
         "C5 FB 10 07 C5 FB 11 02 8B 47 08 89 42 08";
     inline constexpr size_t      kExpected_MarkerMatches = 5;
 
+    // Native SetDestinationMarker hook (sub_140D63C90, TU 2.01+ and legacy)
+    // Directly intercepts and reads authoritative world map destination pin coordinates:
+    // [rcx + 0xE0] = X, [rcx + 0xE4] = Y, [rcx + 0xE8] = Z, [rcx + 0x1EF] = Active flag (1 = active, 0 = cleared)
+    inline constexpr const char* kSig_SetDestinationMarker_Fn =
+        "48 89 5C 24 10 57 48 83 EC 20 C5 FA 10 81 E0 00 00 00";
+    inline constexpr const char* kSig_SetDestinationMarker_Legacy =
+        "48 83 79 28 00 C5 FB 10 02 C5 FB 11 81 E0 00 00 00 8B 42 08 89 81 E8 00 00 00";
+
+    // Unique dispatcher where the game routes the user's destination marker (type 0x0C) into SetDestinationMarker
+    inline constexpr const char* kSig_SetDestinationMarker_Dispatcher =
+        "C6 44 24 28 0C FF 90 48 05 00 00 48 85 C0 0F 84 ?? ?? ?? ?? 48 8B D6 48 8B C8 E8";
+
+    // Authoritative destination pin placement in sub_14374FA00 (TU 2.01+ and legacy)
+    // Directly captures the player's map click destination pin placement:
+    // rbx = authoritative destination marker controller, [rdi + 0x5F0] = clicked world coordinate float[3]
+    inline constexpr const char* kSig_Authoritative_SetPin =
+        "C5 F8 10 87 F0 05 00 00 C5 F8 11 83 F8 01 00 00";
+
+    // Authoritative destination pin clear site in sub_140718BD0 / sub_140718C36
+    // Intercepts the engine clearing/cancelling the destination marker pin:
+    // rdi = destination marker controller, [rdi + 0x1ED] = 0x300, [rdi + 0x1EF] = 0
+    inline constexpr const char* kSig_Authoritative_ClearPin =
+        "66 C7 87 ED 01 00 00 00 03 C6 87 EF 01 00 00 00";
+
+    inline constexpr uintptr_t kOff_DestMarker_X       = 0xE0;
+    inline constexpr uintptr_t kOff_DestMarker_Y       = 0xE4;
+    inline constexpr uintptr_t kOff_DestMarker_Z       = 0xE8;
+    inline constexpr uintptr_t kOff_DestMarker_Active  = 0x1EF;
+    inline constexpr uintptr_t kOff_DestMarker_Coord3D = 0x1F8;
+
+    // TU 2.02.00 re-verified: MULTI by design (26 raw hits image-wide; scanner
+    // reports 21+ only due to its >20 cap). Consumed via FindAllMatches(.., 64)
+    // + origin voting in teleport.cpp: 21 votes -> 0x146C1AE10 vs 5 votes ->
+    // 0x146767930. Never used as a unique pattern; do not pin.
     inline constexpr const char* kSig_MarkerOriginPrefix =
         "C5 F8 5C 05";
-    inline constexpr size_t      kExpected_OriginMatches = 9;
 
+    // TU 2.02.00 verified (unique @ 0x1435CA7CB, inside the TU 2.02 locomotion
+    // helper, same function family as kSig_LocoStepper @ 0x1435C40A0):
+    //     mov rax, [rdi]                     (48 8B 07 - was 48 8B 06 / [rsi])
+    //     vmovups xmmword ptr [rax+0x1B0], xmm1   (C5 F8 11 88 B0 01 00 00)
+    // Only the source register of the player-pointer load changed (rsi -> rdi);
+    // Dest2 stays at +0x1B0 and the 8 bytes the inline stub replays
+    // (players.front()+3 .. +11) are byte-identical to TU 2.01, so the hook
+    // contract and rax capture are unchanged.
+    // Old (TU 2.01, FAIL on 2.02): "48 8B 06 C5 F8 11 88 B0 01 00 00"
     inline constexpr const char* kSig_MarkerPlayer =
-        "48 8B 06 C5 F8 11 88 B0 01 00 00";
+        "48 8B 07 C5 F8 11 88 B0 01 00 00";
 
+    // TU 2.02.00 verified (unique @ 0x14118A46E, marker-context function):
+    //     mov rax, [rbp+...] ; mov byte ptr [rax+0x458], 1 ; lea rdx,[rbp-0x30]...
+    // The protection flag displacement moved 0x454 -> 0x458. The trailing
+    // "48 8D 55" (lea rdx,[rbp-...]) discriminates the true marker site from
+    // a second, unrelated C6 80 58 04 site @ 0x14117DCCF (that one is followed
+    // by 48 8B 5C 24 and its enclosing function has no marker-field accesses).
+    // Site was chosen by fingerprint: only its +/-0x800 neighborhood contains
+    // the destination-marker field disps (0x1EF / 0xE0).
+    // Old (TU 2.01, FAIL on 2.02): "C6 80 54 04 00 00 01"
     inline constexpr const char* kSig_MarkerProtection =
-        "48 8B 46 08 48 89 F1";
+        "C6 80 58 04 00 00 01 48 8D 55";
 
     inline constexpr uintptr_t kOff_Player_Dest0 = 0x90;  // Vec3 x, y, z
     inline constexpr uintptr_t kOff_Player_Dest1 = 0x1A0; // Vec3 x, y, z
+    inline constexpr uintptr_t kOff_Player_Dest2 = 0x1B0; // Vec3 x, y, z (TU 2.01 locomotion helper)
     inline constexpr float     kMarker_CoordLimit = 1.0e9f;
     inline constexpr float     kMarker_DestLift   = 10.0f;
 
@@ -547,25 +667,37 @@ namespace trinity::game
     // Called by HUD wallet, vendor shops, and crafting recipes
     inline constexpr const char* kSig_InvGetItemQty =
         "66 89 54 24 10 53 57 48 83 EC 28 0F B7 DA";
+    // OBSOLETE in TU 2.02.00 (0 hits in final scan; kept for reference).
     inline constexpr const char* kSig_InvGetItemQty_Legacy =
         "48 89 5C 24 ? 48 89 6C 24 ? 48 89 74 24 ? 57 48 83 EC 20 49 8B E8 0F B7 DA";
     inline constexpr const char* kSig_InvGetHolder =
         "40 53 48 83 EC 20 48 8B 41 68 48 8B D9 48 8B 48 20 0F B7 41 30";
 
-    // The engine's OWN slot-expansion setter (IDB sub_1CE8190) - what the game
-    // itself runs when your expansion count changes:
-    //     void* f(holder, int* outErr, void* unused, u16 bucketType, u16 count)
-    // It finds the bucket the same way we do (bucket+0x10 == bucketType), then:
+    // The engine's OWN slot-expansion setter (TU 2.00 IDB sub_1CE8190;
+    // TU 2.02 rebuild @ 0x1420801E0 - it moved into the bucket-cluster region
+    // next to BucketForItem/CreateBucket):
+    //     TU 2.00: void* f(holder, int* outErr, void* unused, u16 bucketType, u16 count)
+    //     TU 2.02: void* f(holder, int* outErr, u16 bucketType, u16 count)
+    // The 2.02 build DROPPED the dead 3rd pointer arg: bucketType now arrives
+    // in r8 (`cmp word [bucket+0x10], r8w`) and count in r9 (`movzx ebp,r9w`).
+    // Calling it with the old 5-arg prototype leaves nullptr in r8, the type
+    // never matches, and the setter takes its not-found path (stores a global
+    // error code through *outErr) - the expansion is never applied. That arg
+    // shift is exactly why the pre-fix build never intercepted the engine's
+    // re-stamps even when a setter-shaped function had been hooked.
+    // Semantics unchanged (verified in the 2.02 disassembly):
     //     bucket[0x16] = count            ; buff accumulator
     //     bucket[0x1A] = count            ; _varyExpandSlotCount (the real one)
-    //     bucket[0x14] = row._defaultSlotCount + bucket[0x1A]
-    // Note `count` is the EXPANSION, not the cap: the resulting cap is
-    // default + count, so a target cap needs count = cap - _defaultSlotCount.
-    // Its final write is NOT clamped to _maxSlotCount (the only _maxSlotCount
-    // read gates a dead branch), so counts past the table max do take effect.
-    // Preferred over writing kOff_InvBucket_MaxSlots directly, which only
-    // pokes a cache the engine recomputes - see kOff_InvBucket_ExpandSlots.
-    // 3rd arg is dead (forwarded to a resolver that ignores it): pass nullptr.
+    //     bucket[0x14] = row._defaultSlotCount + count
+    // where row comes from the same InventoryInfo-by-type resolver the mod
+    // wraps elsewhere (call 0x140433240 with &bucket.type: bounds-checked
+    // index into the global table's row array). Note `count` is the
+    // EXPANSION, not the cap: the resulting cap is default + count, so a
+    // target cap needs count = cap - _defaultSlotCount. Its final write is
+    // NOT clamped to _maxSlotCount (the only row+0x4A read gates a dead
+    // branch), so counts past the table max do take effect. Preferred over
+    // writing kOff_InvBucket_MaxSlots directly, which only pokes a cache the
+    // engine recomputes - see kOff_InvBucket_ExpandSlots.
     //
     // HOOKED, not just called, because the engine re-stamps VANILLA values
     // through it behind our back (found 2026-07-15 chasing "inventory full"
@@ -583,8 +715,23 @@ namespace trinity::game
     // planner's cap check while the on-screen grid still shows the raised
     // cap. Substituting the count inside the hook makes the engine's own
     // re-stamps apply the override, which closes the window for good.
+    // TU 2.02.00 verified (unique @ 0x1420801E0): prologue + bucket-loop head.
+    // It is the only function in the image writing +0x16, +0x1A and +0x14 in
+    // sequence; exactly 2 E8 callers image-wide (0x140b3f50d, 0x142a8e384).
     inline constexpr const char* kSig_InvSetExpandSlots =
-        "48 89 5C 24 ? 56 48 83 EC 20 48 8B 41 ? 48 8B F2 8B 49";
+        "48 89 6C 24 10 48 89 74 24 18 48 89 7C 24 20 41 56 48 83 EC 20 "
+        "48 8B 41 18 41 0F B7 E9 8B 49 20";
+    // TU <=2.01 setter (5-arg convention). 0 hits in TU 2.02.00.
+    inline constexpr const char* kSig_InvSetExpandSlots_Legacy =
+        "48 89 5C 24 ?? 56 48 83 EC 20 48 8B 41 ?? 48 8B F2 8B 49";
+    // WARNING - DO NOT HOOK. The sig above used to be published as "TU 2.02
+    // verified @ 0x143804870", but that hit is an UNRELATED function (its
+    // prologue reads [rcx+0x48], it never writes +0x16/+0x1A/+0x14). Hooking
+    // it installed a detour on the wrong target and left the real setter
+    // unhooked - the actual root cause of the 2.02 "engine re-stamps vanilla"
+    // symptom. Kept only as a reference/warning.
+    inline constexpr const char* kSig_InvSetExpandSlots_Bad20202 =
+        "48 89 5C 24 ?? 56 48 83 EC 20 48 8B 41 48 48 8B F2 48 8B D9";
 
     // The FREE-SPACE GATE (IDB sub_1CE8F40) - the check that actually throws
     // "inventory full" on a world pickup, BEFORE the insert planner runs:
@@ -604,6 +751,22 @@ namespace trinity::game
     // everything (the menu's 9999 limit keeps us clear of that). This is
     // what confirmed kOff_InvBucket_UsedSlots (below) as the field the mod's
     // quantity editor was leaving stale - see its comment for the fix.
+    //
+    // 2026-09-13 (trinity-bangeggi): the gate is still NOT hooked and the
+    // kSig_InvFreeSpace name is still a placeholder. Static hunts on the
+    // current EXE (375MB, Sep 2026) found no unique byte shape: the pair
+    // read is signed i16 per the decompile (movsx 0F BF), the only
+    // movsx 0x12/0x14 pair in .idata is a float-convert UI function, and
+    // the refusal error (eErrNoInventorySlotNotExist = lookup3 hash
+    // 0xD2023F88 per XeTrinityz-reference) is resolved at runtime - the
+    // immediate appears nowhere in the image. Instead the mod now (a)
+    // logs the refusing bucket's used/cap/arr/occ from the reliably-hooked
+    // insert planner (hkHolderInsert) and (b) keeps the gate inputs healthy
+    // via RepairUsedSlots + the anti-shrink guards in ApplySlotCapToHolder
+    // / StampExpandOverride. Verified live in this EXE: the setter sig
+    // still resolves unique @ 0x1420801E0 and the setter's own code
+    // confirms the bucket layout (type +0x10, used +0x12, cap +0x14,
+    // +0x16, +0x1A) is unchanged.
 
     // Per-holder insert planner (IDB sub_1F850C0). Its 3rd arg (r8) is the
     // inventory CONTAINER; it fires for BOTH the client mirror container AND the
@@ -614,10 +777,18 @@ namespace trinity::game
     // empty). Editing a quantity in the client holder alone reverts because a
     // per-frame server reconcile overwrites it; writing the SAME slot in BOTH
     // holders makes the edit real, usable, and non-reverting (live-proven).
+    // TU 2.01+ Per-holder insert planner (unique match @ 0x142A18960 in .data2)
     inline constexpr const char* kSig_InvHolderInsert =
-        "48 89 5C 24 ? 4C 89 44 24 ? 48 89 54 24 ? 48 89 4C 24 ? 55 56 57 41 54 "
-        "41 55 41 56 41 57 48 8D AC 24 ? ? ? ? 48 81 EC 10 03 00 00";
+        "48 89 5C 24 20 4C 89 44 24 18 48 89 54 24 10 48 89 4C 24 08 55 56 57 41 54 "
+        "41 55 41 56 41 57 48 8D AC 24 20 FE FF FF 48 81 EC E0 02 00 00";
 
+    // TU 2.00 Per-holder insert planner (unique match @ 0x142A18960)
+    inline constexpr const char* kSig_InvHolderInsert_TU200 =
+        "48 89 5C 24 20 4C 89 44 24 18 48 89 54 24 10 48 89 4C 24 08 55 56 57 41 54 "
+        "41 55 41 56 41 57 48 8D AC 24 20 FE FF FF 48 81 EC E0 02 00 00";
+
+    // Legacy (pre-2.00) Per-holder insert planner
+    // OBSOLETE in TU 2.02.00 (0 hits in final scan; kept for reference).
     inline constexpr const char* kSig_InvHolderInsert_Legacy =
         "48 89 5C 24 ? 4C 89 44 24 ? 48 89 54 24 ? 48 89 4C 24 ? 55 56 57 41 54 "
         "41 55 41 56 41 57 48 8D AC 24 ? ? ? ? 48 81 EC F0 02 00 00";
@@ -651,7 +822,13 @@ namespace trinity::game
     // lands at arena+0xF0200 in a 16MB-aligned server arena, but nothing
     // reachable points at that arena. Capture-at-load is the route; this is it.
     // Unique byte signature.
+    // TU 2.01+ Transaction Commit (unique match @ 0x142A9A260)
     inline constexpr const char* kSig_InvCommit =
+        "48 89 5C 24 20 48 89 54 24 10 55 56 57 41 54 41 55 41 56 41 57 48 8D AC 24 D0 FC FF FF 48 81 EC";
+
+    // Legacy (TU 2.00 and earlier) Transaction Commit
+    // OBSOLETE in TU 2.02.00 (0 hits in final scan; kept for reference).
+    inline constexpr const char* kSig_InvCommit_Legacy =
         "4C 89 44 24 ? 48 89 54 24 ? 48 89 4C 24 ? 55 53 56 57 41 54 41 55 41 56 "
         "41 57 48 8D 6C 24 ? 48 81 EC 48 01 00 00 4D 8B D0 48 8B D1";
 
@@ -671,10 +848,18 @@ namespace trinity::game
     // whose body is `mov rax, cs:<global>; mov rdx,[rax+30h]; mov rdx,[rdx+50h]`
     // - the exact chain we walk. Unique match; the mov's RIP operand is at
     // match+0x15 (7-byte instruction).
+    // TU 2.01+ InvCoreGlobal (IDB 0x14035C6F0): unique match.
+    // Body: push rbx; sub rsp,20; mov rbx,[rcx+8]; mov rax, cs:<global>; mov rcx,[rax+30h]
     inline constexpr const char* kSig_InvCoreGlobal =
+        "40 53 48 83 EC 20 48 8B 59 08 48 8B 05 ? ? ? ? 48 8B 48 30 48 8B 83 A0 00 00 00";
+    inline constexpr uintptr_t kOff_InvCoreGlobal_Mov = 10; // mov rax, cs:<global> (offset 10)
+
+    // Legacy (TU 2.00) InvCoreGlobal
+    // OBSOLETE in TU 2.02.00 (0 hits in final scan; kept for reference).
+    inline constexpr const char* kSig_InvCoreGlobal_Legacy =
         "48 89 54 24 ? 53 48 83 EC 30 48 8B DA C7 44 24 20 00 00 00 00 "
         "48 8B 05 ? ? ? ? 48 8B 50 30 48 8B 52 50 48 8B CB E8";
-    inline constexpr uintptr_t kOff_InvCoreGlobal_Mov = 0x15; // mov rax, cs:<global>
+    inline constexpr uintptr_t kOff_InvCoreGlobal_Mov_Legacy = 0x15; // mov rax, cs:<global>
     inline constexpr uintptr_t kOff_Global_Mid        = 0x30; // global+0x30 -> mid
     inline constexpr uintptr_t kOff_Mid_Container     = 0x50; // mid+0x50 -> container
     inline constexpr uintptr_t kOff_Container_Sub     = 0x68; // container+0x68 -> sub-object
@@ -826,9 +1011,15 @@ namespace trinity::game
     // goes anywhere; we hand ours straight to the planner, so ZERO IT FIRST or
     // the holes reach the live slot (live-seen: garbage at +0x0C).
 
-    // TrItemValue ctor (IDB sub_1F86FD0): void f(itemVal, u16* typeId, i64 qty).
+    // TrItemValue ctor (TU 2.01 verified @ 0x14234F210): void f(itemVal, u16* typeId, i64 qty).
     // Self-contained - fills subtype/durability/flags/sub-lists from the item
     inline constexpr const char* kSig_TrItemValueCtor =
+        "48 89 5C 24 18 48 89 4C 24 08 55 56 57 41 54 41 55 41 56 41 57 "
+        "48 8B EC 48 83 EC 70 4C 8B F2 4C 8B E1 48 C7 01 FF FF FF FF 0F B7 02 66 89 41 08";
+
+    // Legacy (TU 1.14 - 1.18.02) TrItemValue ctor
+    // OBSOLETE in TU 2.02.00 (0 hits in final scan; kept for reference).
+    inline constexpr const char* kSig_TrItemValueCtor_Legacy =
         "48 89 5C 24 ? 48 89 4C 24 ? 55 56 57 41 54 41 55 41 56 41 57 48 8B EC "
         "48 83 EC 60 4C 8B EA 48 8B F1 48 C7 01 FF FF FF FF 0F B7 02 66 89 41 08";
     // Per-placement COMMIT (IDB sub_1CE1020):
@@ -838,7 +1029,13 @@ namespace trinity::game
     // slot (or merges onto an existing stack) and maintains the used-slot count.
     // 3rd arg is a genuine don't-care: it only supplies the high bits of a
     // scratch whose low word is immediately overwritten with the typeId.
+    // TU 2.01+ Per-placement COMMIT (unique match @ 0x14207A2C0)
     inline constexpr const char* kSig_InvCommitPlacement =
+        "48 89 5C 24 10 55 56 57 41 54 41 55 41 56 41 57 48 8D AC 24 C0 F3 FF FF 48 81 EC 40 0D 00 00";
+
+    // Legacy (TU 2.00 and earlier) Per-placement COMMIT
+    // OBSOLETE in TU 2.02.00 (0 hits in final scan; kept for reference).
+    inline constexpr const char* kSig_InvCommitPlacement_Legacy =
         "48 89 5C 24 ? 4C 89 44 24 ? 55 56 57 48 83 EC 30 41 0F B7 59";
     // Free the planner's placement vector. The pre-1.17 build reached the
     // cleanup target through a 5-byte jmp thunk; 1.17 recompiles the target but
@@ -855,6 +1052,12 @@ namespace trinity::game
         "48 8D 43 10 48 3B C8";
     // TrItemValue dtor (IDB sub_ED6DF40, via thunk sub_1F88270). Destroys the
     // sub-objects the ctor allocated; does NOT free the buffer itself.
+    // TU 2.02.00 status: EMPTY - the 2.00 dtor form is not byte-identical in this
+    // build, and its generic prologue ("40 53 48 83 EC 20 ...") alone matches 419
+    // sites image-wide, so it cannot be used without a caller-side anchor no
+    // consumer currently provides. The 1.x form gives 0 hits. inventory.cpp
+    // safely skips the dtor when null (inventory.cpp:4412 guards on oItemValueDtor),
+    // so leaving this empty keeps only the crash-cleanup path inert.
     inline constexpr const char* kSig_TrItemValueDtor = "";
 
     inline constexpr uintptr_t kOff_InvHolder_Container = 0x08; // holder+8 -> container
@@ -918,7 +1121,8 @@ namespace trinity::game
     // was tried and fails (bogus TEB, then an access violation on the second
     // call, almost certainly CFG rejecting an indirect call into our own page).
     inline constexpr uintptr_t kOff_Teb_TlsPointer = 0x58; // TEB.ThreadLocalStoragePointer
-    inline constexpr uintptr_t kTls_RealmFlag      = 498;  // u8: 0 = client, 1 = server
+    inline constexpr uintptr_t kTls_RealmFlag_TU201 = 509; // u8: 0 = client, 1 = server (TU 2.01+ PE rev >= 2760, 0x1FD)
+    inline constexpr uintptr_t kTls_RealmFlag       = 498; // u8: 0 = client, 1 = server (TU 2.00 / legacy, 0x1F2)
 
     // Item-info table (typeId -> item definition -> item key string, for names).
     // Its resolver is one of ~121 identical 16-bit-key table-resolver clones, so
@@ -968,6 +1172,10 @@ namespace trinity::game
     // the only other site is the table loader, which the prologue check already
     // rejects - the same discriminator "iteminfo" relies on.
     inline constexpr const char* kStr_InventoryInfoTable = "Inventory";
+    // TU 2.02.00 re-verified: MULTI by design (25786 raw hits image-wide) - a
+    // generic 7-byte mov r8, cs:[rip+..]. Used ONLY through FindPatternIf +
+    // IsTableRef anchor-hunt ("Inventory" name string, inventory.cpp:2229); the
+    // surviving Inventory site has its prologue at d=0x59. Do not pin.
     inline constexpr const char* kSig_MovR8Rip = "4C 8B 05 ?? ?? ?? ??";
     //
     // InventoryInfo fields we consume (field->offset recovered from the
@@ -1146,10 +1354,13 @@ namespace trinity::game
     inline constexpr const char* kSig_LocStringGet =
         "8B 41 18 48 8B 0D ? ? ? ? 3B 41 60 72 08 "
         "48 8D 05 ? ? ? ? C3 48 03 41 58 C3";
+    // OBSOLETE in TU 2.02.00 (0 hits in final scan; kept for reference).
     inline constexpr const char* kSig_LocStringGet_Alt1 =
         "8B 51 10 48 8B 05 ?? ?? ?? ?? 48 8B 48 08";
+    // OBSOLETE in TU 2.02.00 (0 hits in final scan; kept for reference).
     inline constexpr const char* kSig_LocStringGet_Alt2 =
         "48 8B 05 ?? ?? ?? ?? 48 8B 48 08 3B 51 08";
+    // OBSOLETE in TU 2.02.00 (0 hits in final scan; kept for reference).
     inline constexpr const char* kSig_LocStringGet_Legacy =
         "8B 41 10 48 8B 05 ?? ?? ?? ?? 48 8B 48 08";
     inline constexpr uintptr_t kOff_LocGet_MovGlobal = 0x03; // mov rax, cs:<locMgr>
@@ -1181,7 +1392,13 @@ namespace trinity::game
     //   match+2 : disp32 of `cmp cs:byte_606B9CE, 1`  (flag; next instr +7)
     //   match+37: `vmovss xmm0, cs:dword_615A4F0`     (value; 8-byte instr)
     // IDB match at 0x8FC348. Unique block.
+    // TU 2.01+ direct function entry for FrameTimerUpdate (unique match @ 0x140A541C0):
     inline constexpr const char* kSig_FrameTimerBody =
+        "48 8B C4 48 89 58 10 48 89 68 18 56 57 41 54 41 56 41 57 48 81 EC B0 01 00 00 C5 F8 29 70";
+
+    // Legacy (TU 2.00 and earlier) body scan
+    // OBSOLETE in TU 2.02.00 (0 hits in final scan; kept for reference).
+    inline constexpr const char* kSig_FrameTimerBody_Legacy =
         "48 8B F9 48 8B 41 60 C5 FA 10 40 64 C5 FA 11 40 60";
     inline constexpr uintptr_t kOff_TimeStruct_Delta       = 0x64; // f32: Frame Delta (seconds)
     inline constexpr uintptr_t kOff_TimeStruct_ScaledDelta = 0x68; // f32: Scaled Frame Delta (seconds)
@@ -1239,7 +1456,13 @@ namespace trinity::game
     // land on xmm1 and zeroes it. Signature = the ABI-fixed prologue plus the
     // distinctive accumulator add `vaddss xmm0, xmm1, [rcx+2Ch]`
     // (make_signature_for_function, unique in this build).
+    // TU 2.01+ FieldTimeTick (unique match @ 0x1409BC623)
     inline constexpr const char* kSig_FieldTimeTick =
+        "48 89 5C 24 08 48 89 74 24 10 48 89 7C 24 18 4C 89 64 24 20 55 41 56 41 57 48 8B EC 48 83 EC 70 48 8B F9 C5 F2 58 41 2C";
+
+    // Legacy (TU 2.00 and earlier) FieldTimeTick
+    // OBSOLETE in TU 2.02.00 (0 hits in final scan; kept for reference).
+    inline constexpr const char* kSig_FieldTimeTick_Legacy =
         "48 89 5C 24 ?? 48 89 74 24 ?? 48 89 7C 24 ?? 55 41 56 41 57 48 8B EC "
         "48 83 EC 70 48 8B F9 C5 F2 58 41 2C";
 
@@ -1294,12 +1517,29 @@ namespace trinity::game
     inline constexpr const char* kSig_WeatherDust =
         "48 8B 41 ?? 41 B8 40 00 00 00 48 85 C0 41 B9 60 01 00 00 48 8D 50 18 B8 CC 01 00 00 49 0F 44 D0";
 
+    // TU 2.01+ WindPack (unique match @ 0x143CC9B10)
     inline constexpr const char* kSig_WindPack =
+        "48 89 5C 24 08 57 48 83 EC 20 48 8B 01 48 8B D9 48 85 C0 48 8B FA B9 40 00 00 00 4C 8D 40 18 4C 0F 44 C1";
+
+    // Legacy (TU 2.00 and earlier) WindPack
+    // OBSOLETE in TU 2.02.00 (0 hits in final scan; kept for reference).
+    inline constexpr const char* kSig_WindPack_Legacy =
         "48 89 5C 24 08 57 48 83 EC 30 48 8B 01 48 8B D9 48 85 C0 48 8B FA B9 40 00 00 00 4C 8D 40 18 4C 0F 44 C1";
 
-    // Safe EnvManager resolution and cloud/atmosphere nodes in TU 1.18.00+:
+    // Safe EnvManager resolution and cloud/atmosphere nodes.
+    // TU 2.02.00 verified (unique @ 0x14340CA3B):
+    //     mov rcx, [rip+disp]      ; g_env (0x146B52FF0)
+    //     mov rax, [rcx]           ; vtable
+    //     call qword ptr [rax+0x60] ; virtual slot moved 0x40 -> 0x60 in 2.02
+    //     mov rcx, [rax+0xEE0]     ; member UNCHANGED from TU 1.18-2.01
+    //     mov rax, [rcx+0x90]      ; trailing deref pins this isolated site
+    // All 16 equivalent mov rcx,[rip] / call [rax+0x60] / mov rcx,[rax+0xEE0]
+    // runs in the 2.02 build resolve to the SAME global 0x146B52FF0, so even
+    // if the trailing pin drifts, the rip-resolve stays correct.
+    // Old (TU 1.18-2.01, FAIL on 2.02):
+    //     "48 8B 0D ?? ?? ?? ?? 48 8B 01 FF 50 40 48 8B D7 48 8B 88 E0 0E 00 00"
     inline constexpr const char* kSig_EnvManager =
-        "48 8B 0D ?? ?? ?? ?? 48 8B 01 FF 50 40 48 8B D7 48 8B 88 E0 0E 00 00";
+        "48 8B 0D ?? ?? ?? ?? 48 8B 01 FF 50 60 48 8B 88 E0 0E 00 00 48 8B 81 90 00 00 00";
     inline constexpr uintptr_t kOff_EnvManager_Mov = 3;
     inline constexpr int       kLen_EnvManager_Mov = 7;
 
@@ -1427,12 +1667,23 @@ namespace trinity::game
     // including the initial load-in dress-up. Signature = full
     // prologue through the arg shuffle (mov r15,r8; mov r12,rdx; mov r14,rcx;
     // mov r13,[rcx+8]); stack/frame immediates wildcarded. Unique.
+    // TU 2.01+ EquipBatch (sub_142B474B0): unique match.
     inline constexpr const char* kSig_EquipBatch =
+        "48 89 5C 24 10 55 56 57 41 54 41 55 41 56 41 57 48 8D 6C 24 D9 48 81 EC ?? 00 00 00 4D 8B F8 4C 8B E2 48 8B D9 4C 8B 69 08";
+
+    // TU 2.01+ EquipBatch (sub_142B474B0) wildcarded prologue (matches even if hooked by MinHook or other detours)
+    inline constexpr const char* kSig_EquipBatch_Hooked =
+        "?? ?? ?? ?? ?? ?? ?? ?? ?? ?? ?? ?? ?? ?? ?? ?? 48 8D 6C 24 D9 48 81 EC ?? 00 00 00 4D 8B F8 4C 8B E2 48 8B D9 4C 8B 69 08";
+
+    // Legacy (TU 2.00) EquipBatch
+    // OBSOLETE in TU 2.02.00 (0 hits in final scan; kept for reference).
+    inline constexpr const char* kSig_EquipBatch_TU200 =
         "48 89 5C 24 10 55 56 57 41 54 41 55 41 56 41 57 "
         "48 8D AC 24 ? ? ? ? B8 ? ? ? ? "
         "E8 ? ? ? ? 48 2B E0 4D 8B E0 4C 8B EA 4C 8B F1 4C 8B 79 08";
 
     // Legacy (TU 1.14 - 1.16) EquipBatch
+    // OBSOLETE in TU 2.02.00 (0 hits in final scan; kept for reference).
     inline constexpr const char* kSig_EquipBatch_Legacy =
         "48 89 5C 24 10 55 56 57 41 54 41 55 41 56 41 57 "
         "48 8D AC 24 ? ? ? ? B8 ? ? ? ? "
@@ -1443,21 +1694,31 @@ namespace trinity::game
     // Called directly with our crafted batch. Signature = prologue + the
     // literal 0x120 frame + arg shuffle (mov r12,r8; mov rsi,rdx). If a patch
     // resizes the frame, re-find via xrefs to the dye upsert (kSig_DyeUpsert)
-    // The per-slot equipped dye applier (sub_847D24 / 1.17+ verified):
-    //     void f(void* equipComponent, uint16_t slotTag, const uint8_t record[16], int channel)
+    // The per-slot equipped dye applier (sub_142B3FE00 / TU 2.01; TU 2.02 verified
+    // @ 0x142B41E60 — ABI SWAPPED in 2.02: disasm shows arg3 is a SIGNED int
+    // (test/jle = integer semantics) and arg4 the record pointer, i.e.
+    //     TU 2.01: void f(void* comp, uint16_t slotTag, const uint8_t rec[16], int channel)
+    //     TU 2.02: void f(void* comp, uint16_t slotTag, int channel, const uint8_t* rec)
     // Works universally for ALL equipped components (Player characters AND Mounts/Vehicles).
     inline constexpr const char* kSig_DyeApplySlot =
+        "48 89 5C 24 18 4C 89 4C 24 20 66 89 54 24 10 55 56 57 41 54 41 55 41 56 41 57 48 83 EC 30 4D 8B";
+    // OBSOLETE in TU 2.02.00 (0 hits in final scan; kept for reference).
+    inline constexpr const char* kSig_DyeApplySlot_Legacy =
         "48 83 EC 30 41 0F B7 D9 48 8B FA 48 8B E9 48 8B 41 08 48 8D 50 08 45 33 FF";
 
-    // The client dye-ack applier (sub_814BD0 / 1.17+ verified):
+    // The client dye-ack applier (sub_140915B80 / TU 2.01 verified):
     //     int* f(void* equipComponent, int* outErr, void* batch1960)
-    // Called directly with our crafted batch. Reads comp+0x80 (table descriptor)
-    // and upserts records directly into TrItemValue and triggers the GPU material update.
+    // Called directly with our crafted batch. Checks possessor and triggers GPU material update.
     inline constexpr const char* kSig_DyeApplyBatch =
-        "48 89 5C 24 18 48 89 54 24 10 55 56 57 41 54 41 55 41 56 41 57 "
-        "48 83 EC 50 4D 8B E0 48 8B F2 4C 8B F1";
+        "4C 89 44 24 18 48 89 54 24 10 55 53 56 57 41 54 41 55 41 56 41 57 48 8B EC 48 83 EC 68 49 8B F0";
+
+    // Legacy (TU 2.00) client dye-ack applier
+    inline constexpr const char* kSig_DyeApplyBatch_TU200 =
+        "4C 89 4C 24 20 4C 89 44 24 18 48 89 54 24 10 55 53 56 57 41 54 41 55 41 56 41 57 "
+        "48 8D AC 24 58 EE FF FF";
 
     // Legacy (TU 1.14 - 1.16) client dye-ack applier
+    // OBSOLETE in TU 2.02.00 (0 hits in final scan; kept for reference).
     inline constexpr const char* kSig_DyeApplyBatch_Legacy =
         "48 89 5C 24 ? 48 89 54 24 ? 55 56 57 41 54 41 55 41 56 41 57 "
         "48 8D 6C 24 ? 48 81 EC 20 01 00 00 4D 8B E0 48 8B F2";
@@ -1468,11 +1729,17 @@ namespace trinity::game
     // (growing the vector in the CALLING THREAD'S REALM) while count < 12.
     // Used for the inventory-instance mirror. The `49 C1 E0 04` is the
     // 16-byte record stride (shl r8,4) - semantic, keep literal.
+    // TU 2.01+ DyeUpsert (sub_1423542D0) - 100% unique match
     inline constexpr const char* kSig_DyeUpsert =
-        "48 8B 41 78 4C 8B D1 44 8B 81 80 00 00 00 49 C1 E0 04";
+        "48 8B 41 78 4C 8D 49 78 45 8B 51 08 41 8B CA 48 C1 E1 04";
+
+    // Legacy (TU 2.00) DyeUpsert
+    inline constexpr const char* kSig_DyeUpsert_Legacy =
+        "48 89 5C 24 18 48 89 6C 24 20 56 57 41 54 41 56 41 57 48 83 EC 30 4C 8B 51 78";
 
     // Legacy (TU 1.14 - 1.16) DyeUpsert
-    inline constexpr const char* kSig_DyeUpsert_Legacy =
+    // OBSOLETE in TU 2.02.00 (0 hits in final scan; kept for reference).
+    inline constexpr const char* kSig_DyeUpsert_TU116 =
         "48 8B 41 ? 4C 8B D1 44 8B 41 ? 49 C1 E0 04";
 
     // --- WHY DyeApplyBatch SILENTLY NO-OPS ON COMPANIONS (RE 2026-08-25) ------
@@ -1498,43 +1765,76 @@ namespace trinity::game
     // that every protagonist body owns. Driving those leaves directly is the
     // universal live apply, possessed or not:
     //
-    // Visual SET leaf (sub_8154A0 @ VA 0x1408160A0, TU 1.18.02 unique):
+    // Visual SET leaf (sub_140916670 / TU 2.01 verified):
     //     void f(void* comp, void* entry, const uint8_t rec[16],
     //            uint16_t slotTag, uint8_t stackCh /*=channel*/,
     //            uint8_t stackZero /*=0*/)
     // Builds the material parameter block from `rec` and pushes the override
-    // into the item's GPU material instance (call 0x140804340 inside).
+    // into the item's GPU material instance (call 0x1403847d0 inside).
     inline constexpr const char* kSig_DyeVisualSet =
+        "48 89 5C 24 18 55 56 57 41 54 41 55 41 56 41 57 "
+        "48 8D AC 24 50 FF FF FF 48 81 EC B0 01 00 00 "
+        "45 0F B7 F1";
+    // OBSOLETE in TU 2.02.00 (0 hits in final scan; kept for reference).
+    inline constexpr const char* kSig_DyeVisualSet_Legacy =
         "48 89 5C 24 18 55 56 57 41 54 41 55 41 56 41 57 "
         "48 8D AC 24 10 FF FF FF 48 81 EC F0 01 00 00 "
         "45 0F B7 F1 49 8B F0 48 8B FA";
-    // Visual CLEAR leaf (sub_817310 @ VA 0x140817310, unique): drops the
+
+    // Visual CLEAR leaf (sub_140917D20 / TU 2.01 verified): drops the
     // rendered override for one channel so the piece shows its natural
     // material again.
     //     void f(void* comp, void* entry, uint16_t slotTag,
     //            uint8_t channel, uint8_t stackZero /*=0*/)
     inline constexpr const char* kSig_DyeVisualClear =
+        "48 89 5C 24 18 55 56 57 41 54 41 55 41 56 41 57 "
+        "48 8B EC 48 83 EC 70 45 0F B6 E9 45 0F B7";
+    // OBSOLETE in TU 2.02.00 (0 hits in final scan; kept for reference).
+    inline constexpr const char* kSig_DyeVisualClear_Legacy =
         "48 89 5C 24 18 44 88 4C 24 20 55 56 57 41 54 41 55 41 56 41 57 "
-        "48 8B EC 48 81 EC 80 00 00 00 45 0F B7 F0 48 8B FA 48 8B F1";
-    // Data remove-by-channel (sub_206EBF0 @ VA 0x14206EBF0, unique): scans
-    // the entry's dye vector for record[+6]==channel and shifts it out - what
-    // the batch's clear branch runs AFTER the visual clear.
-    //     void f(void* entry, uint8_t channel)
+        "48 8D 6C 24 A9 48 81 EC 90 00 00 00 45 0F B6 F1 45 0F B7 E8 48 8B FA 48 8B F1";
+
+    // The dye toast ("Item dyed successfully.") shown by DyeApplyBatch's own
+    // success tail (call @ batch+0x565 -> sub_140926DC0, TU 2.02 verified:
+    // rcx = [[global]+0x80]+0x4F8 UI object, r8d = -1; builds + pushes the
+    // localized notification). Hooked so the auto-restore's batch replays can
+    // suppress it - only the USER's dye action should toast. Tail-call/jmp
+    // forms may exist in other TUs; re-find via the call inside kSig_DyeApplyBatch.
+    inline constexpr const char* kSig_DyeNotify =
+        "4C 8B DC 49 89 5B 10 49 89 6B 20 45 89 43 18 56 57 "
+        "41 54 41 56 41 57 48 83 EC 50 41 8B D8";
+    // Data remove-by-channel - OBSOLETE in TU 2.02.00. The 2.01 leaf
+    // (sub_206EBF0 @ VA 0x14206EBF0, "mov r10d,[rcx+0x80]" scan head) no
+    // longer exists as a standalone function: TU 2.02 INLINED the channel
+    // scan into DyeApplyBatch's clear branch (cmp byte [r9+rcx*8+6], r10b
+    // @ 0x140916835) and the record shift-out was factored into a separate
+    // helper @ 0x140F1D1E0 that takes (vecWrapper{data,count}, INDEX) - NOT
+    // (entry, channel) - so it cannot substitute the old contract.
+    // Container layout is UNCHANGED (proven by kSig_DyeUpsert @ 0x142355870
+    // reading [entry+0x78] data / [entry+0x80] count, 16-byte records,
+    // channel byte at record+6), so the mod's in-place removal fallback in
+    // CallDyeRecordRemove (dye.cpp) covers this path without g_dyeRecRemove.
+    // Kept for reference / older builds only - both forms FAIL on 2.02:
     inline constexpr const char* kSig_DyeRecordRemove =
         "44 8B 91 80 00 00 00 33 C0 4C 8B D9 45 85 D2 0F 84";
+    inline constexpr const char* kSig_DyeRecordRemove_Legacy =
+        "48 89 5C 24 08 48 89 74 24 10 57 48 83 EC 20 48 8B D9 41 0F B6 F8 48 8B F2 48 8B 0D ?? ?? ?? ??";
 
     // Equip component layout (verified in THIS build from BatchEquip's own
     // table walk: `a1[17]` -> desc, `*(desc+8) + 200*i`, tag at +192).
     inline constexpr uintptr_t kOff_EquipComp_Table  = 0x80; // 1.17 -> table descriptor (live client/server chain capture)
     inline constexpr uintptr_t kOff_EquipTable_Array = 0x08; // entry[] base
     inline constexpr uintptr_t kOff_EquipTable_Count = 0x10; // u32
-    inline constexpr uintptr_t kEquipEntry_Stride    = 0xD0; // 1.17: TrItemValue grew by 8 bytes
-    inline constexpr uintptr_t kOff_EquipEntry_SlotTag = 0xC8; // 1.17 u16 slot tag (helm 3, chest 4,
-                                                               // gloves 5, boots 6, cloak 16)
+    inline constexpr uintptr_t kEquipEntry_Stride    = 0xD0; // TU 2.00 / 1.17: TrItemValue stride
+    inline constexpr uintptr_t kOff_EquipEntry_SlotTag = 0xC8; // TU 2.00 / 1.17 u16 slot tag
+    inline constexpr uintptr_t kEquipEntry_Stride_TU201     = 0xC8; // TU 2.01: TrItemValue stride (200 bytes)
+    inline constexpr uintptr_t kOff_EquipEntry_SlotTag_TU201 = 0xC0; // TU 2.01 u16 slot tag (192 bytes)
     // Within an entry, the TrItemValue fields reuse kOff_ItemVal_InstanceId /
     // kOff_InvSlot_TypeId / kOff_InvSlot_Quantity above, plus:
-    inline constexpr uintptr_t kOff_ItemVal_DyeData  = 0x78; // 1.17 -> 16-byte record[]
-    inline constexpr uintptr_t kOff_ItemVal_DyeCount = 0x80; // 1.17 u32 count (capacity at +0x84)
+    inline constexpr uintptr_t kOff_ItemVal_DyeData  = 0x78; // TU 2.00 / 1.17 -> 16-byte record[]
+    inline constexpr uintptr_t kOff_ItemVal_DyeCount = 0x80; // TU 2.00 / 1.17 u32 count (capacity at +0x84)
+    inline constexpr uintptr_t kOff_ItemVal_DyeData_TU201  = 0x78; // TU 2.01 -> 16-byte record[]
+    inline constexpr uintptr_t kOff_ItemVal_DyeCount_TU201 = 0x80; // TU 2.01 u32 count
     inline constexpr uint32_t  kDye_MaxChannels      = 12;
 
     // --- Abyss Gear sockets (live-cracked 2026-07-18; see the abyss-gear note) -
@@ -1578,9 +1878,22 @@ namespace trinity::game
     //     refinement also rebuilds derived data and spins a new item instance);
     //     we trigger the same effect refresh a socket edit does as the best lever.
     //   * whether the server accepts an out-of-band level on reconcile/save.
-    inline constexpr uintptr_t kOff_ItemVal_RefineLevel = 0x0A; // u16, == kOff_ItemVal_Subtype
+    inline constexpr uintptr_t kOff_ItemVal_RefineLevel = 0x0A; // u16 refinement/enhancement level (== kOff_ItemVal_Subtype)
     inline constexpr int       kRefine_Max              = 10;
     inline constexpr uintptr_t kOff_ItemVal_Durability  = 0x40; // u16 durability (max ~10000 or 1000)
+
+    // Native ResizeSocketVector: void f(void* pVectorHeader, uint32_t newCount)
+    // TU 2.02.00: the function was cloned 51x by the linker - every clone is
+    // BYTE-IDENTICAL for the entire body (sig extended below to the full
+    // 31-byte body incl. the not-taken epilogue; still 51 hits). Raw E8 call
+    // xrefs (~8 per clone incl. false positives from embedded rel32 bytes)
+    // show no byte-level way to tell the socket-vector instance apart, so a
+    // unique sig is NOT derivable statically. This sig is currently unused by
+    // any .cpp (the TU-update mod resolves sockets via EquipEffectRefresh),
+    // and any future consumer must disambiguate via a caller-side anchor.
+    inline constexpr const char* kSig_ResizeSocketVector_TU201 =
+        "48 89 5C 24 18 56 48 83 EC 20 8B F2 48 8B D9 3B 51 0C 77 0D "
+        "32 C0 48 8B 5C 24 40 48 83 C4 20 5E C3";
 
     // The equipped-item EFFECT refresh (IDB sub_7C88A0): re-applies every
     // equipped item's effects - re-reading each item's abyss-gear sockets and
@@ -1594,12 +1907,13 @@ namespace trinity::game
     // do not rebuild it, so they did nothing on a raw write. Live trace of the
     // Witch's socketing found sub_7C88A0 as the real entry.)
     // Signature: void* f(equipComponent, int* out).
-    // Modern TU 1.17 - 1.18+ EquipEffectRefresh (100% unique match @ 0x140AEBE70 / sub_7C88A0)
+    // TU 2.01+ EquipEffectRefresh (100% unique match @ 0x140E7BAC0)
     inline constexpr const char* kSig_EquipEffectRefresh =
-        "48 89 5C 24 10 55 56 57 41 54 41 55 41 56 41 57 48 8B EC 48 83 EC 60 4C 8B F2 48 8B F1 80 49 22 20 4C 8D 81 00 01 00 00";
+        "48 89 5C 24 10 55 56 57 48 83 EC 40 48 8B DA 48 8B F9 80 49 22 20 4C 8D";
+    // Modern TU 1.17 - 1.18+ EquipEffectRefresh
+    // OBSOLETE in TU 2.02.00 (0 hits in final scan; kept for reference).
     inline constexpr const char* kSig_EquipEffectRefresh_Legacy =
-        "48 89 5C 24 ? 48 89 54 24 ? 48 89 4C 24 ? 55 56 57 41 54 41 55 41 56 41 57 "
-        "48 8B EC 48 83 EC 60 4C 8B F2";
+        "48 89 5C 24 10 55 56 57 41 54 41 55 41 56 41 57 48 8B EC 48 83 EC 60 4C 8B F2 48 8B F1 80 49 22 20 4C 8D 81 00 01 00 00";
 
     // --- Why live REMOVAL of an abyss gear does not strip its effect -----------
     // (RE 2026-07-19, static trace of the whole effect cluster around sub_7C88A0)
@@ -1672,36 +1986,58 @@ namespace trinity::game
     // cache is seeded (unscaled) the first time a key is seen - and because the
     // save-loader drives these SAME setters at login, every relationship is
     // pre-seeded there, so the first in-game gift/feed is already scaled and a
-    // CDtrustA (Site 1: 0x141BDA967, inside SetNpc):
+    // CDtrustA (TU 2.02.00 verified, Site 1 @ 0x141E2C1F8, inside SetNpc
+    // (kSig_FriendlySetNpc @ 0x141E2C090, +0x168)): the copy-loop tail
+    //     cmp rcx,rdx ; jne loop ; jmp +0x3B
+    //    (48 3B CA 75 F3 EB 3B - was "mov eax,r8d ; jmp +0x4E" in TU 2.01)
+    // followed by the same vector-append copy block. Hook lands on the
+    // vmovups [rcx+0x20],ymm1 store at sig+0x14 (TU 2.01: sig+0x12):
+    //     vmovups [rcx+0x20], ymm1
+    //     vmovups ymm0, [rdi+0x40]     <- 2.02 widened +0x40 copy to YMM
+    //     vmovups [rcx+0x40], ymm0
     inline constexpr const char* kSig_FriendlyTrustSiteA =
-        "41 8B C0 EB 4E C5 FC 10 07 C5 FC 11 01 C5 FC 10 4F 20 C5 FC 11 49 20";
-    inline constexpr size_t kOff_FriendlyTrustSiteA_Hook = 0x12;
+        "48 3B CA 75 F3 EB 3B C5 FC 10 07 C5 FC 11 01 C5 FC 10 4F 20 C5 FC 11 49 20";
+    inline constexpr size_t kOff_FriendlyTrustSiteA_Hook = 0x14;
 
-    // CDtrustB (Site 2: 0x14D4AEFAF, inside SetPet):
+    // CDtrustB (TU 2.02.00 verified, Site 2 @ 0x14D87BE28, inside SetPet
+    // (kSig_FriendlySetPet @ 0x14D87BCB0, +0x178)): same shape as Site A with
+    // the reversed cmp encoding (48 39 D1 instead of 48 3B CA).
     inline constexpr const char* kSig_FriendlyTrustSiteB =
-        "44 89 C0 EB 4E C5 FC 10 07 C5 FC 11 01 C5 FC 10 4F 20 C5 FC 11 49 20";
-    inline constexpr size_t kOff_FriendlyTrustSiteB_Hook = 0x12;
+        "48 39 D1 75 F3 EB 3B C5 FC 10 07 C5 FC 11 01 C5 FC 10 4F 20 C5 FC 11 49 20";
+    inline constexpr size_t kOff_FriendlyTrustSiteB_Hook = 0x14;
 
-    // Original 15 bytes replaced at hook site:
+    // Original 15 bytes replaced at hook site (TU 2.02.00: the 2.01 record
+    // stride grew, widening the +0x40 copy from XMM to YMM - bytes 6 and 11
+    // changed 0xF8 -> 0xFC; both sites byte-identical):
     // vmovups [rcx+20h], ymm1   (C5 FC 11 49 20)
-    // vmovups xmm0, [rdi+40h]   (C5 F8 10 47 40)
-    // vmovups [rcx+40h], xmm0   (C5 F8 11 41 40)
+    // vmovups ymm0, [rdi+40h]   (C5 FC 10 47 40)   <- was C5 F8 (xmm0) in 2.01
+    // vmovups [rcx+40h], ymm0   (C5 FC 11 41 40)   <- was C5 F8 (xmm0) in 2.01
     inline constexpr uint8_t kOrig_FriendlyTrustBytes[15] = {
-        0xC5, 0xFC, 0x11, 0x49, 0x20, 0xC5, 0xF8, 0x10, 0x47, 0x40, 0xC5, 0xF8, 0x11, 0x41, 0x40
+        0xC5, 0xFC, 0x11, 0x49, 0x20, 0xC5, 0xFC, 0x10, 0x47, 0x40, 0xC5, 0xFC, 0x11, 0x41, 0x40
     };
 
-    // Direct SetNpc and SetPet function prologues for TU 2.00:
+    // Direct SetNpc and SetPet function prologues for TU 2.01 (stack frame 0x68):
     inline constexpr const char* kSig_FriendlySetNpc =
-        "4C 8B DC 53 55 56 57 41 56 48 83 EC 60 48 8B FA 48 8D 69 38";
+        "4C 8B DC 53 55 56 57 41 56 41 57 48 83 EC 68 48 8B FA 48 8B F1 0F B7 42 04";
 
     inline constexpr const char* kSig_FriendlySetPet =
-        "49 89 E3 53 55 56 57 41 56 48 83 EC 60 48 89 D7 48 8D 69 18";
+        "49 89 E3 53 55 56 57 41 56 41 57 48 83 EC 68 48 89 D7 48 89 CE 0F B7 42 04";
+
+    // Legacy (TU 2.00) SetNpc and SetPet function prologues (stack frame 0x60):
+    // OBSOLETE in TU 2.02.00 (0 hits in final scan; kept for reference).
+    inline constexpr const char* kSig_FriendlySetNpc_Legacy =
+        "4C 8B DC 53 55 56 57 41 56 48 83 EC 60 48 8B FA 48 8D 69 38";
+
+    // OBSOLETE in TU 2.02.00 (0 hits in final scan; kept for reference).
+    inline constexpr const char* kSig_FriendlySetPet_Legacy =
+        "49 89 E3 53 55 56 57 41 56 48 83 EC 60 48 89 D7";
 
     // NpcTrustWriter (0x141BDF910): The direct internal relation writer for NPCs (Greet, Gift, Dialogue)
     inline constexpr const char* kSig_FriendlyNpcTrustWriter =
         "48 89 5C 24 10 66 44 89 44 24 18 55 56 57 41 54 41 55 41 56 41 57 48 8D 6C 24 E1 48 81 EC E0 00";
 
     // FactionRelationAlertDispatcher (0x142759760): The authoritative UI and Faction dispatcher
+    // OBSOLETE in TU 2.02.00 (0 hits in final scan; kept for reference).
     inline constexpr const char* kSig_FriendlyAlertDisp =
         "48 89 5C 24 10 66 44 89 44 24 18 55 56 57 41 54 41 55 41 56 41 57 48 8D 6C 24 B0 48 81 EC 50 01";
 
@@ -1709,5 +2045,70 @@ namespace trinity::game
     inline constexpr uintptr_t kOff_FriendlyRec_Group = 0x04; // u16 group/bucket key
     inline constexpr uintptr_t kOff_FriendlyRec_Value = 0x28; // i64 trust value (confirmed: QWORD @ +0x28 in TU 2.00)
     inline constexpr int64_t   kFriendly_Max          = 100;  // the taming/NPC cap (0..100)
+
+    // --- Portable Barber (barber.cpp) ----------------------------------------
+    // The game's official barber screen is the class
+    // pa::uiCommonScript::UIGamePlayControlRootBarberShop (RTTI type
+    // descriptor 0x1469B10F0, COL 0x145CFCAD0, vftable 0x1455B3CE8 in TU
+    // 2.01.00; ctor 0x140F0F230/0x140F0F290 - both read the client/server
+    // realm flag from TLS 0x1FD, matching kTls_RealmFlag_TU201). Its element
+    // strings (UI_BarberShop_HairLength, UI_BarberShop_BeardLengh,
+    // UI_BarberShop_Tattoo*, dyeingcamera_barber, ...) confirm the full
+    // hair/beard/tattoo/palette screen ships in the binary.
+    //
+    // Every script-visible UI object has an auto-generated binding thunk of
+    // the shape (7115 of them in TU 2.01.00, all with the same constants):
+    //     41 B9 FF FF 02 00     mov  r9d, 0x2FFFF          // bind tag
+    //     48 8D 15 <rip+32>     lea  rdx, <object name>    // e.g. this root
+    //     41 B8 01 00 00 00     mov  r8d, 1
+    //     48 8D 0D <rip+32>     lea  rcx, <dword handle slot>
+    //     E9 <rel32>            jmp  UiBindObject (below)
+    // The barber thunk is therefore NOT identified by byte pattern alone -
+    // the scanner accepts only the match whose lea rdx resolves to the name
+    // string below (exactly 1 of the 7115 validates). This stays correct if
+    // the thunks are reordered or regenerated in a future build.
+    // IDB (TU 2.01.00): thunk 0x14015F430, name string 0x1455848F8, handle
+    // slot 0x146B99168.
+    inline constexpr const char* kSig_BarberUIThunk =
+        "41 B9 FF FF 02 00 48 8D 15 ?? ?? ?? ?? 41 B8 01 00 00 00 "
+        "48 8D 0D ?? ?? ?? ?? E9";
+
+    // Anchor name of the gameplay-control root the barber screen is bound to.
+    // Occurs 3x in the image (standalone name table entry + inside the
+    // .?AV/.?AU RTTI names); the thunk validation picks the right one.
+    inline constexpr const char* kStr_BarberUIRoot =
+        "UIGamePlayControlRootBarberShop";
+
+    // UiBindObject (0x141231110) - the common resolver all 7115 thunks tail-
+    // jump into: lazily binds a script-visible UI object by name into a dword
+    // handle slot (zeroes the slot, takes a once-guard via lock cmpxchg, then
+    // runs the bind job on a TLS frame). Fallback entry when the thunk shape
+    // ever changes but the resolver does not:
+    //   void __fastcall UiBindObject(unsigned* outSlot, const char* name,
+    //                                int create, int tag)
+    // In-game v1 result (TU 2.02.00, PE 1.0.0.2850): thunk resolves and the
+    // bind lands (handle 0xCF6 in the slot), but binding alone does NOT show
+    // the screen - the game's own open glue binds into a local slot and then
+    // resolves + event-invokes the object through the script VM. v2 adds a
+    // logging hook on UiBindObject: when the game naturally opens a gameplay
+    // root (dyehouse, bank, barber...), the logged return address marks the
+    // exact glue site that performs the show, per root.
+    inline constexpr const char* kSig_BarberUIResolver =
+        "48 89 5C 24 20 44 89 44 24 18 48 89 54 24 10 48 89 4C 24 08 55 56 57 "
+        "41 54 41 55 41 56 41 57 48 8D 6C 24 D9 48 81 EC C0 00 00 00 41 8B F9";
+
+    // UiResolveObject (0x140404C10) - resolves a bound script object from a
+    // handle slot: a global registry pointer (slot 0x146B52E30 in TU 2.01.00,
+    // read via the rip-relative operand at fn+0x14) maps handle -> a 16-byte
+    // entry ([REG+0x58] + handle*16; +8 = inner id); a per-script-VM hashtable
+    // argument then maps that inner id to the object wrapper (+8 = object).
+    //   void* __fastcall UiResolveObject(void* vmCtx, unsigned* handleSlot)
+    // The VM context is not synthetically callable, so for now this function
+    // is used as a static anchor only: the module dumps the raw registry
+    // entry for our handle (entry+0 may be the object itself) to Trinity.log
+    // to map the layout without guessing.
+    inline constexpr const char* kSig_BarberUIResolveObject =
+        "48 83 EC 08 83 79 04 00 4C 8B C1 75 07 33 C0 48 83 C4 08 C3 48 8B 05 "
+        "?? ?? ?? ?? 8B 09 48 89 1C 24 8B 1A";
 }
 

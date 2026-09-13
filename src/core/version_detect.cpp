@@ -57,8 +57,26 @@ namespace trinity::core
             const bool hasLegacyDyeBatch = (mem::FindPattern(game::kSig_DyeApplyBatch_Legacy) != 0);
 
             // TU 2.00.00+: the PE revision moves per title update
-            // (1.0.0.2474 = TU 1.18.02, 1.0.0.2625 = TU 2.00.00, 1.0.0.2658 = TU 2.00.01).
-            if (g_versionInfo.revision >= 2650)
+            // (1.0.0.2474 = TU 1.18.02, 1.0.0.2625 = TU 2.00.00, 1.0.0.2658 = TU 2.00.01, 1.0.0.2692 = TU 2.00.02, 1.0.0.2760 = TU 2.01.00).
+            if (g_versionInfo.revision >= 2800)
+            {
+                g_versionInfo.tu = GameTU::TU_1_18_01_Plus; // modern layout family
+                snprintf(g_versionInfo.displayStr, sizeof(g_versionInfo.displayStr),
+                         "Crimson Desert TU 2.02.00 (Active)");
+            }
+            else if (g_versionInfo.revision >= 2750)
+            {
+                g_versionInfo.tu = GameTU::TU_1_18_01_Plus; // modern layout family
+                snprintf(g_versionInfo.displayStr, sizeof(g_versionInfo.displayStr),
+                         "Crimson Desert TU 2.01.00 (Active)");
+            }
+            else if (g_versionInfo.revision >= 2690)
+            {
+                g_versionInfo.tu = GameTU::TU_1_18_01_Plus; // modern layout family
+                snprintf(g_versionInfo.displayStr, sizeof(g_versionInfo.displayStr),
+                         "Crimson Desert TU 2.00.02 (Active)");
+            }
+            else if (g_versionInfo.revision >= 2650)
             {
                 g_versionInfo.tu = GameTU::TU_1_18_01_Plus; // modern layout family
                 snprintf(g_versionInfo.displayStr, sizeof(g_versionInfo.displayStr),

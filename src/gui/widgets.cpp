@@ -414,10 +414,23 @@ namespace trinity::ui
 
     bool Toggle(const char* label, bool* value, const char* desc)
     {
-        RowResult  r       = RowBase(label, desc, RowKind::Toggle);
-        const bool changed = r.activated || r.left || r.right;
-        if (changed)
+        RowResult r = RowBase(label, desc, RowKind::Toggle);
+        bool changed = false;
+        if (r.activated)
+        {
             *value = !*value;
+            changed = true;
+        }
+        else if (r.left && *value)
+        {
+            *value = false;
+            changed = true;
+        }
+        else if (r.right && !*value)
+        {
+            *value = true;
+            changed = true;
+        }
 
         if (r.drawn)
         {

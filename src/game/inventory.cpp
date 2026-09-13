@@ -65,9 +65,12 @@ namespace trinity::game
                                                   void*, uint8_t, uint8_t, uint8_t);
         // Transaction commit: (holder, err, CONTAINER, items, out, c, c).
         using Commit_t = void*(__fastcall*)(void*, void*, void*, void*, void*, uint8_t, uint8_t);
-        // The game's own slot-expansion setter (kSig_InvSetExpandSlots):
-        // (holder, &err, unused, bucketType, expansionCount). See offsets.h -
-        // `count` is the expansion beyond _defaultSlotCount, not the cap.
+        // The game's own slot-expansion setter (kSig_InvSetExpandSlots).
+        // TU 2.02: (holder, &err, bucketType, expansionCount) - 4 args; the
+        // dead 3rd pointer arg of the TU<=2.01 prototype is gone and
+        // bucketType moved into r8 (see offsets.h). `count` is the expansion
+        // beyond _defaultSlotCount, not the cap.
+        using SetExpandSlots_20202_t = void*(__fastcall*)(void*, int*, uint16_t, uint16_t);
         using SetExpandSlots_t = void*(__fastcall*)(void*, int*, void*, uint16_t, uint16_t);
         // --- The add-item primitives (see the add-item note in offsets.h) ----
         // Resolved, not hooked: we CALL these. oHolderInsert above doubles as
@@ -76,14 +79,16 @@ namespace trinity::game
         // own capture hook.
         using ItemValueCtor_t   = void*(__fastcall*)(void* itemVal, uint16_t* typeId, int64_t qty);
         using CommitPlacement_t = void*(__fastcall*)(void* holder, int* err, void* unused,
-                                                     void* placement, uint16_t slotIdx);
+                                                     void* placement, uint16_t slotIdx,
+                                                     uint16_t pad, void* vec1, void* vec2);
         using FreePlacements_t  = void(__fastcall*)(void* vec);
         using ItemValueDtor_t   = void(__fastcall*)(void* itemVal);
         GetItemQty_t      oGetItemQty      = nullptr;
         GetHolder_t       oGetHolder       = nullptr;
         HolderInsert_t    oHolderInsert    = nullptr;
         Commit_t          oCommit          = nullptr;
-        SetExpandSlots_t  oSetExpandSlots  = nullptr;
+        SetExpandSlots_20202_t oSetExpandSlots20202 = nullptr;
+        SetExpandSlots_t      oSetExpandSlots      = nullptr;
         ItemValueCtor_t   oItemValueCtor   = nullptr;
         CommitPlacement_t oCommitPlacement = nullptr;
         FreePlacements_t  oFreePlacements  = nullptr;
@@ -497,6 +502,18 @@ namespace trinity::game
             return out[0] != 0;
         }
 
+        static bool ContainsSubstringCi(const char* str, const char* sub)
+        {
+            if (!str || !sub || !*sub) return false;
+            const size_t slen = strlen(sub);
+            for (const char* p = str; *p; ++p)
+            {
+                if (_strnicmp(p, sub, slen) == 0)
+                    return true;
+            }
+            return false;
+        }
+
         static bool ContainsWord(const char* str, const char* word)
         {
             if (!str || !word || !*word) return false;
@@ -518,76 +535,92 @@ namespace trinity::game
             if (!key) key = "";
             if (!name) name = "";
 
+            auto matchKey = [&](const char* pat) -> bool {
+                return ContainsSubstringCi(key, pat);
+            };
+
             auto match = [&](const char* pat) -> bool {
-                return (strstr(key, pat) != nullptr) || (strstr(name, pat) != nullptr);
+                return ContainsSubstringCi(key, pat) || ContainsSubstringCi(name, pat);
+            };
+
+            auto matchWordKey = [&](const char* word) -> bool {
+                return ContainsWord(key, word);
             };
 
             auto matchWord = [&](const char* word) -> bool {
                 return ContainsWord(key, word) || ContainsWord(name, word);
             };
 
-            // 1. Genuine Socketable Abyss Gear (Items like Item_Stat_AbyssGear_, Item_Skill_AbyssGear_)
-            // Exclude boxes, recipes, chest items, armors, and weapons with "Abyss" in their name.
-            if ((match("AbyssGear") || match("Item_Stat_AbyssGear") || match("Item_Skill_AbyssGear") ||
-                 match("Item_Passive_AbyssGear") || match("Item_Active_AbyssGear")) &&
+            // 1. Genuine Socketable Abyss Gear
+            if ((matchKey("AbyssGear") || matchKey("Item_Stat_AbyssGear") || matchKey("Item_Skill_AbyssGear") ||
+                 matchKey("Item_Passive_AbyssGear") || matchKey("Item_Active_AbyssGear")) &&
                 !match("Box") && !match("Chest") && !match("Recipe") && !match("Blueprint"))
             {
                 return "Abyss Gear";
             }
 
-            // 2. Visione Chips & Sealed Artifacts (Items like Visione_Chip_TreeOfAxes, Abyss Artifacts, Cells)
-            if (match("Visione_Chip") || match("Visione") || match("Sealed") || match("Artifact") ||
-                match("AbyssArtifact") || match("Abyss_Artifact") || match("Abyss_Cell") || match("AbyssCell") ||
-                match("Abyss_Transporter") || match("AbyssStone") || match("Abyss_InfiniteStat") ||
-                match("Rune") || match("Relic") || match("Orb") || match("Totem") || match("Idol") ||
-                match("Tablet") || match("Slate") || match("Charm") || match("Reliquary") ||
-                match("Ancient_Sculpture") || match("Effigy"))
+            // 2. Visione Chips & Sealed Artifacts
+            if (matchKey("Visione_Chip") || matchKey("Visione") || matchKey("Sealed") || matchKey("Artifact") ||
+                matchKey("AbyssArtifact") || matchKey("Abyss_Artifact") || matchKey("Abyss_Cell") || matchKey("AbyssCell") ||
+                matchKey("Abyss_Transporter") || matchKey("AbyssStone") || matchKey("Abyss_InfiniteStat") ||
+                matchWord("Rune") || matchWord("Relic") || matchWord("Orb") || matchWord("Totem") || matchWord("Idol") ||
+                matchWord("Tablet") || matchWord("Slate") || matchWord("Charm") || matchWord("Reliquary") ||
+                match("Ancient_Sculpture") || matchWord("Effigy"))
+            {
                 return "Sealed Artifacts";
+            }
 
             // 3. Special Boss Quest Equipment
-            if (match("Special_Boss") || match("SpecialBoss") || match("Boss_Reward") || match("Quest_Equip_Special"))
+            if (matchKey("Special_Boss") || matchKey("SpecialBoss") || matchKey("Boss_Reward") || matchKey("Quest_Equip_Special"))
                 return "Special Boss Quest Equipment";
 
             // 4. Controls
-            if (match("GantryCrane") || match("Control") || match("Controller") || match("Remote") || match("Switch") || match("Lever"))
+            if (matchKey("GantryCrane") || matchKey("Control") || matchWord("Controller") || matchWord("Remote") ||
+                matchWord("Switch") || matchWord("Lever"))
                 return "Controls";
 
             // 5. Kuku Pot (All)
-            if (match("KuKuPot_All") || match("KuKu_Pot_All") || match("KuKu_Item") || match("CraftingRecipe_Kuku_Pot") || match("KuKu_ATAG") || match("KuKu Transmission"))
+            if (matchKey("KuKuPot_All") || matchKey("KuKu_Pot_All") || matchKey("KuKu_Item") ||
+                matchKey("CraftingRecipe_Kuku_Pot") || matchKey("KuKu_ATAG") || match("KuKu Transmission"))
                 return "Kuku Pot (All)";
 
             // 6. Kuku Pot
-            if (match("KuKuPot") || match("KuKu_Pot") || match("KuKu"))
+            if (matchKey("KuKuPot") || matchKey("KuKu_Pot") || matchWord("KuKu"))
                 return "Kuku Pot";
 
             // 7. Lures
-            if (match("Lure") || match("Bait") || match("Decoy") || match("Trap_Insect") || match("Bandellure"))
+            if (matchKey("Lure") || matchWord("Lure") || matchWord("Bait") || matchWord("Decoy") ||
+                matchKey("Trap_Insect") || match("Bandellure"))
                 return "Lures";
 
             // 8. Recipe Books
             if ((match("Recipe") || match("Blueprint")) && match("Book"))
                 return "Recipe Books";
 
-            // 9. Crafting Recipes & Blueprints (MUST be before weapons/armor! e.g. CraftingRecipe_Dragon_Weapon)
-            if (match("CraftingRecipe") || match("Recipe") || match("Blueprint") || match("Schematic"))
+            // 9. Crafting Recipes & Blueprints
+            if (matchKey("CraftingRecipe") || matchKey("Recipe") || matchKey("Blueprint") || matchKey("Schematic") ||
+                matchWord("Recipe") || matchWord("Blueprint") || matchWord("Schematic"))
                 return "Crafting Recipes";
 
             // 10. Treasure Maps
-            if (match("Treasure") || match("Map") || match("Chart"))
+            if (matchKey("Treasure") || matchWord("Treasure") || matchWord("Map") || matchWord("Chart"))
                 return "Treasure Maps";
 
             // 11. Wanted Posters
-            if (match("Wanted"))
+            if (matchKey("Wanted") || matchWord("Wanted"))
                 return "Wanted Posters";
 
             // 12. Wall Documents
-            if (match("Wall") || match("WallPaper") || match("Poster"))
+            if (matchKey("WallPaper") || matchKey("Wallpaper") || (matchWord("Wall") && matchWord("Document")) ||
+                matchWord("Poster") || matchWord("Posters") || matchKey("BoardPaper"))
                 return "Wall Documents";
 
             // 13. Quest Memories, Notice Papers, Letters, Clues
-            if (match("NoticePaper") || match("Memory") || match("Quest") || match("Mission") || match("Bounty") ||
-                match("Clue") || match("Evidence") || match("Interaction") || match("Trigger") || match("Gimmick") ||
-                match("Cutscene") || match("Request") || match("Notice"))
+            if (matchKey("NoticePaper") || matchKey("Memory") || matchKey("Quest") || matchKey("Mission") || matchKey("Bounty") ||
+                matchKey("Clue") || matchKey("Evidence") || matchKey("Interaction") || matchKey("Trigger") || matchKey("Gimmick") ||
+                matchKey("Cutscene") || matchKey("Request") || matchKey("Notice") || matchKey("Friendly_") ||
+                matchWord("Notice") || matchWord("Clue") || matchWord("Evidence") || matchWord("Bounty") || matchWord("Memory") ||
+                matchWord("Whereabouts") || matchWord("Profiling") || matchWord("Observation"))
                 return "Quest Memories";
 
             // 14. Books
@@ -595,204 +628,362 @@ namespace trinity::game
                 return "Books";
 
             // 15. Documents
-            if (matchWord("Document") || matchWord("Scroll") || matchWord("Note") || matchWord("Letter") || matchWord("Paper") ||
+            if (matchKey("LostLetter") || matchKey("Letter") || matchKey("Document") || matchKey("Order") ||
+                matchWord("Document") || matchWord("Scroll") || matchWord("Note") || matchWord("Letter") || matchWord("Paper") ||
                 matchWord("Contract") || matchWord("Treaty") || matchWord("Page") || matchWord("Script") || matchWord("Epistle") ||
                 matchWord("Records") || matchWord("Archive") || matchWord("Report") || matchWord("Sighting") || matchWord("Guide") ||
-                matchWord("Manual") || matchWord("Pamphlet") || matchWord("Leaflet") || matchWord("Memo") || matchWord("Dispatch"))
+                matchWord("Manual") || matchWord("Pamphlet") || matchWord("Leaflet") || matchWord("Memo") || matchWord("Dispatch") ||
+                matchWord("Log") || matchWord("Form") || matchWord("Orders"))
                 return "Documents";
 
             // 16. Packed Trade Goods
-            if (match("PackedInVehicle") || match("Packaged") || match("Pack_Trade") || match("Trade_Packed") || match("Freight"))
+            if (matchKey("PackedInVehicle") || matchKey("Packaged") || matchKey("Pack_Trade") || matchKey("Trade_Packed") || matchWord("Freight"))
                 return "Packed Trade Goods";
 
             // 17. Unpacked Trade Goods
-            if (match("Trade_Armor") || match("Trade_Weapon") || match("Unpack") || match("Unpacked"))
+            if (matchKey("Trade_Armor") || matchKey("Trade_Weapon") || matchKey("Unpack") || matchKey("Unpacked"))
                 return "Unpacked Trade Goods";
 
-            // 18. Animal Items
-            if (match("Animal") || match("Carcass"))
+            // 18. Animal Items (Insects, small wildlife, frogs, lizards, birds, carcasses)
+            if (matchKey("Animal") || matchWord("Carcass") ||
+                matchKey("Item_88_Butterfly") || matchKey("Item_Axolotl") || matchKey("Item_Baby_Hedgehog") ||
+                matchKey("Item_BananaSpider") || matchKey("Item_Banded_Peacock") || matchKey("Item_Bee") ||
+                matchKey("Item_Beetle") || matchKey("Item_BlackTail_Flycatcher") || matchKey("Item_Black_Centipede") ||
+                matchKey("Item_BlueJay") || matchKey("Item_Blue_Pansy_Butterfly") || matchKey("Item_Bumblebee") ||
+                matchKey("Item_Bunting_Bird") || matchKey("Item_Butterfly") || matchKey("Item_Camel_Cricket") ||
+                matchKey("Item_Chameleon") || matchKey("Item_Checkered_White") || matchKey("Item_Cockroach") ||
+                matchKey("Item_Colias_Nastes") || matchKey("Item_Common_Buckeye") || matchKey("Item_Common_Green_Birdwing") ||
+                matchKey("Item_Common_Nawab") || matchKey("Item_Crimson_Patch") || matchKey("Item_Desert_Orange_tip") ||
+                matchKey("Item_Diana_Fritillary") || matchKey("Item_Eastern_Comma") || matchKey("Item_Eastern_Tailed_Blue") ||
+                matchKey("Item_Eastern_Tiger_Swallowtail") || matchKey("Item_Firefly") || matchKey("Item_Flying_Squirrel") ||
+                matchKey("Item_Frilled_Lizard") || matchKey("Item_Giant_Salamander") || matchKey("Item_Gnat") ||
+                matchKey("Item_GnatWide") || matchKey("Item_Goanna") || matchKey("Item_GrassHopper") ||
+                matchKey("Item_Great_Purple_Hairstreak") || matchKey("Item_Grizzled_Skipper") || matchKey("Item_Guava_Skipper") ||
+                matchKey("Item_Hila_Lizard") || matchKey("Item_Hornet") || matchKey("Item_House_Centipede") ||
+                matchKey("Item_Hypaurotis_Crysalus") || matchKey("Item_Iguana") || matchKey("Item_JijeongLeaf_Insect") ||
+                matchKey("Item_Kallima_Inachus") || matchKey("Item_Little_Metalmark") || matchKey("Item_Longhorn_Beetle") ||
+                matchKey("Item_Longtailedtit") || matchKey("Item_Luna_Moth") || matchKey("Item_Lycaena_Phlaeas") ||
+                matchKey("Item_Malachite") || matchKey("Item_Meerkat") || matchKey("Item_Milbert_Tortoiseshell") ||
+                matchKey("Item_Mole") || matchKey("Item_Monarch") || matchKey("Item_Moth") || matchKey("Item_Muskrat") ||
+                matchKey("Item_Myscelia_Ethusa") || matchKey("Item_Neophasia_Terlooii") || matchKey("Item_Orange_Barred_Sulphur") ||
+                matchKey("Item_Oriole") || matchKey("Item_Ornythion_Swallowtail") || matchKey("Item_Oxpecker") ||
+                matchKey("Item_Painted_Lady") || matchKey("Item_Pipevine_Swallowtail") || matchKey("Item_Polydamas_Swallowtail") ||
+                matchKey("Item_Possum") || matchKey("Item_Purple_Emperor") || matchKey("Item_Rat") ||
+                matchKey("Item_Red_Spotted_Purple") || matchKey("Item_Red_Squirrel") || matchKey("Item_Regal_Fritillary") ||
+                matchKey("Item_Rhinoceros_Beetle") || matchKey("Item_Ruddy_Daggerwing") || matchKey("Item_Salamander") ||
+                matchKey("Item_Sea_Siater") || matchKey("Item_Silkworm_Moth") || matchKey("Item_Sleepy_Orange") ||
+                matchKey("Item_Snail") || matchKey("Item_Snow_Chipmunk") || matchKey("Item_Snowy_Plover") ||
+                matchKey("Item_Spicebush_Swallowtail") || matchKey("Item_Squirrel") || matchKey("Item_Stag_Beetle") ||
+                matchKey("Item_Theona_Checkerspot") || matchKey("Item_Tiger_Mimic_Queen") || matchKey("Item_Viceroy") ||
+                matchKey("Item_WhiteWing_Flycatcher") || matchKey("Item_White_M_Hairstreak") || matchKey("Item_White_Peacock") ||
+                matchKey("Item_Zebra_Heliconian") || matchKey("Item_Zebra_Swallowtail") || matchKey("Item_dragonfly") ||
+                matchKey("burrowingtoad") || matchKey("centipede") || matchKey("greenfrog") || matchKey("scorpion") || matchKey("toad") ||
+                matchWord("Butterfly") || matchWord("Beetle") || matchWord("Centipede") || matchWord("Spider") ||
+                matchWord("Cricket") || matchWord("Lizard") || matchWord("Salamander") || matchWord("Moth") ||
+                matchWord("Flycatcher") || matchWord("Oriole") || matchWord("Oxpecker") || matchWord("Plover") ||
+                matchWord("Redstart") || matchWord("Tit") || matchWord("Chipmunk") || matchWord("Squirrel") ||
+                matchWord("Opossum") || matchWord("Meerkat") || matchWord("Muskrat") || matchWord("Mole") ||
+                matchWord("Toad") || matchWord("Frog") || matchWord("Scorpion") || matchWord("Dragonfly") ||
+                matchWord("Swallowtail"))
+            {
                 return "Animal Items";
+            }
 
-            // 19. Collection (Dolls, Toys, Ceramic, Pottery, Statues, Props) - MUST be before Rings/Armor!
-            if (matchWord("Doll") || matchWord("Toy") || matchWord("Figurine") || matchWord("Statue") ||
+            // 19. Collection (Statues, props, ceramics, furniture, lamps, decor)
+            if (matchKey("Collection_Prop_") || matchKey("Prop_") || matchKey("Item_Background_Breakable_") ||
+                matchKey("Item_bookcase_") || matchKey("Item_closet_") || matchKey("Crow_Bell") || matchKey("Crow_Thurible") || matchKey("Goblin_Pot") ||
+                matchWord("Doll") || matchWord("Toy") || matchWord("Figurine") || matchWord("Statue") ||
                 matchWord("Ceramic") || matchWord("Pottery") || matchWord("Vase") || matchWord("Jar") ||
                 matchWord("Bottle") || matchWord("Goblet") || matchWord("Bowl") || matchWord("Candelabra") ||
                 matchWord("Furnishing") || matchWord("Furniture") || matchWord("Decor") || matchWord("Collection") ||
-                matchWord("Lamp") || matchWord("Candle") || matchWord("Prop"))
+                matchWord("Beaker") || matchWord("Plate") || matchWord("Mortar") || matchWord("Saucer") ||
+                matchWord("Trophy") || matchWord("Mirror") || matchWord("Dresser") || matchWord("Chair") ||
+                matchWord("Table") || matchWord("Cabinet") || matchWord("Bench") || matchWord("Desk") ||
+                matchWord("Chandelier") || matchWord("Stand") || matchWord("Painting") || matchWord("Sculpture") ||
+                matchWord("Bed") || matchWord("Lamp") || matchWord("Candle") || matchWord("Prop") ||
+                matchWord("Bookshelf") || matchWord("Wardrobe") || matchWord("Censer") || matchWord("Bells") ||
+                matchWord("Fan") || matchWord("Pot") || matchWord("Cup"))
+            {
                 return "Collection";
+            }
 
-            // 20. Trade Goods
-            if (matchWord("Trade") || matchWord("Goods") || matchWord("Cargo") || matchWord("Crate") || matchWord("Bundle") ||
+            // 20. Trade Goods (Commercial cargo, trade packs, barter commodities)
+            if (matchKey("Trade_") || matchKey("Goods_") || matchKey("Item_Trade_") ||
+                matchWord("Trade") || matchWord("Goods") || matchWord("Cargo") || matchWord("Crate") || matchWord("Bundle") ||
                 matchWord("Merchandise") || matchWord("Delivery") || matchWord("Commodity") || matchWord("Export") || matchWord("Import") ||
                 matchWord("Parcel") || matchWord("Transport") || matchWord("Bale") || matchWord("Barter") || matchWord("Coffer") ||
                 matchWord("Container") || matchWord("Basket"))
+            {
                 return "Trade Goods";
+            }
 
-            // 21. Bags (Inventory Bags)
-            if (match("Inventory_Bag") || match("Expand_Bag") || match("Slot_Bag") || _stricmp(key, "bag") == 0)
+            // 21. Bags
+            if (matchKey("Inventory_Bag") || matchKey("Expand_Bag") || matchKey("Slot_Bag") || _stricmp(key, "bag") == 0 || matchKey("Item_Set_"))
                 return "Bags";
 
             // 22. Backpacks
-            if (matchWord("Backpack") || matchWord("BackPack") || matchWord("Knapsack") || matchWord("Rucksack") ||
+            if (matchKey("Equip_BackPack") || matchWord("Backpack") || matchWord("BackPack") || matchWord("Knapsack") || matchWord("Rucksack") ||
                 matchWord("Resonator") || (matchWord("Bag") && !match("Aging")))
                 return "Backpacks";
 
-            // 23. Riding Gear
-            if (matchWord("Saddle") || matchWord("Barding") || matchWord("Stirrup") || matchWord("Harness") || match("Horse_Armor") ||
-                matchWord("Riding") || matchWord("Mount") || matchWord("Ibex") || matchWord("Rein"))
-                return "Riding Gear";
-
-            // 24. Pet Armor
-            if (match("Pet_Armor") || match("Cat_Armor") || match("Dog_Armor") || (matchWord("Pet") && matchWord("Armor")))
+            // 23. Pet Armor
+            if (matchKey("PetArmor_") || matchKey("Pet_Armor") || matchKey("Cat_Armor") || matchKey("Dog_Armor") ||
+                (matchWord("Pet") && (matchWord("Armor") || matchWord("Outfit") || matchWord("Hat") || matchWord("Helm"))))
                 return "Pet Armor";
 
+            // 24. Riding Gear
+            if (matchKey("HorseArmor") || matchKey("Horse_Armor") || matchKey("Equip_Riding") ||
+                matchWord("Saddle") || matchWord("Barding") || matchWord("Stirrup") || matchWord("Harness") ||
+                matchWord("Horseshoe") || matchWord("Horseshoes") || matchWord("Riding") || matchWord("Mount") || matchWord("Ibex") || matchWord("Rein"))
+                return "Riding Gear";
+
             // 25. Special Vehicles
-            if (matchWord("Vehicle") || matchWord("Wagon") || matchWord("Cart") || matchWord("Ship") || matchWord("Boat"))
+            if (matchKey("Vehicle_") || matchWord("Vehicle") || matchWord("Wagon") || matchWord("Cart") || matchWord("Ship") || matchWord("Boat"))
                 return "Special Vehicles";
 
-            // 26. Horse Food
-            if (matchWord("Horse") && (matchWord("Food") || matchWord("Carrot") || matchWord("Fodder") || matchWord("Feed") || matchWord("Hay")))
-                return "Horse Food";
+            // 26. Ammunition (Cannonballs, bombs, arrows, bullets, shells)
+            if (matchKey("CannonBall") || matchKey("Bullet") || matchKey("Arrow") || matchKey("Ammo") ||
+                matchKey("Bomb") || matchKey("Explosive") ||
+                matchWord("Cannonball") || matchWord("Cannonballs") || matchWord("Arrow") || matchWord("Arrows") ||
+                matchWord("Bolt") || matchWord("Bolts") || matchWord("Bullet") || matchWord("Bullets") ||
+                matchWord("Shell") || matchWord("Shells") || matchWord("Ammo") || matchWord("Ammunition") ||
+                matchWord("Bomb") || matchWord("Explosive") ||
+                matchWord("Projectile") || matchWord("Cartridge") || matchWord("Pellet") || matchWord("Quiver"))
+            {
+                return "Ammunition";
+            }
 
-            // 27. Potions
-            if (matchWord("Potion") || matchWord("Elixir") || matchWord("Tonic") || matchWord("Flask") || matchWord("Remedy") ||
-                matchWord("Draught") || matchWord("Brew") || matchWord("Vial") || matchWord("Salve") || matchWord("Ointment") || matchWord("Balm"))
-                return "Potions";
+            // 27. Keys & Access Permits
+            if (matchKey("Key") || matchKey("Pass") || matchKey("Permit") || matchKey("License") ||
+                matchWord("Key") || matchWord("Lockpick") || matchWord("Token") || matchWord("Pass") || matchWord("Emblem") ||
+                matchWord("Crest") || matchWord("Badge") || matchWord("Seal") || matchWord("Sigil") || matchWord("Permission") ||
+                matchWord("Ticket") || matchWord("Stamp") || matchWord("License") || matchWord("Permit"))
+            {
+                return "Keys";
+            }
 
-            // 28. Tools
-            if (matchWord("Pickaxe") || matchWord("Pick") || matchWord("Sickle") || matchWord("Hoe") || match("Fishing_Rod") ||
-                matchWord("Rod") || matchWord("Fishing") || matchWord("Chisel") || matchWord("Trowel") || matchWord("Shovel") ||
-                matchWord("Saw") || matchWord("Needle") || matchWord("Trap") || matchWord("Torch") || matchWord("Lighter") ||
+            // 28. Tools (Equip_Tool, Logging axes, Mallets, Fishing rods, Sickles, Hoes, Pickaxes, Chainsaws, Knuckledrills)
+            if (matchKey("Equip_Tool") || matchKey("Equip_Felling_Axe") || matchKey("Equip_Work_Hammer") ||
+                matchKey("Fishing_Rod") || matchKey("ItemCatch_FishingRod") || matchKey("Hammer_Craft") ||
+                matchKey("Demeniss_Chainsaw") || matchKey("Mining_Drill") || matchKey("Equip_Broom") || matchKey("Equip_Rake") ||
+                matchKey("Equip_TriRake") || matchKey("Equip_Stick") || matchKey("Equip_Trumpet") || matchKey("WarRobot_RepairTool") ||
+                matchWord("Pickaxe") || matchWord("Pick") || matchWord("Sickle") || matchWord("Hoe") ||
+                matchWord("Fishing") || matchWord("Chisel") || matchWord("Trowel") || matchWord("Shovel") ||
+                matchWord("Saw") || matchWord("Chainsaw") || matchWord("Drill") || matchWord("Needle") || matchWord("Trap") || matchWord("Torch") || matchWord("Lighter") ||
                 matchWord("Flute") || matchWord("Lute") || matchWord("Instrument") || matchWord("Drum") || matchWord("Lantern") ||
-                matchWord("Bucket") || match("Hammer_Craft") || matchWord("Picket") || matchWord("Net") || matchWord("Hook") ||
-                matchWord("Whistle") || matchWord("Compass") || matchWord("Spyglass") || matchWord("Telescope") ||
-                matchWord("Grindstone") || matchWord("Anvil") || matchWord("Scissors") || matchWord("Spade"))
+                matchWord("Bucket") || matchWord("Picket") || matchWord("Net") || matchWord("Whistle") ||
+                matchWord("Compass") || matchWord("Spyglass") || matchWord("Telescope") || matchWord("Grindstone") ||
+                matchWord("Anvil") || matchWord("Scissors") || matchWord("Spade") || matchWord("Mallet") ||
+                matchWord("Broom") || matchWord("Rake") || matchWord("Pitchfork") || matchWord("Cane") || matchWord("Trumpet") || matchWord("Pincers") || matchWord("Welder") ||
+                (matchWord("Logging") && matchWord("Axe")))
+            {
                 return "Tools";
+            }
 
-            // --- WEARABLE EQUIPMENT & WEAPONS (Prioritized first before Ammunition/Materials) ---
-            // 29. Helmets
-            if (matchWord("Helm") || matchWord("Helmet") || matchWord("Hat") || matchWord("Cap") || matchWord("Crown") ||
+            // 29. Shields
+            if (matchKey("OneHandShield") || matchKey("OneHandTowerShield") || matchKey("TowerShield") ||
+                matchKey("Equip_Weapon_Shield") || matchKey("Equip_Armor_Shield") ||
+                matchWord("Shield") || matchWord("Targe") || matchWord("Buckler") || matchWord("Pavise") || matchWord("Aegis"))
+            {
+                return "Shields";
+            }
+
+            // 30. RANGED WEAPONS (Bows, Crossbows, Muskets, Shotguns, Pistols, Cannons/Blasters, Flamespitters)
+            bool isRanged = (
+                matchKey("OneHandBow") || matchKey("OneHandMusket") || matchKey("OneHandCrossBow") ||
+                matchKey("OneHandShotgun") || matchKey("OneHandPistol") || matchKey("OneHandCannon") ||
+                matchKey("TwoHandCannon") || matchKey("Range_Weapon") || matchKey("OneHandRange") ||
+                matchKey("MarniMusket") || matchKey("WarRobot_Cannon") || matchKey("FlameThrower") ||
+                matchKey("IceThrower") || matchKey("LightningThrower") || matchKey("WarRobot_FlameThrower") ||
+                matchKey("WarRobot_Gatling") || matchKey("WarRobot_Laser") ||
+                matchWord("Bow") || matchWord("Crossbow") || matchWord("Musket") || matchWord("Pistol") ||
+                matchWord("Shotgun") || matchWord("Cannon") || matchWord("Rifle") || matchWord("Blaster") ||
+                matchWord("Arbalest") || matchWord("Slingshot") || matchWord("Flamespitter") ||
+                matchWord("Frostspitter") || matchWord("Boltspitter")
+            );
+            if (isRanged)
+            {
+                if (!matchKey("TwoHandSpear") && !matchKey("musket_Flag") && !matchWord("Spear") && !matchWord("Pike"))
+                {
+                    return "Ranged Weapons";
+                }
+            }
+
+            // 31. TWO-HANDED WEAPONS (Greatswords, Giant Hammers, Spears, Halberds, Lances, Polearms, Banner Pikes)
+            if (matchKey("TwoHand") || matchKey("musket_Flag") || matchKey("demenissnobility_Flag") ||
+                matchWord("Greatsword") || matchWord("GreatSword") || matchWord("GiantHammer") || matchWord("GreatHammer") ||
+                matchWord("Spear") || matchWord("Lance") || matchWord("Polearm") || matchWord("Halberd") || matchWord("Glaive") ||
+                matchWord("Greataxe") || matchWord("BattleAxe") || matchWord("Scythe") || matchWord("Claymore") || matchWord("Sledge") || matchWord("Pike") ||
+                matchWord("Staff") || matchWord("Banner"))
+            {
+                return "Two-Handed Weapons";
+            }
+
+            // 32. DAGGERS
+            if (matchKey("OneHandDagger") || matchKey("OneHand_Dagger") || matchWord("Dagger") || matchWord("Dirk"))
+                return "Daggers";
+
+            // 33. ONE-HANDED WEAPONS (Swords, Maces, Axes, Rapiers, Fists)
+            if (((matchKey("OneHandSword") || matchKey("OneHandMace") || matchKey("OneHandAxe") || matchKey("OneHandRapier") ||
+                  matchKey("Muscan_Ghost_Fist") || matchKey("WarRobot_Fist") || matchKey("PriestWand") ||
+                  matchWord("Sword") || matchWord("Mace") || matchWord("Axe") || matchWord("Rapier") ||
+                  matchWord("Hwando") || matchWord("Blade") || matchWord("Cutlass") || matchWord("Sabre") || matchWord("Scimitar") ||
+                  matchWord("Wand") || matchWord("Hammer") || matchWord("Katana") || matchWord("Gladius") || matchWord("Flail") || matchWord("Morningstar") ||
+                  (matchKey("OneHand") && !matchKey("Shield") && !matchKey("Dagger") && !matchKey("Bow") && !matchKey("Musket") &&
+                   !matchKey("Pistol") && !matchKey("Shotgun") && !matchKey("Cannon") && !matchKey("Crossbow") && !matchKey("Range"))) &&
+                 !matchWord("Pickaxe") && !matchKey("Hammer_Craft") && !matchWord("Saw")))
+            {
+                return "One-Handed Weapons";
+            }
+
+            // 34. Helmets
+            if (matchKey("Fabric_Helm") || matchKey("Leather_Helm") || matchKey("PlateArmor_Helm") || matchKey("Player_Helm") ||
+                matchWord("Helm") || matchWord("Helmet") || matchWord("Hat") || matchWord("Cap") || matchWord("Crown") ||
                 matchWord("Hood") || matchWord("Tiara") || matchWord("Circlet") || matchWord("Visor") || matchWord("Headgear") ||
-                matchWord("Turban") || matchWord("Bonnet") || match("Player_Helm"))
+                matchWord("Turban") || matchWord("Bonnet"))
                 return "Helmets";
 
-            // 30. Cloaks
-            if (matchWord("Cloak") || matchWord("Cape") || matchWord("Mantle") || matchWord("Shawl") || matchWord("Poncho") ||
-                matchWord("Scarf") || match("Player_Cloak"))
+            // 35. Cloaks
+            if (matchKey("Player_Cloak") || matchKey("Leather_Cloak") || matchKey("Fabric_Cloak") ||
+                matchWord("Cloak") || matchWord("Cape") || matchWord("Mantle") || matchWord("Shawl") || matchWord("Poncho") || matchWord("Scarf"))
                 return "Cloaks";
 
-            // 31. Gloves
-            if (matchWord("Glove") || matchWord("Gloves") || matchWord("Gauntlet") || matchWord("Bracer") || matchWord("Vambrace") ||
-                matchWord("Mitt") || matchWord("Cuff") || match("Player_Gloves"))
+            // 36. Gloves
+            if (matchKey("Player_Gloves") || matchKey("Fabric_Gloves") || matchKey("Leather_Gloves") || matchKey("PlateArmor_Gloves") ||
+                matchWord("Glove") || matchWord("Gloves") || matchWord("Gauntlet") || matchWord("Bracer") || matchWord("Vambrace") ||
+                matchWord("Mitt") || matchWord("Cuff"))
                 return "Gloves";
 
-            // 32. Boots
-            if (matchWord("Boot") || matchWord("Boots") || matchWord("Shoe") || matchWord("Shoes") || matchWord("Greave") ||
-                matchWord("Sabaton") || matchWord("Sandal") || matchWord("Slipper") || match("Player_Boots"))
+            // 37. Boots
+            if (matchKey("Player_Boots") || matchKey("Fabric_Boots") || matchKey("Leather_Boots") || matchKey("PlateArmor_Boots") ||
+                matchWord("Boot") || matchWord("Boots") || matchWord("Shoe") || matchWord("Shoes") || matchWord("Greave") ||
+                matchWord("Sabaton") || matchWord("Sandal") || matchWord("Slipper"))
                 return "Boots";
 
-            // 33. Body Armor / Clothing (Chest, Tunics, Robes, Cloth Armor, Leather Armor, Plate Armor)
-            if (matchWord("Armor") || matchWord("Plate") || matchWord("Robe") || matchWord("Coat") || matchWord("Chest") ||
-                matchWord("ChainMail") || matchWord("Tunic") || matchWord("Mail") || matchWord("Cuirass") ||
-                matchWord("Vest") || matchWord("Shirt") || matchWord("Breastplate") || matchWord("Hauberk") || matchWord("Doublet") ||
-                matchWord("Outfit") || matchWord("Costume") || matchWord("Garment") || matchWord("Attire") ||
-                matchWord("Dress") || matchWord("Trousers") || matchWord("Pants") || match("Player_Armor") ||
-                match("Cloth_Armor") || match("Leather_Armor") || match("Plate_Armor") ||
-                matchWord("Cloth") || matchWord("Leather") || matchWord("Suit") || matchWord("Garb") || matchWord("Uniform") ||
-                matchWord("Corset") || matchWord("Jerkin") || matchWord("Tabard") || matchWord("Surcoat") || matchWord("Gambeson") ||
-                matchWord("Brigandine") || matchWord("Chausses") || matchWord("Breeches") || matchWord("Apparel") || matchWord("Clothing"))
+            // 38. Body Armor
+            if (matchKey("Player_Armor") || matchKey("Cloth_Armor") || matchKey("Leather_Armor") || matchKey("PlateArmor_Armor") ||
+                matchKey("Fabric_Armor") || matchKey("ChainMail_Armor") || matchKey("WarRobot_Body") ||
+                matchWord("Armor") || matchWord("Cuirass") || matchWord("Breastplate") || matchWord("Hauberk") ||
+                matchWord("Doublet") || matchWord("Tunic") || matchWord("Robe") || matchWord("Brigandine") ||
+                matchWord("Gambeson") || matchWord("Attire") || matchWord("Outfit") || matchWord("Costume") ||
+                matchWord("Garment") || matchWord("Corset") || matchWord("Jerkin") || matchWord("Surcoat") ||
+                matchWord("Tabard") || matchWord("Coat") || matchWord("Vest") || matchWord("Shirt") ||
+                matchWord("Dress") || matchWord("Trousers") || matchWord("Pants") || matchWord("Plating"))
                 return "Armor";
 
-            // 34. Necklaces & Bracelets
-            if (matchWord("Necklace") || matchWord("Amulet") || matchWord("Pendant") || matchWord("Choker") || matchWord("Locket") ||
-                matchWord("Talisman") || matchWord("Collar") || matchWord("Bracelet") || matchWord("Bangle") || matchWord("Wristband") ||
-                matchWord("Torc") || match("Accessory_Necklace"))
+            // 39. Necklaces
+            if (matchKey("Accessory_Necklace") || matchKey("Accessory_Bracelet") || matchKey("TestNeck") ||
+                matchWord("Necklace") || matchWord("Amulet") || matchWord("Pendant") || matchWord("Choker") || matchWord("Locket") ||
+                matchWord("Talisman") || matchWord("Collar") || matchWord("Bracelet") || matchWord("Bangle") || matchWord("Wristband"))
                 return "Necklaces";
 
-            // 35. Earrings
-            if (matchWord("Earring") || matchWord("Earrings") || matchWord("Stud") || match("Accessory_Earring"))
+            // 40. Earrings
+            if (matchKey("Accessory_Earring") || matchWord("Earring") || matchWord("Earrings"))
                 return "Equip Accessory Earring";
 
-            // 36. Glasses
-            if (matchWord("Glasses") || matchWord("Monocle") || matchWord("Goggle") || matchWord("Eyepatch") || matchWord("Spectacle") || match("Accessory_Glasses"))
+            // 41. Glasses
+            if (matchKey("Accessory_Glasses") || matchWord("Glasses") || matchWord("Monocle") || matchWord("Goggle") ||
+                matchWord("Eyepatch") || matchWord("Spectacle"))
                 return "Glasses";
 
-            // 37. Masks
-            if (matchWord("Mask") || matchWord("Veil") || matchWord("Blindfold") || matchWord("Visage") || match("Accessory_Mask"))
+            // 42. Masks
+            if (matchKey("Accessory_Mask") || matchWord("Mask") || matchWord("Veil") || matchWord("Blindfold") || matchWord("Visage"))
                 return "Masks";
 
-            // 38. Rings (Strict Word Match only: "Ring", "Signet", "Band", excluding Bandit/Bandana/Ringleader/Offering)
-            if ((matchWord("Ring") || matchWord("Signet") || matchWord("Band") || match("Accessory_Ring")) &&
+            // 43. Rings
+            if ((matchKey("Accessory_Ring") || matchWord("Ring") || matchWord("Signet") || matchWord("Band")) &&
                 !matchWord("Bandit") && !matchWord("Bandana") && !matchWord("Ringleader") && !matchWord("Offering") &&
                 !matchWord("Spring") && !matchWord("String") && !matchWord("Bearing"))
                 return "Rings";
 
-            // 39. Daggers
-            if (match("OneHandDagger") || match("OneHand_Dagger") || matchWord("Dagger") || matchWord("Dirk") || matchWord("Stiletto") || matchWord("Tanto"))
-                return "Daggers";
+            // 44. Horse Food
+            if (matchKey("HorseFeed") || matchKey("Food_Horse") ||
+                (matchWord("Horse") && (matchWord("Food") || matchWord("Carrot") || matchWord("Fodder") || matchWord("Feed") || matchWord("Hay"))))
+                return "Horse Food";
 
-            // 40. Shields
-            if (match("OneHandShield") || match("OneHandTowerShield") || match("TowerShield") || matchWord("Shield") ||
-                matchWord("Targe") || matchWord("Buckler") || matchWord("Pavise") || matchWord("Aegis"))
-                return "Shields";
+            // 45. Potions & Recovery Consumables
+            if (matchKey("Immediate_SubLevel") || matchKey("RevivalItem") ||
+                matchWord("Potion") || matchWord("Elixir") || matchWord("Tonic") || matchWord("Flask") || matchWord("Remedy") ||
+                matchWord("Draught") || matchWord("Brew") || matchWord("Vial") || matchWord("Salve") || matchWord("Ointment") ||
+                matchWord("Balm") || matchWord("Pill") || matchWord("Amplification"))
+                return "Potions";
 
-            // 41. Ranged Weapons
-            if ((matchWord("Bow") || matchWord("Crossbow") || matchWord("Musket") || matchWord("Pistol") || matchWord("Shotgun") ||
-                 matchWord("Cannon") || matchWord("Gun") || matchWord("Rifle") || matchWord("Blaster") || matchWord("Slingshot") ||
-                 matchWord("Rocket") || matchWord("Launcher") || matchWord("Arbalest") || match("Range_Weapon") || match("OneHandRange")) &&
-                !matchWord("Arrow") && !matchWord("Bullet") && !matchWord("Ammo") && !matchWord("Shell"))
-                return "Ranged Weapons";
-
-            // 42. Two-Handed Weapons
-            if (match("TwoHand") || matchWord("Greatsword") || matchWord("GreatSword") || matchWord("GiantHammer") || matchWord("GreatHammer") ||
-                matchWord("Spear") || matchWord("Lance") || matchWord("Polearm") || matchWord("Halberd") || matchWord("Glaive") ||
-                matchWord("Greataxe") || matchWord("BattleAxe") || matchWord("Scythe") || matchWord("Claymore") || matchWord("Sledge") || matchWord("Pike") ||
-                matchWord("Guisarme") || matchWord("Partisan"))
-                return "Two-Handed Weapons";
-
-            // 43. One-Handed Weapons
-            if ((match("OneHand") || matchWord("Sword") || matchWord("Mace") || matchWord("Axe") || matchWord("Rapier") ||
-                 matchWord("Hwando") || matchWord("Blade") || matchWord("Cutlass") || matchWord("Sabre") || matchWord("Scimitar") ||
-                 matchWord("Wand") || matchWord("Hammer") || matchWord("Weapon") || matchWord("Drill") || matchWord("Katana") ||
-                 matchWord("Staff") || matchWord("Cane") || matchWord("Club") || matchWord("Flail") || matchWord("Morningstar") ||
-                 matchWord("Shortsword") || matchWord("Broadsword") || matchWord("Longsword") || matchWord("Saber") || matchWord("Falchion") ||
-                 matchWord("Estoc") || matchWord("Gladius") || match("Equip_Weapon")) &&
-                !matchWord("Pickaxe") && !match("Hammer_Craft") && !matchWord("Saw"))
-                return "One-Handed Weapons";
-
-            // 44. Ammunition (Tested safely AFTER gear and rings!)
-            if (matchWord("Ammo") || matchWord("Arrow") || matchWord("Bolt") || matchWord("Bullet") || matchWord("Shell") ||
-                matchWord("Projectile") || matchWord("Cartridge") || matchWord("Pellet") || matchWord("Quiver"))
-                return "Ammunition";
-
-            // 45. Metarial Medical
-            if (matchWord("Medical") || matchWord("Medicine") || matchWord("Drug") || match("Herb_Tea") || matchWord("Gallbladder") ||
-                matchWord("Bile") || matchWord("Venom") || matchWord("Poison") || matchWord("Acid") || matchWord("Antidote") ||
-                matchWord("Bandage") || matchWord("Tincture") || matchWord("Toxin"))
+            // 46. Medical Materials
+            if (matchKey("Metarial_Medical") || matchWord("Medical") || matchWord("Medicine") || matchWord("Drug") || matchKey("Herb_Tea") ||
+                matchWord("Gallbladder") || matchWord("Bile") || matchWord("Venom") || matchWord("Poison") || matchWord("Acid"))
                 return "Metarial Medical";
 
-            // 46. Korean Food
-            if (matchWord("Korea") || matchWord("Soup") || matchWord("Meal") || matchWord("Stew") || matchWord("Roast") || matchWord("Dish") ||
+            // 47. Korean Food (Cooked dishes)
+            if (matchKey("KoreaFood") || matchKey("Freshly_Grilled_") || matchKey("Grilled_") || matchKey("Fruit_Porridge") ||
+                matchKey("Haemuljjim") || matchKey("Japchae") || matchKey("Kimbap") || matchKey("Nureumjeok") ||
+                matchKey("Pan_fried_") || matchKey("Jerky") ||
+                matchWord("Korea") || matchWord("Soup") || matchWord("Meal") || matchWord("Stew") || matchWord("Roast") || matchWord("Dish") ||
                 matchWord("Cook") || matchWord("Bread") || matchWord("Pie") || matchWord("Cake") || matchWord("Wine") || matchWord("Tea") ||
                 matchWord("Beer") || matchWord("Juice") || matchWord("Ale") || matchWord("Liquor") || matchWord("Coffee") ||
                 matchWord("Sausage") || matchWord("Bacon") || matchWord("Pork") || matchWord("Beef") || matchWord("Chicken") ||
-                matchWord("Poultry") || matchWord("Ration") || matchWord("Fish") || matchWord("Steak") || matchWord("Feast") ||
+                matchWord("Poultry") || matchWord("Ration") || matchWord("Pincers") || matchWord("Seafood") ||
+                matchWord("Punch") || matchWord("Skewers") || matchWord("Roll") || matchWord("Jerky") ||
                 (matchWord("Food") && !matchWord("Material")))
                 return "Korean Food";
 
-            // 47. Food Materials
-            if (matchWord("Ingredient") || matchWord("Crop") || matchWord("Vegetable") || matchWord("Grain") || matchWord("Wheat") ||
+            // 48. Food Materials (Raw harvest, herbs, produce, ingredients)
+            if (matchKey("Material_Food") || matchKey("Rare_Collect_") ||
+                matchKey("Chickadee") || matchKey("Condola") || matchKey("Croton_") || matchKey("Desert_Watermelon") ||
+                matchKey("Figs") || matchKey("Glow_Fruit") || matchKey("GuardianTree_Pear") || matchKey("Haasam") ||
+                matchKey("HoneyComb") || matchKey("Lavender_") || matchKey("Navet") || matchKey("Oleander") ||
+                matchKey("Possesion_Insam") || matchKey("Rasberry") || matchKey("Redbeet") || matchKey("Rosemary_") ||
+                matchKey("SnapDragon") || matchKey("Wild_Insam") || matchKey("peas") ||
+                matchWord("Ingredient") || matchWord("Crop") || matchWord("Vegetable") || matchWord("Grain") || matchWord("Wheat") ||
                 matchWord("Flour") || matchWord("Apple") || matchWord("Egg") || matchWord("Flax") || matchWord("Ama") || matchWord("Bean") ||
                 matchWord("Berry") || matchWord("Mushroom") || matchWord("Fungus") || matchWord("Fungi") || matchWord("Honey") ||
                 matchWord("Sugar") || matchWord("Salt") || matchWord("Oil") || matchWord("Milk") || matchWord("Butter") || matchWord("Onion") ||
                 matchWord("Garlic") || matchWord("Potato") || matchWord("Carrot") || matchWord("Corn") || matchWord("Rice") || matchWord("Water") ||
                 matchWord("Lemon") || matchWord("Grape") || matchWord("Herb") || matchWord("Plant") || matchWord("Flower") || matchWord("Seed") ||
-                matchWord("Root") || matchWord("Leaf") || matchWord("Nut") || matchWord("Stalk") || matchWord("Meat") || matchWord("Flesh") ||
-                matchWord("Fruit") || matchWord("Grass") || matchWord("Vine") || matchWord("Moss") || matchWord("Petal"))
+                matchWord("Root") || matchWord("Leaf") || matchWord("Nut") || matchWord("Stalk") || matchWord("Fish") || matchWord("Meat") ||
+                matchWord("Seaweed") || matchWord("Clam") || matchWord("Algae") || matchWord("Melon") || matchWord("Fig") ||
+                matchWord("Lavender") || matchWord("Rosemary") || matchWord("Ginseng") || matchWord("Raspberry") || matchWord("Beet") ||
+                matchWord("Peas") || matchWord("Turnip") || matchWord("Beehive") || matchWord("Cacao") || matchWord("Chocolate"))
                 return "Food Materials";
 
-            // 48. Metarial Object (Universal Crafting & Object Classification)
-            return "Metarial Object";
+            // 49. Housing
+            if (matchKey("Housing") || matchKey("House_Seed") || matchKey("Furniture_Seed") || matchKey("FarmSlot_Expansion"))
+                return "Housing";
+
+            // 50. Currency
+            if (matchKey("Money_") || matchKey("Contribution_") ||
+                matchWord("Money") || matchWord("Coin") || matchWord("Silver") || matchWord("Gold") || matchWord("Copper") ||
+                matchWord("Cash") || matchWord("Bill") || matchWord("Currency") || matchWord("Credit") || matchWord("Tribute") ||
+                matchWord("Contribution") || matchWord("Price") || matchWord("Wallet") || matchWord("Funds"))
+                return "Currency";
+
+            // 51. Metarial Object (Raw crafting materials, ores, minerals, monster drops, parts, coupon, dye)
+            if (matchKey("Material_") || matchKey("Item_Material_") || matchKey("Metarial_") ||
+                matchKey("BlueStone") || matchKey("GreenStone") || matchKey("RedStone") || matchKey("CharacterCustomize") ||
+                matchKey("Small_Mechanical_Powerplant") || matchKey("Spider_Web") || matchKey("Item_ETC_CooltimeReduce") ||
+                matchWord("Ore") || matchWord("Ingot") || matchWord("Wood") || matchWord("Timber") || matchWord("Lumber") || matchWord("Log") ||
+                matchWord("Plank") || matchWord("Branch") || matchWord("Leather") || matchWord("Hide") || matchWord("Pelt") || matchWord("Fur") ||
+                matchWord("Skin") || matchWord("Cloth") || matchWord("Silk") || matchWord("Fabric") || matchWord("Thread") || matchWord("Fiber") ||
+                matchWord("Stone") || matchWord("Rock") || matchWord("Gem") || matchWord("Jewel") || matchWord("Diamond") || matchWord("Ruby") ||
+                matchWord("Sapphire") || matchWord("Emerald") || matchWord("Topaz") || matchWord("Amber") || matchWord("Pearl") || matchWord("Fragment") ||
+                matchWord("Shard") || matchWord("Dust") || matchWord("Powder") || matchWord("Alchemy") || matchWord("Refine") || matchWord("Material") ||
+                matchWord("Mat") || matchWord("Craft") || matchWord("Component") || matchWord("Essence") || matchWord("Extract") || matchWord("Mineral") ||
+                matchWord("Iron") || matchWord("Copper") || matchWord("Steel") || matchWord("Coal") || matchWord("Crystal") || matchWord("Scale") ||
+                matchWord("Bone") || matchWord("Horn") || matchWord("Claw") || matchWord("Fang") || matchWord("Feather") || matchWord("Cell") ||
+                matchWord("Fossil") || matchWord("Shell") || matchWord("Resin") || matchWord("Sap") || matchWord("Wool") || matchWord("Bar") ||
+                matchWord("Chunk") || matchWord("Fluid") || matchWord("Eye") || matchWord("Heart") || matchWord("Liver") || matchWord("Blood") ||
+                matchWord("Tail") || matchWord("Wing") || matchWord("Beak") || matchWord("Carapace") || matchWord("Chitin") || matchWord("Yarn") ||
+                matchWord("Clay") || matchWord("Sand") || matchWord("Glass") || matchWord("Metal") || matchWord("Alloy") || matchWord("Charcoal") ||
+                matchWord("Ash") || matchWord("Sulfur") || matchWord("Mercury") || matchWord("Sphere") || matchWord("Cog") || matchWord("Gear") ||
+                matchWord("Spring") || matchWord("Screw") || matchWord("Wire") || matchWord("Part") || matchWord("Core") || matchWord("Scrap") ||
+                matchWord("Customize") || matchWord("Coupon") || matchWord("Appearance") || matchWord("Deaging") || matchWord("Aging") ||
+                matchWord("Scar") || matchWord("Dye") || matchWord("Palette") || matchWord("Hair") || matchWord("Face") || matchWord("Tattoo") ||
+                matchWord("Gunpowder") || matchWord("Battery") || matchWord("Azurite") || matchWord("Epidote") || matchWord("Bloodstone") ||
+                matchWord("Brimstone") || matchWord("Rubber") || matchWord("Stalactite") || matchWord("Platinum"))
+            {
+                return "Metarial Object";
+            }
+
+            return "Uncategorised";
         }
 
         // --- Category Table Info & Icons (Matching 1.18.0.2 Exactly, 100% verified in pak 12) ---
@@ -826,7 +1017,9 @@ namespace trinity::game
             { "Potions",                      "ItemIcon_ItemGroup_Potion",                           3200 },
             { "Horse Food",                   "ItemIcon_ItemGroup_Food_Horse",                       3300 },
             { "Food Materials",               "ItemIcon_ItemGroup_Material_Food",                    3400 },
+            { "Medical Materials",            "ItemIcon_ItemGroup_Metarial_Medical_Poison",          4100 },
             { "Metarial Medical",             "ItemIcon_ItemGroup_Metarial_Medical_Poison",          4100 },
+            { "Objects",                      "ItemIcon_ItemGroup_Metarial_Object",                  4200 },
             { "Metarial Object",              "ItemIcon_ItemGroup_Metarial_Object",                  4200 },
             { "Books",                        "ItemIcon_ItemGroup_ETC_Book",                         5100 },
             { "Recipe Books",                 "ItemIcon_ItemGroup_ETC_Book_Recipe",                  5200 },
@@ -850,11 +1043,11 @@ namespace trinity::game
             { "Kuku Pot (All)",               "ItemIcon_ItemGroup_kuku_item",                        7400 },
             { "Kuku Pot",                     "ItemIcon_ItemGroup_kuku_pot",                         7500 },
             { "Lures",                        "ItemIcon_ItemGroup_ETC_Lure",                         7600 },
-            { "Unpacked Trade Goods",         "ItemIcon_ItemGroup_trade_unpack",              8100 },
-            { "Animal Items",                 "ItemIcon_ItemGroup_animal",                    8200 },
-            { "Trade Goods",                  "ItemIcon_ItemGroup_goods",                     8300 },
-            { "Packed Trade Goods",           "ItemIcon_ItemGroup_trade_packed",              8400 },
-            { "Uncategorised",                "ItemIcon_ItemGroup_special_unknown",           9999 },
+            { "Unpacked Trade Goods",         "ItemIcon_ItemGroup_trade_unpack",                     8100 },
+            { "Animal Items",                 "ItemIcon_ItemGroup_animal",                           8200 },
+            { "Trade Goods",                  "ItemIcon_ItemGroup_goods",                            8300 },
+            { "Packed Trade Goods",           "ItemIcon_ItemGroup_trade_packed",                     8400 },
+            { "Uncategorised",                "ItemIcon_ItemGroup_special_unknown",                  9999 },
         };
 
         bool GetCategoryInfoByName(const char* name, uint16_t* outOrder, char* outIcon, size_t iconSize)
@@ -1112,15 +1305,20 @@ namespace trinity::game
 
         const char* GetItemCategoryLabel(const Item& it)
         {
+            // 1. First deduce the category using our comprehensive, authenticated 51-category classifier
+            const char* deduced = DeduceCategoryFromItem(it.key, it.name);
+            if (deduced && strcmp(deduced, "Uncategorised") != 0)
+            {
+                return deduced;
+            }
+
+            // 2. Fallback: Validate engine group name against official category table to prevent corrupted strings
             if (it.cat.row != 0xFFFF && it.cat.row != kNoCategory.row)
             {
                 char rawGrp[128]{};
                 if (GroupName(it.cat.row, rawGrp, sizeof(rawGrp)) && rawGrp[0] != 0)
                 {
                     uint16_t testOrder = 0;
-                    // Only accept the engine group name if it matches a genuine, validated category.
-                    // If it returns a corrupted string (e.g. "Kliff", "liff", raw item names, quest triggers),
-                    // reject it and fall back to DeduceCategoryFromItem so it sorts cleanly with proper icons.
                     if (GetCategoryInfoByName(rawGrp, &testOrder, nullptr, 0))
                     {
                         snprintf(t_catNameBuf, sizeof(t_catNameBuf), "%s", rawGrp);
@@ -1128,7 +1326,8 @@ namespace trinity::game
                     }
                 }
             }
-            return DeduceCategoryFromItem(it.key, it.name);
+
+            return "Uncategorised";
         }
 
         // Bounds-checked accessors for the two outer levels - every public
@@ -1170,10 +1369,20 @@ namespace trinity::game
         uintptr_t HolderForContainer(uintptr_t container)
         {
             if (container < kMinPointer) return 0;
+            if (HolderLooksValid(container)) return container;
+
+            uintptr_t directH = 0;
+            if (ReadPtr(container + kOff_Sub_Holder, &directH) && HolderLooksValid(directH))
+                return directH;
+
             uintptr_t sub = 0, holder = 0;
-            if (!ReadPtr(container + kOff_Container_Sub, &sub) || sub < kMinPointer) return 0;
-            if (!ReadPtr(sub + kOff_Sub_Holder, &holder)) return 0;
-            return HolderLooksValid(holder) ? holder : 0;
+            if (ReadPtr(container + kOff_Container_Sub, &sub) && sub >= kMinPointer)
+            {
+                if (HolderLooksValid(sub)) return sub;
+                if (ReadPtr(sub + kOff_Sub_Holder, &holder) && HolderLooksValid(holder))
+                    return holder;
+            }
+            return 0;
         }
 
         // Durable path: core global -> +0x30 -> +0x50 = container, then the
@@ -1274,12 +1483,24 @@ namespace trinity::game
             uintptr_t tlsArray = 0, tls = 0;
             if (!RawReadPtr(teb + kOff_Teb_TlsPointer, &tlsArray) || !tlsArray) return 0;
             if (!RawReadPtr(tlsArray, &tls) || !tls) return 0;
-            const uintptr_t addr = tls + kTls_RealmFlag;
+            // Try TU 2.01+ offset (509 = 0x1FD) first, then TU 2.00 / legacy (498 = 0x1F2)
+            constexpr uintptr_t kRealmOffsets[] = { kTls_RealmFlag_TU201, kTls_RealmFlag };
+            for (uintptr_t off : kRealmOffsets)
+            {
+                const uintptr_t addr = tls + off;
+                uint8_t v = 0;
+                if (RawRead8(addr, &v) && v <= 1)
+                {
+                    if (outVal) *outVal = v;
+                    return addr;
+                }
+            }
+
+            // Diagnostic fallback if neither matched:
+            const uintptr_t addr = tls + kTls_RealmFlag_TU201;
             uint8_t v = 0;
-            if (!RawRead8(addr, &v)) return 0;
-            if (outVal) *outVal = v;
-            if (v > 1) return 0; // not a bool -> wrong chain, fail closed
-            return addr;
+            if (RawRead8(addr, &v) && outVal) *outVal = v;
+            return 0;
         }
 
         // Is this container a LIVE player character - i.e. the real store, and
@@ -1402,6 +1623,75 @@ namespace trinity::game
                 }
             }
 
+            // 5. Proactive search across tracked characters and CharacterManager list
+            for (int p = 0; p < 3; ++p)
+            {
+                const uintptr_t own = Player::GetOwner(p);
+                if (own && own != clientC)
+                {
+                    uintptr_t h = HolderForContainer(own);
+                    if (h && h != clientH && HolderLooksValid(h))
+                    {
+                        g_serverHolder.store(h, std::memory_order_release);
+                        g_serverContainer.store(own, std::memory_order_release);
+                        g_serverTick.store(now, std::memory_order_relaxed);
+                        return h;
+                    }
+                }
+                const uintptr_t act = Player::GetActor(p);
+                if (act && act != clientC)
+                {
+                    uintptr_t h = HolderForContainer(act);
+                    if (h && h != clientH && HolderLooksValid(h))
+                    {
+                        g_serverHolder.store(h, std::memory_order_release);
+                        g_serverContainer.store(act, std::memory_order_release);
+                        g_serverTick.store(now, std::memory_order_relaxed);
+                        return h;
+                    }
+                }
+            }
+
+            const uintptr_t charMgrGlobal = Player::GetCharMgrGlobal();
+            if (charMgrGlobal >= kMinPointer)
+            {
+                uintptr_t ptrMgr = 0, mgr = 0, data = 0;
+                if (ReadPtr(charMgrGlobal, &ptrMgr) && ptrMgr >= kMinPointer &&
+                    ReadPtr(ptrMgr, &mgr) && mgr >= kMinPointer)
+                {
+                    uint32_t cCount = 0;
+                    if (ReadPtr(mgr + kOff_CharMgr_ListData, &data) && data >= kMinPointer &&
+                        Read32(mgr + kOff_CharMgr_ListCount, &cCount) && cCount > 0 && cCount <= kCharList_MaxCount)
+                    {
+                        for (uint32_t i = 0; i < cCount; ++i)
+                        {
+                            uintptr_t candOwner = 0;
+                            if (ReadPtr(data + static_cast<uintptr_t>(i) * 8, &candOwner) &&
+                                candOwner >= kMinPointer && candOwner != clientC)
+                            {
+                                uint64_t td = 0;
+                                uint8_t tag = 0;
+                                if (Read64(candOwner + kOff_Owner_TypeDesc, &td) && td >= kMinPointer &&
+                                    Read8(static_cast<uintptr_t>(td) + 1, &tag))
+                                {
+                                    if (((tag - 1) & 0xF7) == 0 || tag == 4 || tag == 59 || tag == 0x3B)
+                                    {
+                                        uintptr_t h = HolderForContainer(candOwner);
+                                        if (h && h != clientH && HolderLooksValid(h))
+                                        {
+                                            g_serverHolder.store(h, std::memory_order_release);
+                                            g_serverContainer.store(candOwner, std::memory_order_release);
+                                            g_serverTick.store(now, std::memory_order_relaxed);
+                                            return h;
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+
             // Nothing usable yet
             g_serverHolder.store(0, std::memory_order_release);
             g_serverContainer.store(0, std::memory_order_release);
@@ -1467,6 +1757,50 @@ namespace trinity::game
             __except (EXCEPTION_EXECUTE_HANDLER)
             {
                 realQty = 0;
+            }
+
+            // NPC Gift requirement check (TU 2.01 IDB sub_14213C290 caller @ 0x14213C4A0, RVA 0x213C4A0):
+            // Divides returned quantity by required recipe cost via `idiv [r14]`.
+            // If the player owns at least 1 of the item, guarantee idiv >= 1 by returning >= 999.
+            const void* retAddr = _ReturnAddress();
+            static const uintptr_t s_moduleBase = reinterpret_cast<uintptr_t>(GetModuleHandleA(nullptr));
+            const uintptr_t rva = reinterpret_cast<uintptr_t>(retAddr) - s_moduleBase;
+            if (rva >= 0x213C490 && rva <= 0x213C4D0)
+            {
+                if (realQty > 0)
+                {
+                    return (realQty > 999) ? realQty : 999;
+                }
+
+                // If container passed was server-holder or unindexed, check client bag directly
+                const uintptr_t clientH = g_holder.load(std::memory_order_relaxed);
+                if (clientH >= kMinPointer)
+                {
+                    uintptr_t buckets = 0;
+                    uint32_t bcount = 0;
+                    if (ReadPtr(clientH + kOff_InvHolder_Buckets, &buckets) && Read32(clientH + kOff_InvHolder_Count, &bcount) && buckets >= kMinPointer)
+                    {
+                        for (uint32_t b = 0; b < bcount && b < 16; ++b)
+                        {
+                            uintptr_t bucket = 0;
+                            if (!ReadPtr(buckets + static_cast<uintptr_t>(b) * 8, &bucket) || bucket < kMinPointer) continue;
+                            uintptr_t slots = 0;
+                            uint16_t scount = 0;
+                            if (!ReadPtr(bucket + kOff_InvBucket_Slots, &slots) || !Read16(bucket + kOff_InvBucket_Count, &scount) || slots < kMinPointer) continue;
+                            for (uint16_t s = 0; s < scount && s < 1024; ++s)
+                            {
+                                const uintptr_t slotAddr = slots + static_cast<uintptr_t>(s) * core::GetSlotStride();
+                                uint16_t tid = 0;
+                                int64_t qty = 0;
+                                if (Read16(slotAddr + kOff_InvSlot_TypeId, &tid) && tid == typeId)
+                                {
+                                    if (Read64(slotAddr + kOff_InvSlot_Quantity, &qty) && qty > 0)
+                                        return (qty > 999) ? qty : 999;
+                                }
+                            }
+                        }
+                    }
+                }
             }
 
             static uint16_t s_moneyTid = 0;
@@ -1563,14 +1897,63 @@ namespace trinity::game
             LeaveCriticalSection(&g_candLock);
         }
 
+        void NoteHolder(void* holder)
+        {
+            const uintptr_t h = reinterpret_cast<uintptr_t>(holder);
+            if (h < kMinPointer || !g_candLockInit) return;
+            if (!HolderLooksValid(h)) return;
+
+            uintptr_t c = 0;
+            ReadPtr(h + kOff_InvHolder_Container, &c);
+
+            const uintptr_t clientH = CurrentHolder();
+            if (h != clientH)
+            {
+                g_serverHolder.store(h, std::memory_order_release);
+                if (c >= kMinPointer)
+                    g_serverContainer.store(c, std::memory_order_release);
+            }
+
+            const ULONGLONG now = GetTickCount64();
+            EnterCriticalSection(&g_candLock);
+            int cnt = g_candCount.load(std::memory_order_relaxed);
+            int at  = -1;
+            for (int i = 0; i < cnt; ++i)
+            {
+                if (g_cand[i].holder == h || (c >= kMinPointer && g_cand[i].container == c))
+                {
+                    at = i;
+                    break;
+                }
+            }
+            if (at < 0 && cnt >= kMaxCandidates)
+            {
+                PruneDeadCandidates(); // corpses from earlier loads; indices shift
+                cnt = g_candCount.load(std::memory_order_relaxed);
+            }
+            if (at < 0 && cnt < kMaxCandidates) at = cnt;
+            if (at >= 0)
+            {
+                g_cand[at].container = c;
+                g_cand[at].holder    = h;
+                g_cand[at].tick      = now;
+                if (at >= cnt) g_candCount.store(at + 1, std::memory_order_release); // publish last
+            }
+            LeaveCriticalSection(&g_candLock);
+        }
+
         // --- The commit hook: where the server container shows up at load ---
-        void* __fastcall hkCommit(void* holder, void* err, void* container, void* items,
+        void* __fastcall hkCommit(void* holder, void* err, void* a3, void* items,
                                   void* out, uint8_t a6, uint8_t a7)
         {
             if (!oCommit) return nullptr;
-            __try { NoteContainer(container); } __except (EXCEPTION_EXECUTE_HANDLER) {}
+            __try
+            {
+                NoteHolder(holder);
+            }
+            __except (EXCEPTION_EXECUTE_HANDLER) {}
             g_commitActive.store(true, std::memory_order_release);
-            void* ret = oCommit(holder, err, container, items, out, a6, a7);
+            void* ret = oCommit(holder, err, a3, items, out, a6, a7);
             g_commitActive.store(false, std::memory_order_release);
             return ret;
         }
@@ -1628,11 +2011,13 @@ namespace trinity::game
             return 0;
         }
 
-        void* __fastcall hkSetExpandSlots(void* holder, int* outErr, void* a3,
-                                          uint16_t type, uint16_t count)
+        // Shared post-call bookkeeping for both setter detours: after ANY
+        // engine (re-)stamp of a bucket's expansion, re-apply the Slot Size
+        // override for that type (or keep the fallback self-consistent when
+        // there is no InventoryInfo row). SEH-guarded because it runs on the
+        // game thread, possibly mid-transaction.
+        void StampExpandOverride(void* holder, uint16_t type, uint16_t count)
         {
-            if (!oSetExpandSlots) return nullptr;
-            void* ret = oSetExpandSlots(holder, outErr, a3, type, count);
             __try
             {
                 const State& st = State::Get();
@@ -1673,6 +2058,27 @@ namespace trinity::game
                 }
             }
             __except (EXCEPTION_EXECUTE_HANDLER) {}
+        }
+
+        // TU 2.02 detour: the setter is (holder, &err, bucketType r8w, count r9w)
+        // - 4 args. The detour signature MUST match the target's convention or
+        // MinHook's trampoline misroutes the registers.
+        void* __fastcall hkSetExpandSlots20202(void* holder, int* outErr,
+                                               uint16_t type, uint16_t count)
+        {
+            if (!oSetExpandSlots20202) return nullptr;
+            void* ret = oSetExpandSlots20202(holder, outErr, type, count);
+            StampExpandOverride(holder, type, count);
+            return ret;
+        }
+
+        // TU <=2.01 detour: (holder, &err, unused, bucketType, count) - 5 args.
+        void* __fastcall hkSetExpandSlots(void* holder, int* outErr, void* a3,
+                                          uint16_t type, uint16_t count)
+        {
+            if (!oSetExpandSlots) return nullptr;
+            void* ret = oSetExpandSlots(holder, outErr, a3, type, count);
+            StampExpandOverride(holder, type, count);
             return ret;
         }
 
@@ -1735,6 +2141,39 @@ namespace trinity::game
                     if (!Read16(slot + kOff_InvSlot_TypeId, &tid) || tid == kInvSlot_EmptyType || tid == 0) continue;
                     if (!Read64(slot + kOff_InvSlot_Quantity, &qty) || qty <= 0) continue;
                     ++occ;
+
+                    // Auto-heal corrupted gear item attributes (missing subtype / 0 durability / deactivated state)
+                    EnsureTablesResolved();
+                    if (g_itemTableGlobal)
+                    {
+                        uintptr_t def = 0;
+                        if (DefForRow(g_itemTableGlobal, tid, &def) && def >= kMinPointer)
+                        {
+                            uint16_t sub = 0;
+                            Read16(slot + kOff_ItemVal_Subtype, &sub);
+                            uint16_t defSub = 0;
+                            Read16(def + 0x218, &defSub);
+
+                            uint16_t maxD = 0, curD = 0;
+                            Read16(slot + 0x40, &maxD);
+                            Read16(slot + 0x42, &curD);
+                            uint16_t defD = 0;
+                            Read16(def + 0x400, &defD);
+
+                            uint16_t st = 0;
+                            Read16(slot + 0xA0, &st);
+
+                            if (defSub != 0 && sub == 0)
+                                Write16(slot + kOff_ItemVal_Subtype, defSub);
+                            if (defD > 0 && (maxD == 0 || curD == 0))
+                            {
+                                Write16(slot + 0x40, defD);
+                                Write16(slot + 0x42, defD);
+                            }
+                            if (st == 0 && (defSub != 0 || defD > 0))
+                                Write16(slot + 0xA0, 1);
+                        }
+                    }
                 }
 
                 if (occ != used)
@@ -1868,28 +2307,6 @@ namespace trinity::game
                 g_itemTableGlobal = FindTableGlobal(kStr_ItemInfoTable);
             if (!g_grpTableGlobal)
                 g_grpTableGlobal = FindTableGlobal(kStr_ItemGroupInfoTable);
-            if (!g_grpTableGlobal)
-                g_grpTableGlobal = FindTableGlobal("categorygroupinfo");
-            if (!g_grpTableGlobal)
-                g_grpTableGlobal = FindTableGlobal("categoryinfo");
-            if (!g_grpTableGlobal)
-                g_grpTableGlobal = FindTableGlobal(kStr_ItemGroupInfoTable);
-            if (!g_grpTableGlobal && core::GetGameVersion().revision >= 2625)
-            {
-                uintptr_t gameBase = reinterpret_cast<uintptr_t>(GetModuleHandleA(nullptr));
-                uintptr_t cand1 = gameBase + 0x634DDB8; // categorygroupinfo global in PE 1.0.0.2625
-                uintptr_t cand2 = gameBase + 0x634DDD0; // categoryinfo global in PE 1.0.0.2625
-                uintptr_t table1 = 0, table2 = 0;
-                if (ReadPtr(cand1, &table1) && table1 >= kMinPointer)
-                    g_grpTableGlobal = cand1;
-                else if (ReadPtr(cand2, &table2) && table2 >= kMinPointer)
-                    g_grpTableGlobal = cand2;
-                if (g_grpTableGlobal)
-                {
-                    LOG_OK("inventory: table 'categorygroupinfo' resolved via fallback -> %p",
-                           reinterpret_cast<void*>(g_grpTableGlobal));
-                }
-            }
             if (!g_strTableGlobal)
                 g_strTableGlobal = FindTableGlobal(kStr_StringInfoTable);
             if (!g_invTableGlobal)
@@ -2020,7 +2437,9 @@ namespace trinity::game
             LOG("inventory: using synthetic TrItemValue constructor for cross-version compatibility.");
         }
 
-        const uintptr_t commitAddr = mem::FindPattern(kSig_InvCommitPlacement);
+        uintptr_t commitAddr = mem::FindPattern(kSig_InvCommitPlacement);
+        if (!commitAddr)
+            commitAddr = mem::FindPattern(kSig_InvCommitPlacement_Legacy);
         const uintptr_t freeAddr   = mem::FindPattern(kSig_InvFreePlacements);
         const uintptr_t dtorAddr   = mem::FindPattern(kSig_TrItemValueDtor);
 
@@ -2054,22 +2473,38 @@ namespace trinity::game
         // The game's own slot-expansion setter, HOOKED rather than just
         // resolved: the engine re-stamps every storage's VANILLA expansion
         // through it on ordinary inventory events, in both realms (see
-        // hkSetExpandSlots) - substituting the count inside those re-stamps
-        // is what makes Slot Size stable. Installed after the capture lock it
-        // uses. Our own applies/restores go through the trampoline. If the
-        // hook cannot be installed but the address resolves, fall back to
-        // call-only: the toggle still applies from Tick(), it just re-fights
-        // the engine's stamps (the old, racy behaviour).
-        if (!mem::InstallHook("inventory: slot-expansion setter", kSig_InvSetExpandSlots,
-                              "Slot Size will not apply",
-                              &hkSetExpandSlots, &oSetExpandSlots, &g_expandTarget, 4))
+        // hkSetExpandSlots20202) - substituting the count inside those
+        // re-stamps is what makes Slot Size stable. Installed after the
+        // capture lock it uses. Our own applies/restores go through the
+        // trampoline. If the hook cannot be installed, ApplySlotCapToHolder
+        // falls back to direct bucket expansion seamlessly.
+        // TU 2.02 uses the 4-arg convention (kSig_InvSetExpandSlots, unique
+        // @ 0x1420801E0). Only if that sig finds nothing at all do we try the
+        // 5-arg legacy setter (TU <=2.01) - on 2.02 the legacy sigs either
+        // miss or, worse, land on an unrelated function, so they must never
+        // be tried while the 2.02 sig resolves.
+        if (!mem::InstallHook("inventory: slot-expansion setter", kSig_InvSetExpandSlots, "",
+                              &hkSetExpandSlots20202, &oSetExpandSlots20202, &g_expandTarget, 4))
         {
             const uintptr_t expandAddr = mem::FindPattern(kSig_InvSetExpandSlots);
             if (expandAddr)
             {
-                oSetExpandSlots = reinterpret_cast<SetExpandSlots_t>(expandAddr);
-                LOG_WARN("inventory: slot-expansion setter hook failed - Slot Size applies "
-                         "call-only and may briefly revert when the game recomputes it.");
+                oSetExpandSlots20202 = reinterpret_cast<SetExpandSlots_20202_t>(expandAddr);
+            }
+            else if (!mem::InstallHook("inventory: slot-expansion setter (legacy)",
+                                       kSig_InvSetExpandSlots_Legacy,
+                                       "direct bucket slot expansion active",
+                                       &hkSetExpandSlots, &oSetExpandSlots, &g_expandTarget, 4))
+            {
+                const uintptr_t legacyAddr = mem::FindPattern(kSig_InvSetExpandSlots_Legacy);
+                if (legacyAddr)
+                {
+                    oSetExpandSlots = reinterpret_cast<SetExpandSlots_t>(legacyAddr);
+                }
+                else
+                {
+                    LOG("inventory: slot-expansion setter hook not available - direct bucket slot expansion active.");
+                }
             }
         }
 
@@ -2080,18 +2515,26 @@ namespace trinity::game
         // before the save loads, which an ASI at process start always is.
         // Optional: without it, edits still apply to the client mirror but the
         // reconcile reverts them (the menu still lists/reads fine).
-        mem::InstallHook("inventory: transaction commit", kSig_InvCommit,
-                         "quantity edits will not persist (revert on reconcile)",
-                         &hkCommit, &oCommit, &g_commitTarget, 4);
+        if (!mem::InstallHook("inventory: transaction commit", kSig_InvCommit, "",
+                              &hkCommit, &oCommit, &g_commitTarget, 4))
+        {
+            mem::InstallHook("inventory: transaction commit (legacy)", kSig_InvCommit_Legacy,
+                             "quantity edits will not persist (revert on reconcile)",
+                             &hkCommit, &oCommit, &g_commitTarget, 4);
+        }
 
         // Secondary capture path: fires on a real add/drop/buy, not at load.
         // Catches containers that only appear later (e.g. character swap).
         if (!mem::InstallHook("inventory: holder-insert", kSig_InvHolderInsert, nullptr,
                               &hkHolderInsert, &oHolderInsert, &g_insTarget, 2))
         {
-            mem::InstallHook("inventory: holder-insert legacy", kSig_InvHolderInsert_Legacy,
-                             "server holder relies on the commit hook alone",
-                             &hkHolderInsert, &oHolderInsert, &g_insTarget, 2);
+            if (!mem::InstallHook("inventory: holder-insert (TU 2.00)", kSig_InvHolderInsert_TU200, nullptr,
+                                  &hkHolderInsert, &oHolderInsert, &g_insTarget, 2))
+            {
+                mem::InstallHook("inventory: holder-insert legacy", kSig_InvHolderInsert_Legacy,
+                                 "server holder relies on the commit hook alone",
+                                 &hkHolderInsert, &oHolderInsert, &g_insTarget, 2);
+            }
         }
 
         // Durable container walk (optional but preferred - without it the
@@ -2099,7 +2542,23 @@ namespace trinity::game
         // which is hit-or-miss at load).
         const uintptr_t globAnchor = mem::FindPattern(kSig_InvCoreGlobal);
         if (globAnchor)
+        {
             g_coreGlobal = mem::ResolveRipAt(globAnchor + kOff_InvCoreGlobal_Mov, 7);
+            LOG_OK("inventory: core global resolved at 0x%p (anchor 0x%p)", reinterpret_cast<void*>(g_coreGlobal), reinterpret_cast<void*>(globAnchor));
+        }
+        else
+        {
+            const uintptr_t legAnchor = mem::FindPattern(kSig_InvCoreGlobal_Legacy);
+            if (legAnchor)
+            {
+                g_coreGlobal = mem::ResolveRipAt(legAnchor + kOff_InvCoreGlobal_Mov_Legacy, 7);
+                LOG_OK("inventory: core global resolved via legacy anchor at 0x%p", reinterpret_cast<void*>(g_coreGlobal));
+            }
+            else
+            {
+                LOG_WARN("inventory: core global anchor NOT FOUND");
+            }
+        }
 
         // Item defs (optional - resolved lazily when inventory is opened).
         g_itemTableGlobal = FindTableGlobal(kStr_ItemInfoTable);
@@ -2157,6 +2616,10 @@ namespace trinity::game
 
         const uintptr_t holder = CurrentHolder();
         if (!holder) return;
+
+        RepairUsedSlots(holder);
+        const uintptr_t sh = ServerHolder();
+        if (sh) RepairUsedSlots(sh);
 
         uintptr_t buckets = 0;
         uint32_t  bcount  = 0;
@@ -2638,7 +3101,6 @@ namespace trinity::game
         // Free-Space Gate to reject all vendor purchases. See XeTrinityz-reference.
         bool ApplySlotCapToHolder(uintptr_t holder, bool enable, uint16_t value)
         {
-            if (!oSetExpandSlots) return false;
             if (!HolderLooksValid(holder)) return false;
             uintptr_t buckets = 0;
             uint32_t  bcount  = 0;
@@ -2714,7 +3176,9 @@ namespace trinity::game
                 }
 
                 int err = 0;
-                if (oSetExpandSlots)
+                if (oSetExpandSlots20202)
+                    oSetExpandSlots20202(reinterpret_cast<void*>(holder), &err, type, expand);
+                else if (oSetExpandSlots)
                     oSetExpandSlots(reinterpret_cast<void*>(holder), &err, nullptr, type, expand);
 
                 // Guarantee maxSlots and expandSlots are updated on ALL buckets
@@ -2760,6 +3224,12 @@ namespace trinity::game
                 uintptr_t def = 0;
                 if (!DefForRow(g_invTableGlobal, static_cast<uint16_t>(row), &def)) continue;
                 const uint16_t finalM = enable ? ((targetM > s_origTableMax[row]) ? targetM : s_origTableMax[row]) : s_origTableMax[row];
+                // Skip rows already at the target (mul0/Trinity b12b614 pattern):
+                // re-writing the same value every 100ms tick churns the table
+                // the transaction validator checksums for no benefit.
+                uint16_t curM = 0;
+                if (Read16(def + kOff_InvDef_MaxSlots, &curM) && curM == finalM)
+                    continue;
                 if (Write16(def + kOff_InvDef_MaxSlots, finalM))
                     any = true;
             }
@@ -3177,6 +3647,15 @@ namespace trinity::game
     // in a holder at all (see the dye note in offsets.h).
     uintptr_t Inventory::ClientCharacterAddr()
     {
+        // Prioritize the live controlled player
+        const int liveIdx = Player::GetActiveCharacterIdx();
+        if (liveIdx >= 0 && liveIdx < 3)
+        {
+            const uintptr_t liveOwner = Player::GetOwner(liveIdx);
+            if (liveOwner >= kMinPointer && IsLiveCharacter(liveOwner))
+                return liveOwner;
+        }
+
         const uintptr_t c = ResolveClientContainer();
         return IsLiveCharacter(c) ? c : 0;
     }
@@ -3207,145 +3686,228 @@ namespace trinity::game
     {
         if (comp < kMinPointer) return -1;
 
-        // Self-validating back-reference (comp+0x08 -> owning actor): a wrong
-        // offset resolves to nothing rather than to a plausible wrong object.
-        uintptr_t owner = 0;
-        if (!ReadPtr(comp + kOff_EquipComp_Owner, &owner) || owner < kMinPointer) return -1;
+        __try
+        {
+            // Self-validating back-reference (comp+0x08 -> owning actor)
+            uintptr_t owner = 0;
+            if (!ReadPtr(comp + kOff_EquipComp_Owner, &owner) || owner < kMinPointer) return -1;
 
-        uintptr_t desc = 0, array = 0;
-        uint32_t count = 0;
-        uintptr_t stride = 0xD0;
+            // 0. Authoritative engine party index: 1 = Kliff (0), 2 = Damiane (1), 3 = Oongka (2)
+            uint32_t pIdx = 0;
+            if (Read32(owner + kOff_Owner_PartyIndex, &pIdx) && pIdx >= 1 && pIdx <= 3)
+                return static_cast<int>(pIdx - 1);
 
-        if (ReadPtr(comp + 0x80, &desc) && desc >= kMinPointer &&
-            ReadPtr(desc + kOff_EquipTable_Array, &array) && array >= kMinPointer &&
-            Read32(desc + kOff_EquipTable_Count, &count) && count >= 1 && count <= 64)
-        {
-            stride = 0xD0;
-        }
-        else if (ReadPtr(comp + 0x88, &desc) && desc >= kMinPointer &&
-            ReadPtr(desc + kOff_EquipTable_Array, &array) && array >= kMinPointer &&
-            Read32(desc + kOff_EquipTable_Count, &count) && count >= 1 && count <= 64)
-        {
-            stride = 0xC8;
-        }
-        else
-        {
-            // Alternate table slots (same set dye.cpp ReadEquipTable probes).
-            const uintptr_t tableOffsets[] = { 0x50, 0x38, 0x40, 0x48, 0x60, 0x70 };
-            bool found = false;
+            uintptr_t nestedOwner = 0;
+            if (ReadPtr(owner + kOff_Owner_Actor, &nestedOwner) && nestedOwner >= kMinPointer)
+            {
+                if (Read32(nestedOwner + kOff_Owner_PartyIndex, &pIdx) && pIdx >= 1 && pIdx <= 3)
+                    return static_cast<int>(pIdx - 1);
+            }
+
+            // 1. Direct match against active controlled character
+            const int liveCharIdx = Player::GetActiveCharacterIdx();
+            if (liveCharIdx >= 0 && liveCharIdx < 3)
+            {
+                if (owner == Player::GetActor(liveCharIdx) || owner == Player::GetOwner(liveCharIdx) ||
+                    (nestedOwner && (nestedOwner == Player::GetActor(liveCharIdx) || nestedOwner == Player::GetOwner(liveCharIdx))))
+                {
+                    return liveCharIdx;
+                }
+            }
+
+            // 2. Direct match against remaining party characters
+            for (int c = 0; c < 3; ++c)
+            {
+                if (c == liveCharIdx) continue;
+                if (owner == Player::GetActor(c) || owner == Player::GetOwner(c) ||
+                    (nestedOwner && (nestedOwner == Player::GetActor(c) || nestedOwner == Player::GetOwner(c))))
+                {
+                    return c;
+                }
+            }
+
+            uintptr_t desc = 0, array = 0;
+            uint32_t count = 0;
+
+            const uintptr_t tableOffsets[] = { 0x90, 0x88, 0x80, 0x50, 0x78, 0x38, 0x40, 0x48, 0x60, 0x70 };
+            bool foundTable = false;
             for (uintptr_t tOff : tableOffsets)
             {
                 if (!ReadPtr(comp + tOff, &desc) || desc < kMinPointer) continue;
                 if (ReadPtr(desc + kOff_EquipTable_Array, &array) && array >= kMinPointer &&
                     Read32(desc + kOff_EquipTable_Count, &count) && count >= 1 && count <= 64)
                 {
-                    stride = 0xD0;
-                    found = true;
+                    foundTable = true;
                     break;
                 }
             }
-            if (!found) return -1;
-        }
+            if (!foundTable) return -1;
 
-        auto ContainsCi = [](const char* haystack, const char* needle) -> bool {
-            if (!haystack || !needle || !*needle) return false;
-            const size_t nlen = strlen(needle);
-            for (; *haystack; ++haystack)
+            auto ContainsCi = [](const char* haystack, const char* needle) -> bool {
+                if (!haystack || !needle || !*needle) return false;
+                const size_t nlen = strlen(needle);
+                for (; *haystack; ++haystack)
+                {
+                    if (_strnicmp(haystack, needle, nlen) == 0)
+                        return true;
+                }
+                return false;
+            };
+
+            const uintptr_t candidateStrides[] = { 0xD0, 0xC8 };
+
+            for (uintptr_t stride : candidateStrides)
             {
-                if (_strnicmp(haystack, needle, nlen) == 0)
-                    return true;
+                // Mount gear rejection: If this component holds saddle/champron/barding/stirrups, it is a Mount (NOT a player protagonist)
+                for (uint32_t i = 0; i < count; ++i)
+                {
+                    const uintptr_t entry = array + static_cast<uintptr_t>(i) * stride;
+                    uint16_t tid = 0;
+                    if (!Read16(entry + kOff_InvSlot_TypeId, &tid) || tid == kInvSlot_EmptyType || tid == 0) continue;
+                    char key[96] = "";
+                    if (KeyForType(tid, key, sizeof(key)) && key[0] != 0)
+                    {
+                        if (ContainsCi(key, "Chamfron") || ContainsCi(key, "Champron") ||
+                            ContainsCi(key, "Barding") || ContainsCi(key, "Saddle") ||
+                            ContainsCi(key, "Stirrup") || ContainsCi(key, "Exclaire"))
+                            return -1; // Mount
+                    }
+                }
+
+            for (uint32_t i = 0; i < count; ++i)
+            {
+                const uintptr_t entry = array + static_cast<uintptr_t>(i) * stride;
+                uint16_t tid = 0;
+                if (!Read16(entry + kOff_InvSlot_TypeId, &tid) || tid == kInvSlot_EmptyType || tid == 0) continue;
+
+                // Direct TypeID recognition (fast, zero memory overhead)
+                // Damiane (1): Demian_OneHandRapier (200901 / row 6142), Royal Oath (53935), Demenissian Hero's Musket (6324), White Wind Rapier (6382), rapier line
+                if (tid == 200901 || tid == 6142 || tid == 53935 || tid == 6324 || tid == 6382 || tid == 6041 || tid == 5306 || tid == 5300 ||
+                    tid == 5297 || tid == 5277 || tid == 3463 || (tid >= 5450 && tid <= 5468) ||
+                    (tid >= 5270 && tid <= 5310) || (tid >= 6320 && tid <= 6330) || (tid >= 6380 && tid <= 6390))
+                    return 1;
+                // Oongka (2)
+                if (tid == 6560 || tid == 6042 || tid == 6305 || (tid >= 6550 && tid <= 6570) ||
+                    tid == 6636 || (tid >= 6630 && tid <= 6645) ||
+                    tid == 2299 || tid == 3740 || (tid >= 3762 && tid <= 3777) ||
+                    (tid >= 1090 && tid <= 1094) || tid == 1390)
+                    return 2;
+                // Kliff (0)
+                if (tid == 6303 || tid == 6040 || (tid >= 5330 && tid <= 5350))
+                    return 0;
+
+                char key[96] = "";
+                const bool hasKey = KeyForType(tid, key, sizeof(key)) && key[0] != 0;
+                char locName[96] = "";
+                const bool hasName = Inventory::NameForTypeId(tid, locName, sizeof(locName)) && locName[0] != 0;
+
+                if (hasKey || hasName)
+                {
+                    // Damiane (1): Exclusive weapons, rapiers, Spencer, Dewhaven, Rivenheim, Royal Oath
+                    if (ContainsCi(key, "Damian") || ContainsCi(key, "Demian") || ContainsCi(key, "Demeniss") ||
+                        ContainsCi(key, "OneHandRapier") || ContainsCi(key, "Rapier") ||
+                        ContainsCi(key, "RoyalOath") || ContainsCi(key, "Royal_Oath") ||
+                        ContainsCi(key, "Spencer") || ContainsCi(key, "Dewhaven") ||
+                        ContainsCi(key, "WhiteWind") || ContainsCi(key, "White_Wind") ||
+                        ContainsCi(key, "Rivenheim") ||
+                        ContainsCi(key, "Hwando") || ContainsCi(key, "DualBlade") ||
+                        ContainsCi(locName, "Damiane") || ContainsCi(locName, "Demian") ||
+                        ContainsCi(locName, "Spencer") || ContainsCi(locName, "Dewhaven"))
+                        return 1; // Damiane
+
+                    // Oongka (2): Exclusive Oongka armor sets, Tynion, Valortread, Belkandor, Ashen Wolf, Brass Warden, Kuku Rocket
+                    if (ContainsCi(key, "Oongka") || ContainsCi(key, "OOngka") || ContainsCi(key, "Tynion") ||
+                        ContainsCi(key, "Rocket_BackPack") || ContainsCi(key, "Rocket_Helm") ||
+                        ContainsCi(key, "Valortread") || ContainsCi(key, "Belkandor") ||
+                        ContainsCi(key, "Ashen_Wolf") || ContainsCi(key, "AshenWolf") ||
+                        ContainsCi(key, "Brass_Warden") || ContainsCi(key, "BrassWarden") ||
+                        ContainsCi(key, "Item_Fist_Oongka") || ContainsCi(key, "Dev_Red_Dragon_Oongka") ||
+                        ContainsCi(key, "GiantHammer") || ContainsCi(key, "Giant_Hammer") ||
+                        ContainsCi(key, "HeavyPlate") || ContainsCi(key, "HeavyArmor") ||
+                        ContainsCi(key, "OOngka_Daeil_Band") || ContainsCi(locName, "Oongka"))
+                        return 2; // Oongka
+
+                    // Kliff (0): Darkness King, Balgran, Aeserion, Fated Shadow, Drake Shield, Icewing, Longsword
+                    if (ContainsCi(key, "Kliff") || ContainsCi(key, "DarknessKing") || ContainsCi(key, "Darkness_King") ||
+                        ContainsCi(key, "Balgran") || ContainsCi(key, "Aeserion") ||
+                        ContainsCi(key, "FatedShadow") || ContainsCi(key, "Fated_Shadow") ||
+                        ContainsCi(key, "DrakeShield") || ContainsCi(key, "Drake_Shield") ||
+                        ContainsCi(key, "Icewing") || ContainsCi(key, "OneHandSword") ||
+                        ContainsCi(key, "OneHandShield") || ContainsCi(key, "OneHandBow") ||
+                        ContainsCi(locName, "Kliff"))
+                        return 0; // Kliff
+                }
             }
-            return false;
-        };
-
-        for (uint32_t i = 0; i < count; ++i)
-        {
-            const uintptr_t entry = array + static_cast<uintptr_t>(i) * stride;
-            uint16_t tid = 0;
-            if (!Read16(entry + kOff_InvSlot_TypeId, &tid) || tid == kInvSlot_EmptyType || tid == 0) continue;
-
-            // Direct TypeID recognition
-            // Damiane (1): Royal Oath (53935), Demenissian Hero's Musket (6324), rapier line
-            if (tid == 53935 || tid == 6324 || tid == 6041 || tid == 5306 || tid == 5300 ||
-                tid == 5297 || tid == 5277 || tid == 3463 || (tid >= 5450 && tid <= 5468) ||
-                (tid >= 5270 && tid <= 5310) || (tid >= 6320 && tid <= 6330))
-                return 1;
-            // Oongka (2)
-            if (tid == 6560 || tid == 6042 || tid == 6305 || (tid >= 6550 && tid <= 6570) ||
-                tid == 2299 || tid == 3740 || (tid >= 3762 && tid <= 3777) ||
-                (tid >= 1090 && tid <= 1094) || tid == 1390)
-                return 2;
-            // Kliff (0)
-            if (tid == 6303 || tid == 6040 || (tid >= 5330 && tid <= 5350))
-                return 0;
-
-            char key[96] = "";
-            char name[96] = "";
-            KeyForType(tid, key, sizeof(key));
-            Inventory::NameForTypeId(tid, name, sizeof(name));
-
-            // Damiane (1): Royal Oath, Caliburn, muskets, rapiers, fencing blades, Spencer, Dewhaven, Rivenheim Cloth Armor
-            if ((key[0] && (ContainsCi(key, "Damian") || ContainsCi(key, "Demian") || ContainsCi(key, "Demeniss") ||
-                            ContainsCi(key, "Rapier") || ContainsCi(key, "Musket") || ContainsCi(key, "Caliburn") ||
-                            ContainsCi(key, "RoyalOath") || ContainsCi(key, "Royal_Oath") ||
-                            ContainsCi(key, "Spencer") || ContainsCi(key, "Dewhaven") ||
-                            ContainsCi(key, "WhiteWind") || ContainsCi(key, "White_Wind") ||
-                            ContainsCi(key, "Fencing") || ContainsCi(key, "DualBlade") || ContainsCi(key, "Dual_Blade") ||
-                            ContainsCi(key, "Hwando") || ContainsCi(key, "Rivenheim") || ContainsCi(key, "RivenheimCloth") ||
-                            ContainsCi(key, "Rivenheim_Cloth") || ContainsCi(key, "ClothArmor") || ContainsCi(key, "Cloth_Armor"))) ||
-                (name[0] && (ContainsCi(name, "Damian") || ContainsCi(name, "Demian") || ContainsCi(name, "Demeniss") ||
-                             ContainsCi(name, "Rapier") || ContainsCi(name, "Musket") || ContainsCi(name, "Caliburn") ||
-                             ContainsCi(name, "Royal Oath") || ContainsCi(name, "Spencer") || ContainsCi(name, "Dewhaven") ||
-                             ContainsCi(name, "White Wind") || ContainsCi(name, "Fencing") || ContainsCi(name, "Dual Blade") ||
-                             ContainsCi(name, "Hwando") || ContainsCi(name, "Rivenheim") || ContainsCi(name, "Cloth Armor"))))
-                return 1; // Damiane
-
-            // Oongka (2): Oongka, Tynion, Giant, Rocket, Cannon, Club, Hammer, Belkandor, Valortread, Ashen Wolf, Brass Warden, Kuku, Daeil, WellsBetrayer, Well, Silverwolf, Axe, Plate Armor
-            if ((key[0] && (ContainsCi(key, "Oongka") || ContainsCi(key, "Giant") || ContainsCi(key, "Tynion") ||
-                            ContainsCi(key, "Rocket") || ContainsCi(key, "Cannon") || ContainsCi(key, "Club") ||
-                            ContainsCi(key, "Hammer") || ContainsCi(key, "Greatshield") || ContainsCi(key, "Gauntlet") ||
-                            ContainsCi(key, "HeavyMace") || ContainsCi(key, "Heavy_Mace") || ContainsCi(key, "Valortread") ||
-                            ContainsCi(key, "Belkandor") || ContainsCi(key, "Ashen_Wolf") || ContainsCi(key, "AshenWolf") ||
-                            ContainsCi(key, "Brass_Warden") || ContainsCi(key, "BrassWarden") || ContainsCi(key, "Kuku") ||
-                            ContainsCi(key, "Daeil") || ContainsCi(key, "Troll") || ContainsCi(key, "Fist") ||
-                            ContainsCi(key, "Wells") || ContainsCi(key, "Well") || ContainsCi(key, "Betrayer") ||
-                            ContainsCi(key, "TwoHanded") || ContainsCi(key, "WarHammer") || ContainsCi(key, "Alebard") ||
-                            ContainsCi(key, "Silverwolf") || ContainsCi(key, "Silver_Wolf") || ContainsCi(key, "SilverWolf") ||
-                            ContainsCi(key, "Axe") || ContainsCi(key, "PlateArmor") || ContainsCi(key, "Plate_Armor") ||
-                            ContainsCi(key, "Horned") || ContainsCi(key, "HeavyPlate") || ContainsCi(key, "Heavy_Plate") ||
-                            ContainsCi(key, "HeavyArmor") || ContainsCi(key, "Heavy_Armor"))) ||
-                (name[0] && (ContainsCi(name, "Oongka") || ContainsCi(name, "Giant") || ContainsCi(name, "Tynion") ||
-                             ContainsCi(name, "Rocket") || ContainsCi(name, "Cannon") || ContainsCi(name, "Club") ||
-                             ContainsCi(name, "Hammer") || ContainsCi(name, "Greatshield") || ContainsCi(name, "Gauntlet") ||
-                             ContainsCi(name, "Heavy Mace") || ContainsCi(name, "Valortread") || ContainsCi(name, "Belkandor") ||
-                             ContainsCi(name, "Ashen Wolf") || ContainsCi(name, "Brass Warden") || ContainsCi(name, "Kuku") ||
-                             ContainsCi(name, "Daeil") || ContainsCi(name, "Troll") || ContainsCi(name, "Ordinary Gloves") ||
-                             ContainsCi(name, "Wells") || ContainsCi(name, "Well") || ContainsCi(name, "Betrayer") ||
-                             ContainsCi(name, "Two-Handed") || ContainsCi(name, "War Hammer") || ContainsCi(name, "Halberd") ||
-                             ContainsCi(name, "Silverwolf") || ContainsCi(name, "Silver Wolf") || ContainsCi(name, "Axe") ||
-                             ContainsCi(name, "Plate Armor") || ContainsCi(name, "Horned Helmet") || ContainsCi(name, "Horned") ||
-                             ContainsCi(name, "Heavy Plate") || ContainsCi(name, "Heavy Armor"))))
-                return 2; // Oongka
-
-            // Kliff (0): Darkness King, Balgran, Aeserion, Fated Shadow, Drake Shield, Icewing, Longsword
-            if ((key[0] && (ContainsCi(key, "Kliff") || ContainsCi(key, "DarknessKing") || ContainsCi(key, "Darkness_King") ||
-                            ContainsCi(key, "Balgran") || ContainsCi(key, "Aeserion") ||
-                            ContainsCi(key, "FatedShadow") || ContainsCi(key, "Fated_Shadow") ||
-                            ContainsCi(key, "DrakeShield") || ContainsCi(key, "Drake_Shield") ||
-                            ContainsCi(key, "Icewing") || ContainsCi(key, "Longsword"))) ||
-                (name[0] && (ContainsCi(name, "Kliff") || ContainsCi(name, "Darkness King") || ContainsCi(name, "Balgran") ||
-                             ContainsCi(name, "Aeserion") || ContainsCi(name, "Fated Shadow") ||
-                             ContainsCi(name, "Drake Shield") || ContainsCi(name, "Icewing") || ContainsCi(name, "Longsword"))))
-                return 0; // Kliff
+            }
         }
-        return -1; // Unrecognized
+        __except (EXCEPTION_EXECUTE_HANDLER)
+        {
+            return -1;
+        }
+
+        return -1;
     }
 
-    // Container-level wrapper: walk to the equip component and identify.
-    static int IdentifyCharacterFromEquip(uintptr_t container)
+    // Container/Actor/Owner-level wrapper: walk to the equip component and identify.
+    int Inventory::IdentifyCharacterFromEquip(uintptr_t container)
     {
         if (container < kMinPointer) return -1;
+
+        // 0. Direct check if container itself is already an EquipComp
+        const int directId = IdentifyCharacterIdentity(container);
+        if (directId >= 0) return directId;
+
+        // 1. Authoritative party index on container
+        uint32_t partyIdx = 0;
+        if (Read32(container + kOff_Owner_PartyIndex, &partyIdx) && partyIdx >= 1 && partyIdx <= 3)
+            return static_cast<int>(partyIdx - 1);
+
+        uintptr_t nestedOwner = 0;
+        if (ReadPtr(container + kOff_Owner_Actor, &nestedOwner) && nestedOwner >= kMinPointer)
+        {
+            if (Read32(nestedOwner + kOff_Owner_PartyIndex, &partyIdx) && partyIdx >= 1 && partyIdx <= 3)
+                return static_cast<int>(partyIdx - 1);
+        }
+
+        // 2. Direct match against active character
+        const int liveCharIdx = Player::GetActiveCharacterIdx();
+        if (liveCharIdx >= 0 && liveCharIdx < 3)
+        {
+            if (container == Player::GetActor(liveCharIdx) || container == Player::GetOwner(liveCharIdx) ||
+                (nestedOwner && (nestedOwner == Player::GetActor(liveCharIdx) || nestedOwner == Player::GetOwner(liveCharIdx))))
+                return liveCharIdx;
+        }
+
+        // 3. Direct match against remaining party actors/owners
+        for (int c = 0; c < 3; ++c)
+        {
+            if (c == liveCharIdx) continue;
+            if (container == Player::GetActor(c) || container == Player::GetOwner(c) ||
+                (nestedOwner && (nestedOwner == Player::GetActor(c) || nestedOwner == Player::GetOwner(c))))
+                return c;
+        }
+
+
         uintptr_t sub = 0, comp = 0;
+
+        // Direct component on actor: actor + 0x38
+        if (ReadPtr(container + 0x38, &comp) && comp >= kMinPointer)
+        {
+            const int id = IdentifyCharacterIdentity(comp);
+            if (id >= 0) return id;
+        }
+
+        uintptr_t nestedActor = 0;
+        if (ReadPtr(container + kOff_Owner_Actor, &nestedActor) && nestedActor >= kMinPointer)
+        {
+            if (ReadPtr(nestedActor + 0x38, &comp) && comp >= kMinPointer)
+            {
+                const int id = IdentifyCharacterIdentity(comp);
+                if (id >= 0) return id;
+            }
+        }
+
+        // 1. Direct Actor container: actor + 0x68 -> sub, sub + 0x38 / 0x168 -> comp
         if (ReadPtr(container + kOff_Container_Sub, &sub) && sub >= kMinPointer)
         {
             if (ReadPtr(sub + kOff_Sub_EquipComp, &comp) && comp >= kMinPointer)
@@ -3353,10 +3915,33 @@ namespace trinity::game
                 const int id = IdentifyCharacterIdentity(comp);
                 if (id >= 0) return id;
             }
+            if (ReadPtr(sub + 0x168, &comp) && comp >= kMinPointer)
+            {
+                const int id = IdentifyCharacterIdentity(comp);
+                if (id >= 0) return id;
+            }
+        }
+
+        // 2. Owner entity: owner + 0x68 -> actor, actor + 0x68 -> sub, sub + 0x38 / 0x168 -> comp
+        if (nestedActor >= kMinPointer)
+        {
+            if (ReadPtr(nestedActor + kOff_Container_Sub, &sub) && sub >= kMinPointer)
+            {
+                if (ReadPtr(sub + kOff_Sub_EquipComp, &comp) && comp >= kMinPointer)
+                {
+                    const int id = IdentifyCharacterIdentity(comp);
+                    if (id >= 0) return id;
+                }
+                if (ReadPtr(sub + 0x168, &comp) && comp >= kMinPointer)
+                {
+                    const int id = IdentifyCharacterIdentity(comp);
+                    if (id >= 0) return id;
+                }
+            }
         }
 
         const uintptr_t subOffsets[] = { 0x60, 0x70, 0x58, 0x78, 0x80, 0x88, 0x90 };
-        const uintptr_t compOffsets[] = { 0x38, 0x30, 0x40, 0x28, 0x48, 0x50 };
+        const uintptr_t compOffsets[] = { 0x38, 0x30, 0x40, 0x28, 0x48, 0x50, 0x60, 0x68, 0x168 };
         for (uintptr_t sOff : subOffsets)
         {
             if (ReadPtr(container + sOff, &sub) && sub >= kMinPointer)
@@ -3375,6 +3960,37 @@ namespace trinity::game
         return -1;
     }
 
+    uintptr_t Inventory::FindEquipComp(uintptr_t entity)
+    {
+        if (entity < kMinPointer) return 0;
+        uintptr_t comp = 0;
+        if (ReadPtr(entity + 0x38, &comp) && comp >= kMinPointer && IdentifyCharacterIdentity(comp) >= 0)
+            return comp;
+
+        uintptr_t sub = 0;
+        if (ReadPtr(entity + kOff_Container_Sub, &sub) && sub >= kMinPointer)
+        {
+            if (ReadPtr(sub + kOff_Sub_EquipComp, &comp) && comp >= kMinPointer)
+                return comp;
+            if (ReadPtr(sub + 0x168, &comp) && comp >= kMinPointer)
+                return comp;
+        }
+        uintptr_t nestedActor = 0;
+        if (ReadPtr(entity + kOff_Owner_Actor, &nestedActor) && nestedActor >= kMinPointer)
+        {
+            if (ReadPtr(nestedActor + 0x38, &comp) && comp >= kMinPointer && IdentifyCharacterIdentity(comp) >= 0)
+                return comp;
+            if (ReadPtr(nestedActor + kOff_Container_Sub, &sub) && sub >= kMinPointer)
+            {
+                if (ReadPtr(sub + kOff_Sub_EquipComp, &comp) && comp >= kMinPointer)
+                    return comp;
+                if (ReadPtr(sub + 0x168, &comp) && comp >= kMinPointer)
+                    return comp;
+            }
+        }
+        return 0;
+    }
+
     int Inventory::IdentifyCharacterFromComp(uintptr_t comp)
     {
         return IdentifyCharacterIdentity(comp);
@@ -3390,7 +4006,7 @@ namespace trinity::game
         const uintptr_t clientC = ResolveClientContainer();
         if (clientC)
         {
-            const int ident = IdentifyCharacterFromEquip(clientC);
+            const int ident = Inventory::IdentifyCharacterFromEquip(clientC);
             if (ident >= 0) return ident;
         }
         const uintptr_t liveComp = Dye::HookedClientComp();
@@ -3425,10 +4041,16 @@ namespace trinity::game
         };
 
         const uintptr_t clientC = ResolveClientContainer();
-        if (clientC && LiveCharacterIdentity() == index)
+        if (clientC && ActivePlayerCharacterIdx() == index)
             addMatch(clientC);
 
-        // Candidate containers from every capture source
+        // 1. Direct party actor and owner for this character
+        const uintptr_t act = Player::GetActor(index);
+        if (act) addMatch(act);
+        const uintptr_t own = Player::GetOwner(index);
+        if (own) addMatch(own);
+
+        // Candidate containers from genuine character sources (includes server containers)
         uintptr_t candidates[64] = {};
         int candCount = 0;
 
@@ -3439,68 +4061,49 @@ namespace trinity::game
             if (candCount < 64) candidates[candCount++] = c;
         };
 
-        // 1. Container manager array
-        if (clientC)
+        // 2. Filtered CharacterManager list scan (only entities with matching PartyIndex)
+        const uintptr_t charMgrGlobal = Player::GetCharMgrGlobal();
+        if (charMgrGlobal >= kMinPointer)
         {
-            uintptr_t sub = 0, holder = 0;
-            if (ReadPtr(clientC + kOff_Container_Sub, &sub) && sub >= kMinPointer &&
-                ReadPtr(sub + kOff_Sub_Holder, &holder) && holder >= kMinPointer)
+            uintptr_t p = 0, mgr = 0, data = 0;
+            if (ReadPtr(charMgrGlobal, &p) && p >= kMinPointer &&
+                ReadPtr(p, &mgr) && mgr >= kMinPointer)
             {
-                uintptr_t arr = 0;
-                uint32_t count = 0;
-                if (ReadPtr(holder + 0x18, &arr) && arr >= kMinPointer &&
-                    Read32(holder + 0x20, &count) && count > 1 && count <= 64)
+                uint32_t cCount = 0;
+                // Layout: data at +0xB8, count at +0xC0 (authoritative on TU 2.00 & TU 2.01 per Cheat Engine Table v5.0)
+                if (ReadPtr(mgr + kOff_CharMgr_ListData, &data) && data >= kMinPointer &&
+                    Read32(mgr + kOff_CharMgr_ListCount, &cCount) && cCount > 0 && cCount <= kCharList_MaxCount)
                 {
-                    for (uint32_t i = 0; i < count; ++i)
+                    for (uint32_t i = 0; i < cCount; ++i)
                     {
-                        uintptr_t c = 0;
-                        if (ReadPtr(arr + static_cast<uintptr_t>(i) * 8, &c) && c >= kMinPointer)
-                            addCand(c);
+                        uintptr_t candOwner = 0;
+                        if (ReadPtr(data + static_cast<uintptr_t>(i) * 8, &candOwner) && candOwner >= kMinPointer)
+                        {
+                            uint32_t pIdx = 0;
+                            if (Read32(candOwner + kOff_Owner_PartyIndex, &pIdx) && pIdx == static_cast<uint32_t>(index + 1))
+                            {
+                                addCand(candOwner);
+                                uintptr_t candAct = 0;
+                                if (ReadPtr(candOwner + kOff_Owner_Actor, &candAct) && candAct >= kMinPointer)
+                                    addCand(candAct);
+                            }
+                        }
                     }
                 }
             }
         }
 
-        // 2. Commit-hook snapshot candidates
+        // 3. Commit-hook snapshot candidates (FALLBACK only)
         Candidate snap[kMaxCandidates] = {};
         const int snapN = SnapshotCandidates(snap);
         for (int i = 0; i < snapN; ++i)
             addCand(snap[i].container);
-
-        // 3. Active world party actors (all protagonists, any slot)
-        for (int i = 0; i < 3; ++i)
-        {
-            const uintptr_t act = Player::GetActor(i);
-            if (act) addCand(act);
-        }
 
         // Accept only candidates whose equipped gear identifies as `index`
         for (int i = 0; i < candCount; ++i)
         {
             if (IdentifyCharacterFromEquip(candidates[i]) == index)
                 addMatch(candidates[i]);
-        }
-
-        // Fallback: If no candidate positively identified by gear signature,
-        // use the companion's direct index in the party container manager array!
-        if (n == 0 && clientC)
-        {
-            uintptr_t sub = 0, holder = 0;
-            if (ReadPtr(clientC + kOff_Container_Sub, &sub) && sub >= kMinPointer &&
-                ReadPtr(sub + kOff_Sub_Holder, &holder) && holder >= kMinPointer)
-            {
-                uintptr_t arr = 0;
-                uint32_t count = 0;
-                if (ReadPtr(holder + 0x18, &arr) && arr >= kMinPointer &&
-                    Read32(holder + 0x20, &count) && count > static_cast<uint32_t>(index))
-                {
-                    uintptr_t directC = 0;
-                    if (ReadPtr(arr + static_cast<uintptr_t>(index) * 8, &directC) && directC >= kMinPointer)
-                    {
-                        addMatch(directC);
-                    }
-                }
-            }
         }
 
         return n;
@@ -3510,17 +4113,37 @@ namespace trinity::game
     {
         if (index < 0 || index > 2) return 0;
 
-        uintptr_t matches[16] = {};
-        const int n = CharacterAddrs(index, matches, 16);
-        if (n > 0) return matches[0];
-
-        // Fallback: the tracked party actor for a companion. Its gear carried
-        // nothing recognizable anywhere else; companions were always resolved
-        // this way last.
+        // For companion indices (1 = Damiane, 2 = Oongka), prioritize live 3D actor if currently spawned
         if (index > 0 && index < 3)
         {
             const uintptr_t partyAct = Player::GetActor(index);
-            if (partyAct >= kMinPointer) return partyAct;
+            if (partyAct >= kMinPointer)
+            {
+                return partyAct;
+            }
+            const uintptr_t partyOwn = Player::GetOwner(index);
+            if (partyOwn >= kMinPointer)
+            {
+                return partyOwn;
+            }
+        }
+
+        uintptr_t matches[16] = {};
+        const int n = CharacterAddrs(index, matches, 16);
+        if (n > 0)
+        {
+            return matches[0];
+        }
+
+        // Fallback: the tracked party actor or owner for a companion.
+        if (index > 0 && index < 3)
+        {
+            const uintptr_t partyOwn = Player::GetOwner(index);
+            if (partyOwn >= kMinPointer)
+            {
+                const int id = IdentifyCharacterFromEquip(partyOwn);
+                if (id == index || id < 0) return partyOwn;
+            }
         }
 
         return 0;
@@ -3528,6 +4151,9 @@ namespace trinity::game
 
     int Inventory::ActivePlayerCharacterIdx()
     {
+        const int pIdx = Player::GetActiveCharacterIdx();
+        if (pIdx >= 0 && pIdx <= 2)
+            return pIdx;
         const int ident = LiveCharacterIdentity();
         if (ident >= 0) return ident;
         return 0; // Default to Kliff (0)
@@ -3622,7 +4248,13 @@ namespace trinity::game
                 strstr(k, "Meat") || strstr(k, "Fish") || strstr(k, "Dish") ||
                 strstr(k, "Document") || strstr(k, "Notice") || strstr(k, "Letter") ||
                 strstr(k, "Diary") || strstr(k, "Report") || strstr(k, "Recipe") ||
-                strstr(k, "Key") || strstr(k, "Quest") || strstr(k, "Map"))
+                strstr(k, "Key") || strstr(k, "Quest") || strstr(k, "Map") ||
+                strstr(k, "Trade") || strstr(k, "Goods") || strstr(k, "Cargo") ||
+                strstr(k, "Crate") || strstr(k, "Unpack") || strstr(k, "Prop") ||
+                strstr(k, "Doll") || strstr(k, "Toy") || strstr(k, "Figurine") ||
+                strstr(k, "Statue") || strstr(k, "Ceramic") || strstr(k, "Vase") ||
+                strstr(k, "Jar") || strstr(k, "Goblet") || strstr(k, "Bowl") ||
+                strstr(k, "Candelabra") || strstr(k, "Decor") || strstr(k, "Breakable"))
                 return false;
 
             return (strstr(k, "Sword") || strstr(k, "Shield") || strstr(k, "Bow") ||
@@ -3677,7 +4309,6 @@ namespace trinity::game
                 {
                     oItemValueCtor(itemVal, &typeId, qty);
                     built = true;
-                    *reinterpret_cast<uint16_t*>(itemVal + kOff_ItemVal_Subtype)   = 0;
                     *reinterpret_cast<int64_t*>(itemVal + kOff_ItemVal_InstanceId) = id;
                 }
                 else
@@ -3686,8 +4317,20 @@ namespace trinity::game
                     built = true;
                     *reinterpret_cast<int64_t*>(itemVal + kOff_ItemVal_InstanceId) = id;
                     *reinterpret_cast<uint16_t*>(itemVal + kOff_InvSlot_TypeId)   = typeId;
-                    *reinterpret_cast<uint16_t*>(itemVal + kOff_ItemVal_Subtype)  = 0;
                     *reinterpret_cast<int64_t*>(itemVal + kOff_InvSlot_Quantity) = qty;
+                    if (def)
+                    {
+                        uint16_t sub = 0;
+                        if (Read16(def + 0x218, &sub))
+                            *reinterpret_cast<uint16_t*>(itemVal + kOff_ItemVal_Subtype) = sub;
+                        uint16_t maxD = 0;
+                        if (Read16(def + 0x400, &maxD) && maxD > 0)
+                        {
+                            *reinterpret_cast<uint16_t*>(itemVal + 0x40) = maxD;
+                            *reinterpret_cast<uint16_t*>(itemVal + 0x42) = maxD;
+                        }
+                        *reinterpret_cast<uint16_t*>(itemVal + 0xA0) = 1;
+                    }
                 }
 
                 arr[0] = reinterpret_cast<uintptr_t>(itemVal);
@@ -3696,7 +4339,7 @@ namespace trinity::game
                 // the planner deep-copies this vector, and an uninitialised
                 // capacity corrupts the heap (a delayed, misleading crash).
 
-                oHolderInsert(reinterpret_cast<void*>(bucket), &err,
+                oHolderInsert(reinterpret_cast<void*>(holder), &err,
                               reinterpret_cast<void*>(container), arr, 0, out, 1, 1, 0);
                 planned = true;
 
@@ -3713,10 +4356,114 @@ namespace trinity::game
                         const uint16_t slotIdx =
                             *reinterpret_cast<uint16_t*>(p + slotIdxOffset);
                         int err2 = 0;
+                        struct DummyVec { void* ptr = nullptr; uint32_t count = 0; uint32_t cap = 0; };
+                        DummyVec dummy1{}, dummy2{};
                         oCommitPlacement(reinterpret_cast<void*>(holder), &err2, nullptr,
-                                         reinterpret_cast<void*>(p), slotIdx);
-                        if (err2 == 0) ++committed;
+                                         reinterpret_cast<void*>(p), slotIdx, 0, &dummy1, &dummy2);
+                        if (err2 == 0)
+                        {
+                            ++committed;
+                            uintptr_t slots = 0;
+                            if (ReadPtr(bucket + kOff_InvBucket_Slots, &slots) && slots >= kMinPointer)
+                            {
+                                const uintptr_t committedSlot = slots + static_cast<uintptr_t>(slotIdx) * core::GetSlotStride();
+                                Write16(committedSlot + 0xA0, 1);
+                                Write64(committedSlot + 0x30, -1);
+                                Write32(committedSlot + 0x8C, 0xFFFFFFFF);
+                                uint16_t maxD = 1000;
+                                if (def && Read16(def + 0x400, &maxD) && maxD > 0)
+                                {
+                                    Write16(committedSlot + 0x40, maxD);
+                                    Write16(committedSlot + 0x42, maxD);
+                                }
+                                if (def)
+                                {
+                                    uint16_t sub = 0;
+                                    if (Read16(def + 0x218, &sub))
+                                        Write16(committedSlot + kOff_ItemVal_Subtype, sub);
+                                }
+                            }
+                        }
                         else if (!firstErr2) firstErr2 = err2;
+                    }
+                }
+
+                // Direct container placement fallback:
+                // If the native planner failed (err != 0) or produced no placements, place directly into bucket's slots
+                if (committed == 0 && bucket >= kMinPointer)
+                {
+                    uintptr_t slots = 0;
+                    uint16_t scount = 0;
+                    if (ReadPtr(bucket + kOff_InvBucket_Slots, &slots) && slots >= kMinPointer &&
+                        Read16(bucket + kOff_InvBucket_Count, &scount) && scount > 0)
+                    {
+                        const uintptr_t stride = SlotStride();
+                        bool stacked = false;
+
+                        // 1. Stack into existing slot if same typeId
+                        for (uint16_t i = 0; i < scount; ++i)
+                        {
+                            const uintptr_t s = slots + static_cast<uintptr_t>(i) * stride;
+                            uint16_t sTid = 0;
+                            if (Read16(s + kOff_InvSlot_TypeId, &sTid) && sTid == typeId)
+                            {
+                                int64_t curQty = 0;
+                                if (Read64(s + kOff_InvSlot_Quantity, &curQty) && curQty > 0)
+                                {
+                                    Write64(s + kOff_InvSlot_Quantity, curQty + qty);
+                                    stacked = true;
+                                    ++committed;
+                                    break;
+                                }
+                            }
+                        }
+
+                        // 2. If not stacked, place into first empty slot
+                        if (!stacked)
+                        {
+                            for (uint16_t i = 0; i < scount; ++i)
+                            {
+                                const uintptr_t s = slots + static_cast<uintptr_t>(i) * stride;
+                                uint16_t sTid = 0;
+                                if (!Read16(s + kOff_InvSlot_TypeId, &sTid) || sTid == 0 || sTid == kInvSlot_EmptyType)
+                                {
+                                    const size_t copyBytes = (stride < sizeof(itemVal)) ? stride : sizeof(itemVal);
+                                    memcpy(reinterpret_cast<void*>(s), itemVal, copyBytes);
+                                    Write16(s + kOff_InvSlot_TypeId, typeId);
+                                    Write64(s + kOff_InvSlot_Quantity, qty);
+                                    Write64(s + kOff_ItemVal_InstanceId, id);
+                                    Write16(s + 0xA0, 1);
+                                    Write64(s + 0x30, -1);
+                                    Write32(s + 0x8C, 0xFFFFFFFF);
+
+                                    uint16_t maxD = 1000;
+                                    if (def && Read16(def + 0x400, &maxD) && maxD > 0)
+                                    {
+                                        Write16(s + 0x40, maxD);
+                                        Write16(s + 0x42, maxD);
+                                    }
+                                    if (def)
+                                    {
+                                        uint16_t sub = 0;
+                                        if (Read16(def + 0x218, &sub))
+                                            Write16(s + kOff_ItemVal_Subtype, sub);
+                                    }
+
+                                    uint16_t used = 0;
+                                    if (Read16(bucket + kOff_InvBucket_UsedSlots, &used))
+                                    {
+                                        Write16(bucket + kOff_InvBucket_UsedSlots, used + 1);
+                                    }
+                                    ++committed;
+                                    break;
+                                }
+                            }
+                        }
+
+                        if (committed > 0)
+                        {
+                            RepairUsedSlots(holder);
+                        }
                     }
                 }
             }
@@ -3732,7 +4479,7 @@ namespace trinity::game
 
             // Freed in the target realm, exactly once each, whatever happened.
             if (planned) { __try { oFreePlacements(out); } __except (EXCEPTION_EXECUTE_HANDLER) {} }
-            if (built && oItemValueDtor) { __try { oItemValueDtor(itemVal); } __except (EXCEPTION_EXECUTE_HANDLER) {} }
+            if (built && oItemValueDtor && committed == 0) { __try { oItemValueDtor(itemVal); } __except (EXCEPTION_EXECUTE_HANDLER) {} }
             return committed;
         }
 
@@ -3900,6 +4647,14 @@ namespace trinity::game
             if (serverH && serverH != clientH)
             {
                 okServer = AddIntoHolder(serverH, /*serverRealm=*/true,  typeId, qty, id, def);
+            }
+            if (!okServer)
+            {
+                serverH = ServerHolder();
+                if (serverH && serverH != clientH)
+                {
+                    okServer = AddIntoHolder(serverH, /*serverRealm=*/true, typeId, qty, id, def);
+                }
             }
             if (!okServer)
             {
@@ -4105,46 +4860,45 @@ namespace trinity::game
             uint32_t named = 0;
             for (uint32_t row = 0; row < count; ++row)
             {
-                try
+                const uint16_t tid = static_cast<uint16_t>(row);
+                if (tid == kInvSlot_EmptyType || tid == 0) continue;
+                uintptr_t def = 0;
+                if (!DefForRow(g_itemTableGlobal, tid, &def)) continue;
+
+                Item it{};
+                it.typeId = tid;
+                // readable. Unlike the snapshot there is deliberately no
+                // "Item #N" fallback: a row with no name at all is an internal
+                // or unused definition, and listing it would just be noise.
+                if (!DisplayNameForType(tid, it.name, sizeof(it.name)))
                 {
-                    const uint16_t tid = static_cast<uint16_t>(row);
-                    if (tid == kInvSlot_EmptyType || tid == 0) continue;
-                    uintptr_t def = 0;
-                    if (!DefForRow(g_itemTableGlobal, tid, &def)) continue;
-
-                    Item it{};
-                    it.typeId = tid;
-                    if (!DisplayNameForType(tid, it.name, sizeof(it.name)))
-                    {
-                        if (!KeyForType(tid, it.key, sizeof(it.key))) continue;
-                        Prettify(it.key, it.name, sizeof(it.name));
-                    }
-                    if (!it.name[0]) continue;
-                    if (!it.key[0] && !KeyForType(tid, it.key, sizeof(it.key))) it.key[0] = 0;
-                    if (!IconForType(tid, it.icon, sizeof(it.icon))) it.icon[0] = 0;
-                    if (!CategoryOfType(tid, &it.cat)) it.cat = kNoCategory;
-                    it.tier = TierOfType(tid);
-                    ++named;
-
-                    const char* catName = GetItemCategoryLabel(it);
-                    Group* g = nullptr;
-                    for (auto& cand : g_catalog)
-                        if (_stricmp(cand.label, catName) == 0) { g = &cand; break; }
-                    if (!g)
-                    {
-                        Group ng{};
-                        ng.cat = it.cat;
-                        snprintf(ng.label, sizeof(ng.label), "%s", catName);
-                        ng.tab[0] = 0;
-                        uint16_t order = 9999;
-                        GetCategoryInfoByName(catName, &order, ng.icon, sizeof(ng.icon));
-                        ng.cat.order = order;
-                        g_catalog.push_back(std::move(ng));
-                        g = &g_catalog.back();
-                    }
-                    g->items.push_back(it);
+                    if (!KeyForType(tid, it.key, sizeof(it.key))) continue;
+                    Prettify(it.key, it.name, sizeof(it.name));
                 }
-                catch (...) {}
+                if (!it.name[0]) continue;
+                if (!it.key[0] && !KeyForType(tid, it.key, sizeof(it.key))) it.key[0] = 0;
+                if (!IconForType(tid, it.icon, sizeof(it.icon))) it.icon[0] = 0;
+                if (!CategoryOfType(tid, &it.cat)) it.cat = kNoCategory;
+                it.tier = TierOfType(tid);
+                ++named;
+
+                const char* catName = GetItemCategoryLabel(it);
+                Group* g = nullptr;
+                for (auto& cand : g_catalog)
+                    if (_stricmp(cand.label, catName) == 0) { g = &cand; break; }
+                if (!g)
+                {
+                    Group ng{};
+                    ng.cat = it.cat;
+                    snprintf(ng.label, sizeof(ng.label), "%s", catName);
+                    ng.tab[0] = 0;
+                    uint16_t order = 9999;
+                    GetCategoryInfoByName(catName, &order, ng.icon, sizeof(ng.icon));
+                    ng.cat.order = order;
+                    g_catalog.push_back(std::move(ng));
+                    g = &g_catalog.back();
+                }
+                g->items.push_back(it);
             }
 
             for (auto& g : g_catalog)
@@ -5363,9 +6117,9 @@ namespace trinity::game
         return FindSlotByInstanceHelper(holder, targetInstId);
     }
 
-    int Inventory::FindAndApplyAllHolders(int64_t targetInstId, SlotApplyFn fn, void* userData)
+    int Inventory::FindAndApplyAllHolders(int64_t targetInstId, SlotApplyFn fn, void* userData, uint16_t targetTypeId)
     {
-        if (targetInstId <= 0 || !fn) return 0;
+        if ((targetInstId <= 0 && targetTypeId == 0) || !fn) return 0;
 
         uintptr_t visitedHolders[128] = {};
         int visitedCount = 0;
@@ -5376,65 +6130,187 @@ namespace trinity::game
                 if (visitedHolders[v] == h) return 0;
             if (visitedCount < 128) visitedHolders[visitedCount++] = h;
 
-            const uintptr_t slot = FindSlotByInstanceHelper(h, targetInstId);
-            if (slot >= kMinPointer)
+            int matchedInHolder = 0;
+            __try
             {
-                fn(slot, userData);
-                return 1;
-            }
-            return 0;
-        };
+                uintptr_t buckets = 0;
+                uint32_t  bcount  = 0;
+                if (!ReadPtr(h + kOff_InvHolder_Buckets, &buckets)) return 0;
+                if (!Read32(h + kOff_InvHolder_Count, &bcount) || bcount > 4096) return 0;
 
-        int matched = 0;
-
-        // 1. Current Client Holder & Server Holder
-        matched += applyHolder(CurrentHolder());
-        matched += applyHolder(ServerHolder());
-
-        // 2. All 3 Player Characters' Containers (Kliff = 0, Damiane = 1, Oongka = 2)
-        for (int c = 0; c < 3; ++c)
-        {
-            const uintptr_t candChar = CharacterAddr(c);
-            if (candChar >= kMinPointer)
-            {
-                uintptr_t h = HolderForContainer(candChar);
-                if (h) matched += applyHolder(h);
-
-                uintptr_t sub = 0;
-                if (ReadPtr(candChar + kOff_Container_Sub, &sub) && sub >= kMinPointer)
+                const uintptr_t stride = SlotStride();
+                for (uint32_t b = 0; b < bcount; ++b)
                 {
-                    uintptr_t subH = 0;
-                    if (ReadPtr(sub + kOff_Sub_Holder, &subH) && subH >= kMinPointer)
-                        matched += applyHolder(subH);
-                }
+                    uintptr_t bucket = 0;
+                    if (!ReadPtr(buckets + static_cast<uintptr_t>(b) * 8, &bucket)) break;
+                    if (bucket < kMinPointer) continue;
 
-                uintptr_t compRoot = 0;
-                if (ReadPtr(candChar + 0x68, &compRoot) && compRoot >= kMinPointer)
-                {
-                    uintptr_t actContainer = 0;
-                    if (ReadPtr(compRoot + 0xB8, &actContainer) && actContainer >= kMinPointer)
+                    uintptr_t slots = 0;
+                    uint16_t  scount = 0;
+                    if (!ReadPtr(bucket + kOff_InvBucket_Slots, &slots) || slots < kMinPointer) continue;
+                    if (!Read16(bucket + kOff_InvBucket_Count, &scount) || scount == 0 || scount > 8192) continue;
+
+                    for (uint16_t i = 0; i < scount; ++i)
                     {
-                        uintptr_t actH = HolderForContainer(actContainer);
-                        if (actH) matched += applyHolder(actH);
+                        const uintptr_t slot = slots + static_cast<uintptr_t>(i) * stride;
+                        uint16_t tid = 0;
+                        if (!Read16(slot + kOff_InvSlot_TypeId, &tid) || tid == 0 || tid == kInvSlot_EmptyType) continue;
+                        int64_t inst = 0;
+                        Read64(slot + kOff_ItemVal_InstanceId, &inst);
+                        // Match by instance id when given; typeId is a
+                        // DUAL-match when present (not just a fallback): the
+                        // native inspect UI reads a companion copy whose
+                        // instanceId differs from the equipped comp's, so
+                        // instId-only matching always missed it. Bleeding onto
+                        // other same-type copies is intended here - every
+                        // instance of the character's piece must carry the edit
+                        // (refine/socket), that is the whole point of the sync.
+                        const bool isMatch = (targetInstId > 0 && inst == targetInstId) ||
+                                             (targetTypeId > 0 && tid == targetTypeId);
+                        if (isMatch)
+                        {
+                            fn(slot, userData);
+                            matchedInHolder++;
+                        }
                     }
                 }
             }
-        }
+            __except (EXCEPTION_EXECUTE_HANDLER) {}
+            return matchedInHolder;
+        };
 
-        // 3. Snapshot Candidates (All captured engine holders from commits)
-        Candidate snap[kMaxCandidates] = {};
-        const int n = SnapshotCandidates(snap);
-        for (int i = 0; i < n; ++i)
+        int matched = 0;
+        __try
         {
-            if (snap[i].holder) matched += applyHolder(snap[i].holder);
-            if (snap[i].container)
+            // 1. Current Client Holder & Server Holder
+            matched += applyHolder(CurrentHolder());
+            matched += applyHolder(ServerHolder());
+
+            // 2. All 3 Player Characters' Containers (Kliff = 0, Damiane = 1, Oongka = 2)
+            for (int c = 0; c < 3; ++c)
             {
-                uintptr_t h = HolderForContainer(snap[i].container);
-                if (h) matched += applyHolder(h);
+                uintptr_t copies[16] = {};
+                const int nCopies = CharacterAddrs(c, copies, 16);
+                for (int i = 0; i < nCopies; ++i)
+                {
+                    const uintptr_t candChar = copies[i];
+                    if (candChar < kMinPointer) continue;
+
+                    uintptr_t h = HolderForContainer(candChar);
+                    if (h) matched += applyHolder(h);
+
+                    uintptr_t sub = 0;
+                    if (ReadPtr(candChar + kOff_Container_Sub, &sub) && sub >= kMinPointer)
+                    {
+                        for (uintptr_t off = 0x50; off <= 0x200; off += 8)
+                        {
+                            uintptr_t subH = 0;
+                            if (ReadPtr(sub + off, &subH) && subH >= kMinPointer && HolderLooksValid(subH))
+                                matched += applyHolder(subH);
+                        }
+                    }
+
+                    uintptr_t compRoot = 0;
+                    if (ReadPtr(candChar + 0x68, &compRoot) && compRoot >= kMinPointer)
+                    {
+                        uintptr_t actContainer = 0;
+                        if (ReadPtr(compRoot + 0xB8, &actContainer) && actContainer >= kMinPointer)
+                        {
+                            uintptr_t actH = HolderForContainer(actContainer);
+                            if (actH) matched += applyHolder(actH);
+                        }
+                    }
+                }
+
+                const uintptr_t wAct = Player::GetActor(c);
+                if (wAct >= kMinPointer)
+                {
+                    uintptr_t sub = 0;
+                    if (ReadPtr(wAct + kOff_Container_Sub, &sub) && sub >= kMinPointer)
+                    {
+                        for (uintptr_t off = 0x50; off <= 0x200; off += 8)
+                        {
+                            uintptr_t subH = 0;
+                            if (ReadPtr(sub + off, &subH) && subH >= kMinPointer && HolderLooksValid(subH))
+                                matched += applyHolder(subH);
+                        }
+                    }
+                }
+            }
+
+            // 3. Scan all CharMgr entities directly for character, companion, and mount holders (fallback if not matched yet)
+            const uintptr_t charMgrGlobal = (matched == 0) ? Player::GetCharMgrGlobal() : 0;
+            if (charMgrGlobal >= kMinPointer)
+            {
+                uintptr_t p = 0, mgr = 0, data = 0;
+                if (ReadPtr(charMgrGlobal, &p) && p >= kMinPointer &&
+                    ReadPtr(p, &mgr) && mgr >= kMinPointer)
+                {
+                    uint32_t cCount = 0;
+                    bool listOk = (ReadPtr(mgr + kOff_CharMgr_ListData, &data) && data >= kMinPointer &&
+                                   Read32(mgr + kOff_CharMgr_ListCount, &cCount) && cCount > 0 && cCount <= kCharList_MaxCount);
+                    if (!listOk)
+                    {
+                        listOk = (ReadPtr(mgr + 0xB0, &data) && data >= kMinPointer &&
+                                  Read32(mgr + 0x9C, &cCount) && cCount > 0 && cCount <= kCharList_MaxCount);
+                    }
+                    if (listOk)
+                    {
+                        for (uint32_t i = 0; i < cCount; ++i)
+                        {
+                            uintptr_t candOwner = 0;
+                            if (!ReadPtr(data + static_cast<uintptr_t>(i) * 8, &candOwner) || candOwner < kMinPointer)
+                                continue;
+
+                            uintptr_t candAct = 0;
+                            ReadPtr(candOwner + kOff_Owner_Actor, &candAct);
+
+                            const uintptr_t tryList[] = { candAct, candOwner };
+                            for (uintptr_t cand : tryList)
+                            {
+                                if (cand < kMinPointer) continue;
+                                uintptr_t h = HolderForContainer(cand);
+                                if (h) matched += applyHolder(h);
+
+                                uintptr_t hB8 = 0;
+                                if (ReadPtr(cand + 0xB8, &hB8) && hB8 >= kMinPointer && HolderLooksValid(hB8))
+                                    matched += applyHolder(hB8);
+                            }
+                        }
+                    }
+                }
+            }
+
+            // 4. Snapshot Candidates (All captured engine holders from commits)
+            Candidate snap[kMaxCandidates] = {};
+            const int n = SnapshotCandidates(snap);
+            for (int i = 0; i < n; ++i)
+            {
+                if (snap[i].holder) matched += applyHolder(snap[i].holder);
+                if (snap[i].container)
+                {
+                    uintptr_t h = HolderForContainer(snap[i].container);
+                    if (h) matched += applyHolder(h);
+                }
             }
         }
+        __except (EXCEPTION_EXECUTE_HANDLER) {}
 
         return matched;
+    }
+
+    int Inventory::SnapshotCandidateHolders(CandidateHolder* out, int maxCount)
+    {
+        if (!out || maxCount <= 0) return 0;
+        Candidate snap[kMaxCandidates] = {};
+        const int n = SnapshotCandidates(snap);
+        const int toCopy = (n < maxCount) ? n : maxCount;
+        for (int i = 0; i < toCopy; ++i)
+        {
+            out[i].container = snap[i].container;
+            out[i].holder    = snap[i].holder;
+        }
+        return toCopy;
     }
 
     bool Inventory::SetNoBounty(bool enable)
@@ -5516,5 +6392,234 @@ namespace trinity::game
     uintptr_t Inventory::FindTableGlobal(const char* name, bool indirect)
     {
         return ::trinity::game::FindTableGlobal(name, indirect);
+    }
+
+    bool Inventory::UnlockAllBagSockets(int maxSock, int* modifiedCount)
+    {
+        if (modifiedCount) *modifiedCount = 0;
+        int count = 0;
+
+        uint8_t oldFlag = 0;
+        const uintptr_t flagAddr = RealmFlagAddress(&oldFlag);
+        if (flagAddr) RawWrite8(flagAddr, 1);
+
+        uintptr_t visitedHolders[128] = {};
+        int visitedCount = 0;
+
+        auto processHolder = [&](uintptr_t h) {
+            if (h < kMinPointer || !HolderLooksValid(h)) return;
+            for (int v = 0; v < visitedCount; ++v)
+                if (visitedHolders[v] == h) return;
+            if (visitedCount < 128) visitedHolders[visitedCount++] = h;
+
+            uintptr_t buckets = 0;
+            uint32_t bcount = 0;
+            if (!ReadPtr(h + kOff_InvHolder_Buckets, &buckets)) return;
+            if (!Read32(h + kOff_InvHolder_Count, &bcount) || bcount > 4096) return;
+
+            const uintptr_t stride = SlotStride();
+            for (uint32_t b = 0; b < bcount; ++b)
+            {
+                uintptr_t bucket = 0;
+                if (!ReadPtr(buckets + static_cast<uintptr_t>(b) * 8, &bucket)) break;
+                if (bucket < kMinPointer) continue;
+
+                uintptr_t slots = 0;
+                uint16_t scount = 0;
+                if (!ReadPtr(bucket + kOff_InvBucket_Slots, &slots) || slots < kMinPointer) continue;
+                if (!Read16(bucket + kOff_InvBucket_Count, &scount) || scount == 0 || scount > 8192) continue;
+
+                for (uint16_t i = 0; i < scount; ++i)
+                {
+                    const uintptr_t slot = slots + static_cast<uintptr_t>(i) * stride;
+                    uint16_t tid = 0;
+                    if (!Read16(slot + kOff_InvSlot_TypeId, &tid) || tid == 0 || tid == kInvSlot_EmptyType) continue;
+
+                    char key[64] = {};
+                    char name[64] = {};
+                    KeyForType(tid, key, sizeof(key));
+                    DisplayNameForType(tid, name, sizeof(name));
+                    const char* cat = DeduceCategoryFromItem(key, name);
+                    if (!cat || !cat[0]) continue;
+
+                    if (strstr(cat, "Weapon") || strstr(cat, "Dagger") || strstr(cat, "Shield") ||
+                        strstr(cat, "Armor") || strstr(cat, "Helm") || strstr(cat, "Glove") ||
+                        strstr(cat, "Boot") || strstr(cat, "Cloak") || strstr(cat, "Necklace") ||
+                        strstr(cat, "Earring") || strstr(cat, "Ring") || strstr(cat, "Horse Gear"))
+                    {
+                        Equipment::EnsureSocketVector(slot);
+                        Equipment::OpenAllSockets(slot, maxSock);
+                        count++;
+                    }
+                }
+            }
+        };
+
+        // 1. Current Client Holder & Server Holder
+        processHolder(CurrentHolder());
+        processHolder(ServerHolder());
+
+        // 2. All 3 Player Characters' Containers
+        for (int c = 0; c < 3; ++c)
+        {
+            uintptr_t copies[16] = {};
+            const int nCopies = CharacterAddrs(c, copies, 16);
+            for (int i = 0; i < nCopies; ++i)
+            {
+                const uintptr_t candChar = copies[i];
+                if (candChar < kMinPointer) continue;
+                uintptr_t h = HolderForContainer(candChar);
+                if (h) processHolder(h);
+
+                uintptr_t sub = 0;
+                if (ReadPtr(candChar + kOff_Container_Sub, &sub) && sub >= kMinPointer)
+                {
+                    for (uintptr_t off = 0x50; off <= 0x200; off += 8)
+                    {
+                        uintptr_t subH = 0;
+                        if (ReadPtr(sub + off, &subH) && subH >= kMinPointer && HolderLooksValid(subH))
+                            processHolder(subH);
+                    }
+                }
+            }
+        }
+
+        // 3. Snapshot Candidates
+        Candidate snap[kMaxCandidates] = {};
+        const int nSnap = SnapshotCandidates(snap);
+        for (int i = 0; i < nSnap; ++i)
+        {
+            if (snap[i].holder) processHolder(snap[i].holder);
+            if (snap[i].container)
+            {
+                uintptr_t h = HolderForContainer(snap[i].container);
+                if (h) processHolder(h);
+            }
+        }
+
+        if (flagAddr) RawWrite8(flagAddr, oldFlag);
+
+        int eqUnlocked = 0;
+        Equipment::UnlockAllGears(&eqUnlocked);
+
+        ForceRefresh();
+        if (modifiedCount) *modifiedCount = count;
+        LOG("inventory: Unlocked all %d sockets on %d bag items and %d equipped pieces.", maxSock, count, eqUnlocked);
+        return count > 0 || eqUnlocked > 0;
+    }
+
+    bool Inventory::RefineAllBagEquipment(int level, int* modifiedCount)
+    {
+        if (modifiedCount) *modifiedCount = 0;
+        int count = 0;
+
+        uint8_t oldFlag = 0;
+        const uintptr_t flagAddr = RealmFlagAddress(&oldFlag);
+        if (flagAddr) RawWrite8(flagAddr, 1);
+
+        uintptr_t visitedHolders[128] = {};
+        int visitedCount = 0;
+
+        auto processHolder = [&](uintptr_t h) {
+            if (h < kMinPointer || !HolderLooksValid(h)) return;
+            for (int v = 0; v < visitedCount; ++v)
+                if (visitedHolders[v] == h) return;
+            if (visitedCount < 128) visitedHolders[visitedCount++] = h;
+
+            uintptr_t buckets = 0;
+            uint32_t bcount = 0;
+            if (!ReadPtr(h + kOff_InvHolder_Buckets, &buckets)) return;
+            if (!Read32(h + kOff_InvHolder_Count, &bcount) || bcount > 4096) return;
+
+            const uintptr_t stride = SlotStride();
+            for (uint32_t b = 0; b < bcount; ++b)
+            {
+                uintptr_t bucket = 0;
+                if (!ReadPtr(buckets + static_cast<uintptr_t>(b) * 8, &bucket)) break;
+                if (bucket < kMinPointer) continue;
+
+                uintptr_t slots = 0;
+                uint16_t scount = 0;
+                if (!ReadPtr(bucket + kOff_InvBucket_Slots, &slots) || slots < kMinPointer) continue;
+                if (!Read16(bucket + kOff_InvBucket_Count, &scount) || scount == 0 || scount > 8192) continue;
+
+                for (uint16_t i = 0; i < scount; ++i)
+                {
+                    const uintptr_t slot = slots + static_cast<uintptr_t>(i) * stride;
+                    uint16_t tid = 0;
+                    if (!Read16(slot + kOff_InvSlot_TypeId, &tid) || tid == 0 || tid == kInvSlot_EmptyType) continue;
+
+                    char key[64] = {};
+                    char name[64] = {};
+                    KeyForType(tid, key, sizeof(key));
+                    DisplayNameForType(tid, name, sizeof(name));
+                    const char* cat = DeduceCategoryFromItem(key, name);
+                    if (!cat || !cat[0]) continue;
+
+                    if ((strstr(cat, "Weapon") || strstr(cat, "Dagger") || strstr(cat, "Shield") ||
+                         strstr(cat, "Armor") || strstr(cat, "Helm") || strstr(cat, "Glove") ||
+                         strstr(cat, "Boot") || strstr(cat, "Cloak") || strstr(cat, "Necklace") ||
+                         strstr(cat, "Earring") || strstr(cat, "Ring")) &&
+                        !strstr(cat, "Tool") && !strstr(name, "Pickaxe") && !strstr(name, "Lantern"))
+                    {
+                        Write16(slot + kOff_ItemVal_RefineLevel, static_cast<uint16_t>(level));
+                        Write8(slot + kOff_ItemVal_RefineLevel, static_cast<uint8_t>(level));
+                        count++;
+                    }
+                }
+            }
+        };
+
+        // 1. Current Client Holder & Server Holder
+        processHolder(CurrentHolder());
+        processHolder(ServerHolder());
+
+        // 2. All 3 Player Characters' Containers
+        for (int c = 0; c < 3; ++c)
+        {
+            uintptr_t copies[16] = {};
+            const int nCopies = CharacterAddrs(c, copies, 16);
+            for (int i = 0; i < nCopies; ++i)
+            {
+                const uintptr_t candChar = copies[i];
+                if (candChar < kMinPointer) continue;
+                uintptr_t h = HolderForContainer(candChar);
+                if (h) processHolder(h);
+
+                uintptr_t sub = 0;
+                if (ReadPtr(candChar + kOff_Container_Sub, &sub) && sub >= kMinPointer)
+                {
+                    for (uintptr_t off = 0x50; off <= 0x200; off += 8)
+                    {
+                        uintptr_t subH = 0;
+                        if (ReadPtr(sub + off, &subH) && subH >= kMinPointer && HolderLooksValid(subH))
+                            processHolder(subH);
+                    }
+                }
+            }
+        }
+
+        // 3. Snapshot Candidates
+        Candidate snap[kMaxCandidates] = {};
+        const int nSnap = SnapshotCandidates(snap);
+        for (int i = 0; i < nSnap; ++i)
+        {
+            if (snap[i].holder) processHolder(snap[i].holder);
+            if (snap[i].container)
+            {
+                uintptr_t h = HolderForContainer(snap[i].container);
+                if (h) processHolder(h);
+            }
+        }
+
+        if (flagAddr) RawWrite8(flagAddr, oldFlag);
+
+        int eqRefined = 0;
+        Equipment::RefineAll(level, &eqRefined);
+
+        ForceRefresh();
+        if (modifiedCount) *modifiedCount = count;
+        LOG("inventory: Refined %d bag items and %d equipped pieces to +%d.", count, eqRefined, level);
+        return count > 0 || eqRefined > 0;
     }
 }

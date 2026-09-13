@@ -18,4 +18,10 @@ namespace trinity::hooks
     // Real pad state, bypassing the menu-open neutralisation applied to the
     // game. Falls back to the plain export until the hooks are up.
     DWORD XInputReadReal(DWORD userIndex, XINPUT_STATE* state);
+
+    // Returns true if a native DualSense or DS4 controller is currently connected.
+    bool IsDualSenseConnected();
+
+    // Returns human-readable model and connection string (e.g. "DualSense (USB)").
+    const char* GetDualSenseName();
 }

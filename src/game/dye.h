@@ -38,8 +38,9 @@ namespace trinity::game
         // The raw equip-batch hook capture (g_comp), validated, WITHOUT any
         // character routing. Deliberately recursion-free - ActivePlayerCharacterIdx()
         // scans it to identify who is on screen, so it must never call back
-        // into ClientComp(). 0 until the game has run one equip batch.
         static uintptr_t HookedClientComp();
+        static uintptr_t HookedMountComp();
+        static uintptr_t HookedCharComp(int charIdx);
 
         // Character selection (0 = Kliff, 1 = Damiane, 2 = Oongka)
         static void SetActiveCharacter(int index);
@@ -50,6 +51,10 @@ namespace trinity::game
         static int  GetTargetMode();
         static void SetActiveMount(int index);
         static int  GetActiveMount();
+
+        // Native EquipBatch access for triggering mesh/model updates
+        static void* GetEquipBatch();
+        static void  TriggerEquipMeshRebuild(uintptr_t comp);
 
         // --- Equipped-slot snapshot (menu side; guarded reads only) ---------
         // Rebuilt on every call cheap enough for a menu frame: the table is
@@ -87,12 +92,13 @@ namespace trinity::game
         // engine code, so the request is queued and Tick() runs it within a
         // frame - same pattern as Inventory::AddItem.
         static bool Apply(uint16_t tag, int channel, const Channel& c);
+        static bool ApplyAllEquipped(const Channel& c);
         static bool Clear(uint16_t tag, int channel);
         static bool InjectAllToSave();
 
         // Outcome of the most recent request, for a toast. Read-and-clear: a
         // Done/Failed is reported once, then the state returns to Idle.
-        enum class OpState { Idle, Pending, Done, Failed };
+        enum class OpState { Idle, Pending, Done, DoneDataOnly, Failed };
         static OpState Status();
 
         // Game-thread pump - runs a queued Apply/Clear. Called from the same

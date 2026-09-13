@@ -82,40 +82,72 @@ namespace trinity::mem
         }
 
         // Merged, contiguous, committed+readable spans within the module image.
-        // Merging adjacent regions lets a pattern straddle a page-protection
-        // boundary (e.g. across two .text sub-ranges) without being missed.
-        //
-        // TU 2.00.00: the image ships a huge `.debug$P` section flagged
-        // code+execute that contains STALE machine code from an older build -
-        // matching it pointed hooks at debug leftovers. Exclude ".debug*"
-        // sections from scanning entirely.
+        // Uses VirtualQuery to accurately scan live committed memory pages (MEM_COMMIT)
+        // while bypassing uncommitted gaps and guarded pages, with PE header fallback.
         std::vector<std::pair<uintptr_t, uintptr_t>> ReadableSpans(const ModuleRegion& mod)
         {
             std::vector<std::pair<uintptr_t, uintptr_t>> spans;
             const auto base = mod.base;
-            if (!base) return spans;
+            const auto size = mod.size;
+            if (!base || !size) return spans;
 
-            const auto* dos = reinterpret_cast<const IMAGE_DOS_HEADER*>(base);
-            if (dos->e_magic != IMAGE_DOS_SIGNATURE) return spans;
-            const auto* nt = reinterpret_cast<const IMAGE_NT_HEADERS*>(base + dos->e_lfanew);
-            if (nt->Signature != IMAGE_NT_SIGNATURE) return spans;
+            uintptr_t curr = base;
+            const uintptr_t end = base + size;
 
-            auto* sec = IMAGE_FIRST_SECTION(nt);
-            for (WORD i = 0; i < nt->FileHeader.NumberOfSections; ++i, ++sec)
+            while (curr < end)
             {
-                char name[9] = {};
-                memcpy(name, sec->Name, 8);
-                // Exclude only the non-code .debug data section (preserves .debug$P which holds pa_StatCommit in TU 2.00)
-                if (strcmp(name, ".debug") == 0) continue;
+                MEMORY_BASIC_INFORMATION mbi{};
+                if (!VirtualQuery(reinterpret_cast<const void*>(curr), &mbi, sizeof(mbi)))
+                    break;
 
-                const uintptr_t begin = base + sec->VirtualAddress;
-                const uintptr_t vsz   = sec->Misc.VirtualSize ? sec->Misc.VirtualSize : 1;
-                const uintptr_t regEnd = begin + vsz;
-                if (!spans.empty() && spans.back().second == begin)
-                    spans.back().second = regEnd;                 // merge contiguous
-                else
-                    spans.emplace_back(begin, regEnd);
+                const uintptr_t regionStart = reinterpret_cast<uintptr_t>(mbi.BaseAddress);
+                const uintptr_t regionEnd   = regionStart + mbi.RegionSize;
+
+                if ((mbi.State == MEM_COMMIT) && IsReadable(mbi.Protect))
+                {
+                    const uintptr_t spanBegin = (regionStart > base) ? regionStart : base;
+                    const uintptr_t spanEnd   = (regionEnd < end) ? regionEnd : end;
+                    if (spanBegin < spanEnd)
+                    {
+                        if (!spans.empty() && spans.back().second == spanBegin)
+                            spans.back().second = spanEnd;
+                        else
+                            spans.emplace_back(spanBegin, spanEnd);
+                    }
+                }
+
+                if (regionEnd <= curr)
+                    break;
+                curr = regionEnd;
             }
+
+            // Fallback: If VirtualQuery produced no spans, query PE section headers directly
+            if (spans.empty())
+            {
+                const auto* dos = reinterpret_cast<const IMAGE_DOS_HEADER*>(base);
+                if (dos->e_magic == IMAGE_DOS_SIGNATURE)
+                {
+                    const auto* nt = reinterpret_cast<const IMAGE_NT_HEADERS*>(base + dos->e_lfanew);
+                    if (nt->Signature == IMAGE_NT_SIGNATURE)
+                    {
+                        auto* sec = IMAGE_FIRST_SECTION(nt);
+                        for (WORD i = 0; i < nt->FileHeader.NumberOfSections; ++i, ++sec)
+                        {
+                            if (!(sec->Characteristics & (IMAGE_SCN_MEM_READ | IMAGE_SCN_MEM_EXECUTE)))
+                                continue;
+
+                            const uintptr_t begin = base + sec->VirtualAddress;
+                            const uintptr_t vsz   = sec->Misc.VirtualSize ? sec->Misc.VirtualSize : sec->SizeOfRawData;
+                            const uintptr_t regEnd = begin + vsz;
+                            if (!spans.empty() && spans.back().second == begin)
+                                spans.back().second = regEnd;
+                            else
+                                spans.emplace_back(begin, regEnd);
+                        }
+                    }
+                }
+            }
+
             return spans;
         }
 

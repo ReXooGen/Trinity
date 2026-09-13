@@ -365,6 +365,8 @@ namespace trinity::game
         // verify a hook-captured or walked component really belongs to the
         // character an editor targets before any write is routed through it.
         static int IdentifyCharacterFromComp(uintptr_t comp);
+        static int IdentifyCharacterFromEquip(uintptr_t container);
+        static uintptr_t FindEquipComp(uintptr_t entity);
 
         // Every container that positively identifies as `index` (0..2), most
         // trusted first. Lets the editors sync one character's change across
@@ -379,6 +381,10 @@ namespace trinity::game
         static uintptr_t FindSlotByInstance(uintptr_t holder, int64_t targetInstId);
 
         using SlotApplyFn = void(*)(uintptr_t slotEntry, void* userData);
-        static int FindAndApplyAllHolders(int64_t targetInstId, SlotApplyFn fn, void* userData);
+        static int FindAndApplyAllHolders(int64_t targetInstId, SlotApplyFn fn, void* userData, uint16_t targetTypeId = 0);
+
+        // 1-Click Inventory Bag Enhancement
+        static bool UnlockAllBagSockets(int maxSock = 5, int* modifiedCount = nullptr);
+        static bool RefineAllBagEquipment(int level = 10, int* modifiedCount = nullptr);
     };
 }

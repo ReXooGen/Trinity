@@ -20,6 +20,9 @@ namespace trinity::game
         // has been observed yet (e.g. still at the main menu).
         static bool GetLastPosition(float* x, float* y, float* z);
 
+        // Returns the active player move-owner pointer captured from hkMoveUpdate.
+        static uintptr_t GetMoveOwner();
+
         // True on frames where Free Flight is actively driving the player's
         // vertical velocity (a direction is held while airborne). Exposed so the
         // HUD can light "FLY".
@@ -67,6 +70,7 @@ namespace trinity::game
         enum class MarkerStatus
         {
             Success,
+            Queued,
             NotReady,
             NoPlayer,
             NoMarker,
@@ -95,6 +99,11 @@ namespace trinity::game
         // Uses fallbackHeight (default 1200.0f) if the marker altitude is 0.
         // Activates safe landing / fall protection.
         static MarkerStatus TeleportToMarker(float fallbackHeight = 1200.0f);
+
+        // Returns a completed asynchronous marker-teleport result once. A
+        // queued request is not reported as successful until its position
+        // write has survived the game's movement update and read-back check.
+        static bool ConsumeMarkerResult(MarkerStatus* status);
 
         // Returns true if safe landing / fall damage protection is actively protecting the player.
         static bool IsProtected();

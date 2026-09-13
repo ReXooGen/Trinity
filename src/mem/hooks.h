@@ -38,7 +38,9 @@ namespace trinity::mem
 
         const size_t matches = CountMatches(sig, maxMatches);
         if (matches != 1)
-            LOG_WARN("%s signature ambiguous (%zu); hooking first.", context, matches);
+        {
+            LOG_WARN("%s signature matched %zu sites - using first match @ %p.", context, matches, reinterpret_cast<void*>(addr));
+        }
 
         void* t = reinterpret_cast<void*>(addr);
         if (MH_CreateHook(t, reinterpret_cast<void*>(detour), reinterpret_cast<void**>(original)) != MH_OK ||

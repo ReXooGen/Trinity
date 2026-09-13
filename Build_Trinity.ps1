@@ -7,6 +7,9 @@ param(
 
 $ErrorActionPreference = 'Stop'
 $source = $PSScriptRoot
+# Game title-update tag stamped into package metadata and release names.
+# Bump this when the mod is rebuilt for a new Crimson Desert TU.
+$tuTag = '2.02.00'
 $build = if ($WithDLC) { Join-Path $source 'build-dlc' } else { Join-Path $source 'build-clean' }
 $dlcFlag = if ($WithDLC) { "-DENABLE_EXTENDED_HOOKS=ON" } else { "-DENABLE_EXTENDED_HOOKS=OFF" }
 $variantTag = if ($WithDLC) { "-DLC" } else { "" }
@@ -107,15 +110,15 @@ if ($numMatch.Success) {
     if ($majorMatch.Success -and $minorMatch.Success -and $patchMatch.Success) {
         $versionStr = "$($majorMatch.Groups[1].Value).$($minorMatch.Groups[1].Value).$($patchMatch.Groups[1].Value)"
     } else {
-        $versionStr = "2.00.01"
+        $versionStr = "1.4.0"
     }
 }
 
 # Mod Manager Metadata (DMM / Fluffy / Vortex identification)
 $modInfoContent = @"
-name=Trinity - vTweak
+name=Trinity - vTweak (TU $tuTag)
 version=$versionStr
-description=DirectX 12 Mod Menu for Crimson Desert (Maintenance & vTweak by Lian)
+description=DirectX 12 Mod Menu for Crimson Desert TU $tuTag (Maintenance & vTweak by Lian)
 author=Lian (ReXooGen)
 category=Utilities
 "@
@@ -123,10 +126,10 @@ Set-Content -Path (Join-Path $pkgDir 'modinfo.ini') -Value $modInfoContent -Enco
 
 $infoJsonContent = @"
 {
-  "name": "Trinity - vTweak",
+  "name": "Trinity - vTweak (TU $tuTag)",
   "version": "$versionStr",
   "author": "Lian (ReXooGen)",
-  "description": "DirectX 12 Mod Menu for Crimson Desert (Maintenance & vTweak by Lian)",
+  "description": "DirectX 12 Mod Menu for Crimson Desert TU $tuTag (Maintenance & vTweak by Lian)",
   "category": "Utilities"
 }
 "@
@@ -167,7 +170,7 @@ if (-not (Test-Path -LiteralPath $variantReleaseDir)) {
     New-Item -ItemType Directory -Path $variantReleaseDir -Force | Out-Null
 }
 
-$zipName = "Trinity-v$versionStr-vTweak (2.00.01).zip"
+$zipName = "Trinity-v$versionStr-vTweak ($tuTag).zip"
 $zipPath = Join-Path $variantReleaseDir $zipName
 if (Test-Path -LiteralPath $zipPath) {
     Remove-Item -LiteralPath $zipPath -Force
@@ -180,7 +183,7 @@ Copy-Item -Path $zipPath -Destination (Join-Path $commonReleaseDir $zipName) -Fo
 Copy-Item -Path $zipPath -Destination (Join-Path $releaseDir $zipName) -Force
 
 # Copy loose .asi files directly to variant release folder
-Copy-Item -Path (Join-Path $pkgDir 'Trinity.asi') -Destination (Join-Path $variantReleaseDir 'Trinity-2.00.01.asi') -Force
+Copy-Item -Path (Join-Path $pkgDir 'Trinity.asi') -Destination (Join-Path $variantReleaseDir "Trinity-$tuTag.asi") -Force
 Copy-Item -Path (Join-Path $pkgDir 'Trinity.asi') -Destination (Join-Path $variantReleaseDir 'Trinity.asi') -Force
 
 # Setup dedicated Languages folders
@@ -211,7 +214,16 @@ if (Test-Path -LiteralPath $steamGameDir) {
         Copy-Item -Path (Join-Path $pkgDir 'Trinity.asi') -Destination (Join-Path $steamGameDir 'Trinity.asi') -Force -ErrorAction Stop
         Write-Host "Auto-deployed to Steam game folder: $steamGameDir"
     } catch {
-        Write-Host "Note: Game may be running in bin64, copy skipped (will apply when game restarts): $_"
+        $targetAsi = Join-Path $steamGameDir 'Trinity.asi'
+        $oldAsi = Join-Path $steamGameDir 'Trinity.asi.old'
+        if (Test-Path -LiteralPath $oldAsi) { Remove-Item -LiteralPath $oldAsi -Force -ErrorAction SilentlyContinue }
+        try {
+            Rename-Item -LiteralPath $targetAsi -NewName 'Trinity.asi.old' -Force -ErrorAction Stop
+            Copy-Item -Path (Join-Path $pkgDir 'Trinity.asi') -Destination $targetAsi -Force -ErrorAction Stop
+            Write-Host "Auto-deployed to Steam game folder (via atomic rename): $steamGameDir"
+        } catch {
+            Write-Host "Note: Game may be running in bin64, copy skipped (will apply when game restarts): $_"
+        }
     }
 }
 
@@ -225,6 +237,13 @@ try {
     Write-Host "Auto-deployed Trinity.asi to Steam mods folder: $steamModsDir"
 } catch {
     Write-Host "Note: Could not copy to mods folder: $_"
+}
+
+# Update DMM mod directory metadata if present
+$dmmFolders = Get-ChildItem -Path $steamModsDir -Directory -Filter '*Trinity*' -ErrorAction SilentlyContinue
+foreach ($dmmFolder in $dmmFolders) {
+    Copy-Item -Path (Join-Path $pkgDir 'info.json') -Destination (Join-Path $dmmFolder.FullName 'info.json') -Force -ErrorAction SilentlyContinue
+    Copy-Item -Path (Join-Path $pkgDir 'modinfo.ini') -Destination (Join-Path $dmmFolder.FullName 'modinfo.ini') -Force -ErrorAction SilentlyContinue
 }
 
 # Copy and deploy all discovered translation files (*.ini)

@@ -60,3 +60,10 @@ dlc.h
 src/game/dlc.cpp
 src/game/dlc.h
 
+scripts/live_combat_diagnostic.py
+tools/live_combat_monitor.py
+/re_scripts/
+
+# Scratch / dev scripts (moved from scripts/)
+scratch/scripts/
+scratch/

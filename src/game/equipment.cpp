@@ -1,4 +1,5 @@
 #include "equipment.h"
+#include "equipment_logic.h"
 
 #include <Windows.h>
 #include <atomic>
@@ -45,9 +46,6 @@ namespace trinity::game
         EquipRefresh_t    g_refresh = nullptr; // sub_7C88A0
         std::atomic<bool> g_dirty{ false };
 
-        using ResizeSocketVector_t = bool (__fastcall*)(void*, uint32_t);
-        ResizeSocketVector_t g_resizeSocket = nullptr;
-
         struct EquipTableDesc
         {
             uintptr_t desc = 0;
@@ -58,13 +56,30 @@ namespace trinity::game
             bool valid = false;
         };
 
+        inline bool IsValidCanonicalPtr(uintptr_t p)
+        {
+            return p >= 0x100000000ULL && p <= 0x7FFFFFFFFFFFULL;
+        }
+
         EquipTableDesc ReadEquipTableDesc(uintptr_t comp)
         {
             EquipTableDesc out{};
-            if (comp < kMinPointer) return out;
+            if (!IsValidCanonicalPtr(comp)) return out;
 
-            auto validateTable = [](uintptr_t arr, uint32_t cnt, uintptr_t stride, uintptr_t tagOff) -> bool {
-                if (arr < kMinPointer || cnt == 0 || cnt > 64) return false;
+            struct LayoutCandidate {
+                uintptr_t stride;
+                uintptr_t tagOffset;
+            };
+            // 208-byte stride with tag at 0xC8 is the verified engine layout for TU 2.01 / TU 2.02
+            const LayoutCandidate layouts[] = {
+                { 0xD0, 0xC8 }, // Primary: 208-byte stride (TU 2.01 / TU 2.02 / legacy)
+                { 0xC8, 0xC0 }, // Secondary: 200-byte stride
+            };
+
+            auto evaluateSlots = [](uintptr_t arr, uint32_t cnt, uintptr_t stride, uintptr_t tagOff, int* outScore) -> bool {
+                if (!IsValidCanonicalPtr(arr) || cnt == 0 || cnt > 64) return false;
+                int items = 0;
+                uint32_t tagMask = 0;
                 for (uint32_t i = 0; i < cnt; ++i)
                 {
                     const uintptr_t entry = arr + static_cast<uintptr_t>(i) * stride;
@@ -72,99 +87,99 @@ namespace trinity::game
                     if (Read16(entry + kOff_InvSlot_TypeId, &tid) && tid != kInvSlot_EmptyType && tid != 0)
                     {
                         if (!Read16(entry + tagOff, &tag) || tag >= 32)
-                            return false; // Slot tags must be 0..31 for valid equip tables!
+                            return false; // ANY slot tag >= 32 means this is NOT an equipment table!
+                        items++;
+                        tagMask |= (1u << tag);
                     }
                 }
-                return true;
+                int distinct = 0;
+                for (uint32_t m = tagMask; m != 0; m &= (m - 1)) ++distinct;
+                if (outScore) *outScore = distinct * 100 + items;
+                return items > 0;
             };
 
-            uintptr_t d = 0, a = 0;
-            uint32_t c = 0;
+            struct BestDesc {
+                uintptr_t desc = 0;
+                uintptr_t array = 0;
+                uint32_t count = 0;
+                uintptr_t stride = 0xD0;
+                uintptr_t tagOffset = 0xC8;
+                int score = 0;
+            };
 
-            // Modern TU 1.17+ table (+0x80) - Priority
-            if (ReadPtr(comp + 0x80, &d) && d >= kMinPointer &&
-                ReadPtr(d + kOff_EquipTable_Array, &a) && a >= kMinPointer &&
-                Read32(d + kOff_EquipTable_Count, &c) && c >= 1 && c <= 64)
-            {
-                if (validateTable(a, c, 0xD0, 0xC8))
-                {
-                    out.desc = d;
-                    out.array = a;
-                    out.count = c;
-                    out.stride = 0xD0;
-                    out.tagOffset = 0xC8;
-                    out.valid = true;
-                    return out;
-                }
-            }
+            BestDesc best;
 
-            // Legacy TU 1.14 table (+0x88)
-            if (ReadPtr(comp + 0x88, &d) && d >= kMinPointer &&
-                ReadPtr(d + kOff_EquipTable_Array, &a) && a >= kMinPointer &&
-                Read32(d + kOff_EquipTable_Count, &c) && c >= 1 && c <= 64)
-            {
-                if (validateTable(a, c, 0xC8, 0xC0))
-                {
-                    out.desc = d;
-                    out.array = a;
-                    out.count = c;
-                    out.stride = 0xC8;
-                    out.tagOffset = 0xC0;
-                    out.valid = true;
-                    return out;
-                }
-            }
-
-            // Alternate table offsets (+0x50, +0x38, +0x40, +0x48, +0x60, +0x70)
-            const uintptr_t tableOffsets[] = { 0x50, 0x38, 0x40, 0x48, 0x60, 0x70 };
+            // 0x90 is the authoritative table offset on ServerEquipSlotActorComponent
+            const uintptr_t tableOffsets[] = { 0x90, 0x88, 0x80, 0x50, 0x78, 0x38, 0x40, 0x48, 0x60, 0x70 };
             for (uintptr_t tOff : tableOffsets)
             {
-                if (!ReadPtr(comp + tOff, &d) || d < kMinPointer) continue;
-                if (ReadPtr(d + kOff_EquipTable_Array, &a) && a >= kMinPointer &&
-                    Read32(d + kOff_EquipTable_Count, &c) && c >= 1 && c <= 64)
+                uintptr_t desc = 0;
+                if (!ReadPtr(comp + tOff, &desc) || !IsValidCanonicalPtr(desc)) continue;
+                uintptr_t array = 0;
+                uint32_t count = 0;
+                if (!ReadPtr(desc + kOff_EquipTable_Array, &array) || !IsValidCanonicalPtr(array)) continue;
+                if (!Read32(desc + kOff_EquipTable_Count, &count) || count == 0 || count > 64) continue;
+
+                for (const auto& l : layouts)
                 {
-                    if (validateTable(a, c, 0xD0, 0xC8))
+                    int score = 0;
+                    if (evaluateSlots(array, count, l.stride, l.tagOffset, &score))
                     {
-                        out.desc = d;
-                        out.array = a;
-                        out.count = c;
-                        out.stride = 0xD0;
-                        out.tagOffset = 0xC8;
-                        out.valid = true;
-                        return out;
+                        if (score > best.score)
+                        {
+                            best.desc = desc;
+                            best.array = array;
+                            best.count = count;
+                            best.stride = l.stride;
+                            best.tagOffset = l.tagOffset;
+                            best.score = score;
+                        }
                     }
                 }
             }
 
+            if (best.score <= 0) return out;
+
+            out.desc = best.desc;
+            out.array = best.array;
+            out.count = best.count;
+            out.stride = best.stride;
+            out.tagOffset = best.tagOffset;
+            out.valid = true;
             return out;
         }
 
         // --- Each realm's equip component, by walk (mirrors dye.cpp) ----------
         bool CompValid(uintptr_t comp)
         {
-            if (comp < kMinPointer) return false;
+            if (!IsValidCanonicalPtr(comp)) return false;
             const EquipTableDesc tbl = ReadEquipTableDesc(comp);
             return tbl.valid && tbl.count > 0 && tbl.count <= 64;
         }
 
         uintptr_t FindEquipCompFromActor(uintptr_t actor)
         {
-            if (actor < kMinPointer) return 0;
+            if (!IsValidCanonicalPtr(actor)) return 0;
 
-            // 1. Standard character / mount container walk (*(*(actor+0x68)+0x38))
-            uintptr_t sub = 0, comp = 0;
-            if (ReadPtr(actor + kOff_Container_Sub, &sub) && sub >= kMinPointer)
+            // 1. Direct component at actor + 0x38 (actor is SubContainer)
+            uintptr_t comp = 0;
+            if (ReadPtr(actor + kOff_Sub_EquipComp, &comp) && CompValid(comp))
+                return comp;
+
+            // 2. Standard character / mount container walk (*(*(actor+0x68)+0x38))
+            uintptr_t sub = 0;
+            if (ReadPtr(actor + kOff_Container_Sub, &sub) && IsValidCanonicalPtr(sub))
             {
                 if (ReadPtr(sub + kOff_Sub_EquipComp, &comp) && CompValid(comp))
                     return comp;
             }
 
-            // 2. Alternate sub-container offsets on actor
+            // 3. Alternate sub-container offsets on actor
             const uintptr_t subOffsets[] = { 0x60, 0x68, 0x70, 0x58, 0x78, 0x80, 0x88, 0x90, 0x98, 0xA0 };
-            const uintptr_t compOffsets[] = { 0x38, 0x30, 0x40, 0x28, 0x48, 0x50, 0x58, 0x60, 0x68 };
+            const uintptr_t compOffsets[] = { 0x38, 0x30, 0x40, 0x28, 0x48, 0x50, 0x58, 0x60, 0x68, 0x80, 0x88, 0x90, 0x168 };
             for (uintptr_t sOff : subOffsets)
             {
-                if (ReadPtr(actor + sOff, &sub) && sub >= kMinPointer)
+                if (ReadPtr(actor + sOff, &sub) && IsValidCanonicalPtr(sub))
                 {
                     for (uintptr_t cOff : compOffsets)
                     {
@@ -174,7 +189,7 @@ namespace trinity::game
                 }
             }
 
-            // 3. Direct component pointer on actor
+            // 4. Direct component pointer on actor
             const uintptr_t directOffsets[] = { 0x38, 0x40, 0x48, 0x50, 0x58, 0x60, 0x68, 0x70, 0x78, 0x80, 0x88, 0x90, 0x98, 0xA0, 0x168 };
             for (uintptr_t dOff : directOffsets)
             {
@@ -187,16 +202,55 @@ namespace trinity::game
 
         uintptr_t CompForCharacter(uintptr_t actor)
         {
-            if (actor < kMinPointer) return 0;
-            uintptr_t sub = 0, comp = 0;
-            if (ReadPtr(actor + kOff_Container_Sub, &sub) && sub >= kMinPointer)
+            if (!IsValidCanonicalPtr(actor)) return 0;
+
+            auto resolveFromActor = [](uintptr_t act) -> uintptr_t {
+                if (!IsValidCanonicalPtr(act)) return 0;
+                uintptr_t comp = 0;
+                // Step 1: If act is already a SubContainer (e.g. from Player::GetActor), check act + 0x38 directly!
+                if (ReadPtr(act + kOff_Sub_EquipComp, &comp) && CompValid(comp))
+                    return comp;
+                // Step 2: Standard actor walk (*(*(act+0x68)+0x38))
+                uintptr_t sub = 0;
+                if (ReadPtr(act + kOff_Container_Sub, &sub) && IsValidCanonicalPtr(sub))
+                {
+                    if (ReadPtr(sub + kOff_Sub_EquipComp, &comp) && CompValid(comp))
+                        return comp;
+                }
+                comp = FindEquipCompFromActor(act);
+                if (comp && CompValid(comp))
+                    return comp;
+                return 0;
+            };
+
+            // 1. Direct actor check
+            uintptr_t comp = resolveFromActor(actor);
+            if (comp) return comp;
+
+            // 2. If actor is an owner object, inspect inner actor (+0x68)
+            uintptr_t innerAct = 0;
+            if (ReadPtr(actor + kOff_Owner_Actor, &innerAct) && IsValidCanonicalPtr(innerAct) && innerAct != actor)
             {
-                if (ReadPtr(sub + kOff_Sub_EquipComp, &comp) && CompValid(comp))
+                comp = resolveFromActor(innerAct);
+                if (comp) return comp;
+            }
+
+            return 0;
+        }
+
+        uintptr_t FindTrackedCharacterComp(int targetIdx)
+        {
+            if (targetIdx < 0 || targetIdx > 2) return 0;
+            for (int p = 0; p < 3; ++p)
+            {
+                const uintptr_t root = PreferEquipmentOwner(
+                    Player::GetOwner(p), Player::GetActor(p));
+                const uintptr_t comp = CompForCharacter(root);
+                if (!comp) continue;
+                const int id = Inventory::IdentifyCharacterFromComp(comp);
+                if (AcceptCharacterComponent(targetIdx, id, p))
                     return comp;
             }
-            comp = FindEquipCompFromActor(actor);
-            if (comp && CompValid(comp))
-                return comp;
             return 0;
         }
 
@@ -226,7 +280,61 @@ namespace trinity::game
                 if (liveChar)
                 {
                     const uintptr_t comp = CompForCharacter(liveChar);
-                    if (comp) return comp;
+                    if (comp && AcceptCharacterComponent(targetIdx,
+                                                         Inventory::IdentifyCharacterFromComp(comp),
+                                                         liveIdx))
+                        return comp;
+                }
+
+                // Direct check on active controlled player
+                const int liveActiveIdx = Player::GetActiveCharacterIdx();
+                const uintptr_t liveOwner = Player::GetOwner(liveActiveIdx >= 0 && liveActiveIdx < 3 ? liveActiveIdx : 0);
+                const uintptr_t liveActor = Player::GetActor(liveActiveIdx >= 0 && liveActiveIdx < 3 ? liveActiveIdx : 0);
+                if (liveOwner || liveActor)
+                {
+                    const uintptr_t root = PreferEquipmentOwner(liveOwner, liveActor);
+                    const uintptr_t comp = CompForCharacter(root);
+                    if (comp && AcceptCharacterComponent(targetIdx,
+                                                         Inventory::IdentifyCharacterFromComp(comp),
+                                                         liveIdx))
+                        return comp;
+                }
+
+                if (targetIdx > 0 && targetIdx < 3)
+                {
+                    const uintptr_t directActor = Player::GetActor(targetIdx);
+                    if (directActor)
+                    {
+                        const uintptr_t comp = CompForCharacter(directActor);
+                        if (comp && AcceptCharacterComponent(targetIdx,
+                                                             Inventory::IdentifyCharacterFromComp(comp),
+                                                             targetIdx))
+                            return comp;
+                    }
+                    const uintptr_t directOwner = Player::GetOwner(targetIdx);
+                    if (directOwner)
+                    {
+                        const uintptr_t comp = CompForCharacter(directOwner);
+                        if (comp && AcceptCharacterComponent(targetIdx,
+                                                             Inventory::IdentifyCharacterFromComp(comp),
+                                                             targetIdx))
+                            return comp;
+                    }
+                }
+
+                // Fallback: resolve from live inventory holder's owner
+                const uintptr_t h = Inventory::ClientHolderAddr();
+                if (h)
+                {
+                    uintptr_t owner = 0;
+                    if (ReadPtr(h + 8, &owner) && owner >= kMinPointer)
+                    {
+                        const uintptr_t comp = CompForCharacter(owner);
+                        if (comp && AcceptCharacterComponent(targetIdx,
+                                                             Inventory::IdentifyCharacterFromComp(comp),
+                                                             liveIdx))
+                            return comp;
+                    }
                 }
 
                 const uintptr_t hooked = Dye::HookedClientComp();
@@ -242,15 +350,10 @@ namespace trinity::game
                     }
                 }
 
-                if (liveIdx > 0 && liveIdx < 3)
-                {
-                    const uintptr_t liveActor = Player::GetActor(liveIdx);
-                    if (liveActor)
-                    {
-                        const uintptr_t comp = CompForCharacter(liveActor);
-                        if (comp) return comp;
-                    }
-                }
+                if (const uintptr_t comp = FindTrackedCharacterComp(targetIdx))
+                    return comp;
+                if (const uintptr_t profComp = Player::GetProfileEquipComp(targetIdx))
+                    return profComp;
                 return 0; // never another character's component
             }
 
@@ -262,26 +365,36 @@ namespace trinity::game
                 if (comp)
                 {
                     const int id = Inventory::IdentifyCharacterFromComp(comp);
-                    if (id < 0 || id == targetIdx) return comp;
+                    if (AcceptCharacterComponent(targetIdx, id, targetIdx)) return comp;
                 }
             }
-            if (targetIdx > 0 && targetIdx < 3)
+            if (targetIdx >= 0 && targetIdx < 3)
             {
-                for (int p = 0; p < 3; ++p)
+                const uintptr_t directActor = Player::GetActor(targetIdx);
+                if (directActor)
                 {
-                    const uintptr_t directActor = Player::GetActor(p);
-                    if (directActor)
+                    const uintptr_t comp = CompForCharacter(directActor);
+                    if (comp)
                     {
-                        const uintptr_t comp = CompForCharacter(directActor);
-                        if (comp)
-                        {
-                            const int id = Inventory::IdentifyCharacterFromComp(comp);
-                            if (id == targetIdx || (p == targetIdx && id < 0))
-                                return comp;
-                        }
+                        const int id = Inventory::IdentifyCharacterFromComp(comp);
+                        if (AcceptCharacterComponent(targetIdx, id, targetIdx)) return comp;
+                    }
+                }
+                const uintptr_t directOwner = Player::GetOwner(targetIdx);
+                if (directOwner)
+                {
+                    const uintptr_t comp = CompForCharacter(directOwner);
+                    if (comp)
+                    {
+                        const int id = Inventory::IdentifyCharacterFromComp(comp);
+                        if (AcceptCharacterComponent(targetIdx, id, targetIdx)) return comp;
                     }
                 }
             }
+            if (const uintptr_t comp = FindTrackedCharacterComp(targetIdx))
+                return comp;
+            if (const uintptr_t profComp = Player::GetProfileEquipComp(targetIdx))
+                return profComp;
             return 0;
         }
 
@@ -297,7 +410,46 @@ namespace trinity::game
                 if (serverChar)
                 {
                     const uintptr_t comp = CompForCharacter(serverChar);
-                    if (comp) return comp;
+                    if (comp && AcceptCharacterComponent(targetIdx,
+                                                         Inventory::IdentifyCharacterFromComp(comp),
+                                                         liveIdx))
+                        return comp;
+                }
+
+                // Direct check on active controlled player
+                const int liveActiveIdx = Player::GetActiveCharacterIdx();
+                const uintptr_t liveOwner = Player::GetOwner(liveActiveIdx >= 0 && liveActiveIdx < 3 ? liveActiveIdx : 0);
+                const uintptr_t liveActor = Player::GetActor(liveActiveIdx >= 0 && liveActiveIdx < 3 ? liveActiveIdx : 0);
+                if (liveOwner || liveActor)
+                {
+                    const uintptr_t root = PreferEquipmentOwner(liveOwner, liveActor);
+                    const uintptr_t comp = CompForCharacter(root);
+                    if (comp && AcceptCharacterComponent(targetIdx,
+                                                         Inventory::IdentifyCharacterFromComp(comp),
+                                                         liveIdx))
+                        return comp;
+                }
+
+                if (targetIdx > 0 && targetIdx < 3)
+                {
+                    const uintptr_t directActor = Player::GetActor(targetIdx);
+                    if (directActor)
+                    {
+                        const uintptr_t comp = CompForCharacter(directActor);
+                        if (comp && AcceptCharacterComponent(targetIdx,
+                                                             Inventory::IdentifyCharacterFromComp(comp),
+                                                             targetIdx))
+                            return comp;
+                    }
+                    const uintptr_t directOwner = Player::GetOwner(targetIdx);
+                    if (directOwner)
+                    {
+                        const uintptr_t comp = CompForCharacter(directOwner);
+                        if (comp && AcceptCharacterComponent(targetIdx,
+                                                             Inventory::IdentifyCharacterFromComp(comp),
+                                                             targetIdx))
+                            return comp;
+                    }
                 }
             }
 
@@ -308,26 +460,36 @@ namespace trinity::game
                 if (comp)
                 {
                     const int id = Inventory::IdentifyCharacterFromComp(comp);
-                    if (id < 0 || id == targetIdx) return comp;
+                    if (AcceptCharacterComponent(targetIdx, id, targetIdx)) return comp;
                 }
             }
-            if (targetIdx > 0 && targetIdx < 3)
+            if (targetIdx >= 0 && targetIdx < 3)
             {
-                for (int p = 0; p < 3; ++p)
+                const uintptr_t directActor = Player::GetActor(targetIdx);
+                if (directActor && directActor != actor)
                 {
-                    const uintptr_t directActor = Player::GetActor(p);
-                    if (directActor && directActor != actor)
+                    const uintptr_t comp = CompForCharacter(directActor);
+                    if (comp)
                     {
-                        const uintptr_t comp = CompForCharacter(directActor);
-                        if (comp)
-                        {
-                            const int id = Inventory::IdentifyCharacterFromComp(comp);
-                            if (id == targetIdx || (p == targetIdx && id < 0))
-                                return comp;
-                        }
+                        const int id = Inventory::IdentifyCharacterFromComp(comp);
+                        if (AcceptCharacterComponent(targetIdx, id, targetIdx)) return comp;
+                    }
+                }
+                const uintptr_t directOwner = Player::GetOwner(targetIdx);
+                if (directOwner && directOwner != actor)
+                {
+                    const uintptr_t comp = CompForCharacter(directOwner);
+                    if (comp)
+                    {
+                        const int id = Inventory::IdentifyCharacterFromComp(comp);
+                        if (AcceptCharacterComponent(targetIdx, id, targetIdx)) return comp;
                     }
                 }
             }
+            if (const uintptr_t comp = FindTrackedCharacterComp(targetIdx))
+                return comp;
+            if (const uintptr_t profComp = Player::GetProfileEquipComp(targetIdx))
+                return profComp;
             return 0;
         }
 
@@ -360,9 +522,9 @@ namespace trinity::game
                 if (!Read16(entry + kOff_InvSlot_TypeId, &tid) || tid == kInvSlot_EmptyType || tid == 0) continue;
 
                 int64_t qty = 1;
-                if (Read64(entry + kOff_InvSlot_Quantity, &qty) && qty <= 0) continue;
+                Read64(entry + kOff_InvSlot_Quantity, &qty);
                 int64_t inst = 1;
-                if (Read64(entry + kOff_ItemVal_InstanceId, &inst) && inst <= 0) continue;
+                Read64(entry + kOff_ItemVal_InstanceId, &inst);
 
                 char itemName[96] = "";
                 Inventory::NameForTypeId(tid, itemName, sizeof(itemName));
@@ -460,17 +622,7 @@ namespace trinity::game
         uintptr_t EnsureSocketVector(uintptr_t entry)
         {
             if (entry < kMinPointer) return 0;
-            uintptr_t data = SocketData(entry);
-            if (data) return data;
-
-            if (g_resizeSocket)
-            {
-                __try { g_resizeSocket(reinterpret_cast<void*>(entry), 5); } __except (EXCEPTION_EXECUTE_HANDLER) {}
-                data = SocketData(entry);
-                if (data) return data;
-            }
-
-            return 0;
+            return SocketData(entry);
         }
 
         bool WriteSocketToEntry(uintptr_t entry, int idx, uint16_t gear)
@@ -559,25 +711,14 @@ namespace trinity::game
             if (!Read16(entry + kOff_InvSlot_TypeId, &tid) || tid == kInvSlot_EmptyType || tid == 0)
                 return false;
 
-            // The socket vector must already be structurally sane before we
-            // write any records into it.
-            const bool isLegacy = core::IsLegacyTU();
-            uint32_t sz = 0, cap = 0, unlocked = 0;
-            if (!Read32(entry + (isLegacy ? 0x60 : 0x68), &sz) ||
-                !Read32(entry + (isLegacy ? 0x64 : 0x6C), &cap) ||
-                !Read32(entry + (isLegacy ? 0x68 : 0x70), &unlocked))
-                return false;
-            if (sz > 5 || cap > 5 || cap < sz || unlocked > 5)
-                return false;
-
-            // Slot taxonomy: resolve the item name and require it to match what
-            // this equipment slot accepts (same check the menu's equip path uses).
-            char name[64] = "";
+            char name[96] = "";
             Inventory::NameForTypeId(tid, name, sizeof(name));
+            if (IsDummyOrUnarmed(tid, name)) return false;
+
             return Equipment::IsItemForSlot(tag, tid, name, name);
         }
 
-        bool SyncSocketAllRealms(uint16_t tag, int64_t instId, int idx, uint16_t gear)
+        bool SyncSocketAllRealms(uint16_t tag, int64_t instId, int idx, uint16_t gear, uint16_t typeId = 0)
         {
             bool ok = false;
 
@@ -589,6 +730,14 @@ namespace trinity::game
                 if (ce) ok |= WriteSocketToEntry(ce, idx, gear);
             }
 
+            // Direct profile component update (authoritative for in-game pause/party menu)
+            const uintptr_t profC = Player::GetProfileEquipComp(Equipment::GetActiveCharacter());
+            if (profC && profC != clientC)
+            {
+                const uintptr_t pe = FindEntryByTag(profC, tag);
+                if (pe) ok |= WriteSocketToEntry(pe, idx, gear);
+            }
+
             // Every realm copy of the SELECTED character only - never the
             // other protagonists' same-tag items.
             uintptr_t sockCopies[16] = {};
@@ -596,24 +745,58 @@ namespace trinity::game
             for (int i = 0; i < sockNCopies; ++i)
             {
                 const uintptr_t comp = CompForCharacter(sockCopies[i]);
-                if (comp && comp != clientC)
+                if (comp && comp != clientC && comp != profC)
                 {
                     const uintptr_t ce = FindEntryByTag(comp, tag);
                     if (ce) ok |= WriteSocketToEntry(ce, idx, gear);
                 }
             }
 
-            // 2. Client Inventory Holders & All Companion Containers
-            struct SockArg { int idx; uint16_t gear; bool* pOk; };
-            SockArg sArg{ idx, gear, &ok };
-            auto sockCb = [](uintptr_t slotEntry, void* ud) {
-                auto* a = static_cast<SockArg*>(ud);
-                if (WriteSocketToEntry(slotEntry, a->idx, a->gear))
-                    *a->pOk = true;
-            };
-            Inventory::FindAndApplyAllHolders(instId, sockCb, &sArg);
+            // 1b. Companion containers via PartyIndex - same copy the native
+            // inspect UI reads; mirror of the Refine fix. Bounded: PartyIndex
+            // match first, and stop touching candidates after a write hit.
+            {
+                const int targetIdx = Equipment::GetActiveCharacter();
+                if (targetIdx >= 0 && targetIdx < 3)
+                {
+                    const uintptr_t charMgrGlobal = Player::GetCharMgrGlobal();
+                    uintptr_t p = 0, mgr = 0, data = 0;
+                    if (charMgrGlobal >= kMinPointer &&
+                        ReadPtr(charMgrGlobal, &p) && p >= kMinPointer &&
+                        ReadPtr(p, &mgr) && mgr >= kMinPointer)
+                    {
+                        uint32_t cCount = 0;
+                        if (ReadPtr(mgr + kOff_CharMgr_ListData, &data) && data >= kMinPointer &&
+                            Read32(mgr + kOff_CharMgr_ListCount, &cCount) && cCount > 0 && cCount <= kCharList_MaxCount)
+                        {
+                            for (uint32_t i = 0; i < cCount; ++i)
+                            {
+                                uintptr_t cand = 0;
+                                if (!ReadPtr(data + static_cast<uintptr_t>(i) * 8, &cand) || cand < kMinPointer) continue;
+                                uint32_t pIdx = 0;
+                                if (!Read32(cand + kOff_Owner_PartyIndex, &pIdx) || pIdx != static_cast<uint32_t>(targetIdx + 1)) continue;
+                                const uintptr_t comp = CompForCharacter(cand);
+                                if (comp && comp != clientC && comp != profC)
+                                {
+                                    const uintptr_t ce = FindEntryByTag(comp, tag);
+                                    if (ce) ok |= WriteSocketToEntry(ce, idx, gear);
+                                }
+                            }
+                        }
+                    }
+                }
+            }
 
-            // 3. Server Realm (Equip Comp + All Companion Server Holders) with RealmFlag = 1
+            // 2. Direct bag slot sync across ALL containers and holders
+            struct SockCtx { int idx; uint16_t gear; bool* ok; };
+            SockCtx ctx{ idx, gear, &ok };
+            Inventory::FindAndApplyAllHolders(instId, [](uintptr_t slot, void* u) {
+                auto* c = reinterpret_cast<SockCtx*>(u);
+                if (WriteSocketToEntry(slot, c->idx, c->gear))
+                    *(c->ok) = true;
+            }, &ctx, typeId);
+
+            // 3. Server Realm (Equip Comp + Mirrors) with RealmFlag = 1
             uint8_t oldFlag = 0;
             const uintptr_t flagAddr = Inventory::RealmFlagAddress(&oldFlag);
             if (flagAddr && RawWrite8(flagAddr, 1))
@@ -625,93 +808,215 @@ namespace trinity::game
                     if (se) ok |= WriteSocketToEntry(se, idx, gear);
                 }
 
-                uintptr_t sockSCopies[16] = {};
-                const int sockSNCopies = Inventory::CharacterAddrs(Equipment::GetActiveCharacter(), sockSCopies, 16);
-                for (int i = 0; i < sockSNCopies; ++i)
+                if (profC && profC != serverC)
                 {
-                    const uintptr_t comp = CompForCharacter(sockSCopies[i]);
-                    if (comp && comp != serverC)
+                    const uintptr_t pe = FindEntryByTag(profC, tag);
+                    if (pe) ok |= WriteSocketToEntry(pe, idx, gear);
+                }
+
+                // Server-realm companion containers via PartyIndex (RealmFlag
+                // = 1 active) - same rationale as the Refine fix above.
+                {
+                    const int targetIdx = Equipment::GetActiveCharacter();
+                    if (targetIdx >= 0 && targetIdx < 3)
                     {
-                        const uintptr_t se = FindEntryByTag(comp, tag);
-                        if (se) ok |= WriteSocketToEntry(se, idx, gear);
+                        const uintptr_t charMgrGlobal = Player::GetCharMgrGlobal();
+                        uintptr_t p = 0, mgr = 0, data = 0;
+                        if (charMgrGlobal >= kMinPointer &&
+                            ReadPtr(charMgrGlobal, &p) && p >= kMinPointer &&
+                            ReadPtr(p, &mgr) && mgr >= kMinPointer)
+                        {
+                            uint32_t cCount = 0;
+                            if (ReadPtr(mgr + kOff_CharMgr_ListData, &data) && data >= kMinPointer &&
+                                Read32(mgr + kOff_CharMgr_ListCount, &cCount) && cCount > 0 && cCount <= kCharList_MaxCount)
+                            {
+                                for (uint32_t i = 0; i < cCount; ++i)
+                                {
+                                    uintptr_t cand = 0;
+                                    if (!ReadPtr(data + static_cast<uintptr_t>(i) * 8, &cand) || cand < kMinPointer) continue;
+                                    uint32_t pIdx = 0;
+                                    if (!Read32(cand + kOff_Owner_PartyIndex, &pIdx) || pIdx != static_cast<uint32_t>(targetIdx + 1)) continue;
+                                    const uintptr_t comp = CompForCharacter(cand);
+                                    if (comp && comp != serverC && comp != profC)
+                                    {
+                                        const uintptr_t se = FindEntryByTag(comp, tag);
+                                        if (se) ok |= WriteSocketToEntry(se, idx, gear);
+                                    }
+                                }
+                            }
+                        }
                     }
                 }
 
-                Inventory::FindAndApplyAllHolders(instId, sockCb, &sArg);
+                Inventory::FindAndApplyAllHolders(instId, [](uintptr_t slot, void* u) {
+                    auto* c = reinterpret_cast<SockCtx*>(u);
+                    WriteSocketToEntry(slot, c->idx, c->gear);
+                }, &ctx, typeId);
+
                 RawWrite8(flagAddr, oldFlag);
             }
 
+            // Re-drive the inventory snapshot + used-slot repair (HEAD
+            // behavior): makes the edit visible immediately and lets the
+            // engine reconcile the touched containers.
             Inventory::ForceRefresh();
+
             return ok;
         }
 
-        bool SyncRefineAllRealms(uint16_t tag, int64_t instId, uint16_t lvl)
+        bool SyncRefineAllRealms(uint16_t tag, int64_t instId, uint16_t lvl, uint16_t typeId = 0)
         {
             bool ok = false;
-
-            // 1. Client Equip Comp
-            const uintptr_t clientC = ClientComp();
-            if (clientC)
+            __try
             {
-                const uintptr_t ce = FindEntryByTag(clientC, tag);
-                if (ce) ok |= Write16(ce + kOff_ItemVal_RefineLevel, lvl);
-            }
-
-            uintptr_t refCopies[16] = {};
-            const int refNCopies = Inventory::CharacterAddrs(Equipment::GetActiveCharacter(), refCopies, 16);
-            for (int i = 0; i < refNCopies; ++i)
-            {
-                const uintptr_t comp = CompForCharacter(refCopies[i]);
-                if (comp && comp != clientC)
+                // 1. Client Equip Comp
+                const uintptr_t clientC = ClientComp();
+                if (clientC)
                 {
-                    const uintptr_t ce = FindEntryByTag(comp, tag);
+                    const uintptr_t ce = FindEntryByTag(clientC, tag);
                     if (ce) ok |= Write16(ce + kOff_ItemVal_RefineLevel, lvl);
                 }
-            }
 
-            // 2. Client Inventory Holders & All Companion Containers
-            struct RefineArg { uint16_t level; bool* pOk; };
-            RefineArg rArg{ lvl, &ok };
-            auto refineCb = [](uintptr_t slotEntry, void* ud) {
-                auto* a = static_cast<RefineArg*>(ud);
-                if (Write16(slotEntry + kOff_ItemVal_RefineLevel, a->level))
-                    *a->pOk = true;
-            };
-            Inventory::FindAndApplyAllHolders(instId, refineCb, &rArg);
-
-            // 3. Server Realm (Equip Comp + All Companion Server Holders) with RealmFlag = 1
-            uint8_t oldFlag = 0;
-            const uintptr_t flagAddr = Inventory::RealmFlagAddress(&oldFlag);
-            if (flagAddr && RawWrite8(flagAddr, 1))
-            {
-                const uintptr_t serverC = ServerComp();
-                if (serverC)
+                // Direct profile component update (authoritative for in-game pause/party menu)
+                const uintptr_t profC = Player::GetProfileEquipComp(Equipment::GetActiveCharacter());
+                if (profC && profC != clientC)
                 {
-                    const uintptr_t se = FindEntryByTag(serverC, tag);
-                    if (se) ok |= Write16(se + kOff_ItemVal_RefineLevel, lvl);
+                    const uintptr_t pe = FindEntryByTag(profC, tag);
+                    if (pe) ok |= Write16(pe + kOff_ItemVal_RefineLevel, lvl);
                 }
 
-                uintptr_t refSCopies[16] = {};
-                const int refSNCopies = Inventory::CharacterAddrs(Equipment::GetActiveCharacter(), refSCopies, 16);
-                for (int i = 0; i < refSNCopies; ++i)
+                uintptr_t refCopies[16] = {};
+                const int refNCopies = Inventory::CharacterAddrs(Equipment::GetActiveCharacter(), refCopies, 16);
+                for (int i = 0; i < refNCopies; ++i)
                 {
-                    const uintptr_t comp = CompForCharacter(refSCopies[i]);
-                    if (comp && comp != serverC)
+                    const uintptr_t comp = CompForCharacter(refCopies[i]);
+                    if (comp && comp != clientC && comp != profC)
                     {
-                        const uintptr_t se = FindEntryByTag(comp, tag);
-                        if (se) ok |= Write16(se + kOff_ItemVal_RefineLevel, lvl);
+                        const uintptr_t ce = FindEntryByTag(comp, tag);
+                        if (ce) ok |= Write16(ce + kOff_ItemVal_RefineLevel, lvl);
                     }
                 }
 
-                Inventory::FindAndApplyAllHolders(instId, refineCb, &rArg);
-                RawWrite8(flagAddr, oldFlag);
-            }
+                // 1b. Companion containers via PartyIndex (the copy the native
+                // in-game inspect/pause UI reads). CharacterAddrs filters by
+                // gear-identity and can miss these copies; the game reads THIS
+                // one, so write it directly regardless of instanceId.
+                {
+                    const int targetIdx = Equipment::GetActiveCharacter();
+                    if (targetIdx >= 0 && targetIdx < 3)
+                    {
+                        const uintptr_t charMgrGlobal = Player::GetCharMgrGlobal();
+                        uintptr_t p = 0, mgr = 0, data = 0;
+                        if (charMgrGlobal >= kMinPointer &&
+                            ReadPtr(charMgrGlobal, &p) && p >= kMinPointer &&
+                            ReadPtr(p, &mgr) && mgr >= kMinPointer)
+                        {
+                            uint32_t cCount = 0;
+                            if (ReadPtr(mgr + kOff_CharMgr_ListData, &data) && data >= kMinPointer &&
+                                Read32(mgr + kOff_CharMgr_ListCount, &cCount) && cCount > 0 && cCount <= kCharList_MaxCount)
+                            {
+                                for (uint32_t i = 0; i < cCount; ++i)
+                                {
+                                    uintptr_t cand = 0;
+                                    if (!ReadPtr(data + static_cast<uintptr_t>(i) * 8, &cand) || cand < kMinPointer) continue;
+                                    uint32_t pIdx = 0;
+                                    if (!Read32(cand + kOff_Owner_PartyIndex, &pIdx) || pIdx != static_cast<uint32_t>(targetIdx + 1)) continue;
+                                    const uintptr_t comp = CompForCharacter(cand);
+                                    if (comp && comp != clientC && comp != profC)
+                                    {
+                                        const uintptr_t ce = FindEntryByTag(comp, tag);
+                                        if (ce) ok |= Write16(ce + kOff_ItemVal_RefineLevel, lvl);
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
 
-            Inventory::ForceRefresh();
+                // 2. Direct bag slot sync across ALL containers and holders
+                struct RefCtx { uint16_t lvl; bool* ok; };
+                RefCtx ctx{ lvl, &ok };
+                Inventory::FindAndApplyAllHolders(instId, [](uintptr_t slot, void* u) {
+                    auto* c = reinterpret_cast<RefCtx*>(u);
+                    Write16(slot + kOff_ItemVal_RefineLevel, c->lvl);
+                    Write8(slot + kOff_ItemVal_RefineLevel, static_cast<uint8_t>(c->lvl));
+                    *(c->ok) = true;
+                }, &ctx, typeId);
+
+                // 3. Server Realm (Equip Comp + Mirrors) with RealmFlag = 1
+                uint8_t oldFlag = 0;
+                const uintptr_t flagAddr = Inventory::RealmFlagAddress(&oldFlag);
+                if (flagAddr && RawWrite8(flagAddr, 1))
+                {
+                    const uintptr_t serverC = ServerComp();
+                    if (serverC)
+                    {
+                        const uintptr_t se = FindEntryByTag(serverC, tag);
+                        if (se) ok |= Write16(se + kOff_ItemVal_RefineLevel, lvl);
+                    }
+
+                    if (profC && profC != serverC)
+                    {
+                        const uintptr_t pe = FindEntryByTag(profC, tag);
+                        if (pe) ok |= Write16(pe + kOff_ItemVal_RefineLevel, lvl);
+                    }
+
+                    // Server-realm companion containers via PartyIndex. The
+                    // client-side PartyIndex walk (1b) resolves through the
+                    // CLIENT realm; the copy the native inspect UI reads is the
+                    // SERVER realm's - it needs this walk with RealmFlag = 1
+                    // active (the .bak server-realm CharacterAddrs loop that
+                    // fix5 removed was doing exactly this, not duplicating).
+                    {
+                        const int targetIdx = Equipment::GetActiveCharacter();
+                        if (targetIdx >= 0 && targetIdx < 3)
+                        {
+                            const uintptr_t charMgrGlobal = Player::GetCharMgrGlobal();
+                            uintptr_t p = 0, mgr = 0, data = 0;
+                            if (charMgrGlobal >= kMinPointer &&
+                                ReadPtr(charMgrGlobal, &p) && p >= kMinPointer &&
+                                ReadPtr(p, &mgr) && mgr >= kMinPointer)
+                            {
+                                uint32_t cCount = 0;
+                                if (ReadPtr(mgr + kOff_CharMgr_ListData, &data) && data >= kMinPointer &&
+                                    Read32(mgr + kOff_CharMgr_ListCount, &cCount) && cCount > 0 && cCount <= kCharList_MaxCount)
+                                {
+                                    for (uint32_t i = 0; i < cCount; ++i)
+                                    {
+                                        uintptr_t cand = 0;
+                                        if (!ReadPtr(data + static_cast<uintptr_t>(i) * 8, &cand) || cand < kMinPointer) continue;
+                                        uint32_t pIdx = 0;
+                                        if (!Read32(cand + kOff_Owner_PartyIndex, &pIdx) || pIdx != static_cast<uint32_t>(targetIdx + 1)) continue;
+                                        const uintptr_t comp = CompForCharacter(cand);
+                                        if (comp && comp != serverC && comp != profC)
+                                        {
+                                            const uintptr_t se = FindEntryByTag(comp, tag);
+                                            if (se) ok |= Write16(se + kOff_ItemVal_RefineLevel, lvl);
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+
+                    Inventory::FindAndApplyAllHolders(instId, [](uintptr_t slot, void* u) {
+                        auto* c = reinterpret_cast<RefCtx*>(u);
+                        Write16(slot + kOff_ItemVal_RefineLevel, c->lvl);
+                        Write8(slot + kOff_ItemVal_RefineLevel, static_cast<uint8_t>(c->lvl));
+                    }, &ctx, typeId);
+
+                    RawWrite8(flagAddr, oldFlag);
+                }
+
+                // Re-drive snapshot + used-slot repair (HEAD behavior).
+                Inventory::ForceRefresh();
+            }
+            __except (EXCEPTION_EXECUTE_HANDLER) {}
+
             return ok;
         }
 
-        bool SyncUnlockAllRealms(uint16_t tag, int64_t instId, int maxSock)
+        bool SyncUnlockAllRealms(uint16_t tag, int64_t instId, int maxSock, uint16_t typeId = 0)
         {
             bool ok = false;
             auto openOnEntry = [&](uintptr_t entry) {
@@ -724,24 +1029,51 @@ namespace trinity::game
             const uintptr_t clientC = ClientComp();
             if (clientC) openOnEntry(FindEntryByTag(clientC, tag));
 
-            uintptr_t unlCopies[16] = {};
-            const int unlNCopies = Inventory::CharacterAddrs(Equipment::GetActiveCharacter(), unlCopies, 16);
-            for (int i = 0; i < unlNCopies; ++i)
+            // Direct profile component update (authoritative for in-game pause/party menu)
+            const uintptr_t profC = Player::GetProfileEquipComp(Equipment::GetActiveCharacter());
+            if (profC && profC != clientC)
+                openOnEntry(FindEntryByTag(profC, tag));
+
+            // 1b. Companion containers via PartyIndex (the copy the native
+            // inspect UI reads) - mirror of the Refine fix, bounded to the
+            // PartyIndex match only.
             {
-                const uintptr_t comp = CompForCharacter(unlCopies[i]);
-                if (comp && comp != clientC)
-                    openOnEntry(FindEntryByTag(comp, tag));
+                const int targetIdx = Equipment::GetActiveCharacter();
+                if (targetIdx >= 0 && targetIdx < 3)
+                {
+                    const uintptr_t charMgrGlobal = Player::GetCharMgrGlobal();
+                    uintptr_t p = 0, mgr = 0, data = 0;
+                    if (charMgrGlobal >= kMinPointer &&
+                        ReadPtr(charMgrGlobal, &p) && p >= kMinPointer &&
+                        ReadPtr(p, &mgr) && mgr >= kMinPointer)
+                    {
+                        uint32_t cCount = 0;
+                        if (ReadPtr(mgr + kOff_CharMgr_ListData, &data) && data >= kMinPointer &&
+                            Read32(mgr + kOff_CharMgr_ListCount, &cCount) && cCount > 0 && cCount <= kCharList_MaxCount)
+                        {
+                            for (uint32_t i = 0; i < cCount; ++i)
+                            {
+                                uintptr_t cand = 0;
+                                if (!ReadPtr(data + static_cast<uintptr_t>(i) * 8, &cand) || cand < kMinPointer) continue;
+                                uint32_t pIdx = 0;
+                                if (!Read32(cand + kOff_Owner_PartyIndex, &pIdx) || pIdx != static_cast<uint32_t>(targetIdx + 1)) continue;
+                                const uintptr_t comp = CompForCharacter(cand);
+                                if (comp && comp != clientC && comp != profC)
+                                    openOnEntry(FindEntryByTag(comp, tag));
+                            }
+                        }
+                    }
+                }
             }
 
-            // 2. Client Inventory Holders & All Companion Containers
-            struct UnlockArg { int maxS; bool* pOk; };
-            UnlockArg uArg{ maxSock, &ok };
-            auto unlockCb = [](uintptr_t slotEntry, void* ud) {
-                auto* a = static_cast<UnlockArg*>(ud);
-                OpenAllSockets(slotEntry, a->maxS);
-                *a->pOk = true;
-            };
-            Inventory::FindAndApplyAllHolders(instId, unlockCb, &uArg);
+            // 2. Direct bag slot sync across ALL containers and holders
+            struct UnlCtx { int maxSock; bool* ok; };
+            UnlCtx ctx{ maxSock, &ok };
+            Inventory::FindAndApplyAllHolders(instId, [](uintptr_t slot, void* u) {
+                auto* c = reinterpret_cast<UnlCtx*>(u);
+                OpenAllSockets(slot, c->maxSock);
+                *(c->ok) = true;
+            }, &ctx, typeId);
 
             // 3. Server Realm
             uint8_t oldFlag = 0;
@@ -751,24 +1083,57 @@ namespace trinity::game
                 const uintptr_t serverC = ServerComp();
                 if (serverC) openOnEntry(FindEntryByTag(serverC, tag));
 
-                uintptr_t unlSCopies[16] = {};
-                const int unlSNCopies = Inventory::CharacterAddrs(Equipment::GetActiveCharacter(), unlSCopies, 16);
-                for (int i = 0; i < unlSNCopies; ++i)
+                if (profC && profC != serverC)
+                    openOnEntry(FindEntryByTag(profC, tag));
+
+                // Server-realm companion containers via PartyIndex (RealmFlag
+                // = 1 active) - same rationale as the Refine fix above.
                 {
-                    const uintptr_t comp = CompForCharacter(unlSCopies[i]);
-                    if (comp && comp != serverC)
-                        openOnEntry(FindEntryByTag(comp, tag));
+                    const int targetIdx = Equipment::GetActiveCharacter();
+                    if (targetIdx >= 0 && targetIdx < 3)
+                    {
+                        const uintptr_t charMgrGlobal = Player::GetCharMgrGlobal();
+                        uintptr_t p = 0, mgr = 0, data = 0;
+                        if (charMgrGlobal >= kMinPointer &&
+                            ReadPtr(charMgrGlobal, &p) && p >= kMinPointer &&
+                            ReadPtr(p, &mgr) && mgr >= kMinPointer)
+                        {
+                            uint32_t cCount = 0;
+                            if (ReadPtr(mgr + kOff_CharMgr_ListData, &data) && data >= kMinPointer &&
+                                Read32(mgr + kOff_CharMgr_ListCount, &cCount) && cCount > 0 && cCount <= kCharList_MaxCount)
+                            {
+                                for (uint32_t i = 0; i < cCount; ++i)
+                                {
+                                    uintptr_t cand = 0;
+                                    if (!ReadPtr(data + static_cast<uintptr_t>(i) * 8, &cand) || cand < kMinPointer) continue;
+                                    uint32_t pIdx = 0;
+                                    if (!Read32(cand + kOff_Owner_PartyIndex, &pIdx) || pIdx != static_cast<uint32_t>(targetIdx + 1)) continue;
+                                    const uintptr_t comp = CompForCharacter(cand);
+                                    if (comp && comp != serverC && comp != profC)
+                                        openOnEntry(FindEntryByTag(comp, tag));
+                                }
+                            }
+                        }
+                    }
                 }
 
-                Inventory::FindAndApplyAllHolders(instId, unlockCb, &uArg);
+                Inventory::FindAndApplyAllHolders(instId, [](uintptr_t slot, void* u) {
+                    auto* c = reinterpret_cast<UnlCtx*>(u);
+                    OpenAllSockets(slot, c->maxSock);
+                }, &ctx, typeId);
+
                 RawWrite8(flagAddr, oldFlag);
             }
 
+            // Re-drive the inventory snapshot + used-slot repair (HEAD
+            // behavior): makes the edit visible immediately and lets the
+            // engine reconcile the touched containers.
             Inventory::ForceRefresh();
+
             return ok;
         }
 
-        bool SyncEmptyAllRealms(uint16_t tag, int64_t instId)
+        bool SyncEmptyAllRealms(uint16_t tag, int64_t instId, uint16_t typeId = 0)
         {
             bool ok = false;
             auto emptyOnEntry = [&](uintptr_t entry) {
@@ -781,21 +1146,47 @@ namespace trinity::game
             const uintptr_t clientC = ClientComp();
             if (clientC) emptyOnEntry(FindEntryByTag(clientC, tag));
 
-            uintptr_t empCopies[16] = {};
-            const int empNCopies = Inventory::CharacterAddrs(Equipment::GetActiveCharacter(), empCopies, 16);
-            for (int i = 0; i < empNCopies; ++i)
+            // Direct profile component update (authoritative for in-game pause/party menu)
+            const uintptr_t profC = Player::GetProfileEquipComp(Equipment::GetActiveCharacter());
+            if (profC && profC != clientC)
+                emptyOnEntry(FindEntryByTag(profC, tag));
+
+            // 1b. Companion containers via PartyIndex (the copy the native
+            // inspect UI reads) - mirror of the Refine fix, bounded.
             {
-                const uintptr_t comp = CompForCharacter(empCopies[i]);
-                if (comp && comp != clientC)
-                    emptyOnEntry(FindEntryByTag(comp, tag));
+                const int targetIdx = Equipment::GetActiveCharacter();
+                if (targetIdx >= 0 && targetIdx < 3)
+                {
+                    const uintptr_t charMgrGlobal = Player::GetCharMgrGlobal();
+                    uintptr_t p = 0, mgr = 0, data = 0;
+                    if (charMgrGlobal >= kMinPointer &&
+                        ReadPtr(charMgrGlobal, &p) && p >= kMinPointer &&
+                        ReadPtr(p, &mgr) && mgr >= kMinPointer)
+                    {
+                        uint32_t cCount = 0;
+                        if (ReadPtr(mgr + kOff_CharMgr_ListData, &data) && data >= kMinPointer &&
+                            Read32(mgr + kOff_CharMgr_ListCount, &cCount) && cCount > 0 && cCount <= kCharList_MaxCount)
+                        {
+                            for (uint32_t i = 0; i < cCount; ++i)
+                            {
+                                uintptr_t cand = 0;
+                                if (!ReadPtr(data + static_cast<uintptr_t>(i) * 8, &cand) || cand < kMinPointer) continue;
+                                uint32_t pIdx = 0;
+                                if (!Read32(cand + kOff_Owner_PartyIndex, &pIdx) || pIdx != static_cast<uint32_t>(targetIdx + 1)) continue;
+                                const uintptr_t comp = CompForCharacter(cand);
+                                if (comp && comp != clientC && comp != profC)
+                                    emptyOnEntry(FindEntryByTag(comp, tag));
+                            }
+                        }
+                    }
+                }
             }
 
-            // 2. Client Inventory Holders & All Companion Containers
-            auto emptyCb = [](uintptr_t slotEntry, void* ud) {
-                EmptyAllSockets(slotEntry);
-                *static_cast<bool*>(ud) = true;
-            };
-            Inventory::FindAndApplyAllHolders(instId, emptyCb, &ok);
+            // 2. Direct bag slot sync across ALL containers and holders
+            Inventory::FindAndApplyAllHolders(instId, [](uintptr_t slot, void* u) {
+                EmptyAllSockets(slot);
+                if (u) *reinterpret_cast<bool*>(u) = true;
+            }, &ok, typeId);
 
             // 3. Server Realm
             uint8_t oldFlag = 0;
@@ -805,21 +1196,55 @@ namespace trinity::game
                 const uintptr_t serverC = ServerComp();
                 if (serverC) emptyOnEntry(FindEntryByTag(serverC, tag));
 
-                uintptr_t empSCopies[16] = {};
-                const int empSNCopies = Inventory::CharacterAddrs(Equipment::GetActiveCharacter(), empSCopies, 16);
-                for (int i = 0; i < empSNCopies; ++i)
+                if (profC && profC != serverC)
+                    emptyOnEntry(FindEntryByTag(profC, tag));
+
+                // Server-realm companion containers via PartyIndex (RealmFlag
+                // = 1 active) - same rationale as the Refine fix above.
                 {
-                    const uintptr_t comp = CompForCharacter(empSCopies[i]);
-                    if (comp && comp != serverC)
-                        emptyOnEntry(FindEntryByTag(comp, tag));
+                    const int targetIdx = Equipment::GetActiveCharacter();
+                    if (targetIdx >= 0 && targetIdx < 3)
+                    {
+                        const uintptr_t charMgrGlobal = Player::GetCharMgrGlobal();
+                        uintptr_t p = 0, mgr = 0, data = 0;
+                        if (charMgrGlobal >= kMinPointer &&
+                            ReadPtr(charMgrGlobal, &p) && p >= kMinPointer &&
+                            ReadPtr(p, &mgr) && mgr >= kMinPointer)
+                        {
+                            uint32_t cCount = 0;
+                            if (ReadPtr(mgr + kOff_CharMgr_ListData, &data) && data >= kMinPointer &&
+                                Read32(mgr + kOff_CharMgr_ListCount, &cCount) && cCount > 0 && cCount <= kCharList_MaxCount)
+                            {
+                                for (uint32_t i = 0; i < cCount; ++i)
+                                {
+                                    uintptr_t cand = 0;
+                                    if (!ReadPtr(data + static_cast<uintptr_t>(i) * 8, &cand) || cand < kMinPointer) continue;
+                                    uint32_t pIdx = 0;
+                                    if (!Read32(cand + kOff_Owner_PartyIndex, &pIdx) || pIdx != static_cast<uint32_t>(targetIdx + 1)) continue;
+                                    const uintptr_t comp = CompForCharacter(cand);
+                                    if (comp && comp != serverC && comp != profC)
+                                        emptyOnEntry(FindEntryByTag(comp, tag));
+                                }
+                            }
+                        }
+                    }
                 }
 
-                Inventory::FindAndApplyAllHolders(instId, emptyCb, &ok);
+                Inventory::FindAndApplyAllHolders(instId, [](uintptr_t slot, void* /*u*/) {
+                    EmptyAllSockets(slot);
+                }, nullptr, typeId);
+
                 RawWrite8(flagAddr, oldFlag);
             }
 
+            // Re-drive the inventory snapshot + used-slot repair (HEAD
+            // behavior): makes the edit visible immediately and lets the
+            // engine reconcile the touched containers.
+            Inventory::ForceRefresh();
+
             return ok;
         }
+
 
         // --- The abyss-gear catalog category (found once) --------------------
         int  g_gearCat = -2; // -2 = not looked up, -1 = none found
@@ -939,7 +1364,9 @@ namespace trinity::game
                 if (line[0] == '#' && !strncmp(line, "# GameVersion=", 14))
                 {
                     sawVersion = true;
-                    versionOk  = strcmp(line + 14, core::GetGameVersionDisplay()) == 0;
+                    versionOk = (strcmp(line + 14, core::GetGameVersionDisplay()) == 0) ||
+                                (strstr(line + 14, "TU 2.") != nullptr) ||
+                                (strstr(line + 14, "Crimson Desert") != nullptr);
                     continue;
                 }
 
@@ -983,24 +1410,27 @@ namespace trinity::game
 
             if (!sawVersion || !versionOk)
             {
-                // Stale profile (saved by an older build, or pre-stamp file):
-                // drop everything instead of force-applying it to whatever now
-                // occupies those tags. It regenerates on the next edit.
-                memset(s_savedEquipSlots, 0, sizeof(s_savedEquipSlots));
-                LOG_WARN("equipment: profile saved under a different game build - ignored (file will re-save under %s).",
-                         core::GetGameVersionDisplay());
-                return;
+                LOG("equipment: loaded persistent profiles (will re-save under %s).",
+                    core::GetGameVersionDisplay());
             }
-
-            LOG("equipment: loaded persistent profiles from '%s'.", iniPath);
+            else
+            {
+                LOG("equipment: loaded persistent profiles from '%s'.", iniPath);
+            }
         }
+
+        static std::atomic<ULONGLONG> s_profileSavePendingMs{ 0 };
 
         static void SyncSlotToProfile(int charIdx, uint16_t tag)
         {
             if (charIdx < 0 || charIdx >= 3 || tag >= 32) return;
             const uintptr_t comp = ClientComp();
-            if (!comp) return;
-            const uintptr_t entry = FindEntryByTag(comp, tag);
+            uintptr_t entry = comp ? FindEntryByTag(comp, tag) : 0;
+            if (!entry && charIdx > 0)
+            {
+                const uintptr_t profC = Player::GetProfileEquipComp(charIdx);
+                if (profC) entry = FindEntryByTag(profC, tag);
+            }
             if (!entry) return;
 
             auto& prof = s_savedEquipSlots[charIdx][tag];
@@ -1020,7 +1450,8 @@ namespace trinity::game
                 prof.socketGems[k] = data ? GearAt(data, k) : kSock_Empty;
             }
 
-            SaveEquipProfilesToDisk();
+            // Debounce disk write: avoid blocking the render thread on every slider step
+            s_profileSavePendingMs.store(GetTickCount64() + 600, std::memory_order_release);
         }
 
         // --- Menu-side snapshot ---------------------------------------------
@@ -1164,8 +1595,8 @@ namespace trinity::game
                 uint16_t tid = 0, tag = 0;
                 int64_t  inst = 0, qty = 1;
                 if (!Read16(entry + kOff_InvSlot_TypeId, &tid) || tid == kInvSlot_EmptyType || tid == 0) continue;
-                if (Read64(entry + kOff_InvSlot_Quantity, &qty) && qty <= 0) continue;
-                if (Read64(entry + kOff_ItemVal_InstanceId, &inst) && inst <= 0) continue;
+                Read64(entry + kOff_InvSlot_Quantity, &qty);
+                Read64(entry + kOff_ItemVal_InstanceId, &inst);
 
                 char itemName[96] = "";
                 if (!Inventory::NameForTypeId(tid, itemName, sizeof(itemName)))
@@ -1545,10 +1976,6 @@ namespace trinity::game
         else
             LOG_WARN("equipment: EquipEffectRefresh signature not found.");
 
-        g_resizeSocket = reinterpret_cast<ResizeSocketVector_t>(mem::FindPattern("48 89 74 24 10 57 48 83 EC 20 48 83 79 60 00"));
-        if (g_resizeSocket)
-            LOG("equipment: native ResizeSocketVector resolved @ %p.", reinterpret_cast<void*>(g_resizeSocket));
-
         // 1. Load Persistent Equipment Profiles from Disk (Trinity_EquipmentProfile.ini)
         LoadEquipProfilesFromDisk();
 
@@ -1559,11 +1986,11 @@ namespace trinity::game
     {
         g_gearCat = -2;
         g_refresh = nullptr;
-        g_resizeSocket = nullptr;
         g_dirty.store(false, std::memory_order_release);
     }
 
     bool Equipment::Ready()        { return ClientComp() != 0; }
+    void Equipment::ForceRefresh() { g_dirty.store(true, std::memory_order_release); }
     bool Equipment::EditsPersist() { return ServerComp() != 0; }
 
     void Equipment::SetActiveCharacter(int index)
@@ -1632,7 +2059,8 @@ namespace trinity::game
         const uintptr_t entry = FindEntryByTag(comp, tag);
         if (!entry) return false;
         int64_t instId = 0;
-        if (!Read64(entry + kOff_ItemVal_InstanceId, &instId) || instId <= 0) return false;
+        Read64(entry + kOff_ItemVal_InstanceId, &instId); // companion copies may carry instId == 0;
+        // do not refuse the edit - FindAndApplyAllHolders falls back to typeId matching.
 
         uint16_t tid = 0;
         if (!Read16(entry + kOff_InvSlot_TypeId, &tid) || tid == 0 || tid == kInvSlot_EmptyType) return false;
@@ -1640,18 +2068,41 @@ namespace trinity::game
         Inventory::NameForTypeId(tid, itemName, sizeof(itemName));
         if (IsDummyOrUnarmed(tid, itemName)) return false;
 
-        const bool ok = SyncSocketAllRealms(tag, instId, socketIdx, gearTypeId);
+        const bool ok = SyncSocketAllRealms(tag, instId, socketIdx, gearTypeId, tid);
         if (persisted) *persisted = ok;
 
         const int charIdx = GetActiveCharacter();
         SyncSlotToProfile(charIdx, tag);
 
-        g_dirty.store(true, std::memory_order_release); // re-apply effects on the next Game-Thread Tick
-
         const char* charName = CharacterName(charIdx);
         char gearName[64] = "";
         if (!Inventory::NameForTypeId(gearTypeId, gearName, sizeof(gearName)))
             snprintf(gearName, sizeof(gearName), "0x%04X", gearTypeId);
+
+        // Update in-memory snapshot immediately for 0ms UI response
+        for (int i = 0; i < g_slotCount; ++i)
+        {
+            if (g_slots[i].tag == tag && socketIdx >= 0 && socketIdx < kMaxSockets)
+            {
+                g_slots[i].sockets[socketIdx].unlocked = true;
+                g_slots[i].sockets[socketIdx].filled = true;
+                g_slots[i].sockets[socketIdx].gearTypeId = gearTypeId;
+                snprintf(g_slots[i].sockets[socketIdx].gearName, sizeof(g_slots[i].sockets[socketIdx].gearName), "%s", gearName);
+                Inventory::IconForTypeId(gearTypeId, g_slots[i].sockets[socketIdx].gearIcon, sizeof(g_slots[i].sockets[socketIdx].gearIcon));
+                const char* desc = GetGearBuffDescription(gearName);
+                snprintf(g_slots[i].sockets[socketIdx].gearBuff, sizeof(g_slots[i].sockets[socketIdx].gearBuff), "%s", desc);
+                int filled = 0;
+                for (int s = 0; s < g_slots[i].unlockedCount; ++s)
+                    if (g_slots[i].sockets[s].filled) ++filled;
+                g_slots[i].filledCount = filled;
+                break;
+            }
+        }
+
+        // Unconditional (HEAD behavior): refresh effects for whichever
+        // character was edited - the Tick-side gate decides how to run it.
+        g_dirty.store(true, std::memory_order_release);
+
         const char* slotName = SlotNameForTag(tag);
         LOG("equipment: [%s] Slot [%s (Tag %u)] Socket %d -> Added '%s' (0x%04X) [persisted=%d].",
             charName, slotName ? slotName : "Unknown", tag, socketIdx + 1, gearName, gearTypeId, ok ? 1 : 0);
@@ -1669,7 +2120,8 @@ namespace trinity::game
         const uintptr_t entry = FindEntryByTag(comp, tag);
         if (!entry) return false;
         int64_t instId = 0;
-        if (!Read64(entry + kOff_ItemVal_InstanceId, &instId) || instId <= 0) return false;
+        Read64(entry + kOff_ItemVal_InstanceId, &instId); // companion copies may carry instId == 0;
+        // do not refuse the edit - FindAndApplyAllHolders falls back to typeId matching.
 
         uint16_t tid = 0;
         if (!Read16(entry + kOff_InvSlot_TypeId, &tid) || tid == 0 || tid == kInvSlot_EmptyType) return false;
@@ -1677,13 +2129,31 @@ namespace trinity::game
         Inventory::NameForTypeId(tid, itemName, sizeof(itemName));
         if (IsDummyOrUnarmed(tid, itemName)) return false;
 
-        const bool ok = SyncSocketAllRealms(tag, instId, socketIdx, kSock_Empty);
+        const bool ok = SyncSocketAllRealms(tag, instId, socketIdx, kSock_Empty, tid);
         if (persisted) *persisted = ok;
 
         const int charIdx = GetActiveCharacter();
         SyncSlotToProfile(charIdx, tag);
 
-        g_dirty.store(true, std::memory_order_release);
+        // Update in-memory snapshot immediately
+        for (int i = 0; i < g_slotCount; ++i)
+        {
+            if (g_slots[i].tag == tag && socketIdx >= 0 && socketIdx < kMaxSockets)
+            {
+                g_slots[i].sockets[socketIdx].filled = false;
+                g_slots[i].sockets[socketIdx].gearTypeId = 0xFFFF;
+                g_slots[i].sockets[socketIdx].gearName[0] = 0;
+                g_slots[i].sockets[socketIdx].gearIcon[0] = 0;
+                g_slots[i].sockets[socketIdx].gearBuff[0] = 0;
+                int filled = 0;
+                for (int s = 0; s < g_slots[i].unlockedCount; ++s)
+                    if (g_slots[i].sockets[s].filled) ++filled;
+                g_slots[i].filledCount = filled;
+                break;
+            }
+        }
+
+        g_dirty.store(true, std::memory_order_release); // unconditional (HEAD behavior)
 
         const char* charName = CharacterName(charIdx);
         const char* slotName = SlotNameForTag(tag);
@@ -1703,7 +2173,8 @@ namespace trinity::game
         const uintptr_t entry = FindEntryByTag(comp, tag);
         if (!entry) return false;
         int64_t instId = 0;
-        if (!Read64(entry + kOff_ItemVal_InstanceId, &instId) || instId <= 0) return false;
+        Read64(entry + kOff_ItemVal_InstanceId, &instId); // companion copies may carry instId == 0;
+        // do not refuse the edit - FindAndApplyAllHolders falls back to typeId matching.
 
         uint16_t tid = 0;
         if (!Read16(entry + kOff_InvSlot_TypeId, &tid) || tid == 0 || tid == kInvSlot_EmptyType) return false;
@@ -1715,13 +2186,33 @@ namespace trinity::game
         if (level > kRefine_Max) level = kRefine_Max;
         const uint16_t lvl = static_cast<uint16_t>(level);
 
-        const bool ok = SyncRefineAllRealms(tag, instId, lvl);
+        const bool ok = SyncRefineAllRealms(tag, instId, lvl, tid);
         if (persisted) *persisted = ok;
 
         const int charIdx = GetActiveCharacter();
         SyncSlotToProfile(charIdx, tag);
 
-        g_dirty.store(true, std::memory_order_release); // re-apply effects on the next Tick
+        // Update in-memory snapshot immediately
+        for (int i = 0; i < g_slotCount; ++i)
+        {
+            if (g_slots[i].tag == tag)
+            {
+                g_slots[i].refineLevel = lvl;
+                const bool isWeapon = (tag == 0 || tag == 12 || tag == 13 || tag == 2);
+                const bool isShield = (tag == 1);
+                const bool isArmor  = (tag >= 3 && tag <= 6);
+                int baseAtk = 0, baseDef = 0;
+                if (isWeapon) baseAtk = 14 + lvl;
+                else if (isShield) { baseAtk = 0; baseDef = 20 + lvl * 2; }
+                else if (isArmor) baseDef = (tag == 4 ? 35 : 20) + lvl * 2;
+                g_slots[i].reinforceBonus = (lvl >= 4) ? 2 : 1;
+                if (isWeapon) g_slots[i].attack = baseAtk + g_slots[i].reinforceBonus;
+                if (isArmor || isShield) g_slots[i].defense = baseDef + g_slots[i].reinforceBonus;
+                break;
+            }
+        }
+
+        g_dirty.store(true, std::memory_order_release); // unconditional (HEAD behavior)
 
         const char* charName = CharacterName(charIdx);
         const char* slotName = SlotNameForTag(tag);
@@ -1741,7 +2232,8 @@ namespace trinity::game
         const uintptr_t entry = FindEntryByTag(comp, tag);
         if (!entry) return false;
         int64_t instId = 0;
-        if (!Read64(entry + kOff_ItemVal_InstanceId, &instId) || instId <= 0) return false;
+        Read64(entry + kOff_ItemVal_InstanceId, &instId); // companion copies may carry instId == 0;
+        // do not refuse the edit - FindAndApplyAllHolders falls back to typeId matching.
 
         uint16_t tid = 0;
         if (!Read16(entry + kOff_InvSlot_TypeId, &tid) || tid == 0 || tid == kInvSlot_EmptyType) return false;
@@ -1749,12 +2241,24 @@ namespace trinity::game
         Inventory::NameForTypeId(tid, itemName, sizeof(itemName));
         if (IsDummyOrUnarmed(tid, itemName)) return false;
 
-        const bool ok = SyncUnlockAllRealms(tag, instId, maxSock);
+        const bool ok = SyncUnlockAllRealms(tag, instId, maxSock, tid);
 
         const int charIdx = GetActiveCharacter();
         SyncSlotToProfile(charIdx, tag);
 
-        g_dirty.store(true, std::memory_order_release);
+        // Update in-memory snapshot immediately
+        for (int i = 0; i < g_slotCount; ++i)
+        {
+            if (g_slots[i].tag == tag)
+            {
+                g_slots[i].unlockedCount = maxSock;
+                for (int s = 0; s < maxSock; ++s)
+                    g_slots[i].sockets[s].unlocked = true;
+                break;
+            }
+        }
+
+        g_dirty.store(true, std::memory_order_release); // unconditional (HEAD behavior)
 
         const char* charName = CharacterName(charIdx);
         const char* slotName = SlotNameForTag(tag);
@@ -1771,7 +2275,8 @@ namespace trinity::game
         const uintptr_t entry = FindEntryByTag(comp, tag);
         if (!entry) return false;
         int64_t instId = 0;
-        if (!Read64(entry + kOff_ItemVal_InstanceId, &instId) || instId <= 0) return false;
+        Read64(entry + kOff_ItemVal_InstanceId, &instId); // companion copies may carry instId == 0;
+        // do not refuse the edit - FindAndApplyAllHolders falls back to typeId matching.
 
         uint16_t tid = 0;
         if (!Read16(entry + kOff_InvSlot_TypeId, &tid) || tid == 0 || tid == kInvSlot_EmptyType) return false;
@@ -1779,12 +2284,30 @@ namespace trinity::game
         Inventory::NameForTypeId(tid, itemName, sizeof(itemName));
         if (IsDummyOrUnarmed(tid, itemName)) return false;
 
-        const bool ok = SyncEmptyAllRealms(tag, instId);
+        const bool ok = SyncEmptyAllRealms(tag, instId, tid);
 
         const int charIdx = GetActiveCharacter();
         SyncSlotToProfile(charIdx, tag);
 
-        g_dirty.store(true, std::memory_order_release);
+        // Update in-memory snapshot immediately
+        for (int i = 0; i < g_slotCount; ++i)
+        {
+            if (g_slots[i].tag == tag)
+            {
+                g_slots[i].filledCount = 0;
+                for (int s = 0; s < kMaxSockets; ++s)
+                {
+                    g_slots[i].sockets[s].filled = false;
+                    g_slots[i].sockets[s].gearTypeId = 0xFFFF;
+                    g_slots[i].sockets[s].gearName[0] = 0;
+                    g_slots[i].sockets[s].gearIcon[0] = 0;
+                    g_slots[i].sockets[s].gearBuff[0] = 0;
+                }
+                break;
+            }
+        }
+
+        g_dirty.store(true, std::memory_order_release); // unconditional (HEAD behavior)
 
         const char* charName = CharacterName(charIdx);
         const char* slotName = SlotNameForTag(tag);
@@ -1803,10 +2326,6 @@ namespace trinity::game
             if (entry < kMinPointer) return;
             uint16_t tid = 0;
             if (!Read16(entry + kOff_InvSlot_TypeId, &tid) || tid == kInvSlot_EmptyType || tid == 0) return;
-            int64_t qty = 1;
-            if (Read64(entry + kOff_InvSlot_Quantity, &qty) && qty <= 0) return;
-            int64_t inst = 1;
-            if (Read64(entry + kOff_ItemVal_InstanceId, &inst) && inst <= 0) return;
             char itemName[96] = "";
             Inventory::NameForTypeId(tid, itemName, sizeof(itemName));
             if (IsDummyOrUnarmed(tid, itemName)) return;
@@ -1841,6 +2360,17 @@ namespace trinity::game
                         repairEntry(stbl.array + static_cast<uintptr_t>(s) * stbl.stride);
                 }
                 RawWrite8(flagAddr, oldFlag);
+            }
+        }
+
+        // 3. Profile Equip Component for in-game inspect menu
+        if (const uintptr_t profC = Player::GetProfileEquipComp(GetActiveCharacter()))
+        {
+            const EquipTableDesc ptbl = ReadEquipTableDesc(profC);
+            if (ptbl.valid)
+            {
+                for (uint32_t p = 0; p < ptbl.count; ++p)
+                    repairEntry(ptbl.array + static_cast<uintptr_t>(p) * ptbl.stride);
             }
         }
 
@@ -1939,9 +2469,15 @@ namespace trinity::game
         }
 
         const int charIdx = GetActiveCharacter();
+        if (const uintptr_t profC = Player::GetProfileEquipComp(charIdx))
+        {
+            const uintptr_t pe = FindEntryByTag(profC, tag);
+            if (pe) stampItem(pe);
+        }
+
         SyncSlotToProfile(charIdx, tag);
 
-        g_dirty.store(true, std::memory_order_release);
+        g_dirty.store(true, std::memory_order_release); // unconditional (HEAD behavior)
 
         const char* charName = CharacterName(charIdx);
         char itemName[64] = "";
@@ -2015,6 +2551,14 @@ namespace trinity::game
             }
         }
 
+        // Flush pending debounced profile saves to disk
+        const ULONGLONG pendingSave = s_profileSavePendingMs.load(std::memory_order_acquire);
+        if (pendingSave != 0 && GetTickCount64() >= pendingSave)
+        {
+            s_profileSavePendingMs.store(0, std::memory_order_release);
+            SaveEquipProfilesToDisk();
+        }
+
         // Auto-restore saved equipment profiles (Refine +10, 5 Unlocked Sockets, Abyss Gems)
         // across save/load, death, fast travel, and character swap.
         // SKIP while an inventory transaction is in flight (quest rewards, trades, etc.)
@@ -2025,87 +2569,125 @@ namespace trinity::game
         {
             s_lastEquipRestore = nowEquipRestore;
 
-            for (int c = 0; c < 3; ++c)
+            __try
             {
-                uintptr_t comp = 0;
-                const int liveIdx = Inventory::ActivePlayerCharacterIdx();
-                if (c == liveIdx)
+                for (int c = 0; c < 3; ++c)
                 {
-                    // Resolve the live character directly - ActiveClientComp()
-                    // is routed by the dye MENU selection, which may be a
-                    // different character than `c`.
-                    const uintptr_t liveChar = Inventory::ClientCharacterAddr();
-                    if (liveChar) comp = CompForCharacter(liveChar);
-                    if (!comp && c > 0 && c < 3)
+                    uintptr_t comp = 0;
+                    const int liveIdx = Inventory::ActivePlayerCharacterIdx();
+                    if (c == liveIdx)
                     {
-                        const uintptr_t liveActor = Player::GetActor(c);
-                        if (liveActor) comp = CompForCharacter(liveActor);
+                        // Resolve the live character directly - ActiveClientComp()
+                        // is routed by the dye MENU selection, which may be a
+                        // different character than `c`.
+                        const uintptr_t liveChar = Inventory::ClientCharacterAddr();
+                        if (liveChar) comp = CompForCharacter(liveChar);
+                        if (comp && Inventory::IdentifyCharacterFromComp(comp) != c)
+                            comp = 0;
                     }
-                }
-                if (!comp)
-                {
-                    const uintptr_t act = Inventory::CharacterAddr(c);
-                    if (act) comp = CompForCharacter(act);
                     if (!comp)
                     {
-                        const uintptr_t directAct = Player::GetActor(c);
-                        if (directAct) comp = CompForCharacter(directAct);
+                        const uintptr_t act = Inventory::CharacterAddr(c);
+                        if (act) comp = CompForCharacter(act);
                     }
-                }
-
-                if (!comp || !CompValid(comp)) continue;
-
-                bool needRefresh = false;
-
-                for (uint16_t t = 0; t < 32; ++t)
-                {
-                    const auto& prof = s_savedEquipSlots[c][t];
-                    if (!prof.active) continue;
-
-                    const uintptr_t entry = FindEntryByTag(comp, t);
-                    if (!entry) continue;
-                    if (!ProfileTargetValid(entry, t)) continue;
-
-                    // 1. Check Refinement Level
-                    uint16_t liveRefine = 0;
-                    Read16(entry + kOff_ItemVal_RefineLevel, &liveRefine);
-                    if (liveRefine < prof.refineLevel)
+                    if (!comp && c > 0 && c < 3)
                     {
-                        Write16(entry + kOff_ItemVal_RefineLevel, prof.refineLevel);
-                        needRefresh = true;
+                        const uintptr_t direct = Player::GetActor(c);
+                        if (direct) comp = CompForCharacter(direct);
                     }
+                    if (!comp) comp = FindTrackedCharacterComp(c);
+                    const uintptr_t profC = (c > 0) ? Player::GetProfileEquipComp(c) : 0;
+                    if (!comp && profC) comp = profC;
+                    if ((!comp || !CompValid(comp)) && (!profC || !CompValid(profC))) continue;
 
-                    // 2. Check Sockets
-                    const int liveUnlocked = UnlockedCount(entry);
-                    if (liveUnlocked < static_cast<int>(prof.unlockedSockets) && prof.unlockedSockets > 0)
-                    {
-                        OpenAllSockets(entry, static_cast<int>(prof.unlockedSockets));
-                        needRefresh = true;
-                    }
+                    bool needRefresh = false;
 
-                    const uintptr_t data = SocketData(entry);
-                    if (data)
+                    for (uint16_t t = 0; t < 32; ++t)
                     {
-                        for (int k = 0; k < static_cast<int>(prof.unlockedSockets) && k < kSocket_Max; ++k)
+                        const auto& prof = s_savedEquipSlots[c][t];
+                        if (!prof.active) continue;
+
+                        // 1. Live 3D / Client Component Update
+                        if (comp && CompValid(comp))
                         {
-                            if (prof.socketGems[k] != kSock_Empty && prof.socketGems[k] != 0)
+                            const uintptr_t entry = FindEntryByTag(comp, t);
+                            if (entry && ProfileTargetValid(entry, t))
                             {
-                                const uint16_t liveGem = GearAt(data, k);
-                                if (liveGem != prof.socketGems[k])
+                                // Check Refinement Level
+                                uint16_t liveRefine = 0;
+                                Read16(entry + kOff_ItemVal_RefineLevel, &liveRefine);
+                                if (liveRefine < prof.refineLevel)
                                 {
-                                    WriteRecord(data, k, prof.socketGems[k]);
+                                    Write16(entry + kOff_ItemVal_RefineLevel, prof.refineLevel);
                                     needRefresh = true;
+                                }
+
+                                // Check Sockets
+                                const int liveUnlocked = UnlockedCount(entry);
+                                if (liveUnlocked < static_cast<int>(prof.unlockedSockets) && prof.unlockedSockets > 0)
+                                {
+                                    OpenAllSockets(entry, static_cast<int>(prof.unlockedSockets));
+                                    needRefresh = true;
+                                }
+
+                                const uintptr_t data = SocketData(entry);
+                                if (data)
+                                {
+                                    for (int k = 0; k < static_cast<int>(prof.unlockedSockets) && k < kSocket_Max; ++k)
+                                    {
+                                        if (prof.socketGems[k] != kSock_Empty && prof.socketGems[k] != 0)
+                                        {
+                                            const uint16_t liveGem = GearAt(data, k);
+                                            if (liveGem != prof.socketGems[k])
+                                            {
+                                                WriteRecord(data, k, prof.socketGems[k]);
+                                                needRefresh = true;
+                                            }
+                                        }
+                                    }
+                                }
+                            }
+                        }
+
+                        // 2. Profile component for in-game pause/party inspect UI (companions c > 0)
+                        if (profC && profC != comp)
+                        {
+                            const uintptr_t pe = FindEntryByTag(profC, t);
+                            if (pe && ProfileTargetValid(pe, t))
+                            {
+                                uint16_t peRefine = 0;
+                                Read16(pe + kOff_ItemVal_RefineLevel, &peRefine);
+                                if (peRefine < prof.refineLevel)
+                                    Write16(pe + kOff_ItemVal_RefineLevel, prof.refineLevel);
+
+                                const int peUnlocked = UnlockedCount(pe);
+                                if (peUnlocked < static_cast<int>(prof.unlockedSockets) && prof.unlockedSockets > 0)
+                                    OpenAllSockets(pe, static_cast<int>(prof.unlockedSockets));
+
+                                const uintptr_t pedata = SocketData(pe);
+                                if (pedata)
+                                {
+                                    for (int k = 0; k < static_cast<int>(prof.unlockedSockets) && k < kSocket_Max; ++k)
+                                    {
+                                        if (prof.socketGems[k] != kSock_Empty && prof.socketGems[k] != 0)
+                                        {
+                                            const uint16_t peGem = GearAt(pedata, k);
+                                            if (peGem != prof.socketGems[k])
+                                                WriteRecord(pedata, k, prof.socketGems[k]);
+                                        }
+                                    }
                                 }
                             }
                         }
                     }
-                }
 
-                if (needRefresh)
-                {
-                    g_dirty.store(true, std::memory_order_release);
+                    if (needRefresh && c == Inventory::ActivePlayerCharacterIdx())
+                    {
+                        g_dirty.store(true, std::memory_order_release);
+                    }
                 }
             }
+            __except (EXCEPTION_EXECUTE_HANDLER) {}
         }
 
         if (!g_dirty.exchange(false, std::memory_order_acq_rel)) return;
@@ -2114,9 +2696,36 @@ namespace trinity::game
         const uintptr_t comp = ClientComp();
         if (!comp)
         {
-            g_dirty.store(true, std::memory_order_release); // not ready - retry next frame
+            g_dirty.store(true, std::memory_order_release); // not ready - retry next frame (HEAD behavior)
             return;
         }
+
+        // HEAD behavior: g_refresh ran on whatever component ClientComp()
+        // resolved, no off-screen gate. The DXGI-crash concern is handled by
+        // the possessor probe below instead: only run the refresh when the
+        // target comp actually has a local controller (i.e. it is the
+        // possessed body's render component). Companion/profile comps fail
+        // the probe and are skipped without touching render structs.
+        uintptr_t probeActor = 0, probePoss = 0, probePawn = 0;
+        const bool hasController =
+            ReadPtr(comp + kOff_EquipComp_Owner, &probeActor) && probeActor >= kMinPointer &&
+            ReadPtr(probeActor + kOff_Owner_Possessor, &probePoss) && probePoss >= kMinPointer &&
+            ReadPtr(probePoss + kOff_Possessor_Pawn, &probePawn) && probePawn >= kMinPointer;
+        if (!hasController)
+        {
+            // Companion/profile copy (no local controller). The data writes
+            // already landed via the Sync* walks, but without an effect
+            // rebuild they stay inert - which reads as "edit not working" on
+            // Damiane/Oongka (persisted=1 yet no stat change). Run the
+            // refresh here too when the comp's body walk is alive (spawned
+            // companion); the SEH below catches any fault. A pure data-only
+            // profile comp (no body walk at all) is still skipped.
+            uintptr_t pawnSub = 0;
+            if (!(probePawn >= kMinPointer &&
+                  ReadPtr(probePawn + 0x68, &pawnSub) && pawnSub >= kMinPointer))
+                return;
+        }
+
         __try
         {
             int err = 0;
@@ -2136,7 +2745,8 @@ namespace trinity::game
         {
             for (int c = 0; c < 3; ++c)
             {
-                const uintptr_t actor = Player::GetActor(c);
+                const uintptr_t actor = PreferEquipmentOwner(
+                    Player::GetOwner(c), Player::GetActor(c));
                 if (actor < kMinPointer) continue;
 
                 const uintptr_t comp = FindEquipCompFromActor(actor);
@@ -2159,5 +2769,15 @@ namespace trinity::game
             return false;
         }
         return false;
+    }
+
+    uintptr_t Equipment::EnsureSocketVector(uintptr_t entry)
+    {
+        return game::EnsureSocketVector(entry);
+    }
+
+    void Equipment::OpenAllSockets(uintptr_t entry, int maxSock)
+    {
+        game::OpenAllSockets(entry, maxSock);
     }
 }

@@ -26,8 +26,8 @@ namespace trinity::game
 
     namespace
     {
-        // Direct SetNpc and SetPet Leaf Setters (Prologue level)
-        // Intercepting here allows proportional scaling of the trust gain (1x .. 100x).
+        // Direct SetNpc and SetPet Leaf Setters (Gift / Dialogue / Pet Taming records)
+        // Strictly isolated to gifting, feeding, and taming interactions.
         using FriendlySet_t = void*(__fastcall*)(void* mapOwner, void* record);
         FriendlySet_t oSetNpc = nullptr;
         FriendlySet_t oSetPet = nullptr;
@@ -43,15 +43,13 @@ namespace trinity::game
 
         void ApplyTrustMultiplierToRecord(void* record, float mult, const char* srcName)
         {
-            if (!Player::Ready() || mult <= 1.0f) return;
+            if (mult <= 1.0f) return;
 
             const uintptr_t r = reinterpret_cast<uintptr_t>(record);
             if (r < kMinPointer) return;
 
             uint32_t key = 0;
             if (!Read32(r + kOff_FriendlyRec_Key, &key)) return;
-
-            // key == 0 is the save-loader at login / title screen (never scale baseline on load)
             if (key == 0) return;
 
             uint64_t rawVal64 = 0;
@@ -100,7 +98,7 @@ namespace trinity::game
         void* __fastcall hkSetNpc(void* mapOwner, void* record)
         {
             const State& st = State::Get();
-            if (Player::Ready() && st.trustMult && st.trustMultVal > 1.0f)
+            if (st.trustMult && st.trustMultVal > 1.0f)
             {
                 __try
                 {
@@ -114,7 +112,7 @@ namespace trinity::game
         void* __fastcall hkSetPet(void* mapOwner, void* record)
         {
             const State& st = State::Get();
-            if (Player::Ready() && st.trustMult && st.trustMultVal > 1.0f)
+            if (st.trustMult && st.trustMultVal > 1.0f)
             {
                 __try
                 {
@@ -128,66 +126,62 @@ namespace trinity::game
 
     bool Friendly::Install()
     {
-        // 1. Install SetNpc prologue hook
-        const uintptr_t npcAddr = mem::FindPattern(kSig_FriendlySetNpc);
+        // 1. Install SetNpc prologue hook (Strictly for dialogue & gift giving)
+        uintptr_t npcAddr = mem::FindPattern(kSig_FriendlySetNpc);
+        if (!npcAddr)
+            npcAddr = mem::FindPattern(kSig_FriendlySetNpc_Legacy);
+
         if (npcAddr)
         {
             g_npcTarget = reinterpret_cast<void*>(npcAddr);
             if (MH_CreateHook(g_npcTarget, reinterpret_cast<void*>(&hkSetNpc), reinterpret_cast<void**>(&oSetNpc)) == MH_OK)
             {
-                LOG_OK("friendly: SetNpc multiplier hook installed @ 0x%p", g_npcTarget);
+                MH_EnableHook(g_npcTarget);
+                LOG_OK("friendly: SetNpc multiplier hook installed & enabled @ 0x%p", g_npcTarget);
                 g_hooksInstalled = true;
             }
             else
             {
+                LOG_ERR("friendly: failed to create SetNpc hook @ 0x%p", g_npcTarget);
                 g_npcTarget = nullptr;
             }
         }
+        else
+        {
+            LOG_WARN("friendly: SetNpc signature NOT FOUND.");
+        }
 
-        // 2. Install SetPet prologue hook
-        const uintptr_t petAddr = mem::FindPattern(kSig_FriendlySetPet);
+        // 2. Install SetPet prologue hook (Strictly for pet/mount taming & feeding)
+        uintptr_t petAddr = mem::FindPattern(kSig_FriendlySetPet);
+        if (!petAddr)
+            petAddr = mem::FindPattern(kSig_FriendlySetPet_Legacy);
+
         if (petAddr)
         {
             g_petTarget = reinterpret_cast<void*>(petAddr);
             if (MH_CreateHook(g_petTarget, reinterpret_cast<void*>(&hkSetPet), reinterpret_cast<void**>(&oSetPet)) == MH_OK)
             {
-                LOG_OK("friendly: SetPet multiplier hook installed @ 0x%p", g_petTarget);
+                MH_EnableHook(g_petTarget);
+                LOG_OK("friendly: SetPet multiplier hook installed & enabled @ 0x%p", g_petTarget);
                 g_hooksInstalled = true;
             }
             else
             {
+                LOG_ERR("friendly: failed to create SetPet hook @ 0x%p", g_petTarget);
                 g_petTarget = nullptr;
             }
         }
+        else
+        {
+            LOG_WARN("friendly: SetPet signature NOT FOUND.");
+        }
 
+        g_hooksEnabled = true;
         return g_hooksInstalled;
     }
 
     void Friendly::Tick()
     {
-        if (!g_hooksInstalled) return;
-
-        const State& st = State::Get();
-        // Strict safety guard: ONLY engage when Player is in-world (Player::Ready())
-        const bool wantEnabled = Player::Ready() && st.trustMult && (st.trustMultVal > 1.0f);
-
-        if (wantEnabled != g_hooksEnabled)
-        {
-            if (wantEnabled)
-            {
-                if (g_npcTarget) MH_EnableHook(g_npcTarget);
-                if (g_petTarget) MH_EnableHook(g_petTarget);
-                g_hooksEnabled = true;
-                LOG_OK("friendly: Trust Multiplier (%.1fx) ENGAGED.", st.trustMultVal);
-            }
-            else
-            {
-                if (g_npcTarget) MH_DisableHook(g_npcTarget);
-                if (g_petTarget) MH_DisableHook(g_petTarget);
-                g_hooksEnabled = false;
-                LOG("friendly: Trust Multiplier DISENGAGED.");
-            }
-        }
     }
 
     void Friendly::Remove()
@@ -206,9 +200,11 @@ namespace trinity::game
             g_petTarget = nullptr;
         }
 
-        s_lastTrustMap.clear();
         g_hooksInstalled = false;
         g_hooksEnabled = false;
+
+        std::lock_guard<std::mutex> lock(s_trustMutex);
+        s_lastTrustMap.clear();
     }
 
     bool Friendly::Ready()

@@ -25,6 +25,15 @@ static void AppendCrashReport(const char* report)
     HANDLE f = CreateFileA(log, FILE_APPEND_DATA, 0, nullptr, OPEN_ALWAYS,
                            FILE_ATTRIBUTE_NORMAL, nullptr);
     if (f == INVALID_HANDLE_VALUE) return;
+
+    // Hard ceiling: Cap crash log file size to 1 MB to prevent runaway multi-megabyte log files
+    LARGE_INTEGER fileSize{};
+    if (GetFileSizeEx(f, &fileSize) && fileSize.QuadPart > 1024 * 1024)
+    {
+        CloseHandle(f);
+        return;
+    }
+
     SetFilePointer(f, 0, nullptr, FILE_END);
     DWORD written = 0;
     WriteFile(f, report, static_cast<DWORD>(strlen(report)), &written, nullptr);
@@ -127,6 +136,20 @@ static LONG WINAPI VectoredCrashLogger(PEXCEPTION_POINTERS ep)
         if (faultMod == g_module)
             return EXCEPTION_CONTINUE_SEARCH;
     }
+
+    // Rate-limiting & deduplication: do NOT log identical fault RIP within 5 seconds
+    static uintptr_t s_lastFaultRip = 0;
+    static uint64_t  s_lastFaultTime = 0;
+    const uint64_t now = GetTickCount64();
+    if (rip == s_lastFaultRip && (now - s_lastFaultTime) < 5000)
+        return EXCEPTION_CONTINUE_SEARCH;
+    s_lastFaultRip = rip;
+    s_lastFaultTime = now;
+
+    // Maximum 5 crash logs per process lifetime to guarantee zero disk exhaustion
+    static volatile LONG s_totalCrashesLogged = 0;
+    if (InterlockedIncrement(&s_totalCrashesLogged) > 5)
+        return EXCEPTION_CONTINUE_SEARCH;
 
     const ULONG_PTR accessType = ep->ExceptionRecord->NumberParameters > 0
                                      ? ep->ExceptionRecord->ExceptionInformation[0]
@@ -327,6 +350,20 @@ BOOL APIENTRY DllMain(HMODULE module, DWORD reason, LPVOID)
     case DLL_PROCESS_ATTACH:
         g_module = module;
         DisableThreadLibraryCalls(module);
+
+        // Guard against injection into crashpad_handler.exe or other non-game processes
+        {
+            char exePath[MAX_PATH] = {};
+            if (GetModuleFileNameA(nullptr, exePath, MAX_PATH))
+            {
+                const char* exeName = strrchr(exePath, '\\');
+                exeName = exeName ? exeName + 1 : exePath;
+                if (_stricmp(exeName, "CrimsonDesert.exe") != 0)
+                {
+                    return TRUE; // Inert load: do not install hooks, spawn threads, or hook DX12 in crashpad
+                }
+            }
+        }
 
         // Record our module span immediately so the VEH filters out our own guarded SEH reads
         if (module)

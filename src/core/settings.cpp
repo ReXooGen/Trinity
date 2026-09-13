@@ -187,9 +187,9 @@ namespace trinity
         fclose(f);
 
         State& st  = State::Get();
-        st.autoSave = vals.autoSave;
-        st.fileLogging = vals.fileLogging;
-        st.themeIndex = vals.themeIndex;
+        st.autoSave      = vals.autoSave;
+        st.fileLogging   = vals.fileLogging;
+        st.themeIndex    = vals.themeIndex;
         st.playstationIcons = vals.playstationIcons;
         st.useCustomFont = vals.useCustomFont;
         st.builtInFontIndex = vals.builtInFontIndex;
@@ -228,6 +228,8 @@ namespace trinity
         // Clamp the floats to the same ranges the menu rows enforce, in case
         // the file was hand-edited.
         st.godMode         = vals.godMode;
+        st.oneHitKill      = vals.oneHitKill;
+        st.infDurability   = vals.infDurability;
         st.noFallDamage    = vals.noFallDamage;
         st.infStamina      = vals.infStamina;
         st.infMountStamina = vals.infMountStamina || vals.infStamina;

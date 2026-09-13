@@ -42,6 +42,7 @@ namespace trinity
         bool rebindCapture = false;
 
         // Player stat & combat features (player.cpp).
+
         bool godMode         = false;
         bool oneHitKill      = false;
         bool infDurability   = false;
@@ -93,7 +94,7 @@ namespace trinity
         // F10 key) and persisted in Trinity.ini. Fallback height is used when the
         // marker has no elevation (sky insertion).
         int          markerTeleportKeyVk  = 0x79;  // VK_F10
-        unsigned int markerTeleportPadMask = 0;     // Disabled on pad by default
+        unsigned int markerTeleportPadMask = 0;    // Disabled on pad by default
         float        markerFallbackHeight = 1200.0f;
 
         // Trust Multiplier (friendly.cpp). Scales the trust ("Friendly")

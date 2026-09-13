@@ -19,7 +19,11 @@ namespace trinity
     class Logger
     {
     public:
-        enum Level { Debug, Info, Good, Warn, Error };
+        // CombatVerbose: console-only, NEVER written to file (prevents 72GB log runaway)
+        enum Level { Debug, Info, Good, Warn, Error, CombatVerbose };
+
+        // Hard cap: 50 MB. When exceeded, current log is rotated to Trinity.1.log and a fresh file begins.
+        static constexpr size_t kMaxLogBytes = 50ULL * 1024ULL * 1024ULL;
 
         static void InitFileLogging(HMODULE module)
         {
@@ -34,7 +38,10 @@ namespace trinity
                 if (slash)
                 {
                     strcpy_s(slash + 1, static_cast<size_t>(path + MAX_PATH - slash - 1), "Trinity.log");
-                    s_logFp = _fsopen(path, "w", _SH_DENYNO);
+                    s_logPath = path;
+                    TruncateOversizedLog(path);
+                    s_logFp = _fsopen(path, "a", _SH_DENYNO);
+                    s_logBytesWritten = GetLogFileSize(path);
                 }
             }
 
@@ -72,7 +79,10 @@ namespace trinity
                     {
                         strcpy_s(slash + 1, static_cast<size_t>(path + MAX_PATH - slash - 1),
                                  "Trinity.log");
-                        s_logFp = _fsopen(path, "w", _SH_DENYNO);
+                        s_logPath = path;
+                        TruncateOversizedLog(path);
+                        s_logFp = _fsopen(path, "a", _SH_DENYNO);
+                        s_logBytesWritten = GetLogFileSize(path);
                     }
                 }
             }
@@ -163,6 +173,10 @@ namespace trinity
 
         static void LogInternalLocked(Level lvl, const char* msg)
         {
+            // CombatVerbose messages are console-only and NEVER touch the file.
+            // This is the critical guard against 72GB runaway log files.
+            const bool fileEligible = (lvl != CombatVerbose);
+
             const ULONGLONG now = GetTickCount64();
             // Suppress rapid identical spam within 3 seconds
             if (s_lastMessage == msg && s_lastLevel == lvl && (now - s_lastTime < 3000))
@@ -192,14 +206,18 @@ namespace trinity
 
             if (s_console)
             {
-                Emit(line);
+                // CombatVerbose: write to console only, never call EmitToFile
+                if (fileEligible)
+                    Emit(line);
+                else
+                    EmitConsoleOnly(line);
             }
             else
             {
                 s_buffer.emplace_back(std::move(line));
                 if (s_buffer.size() > 512)
                     s_buffer.pop_front();
-                if (s_logFp)
+                if (s_logFp && fileEligible)
                     EmitToFile(s_buffer.back());
             }
         }
@@ -230,38 +248,106 @@ namespace trinity
             }
         }
 
+        // Returns current file size in bytes (0 if not found)
+        static size_t GetLogFileSize(const char* path)
+        {
+            WIN32_FILE_ATTRIBUTE_DATA info{};
+            if (GetFileAttributesExA(path, GetFileExInfoStandard, &info))
+                return (static_cast<size_t>(info.nFileSizeHigh) << 32) | info.nFileSizeLow;
+            return 0;
+        }
+
+        // If the log file already exceeds the cap (e.g. leftover from last session), delete it.
+        static void TruncateOversizedLog(const char* path)
+        {
+            if (GetLogFileSize(path) > kMaxLogBytes)
+                DeleteFileA(path);
+        }
+
+        // Rotate: Trinity.log → Trinity.1.log, then open a fresh Trinity.log
+        static void RotateLog()
+        {
+            if (!s_logFp || s_logPath.empty()) return;
+            fclose(s_logFp);
+            s_logFp = nullptr;
+
+            std::string rotated = s_logPath;
+            // Replace .log with .1.log
+            const size_t dot = rotated.rfind('.');
+            if (dot != std::string::npos)
+                rotated.insert(dot, ".1");
+            else
+                rotated += ".1";
+
+            DeleteFileA(rotated.c_str());                     // Remove old rotation
+            MoveFileExA(s_logPath.c_str(), rotated.c_str(),  // Rename current → .1
+                        MOVEFILE_REPLACE_EXISTING);
+
+            s_logFp = _fsopen(s_logPath.c_str(), "w", _SH_DENYNO);
+            s_logBytesWritten = 0;
+
+            // Write a rotation notice at the top of the new file
+            if (s_logFp)
+            {
+                const char* notice = "[LOGGER] Log rotated – previous log saved to Trinity.1.log (50MB cap)\n";
+                std::fputs(notice, s_logFp);
+                s_logBytesWritten += strlen(notice);
+                std::fflush(s_logFp);
+            }
+        }
+
         static void EmitToFile(const Line& l)
         {
             if (!s_logFp) return;
-            static const char* names[] = { "DEBUG", "INFO", "OK", "WARN", "ERROR" };
-            std::fprintf(s_logFp, "%s [TID %lu] [%s] %s\n", l.stamp.c_str(), l.tid, names[l.lvl], l.text.c_str());
-            if (l.lvl >= Warn)
+            static const char* names[] = { "DEBUG", "INFO", "OK", "WARN", "ERROR", "VERBOSE" };
+            char buf[2176];
+            const int n = std::snprintf(buf, sizeof(buf), "%s [TID %lu] [%s] %s\n",
+                                        l.stamp.c_str(), l.tid, names[l.lvl], l.text.c_str());
+            if (n <= 0) return;
+
+            // Enforce 50MB cap: rotate before write if needed
+            if (s_logBytesWritten + static_cast<size_t>(n) > kMaxLogBytes)
+                RotateLog();
+
+            if (s_logFp)
+            {
+                std::fputs(buf, s_logFp);
                 std::fflush(s_logFp);
+                s_logBytesWritten += static_cast<size_t>(n);
+            }
         }
 
-        static void Emit(const Line& l)
+        static WORD LevelColor(Level lvl)
+        {
+            switch (lvl)
+            {
+            case Debug:         return FOREGROUND_INTENSITY;
+            case Good:          return FOREGROUND_GREEN | FOREGROUND_INTENSITY;
+            case Warn:          return FOREGROUND_RED | FOREGROUND_GREEN | FOREGROUND_INTENSITY;
+            case Error:         return FOREGROUND_RED | FOREGROUND_INTENSITY;
+            case CombatVerbose: return FOREGROUND_BLUE | FOREGROUND_GREEN; // Teal – visually distinct
+            default:            return FOREGROUND_RED | FOREGROUND_GREEN | FOREGROUND_BLUE;
+            }
+        }
+
+        // Console-only emit: no file write.
+        static void EmitConsoleOnly(const Line& l)
         {
             HANDLE h = GetStdHandle(STD_OUTPUT_HANDLE);
-            WORD body = FOREGROUND_RED | FOREGROUND_GREEN | FOREGROUND_BLUE;
-            switch (l.lvl)
-            {
-            case Debug: body = FOREGROUND_INTENSITY; break;
-            case Good:  body = FOREGROUND_GREEN | FOREGROUND_INTENSITY; break;
-            case Warn:  body = FOREGROUND_RED | FOREGROUND_GREEN | FOREGROUND_INTENSITY; break;
-            case Error: body = FOREGROUND_RED | FOREGROUND_INTENSITY; break;
-            default: break;
-            }
-
             SetConsoleTextAttribute(h, FOREGROUND_INTENSITY);
             std::printf("%s ", l.stamp.c_str());
             SetConsoleTextAttribute(h, FOREGROUND_RED | FOREGROUND_INTENSITY);
             std::printf("Trinity ");
-            SetConsoleTextAttribute(h, body);
+            SetConsoleTextAttribute(h, LevelColor(l.lvl));
             std::printf("%s\n", l.text.c_str());
             SetConsoleTextAttribute(h, FOREGROUND_RED | FOREGROUND_GREEN | FOREGROUND_BLUE);
             std::fflush(stdout);
+        }
 
-            EmitToFile(l);
+        static void Emit(const Line& l)
+        {
+            EmitConsoleOnly(l);
+            EmitToFile(l);   // EmitToFile will skip CombatVerbose (caller must ensure fileEligible)
         }
 
         static std::mutex& Mutex()
@@ -280,10 +366,13 @@ namespace trinity
         static inline uint32_t                                      s_repeatCount = 0;
         static inline std::unordered_map<std::string, ULONGLONG>    s_throttleMap;
         static inline std::unordered_set<std::string>               s_loggedOnce;
+        static inline std::string                                   s_logPath;
+        static inline size_t                                        s_logBytesWritten = 0;
     };
 }
 
 #define LOG(...)           ::trinity::Logger::Log(::trinity::Logger::Info,  __VA_ARGS__)
+#define LOG_INFO(...)      ::trinity::Logger::Log(::trinity::Logger::Info,  __VA_ARGS__)
 #define LOG_DEBUG(...)     ::trinity::Logger::Log(::trinity::Logger::Debug, __VA_ARGS__)
 #define LOG_OK(...)        ::trinity::Logger::Log(::trinity::Logger::Good,  __VA_ARGS__)
 #define LOG_WARN(...)      ::trinity::Logger::Log(::trinity::Logger::Warn,  __VA_ARGS__)
@@ -291,3 +380,5 @@ namespace trinity
 #define LOG_ONCE(...)      ::trinity::Logger::LogOnce(::trinity::Logger::Info, __VA_ARGS__)
 #define LOG_WARN_ONCE(...) ::trinity::Logger::LogOnce(::trinity::Logger::Warn, __VA_ARGS__)
 #define LOG_THROTTLE(intervalMs, ...) ::trinity::Logger::LogThrottled(intervalMs, ::trinity::Logger::Info, __VA_ARGS__)
+// LOG_COMBAT: visible on console, NEVER written to file. Use for per-frame/per-hit events.
+#define LOG_COMBAT(...)    ::trinity::Logger::Log(::trinity::Logger::CombatVerbose, __VA_ARGS__)

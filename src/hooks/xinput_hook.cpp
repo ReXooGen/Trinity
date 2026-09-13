@@ -1,4 +1,5 @@
 #include "xinput_hook.h"
+#include "dualsense.h"
 
 #include <MinHook.h>
 
@@ -43,8 +44,13 @@ namespace trinity::hooks
     #define TRINITY_XINPUT_DETOUR(NAME, ORIG)                              \
         static DWORD WINAPI NAME(DWORD i, XINPUT_STATE* s)                 \
         {                                                                  \
-            const DWORD r = ORIG(i, s);                                    \
-            if (r == ERROR_SUCCESS && s && State::Get().menuOpen)         \
+            DWORD r = ORIG(i, s);                                          \
+            if (r != ERROR_SUCCESS && i == 0 && dualsense::IsConnected() && s) \
+            {                                                              \
+                if (dualsense::GetState(s))                                \
+                    r = ERROR_SUCCESS;                                     \
+            }                                                              \
+            if (r == ERROR_SUCCESS && s && State::Get().menuOpen)          \
                 Neutralize(s);                                             \
             return r;                                                      \
         }
@@ -69,6 +75,8 @@ namespace trinity::hooks
 
     void EnsureXInputHooks()
     {
+        dualsense::Start();
+
         static bool s_allDone = false;
         if (s_allDone)
             return;
@@ -121,6 +129,8 @@ namespace trinity::hooks
 
     void RemoveXInputHooks()
     {
+        dualsense::Stop();
+
         // The detours are torn down by MH_DisableHook(MH_ALL_HOOKS) /
         // MH_Uninitialize during shutdown; just reset our bookkeeping.
         for (auto& t : g_targets)
@@ -133,8 +143,27 @@ namespace trinity::hooks
 
     DWORD XInputReadReal(DWORD userIndex, XINPUT_STATE* state)
     {
+        DWORD r = ERROR_DEVICE_NOT_CONNECTED;
         if (g_read)
-            return g_read(userIndex, state);
-        return XInputGetState(userIndex, state); // hooks not up yet
+            r = g_read(userIndex, state);
+        else
+            r = XInputGetState(userIndex, state); // hooks not up yet
+
+        if (r != ERROR_SUCCESS && userIndex == 0 && dualsense::IsConnected() && state)
+        {
+            if (dualsense::GetState(state))
+                r = ERROR_SUCCESS;
+        }
+        return r;
+    }
+
+    bool IsDualSenseConnected()
+    {
+        return dualsense::IsConnected();
+    }
+
+    const char* GetDualSenseName()
+    {
+        return dualsense::GetDeviceName();
     }
 }

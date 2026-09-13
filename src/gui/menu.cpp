@@ -24,6 +24,7 @@
 #include "../game/equipment.h"
 #include "../game/friendly.h"
 #include "../game/item_names.h"
+#include "../hooks/xinput_hook.h"
 #include "../core/version_detect.h"
 
 namespace trinity::gui
@@ -101,6 +102,8 @@ namespace trinity::gui
         State& st = State::Get();
         ui::Begin(LOC("Combat & Gameplay Options"));
 
+
+
         bool changed = false;
         changed |= ui::Toggle(LOC("One-Hit Kill"), &st.oneHitKill,
                    LOC("Instantly eliminates any enemy or boss with a single strike (1,000x damage multiplier)."));
@@ -145,6 +148,7 @@ namespace trinity::gui
         State& st = State::Get();
         ui::Begin();
 
+        bool changed = false;
         ui::Submenu(LOC("Combat & Gameplay Options"), "combat_options",
                     LOC("One-Hit Kill, God Mode, Durability, and damage multipliers."));
 
@@ -164,7 +168,6 @@ namespace trinity::gui
         ui::Submenu(LOC("Mount & Horse Options"), "mount_options",
                     LOC("Stamina, gear customization, and summon options for mounts and horses."));
 
-        bool changed = false;
         changed |= ui::ToggleFloat(LOC("Super Run"), &st.superRun, &st.superRunMult, 1.0f, 10.0f, 0.25f, 2.0f, "%.2fx",
                         LOC("Move faster than normal."));
         changed |= ui::ToggleFloat(LOC("Super Jump"), &st.superJump, &st.superJumpMult, 1.0f, 10.0f, 0.25f, 2.0f, "%.2fx",
@@ -209,15 +212,36 @@ namespace trinity::gui
         const game::Dye::OpState s = game::Dye::Status();
         if (s == game::Dye::OpState::Done)
         {
-            const int targetIdx = (game::Dye::GetTargetMode() == 0) ? game::Dye::GetActiveCharacter() : -1;
-            if (targetIdx == 1 || targetIdx == 2)
+            const int targetMode = game::Dye::GetTargetMode();
+            const int liveIdx = game::Inventory::ActivePlayerCharacterIdx();
+            const int targetIdx = (targetMode == 0) ? game::Dye::GetActiveCharacter() : -1;
+
+            if (targetMode == 1) // Mount
+            {
+                ui::Toast(LOC("Dye saved to mount! (Renders live when mounted or upon travel/reload)"));
+            }
+            else if (targetIdx == 1 || targetIdx == 2) // Damiane or Oongka
             {
                 const char* name = game::Equipment::CharacterName(targetIdx);
-                ui::Toast(LOC("Dye applied to %s"), name);
+                ui::Toast(LOC("Dye applied to %s live!"), name);
             }
             else
             {
-                ui::Toast(LOC("Dye applied"));
+                ui::Toast(LOC("Dye applied live!"));
+            }
+        }
+        else if (s == game::Dye::OpState::DoneDataOnly)
+        {
+            const int targetMode = game::Dye::GetTargetMode();
+            const int targetIdx = (targetMode == 0) ? game::Dye::GetActiveCharacter() : -1;
+            if (targetIdx == 1 || targetIdx == 2)
+            {
+                const char* name = game::Equipment::CharacterName(targetIdx);
+                ui::Toast(LOC("Dye saved to %s (visual pending reload)"), name);
+            }
+            else
+            {
+                ui::Toast(LOC("Dye saved (visual pending reload)"));
             }
         }
         else if (s == game::Dye::OpState::Failed)
@@ -237,6 +261,20 @@ namespace trinity::gui
             ui::Toast(LOC("Applying dye..."));
         // The custom rows follow whatever was applied last, so the Custom
         // Color page always opens on the color the item just got.
+        s_dyeR = r; s_dyeG = g; s_dyeB = b;
+    }
+
+    static void SendDyeAllEquipped(uint32_t familyKey, int r, int g, int b)
+    {
+        game::Dye::Channel c{};
+        c.groupKey   = familyKey;
+        c.r          = static_cast<uint8_t>(r);
+        c.g          = static_cast<uint8_t>(g);
+        c.b          = static_cast<uint8_t>(b);
+        c.materialId = (s_dyeMat == 0) ? uint16_t(0xFFFF) : static_cast<uint16_t>(s_dyeMat);
+        c.repair     = static_cast<uint8_t>(((100 - s_dyeRepair) * 127) / 100);
+        if (game::Dye::ApplyAllEquipped(c))
+            ui::Toast(LOC("Dyeing all equipped items..."));
         s_dyeR = r; s_dyeG = g; s_dyeB = b;
     }
 
@@ -303,9 +341,30 @@ namespace trinity::gui
         const bool isMount = (game::Dye::GetTargetMode() == 1);
         if (isMount)
         {
-            static const char* const kMountNames[] = { "Active Mount", "Mount 2", "Mount 3", "Mount 4" };
+            static char mountLabelStorage[4][128];
+            static const char* mountLabels[4];
+            int nTracked = game::Player::GetTrackedMountCount();
+            int comboCount = (nTracked > 0) ? nTracked : 1;
+            if (comboCount > 4) comboCount = 4;
+
+            for (int i = 0; i < 4; ++i)
+            {
+                game::Player::MountDescriptor desc{};
+                if (game::Player::GetMountDescriptor(i, &desc) && desc.label[0])
+                {
+                    strncpy_s(mountLabelStorage[i], sizeof(mountLabelStorage[i]), desc.label, sizeof(mountLabelStorage[i]) - 1);
+                }
+                else
+                {
+                    if (i == 0) snprintf(mountLabelStorage[i], sizeof(mountLabelStorage[i]), "Active Mount (None Nearby)");
+                    else        snprintf(mountLabelStorage[i], sizeof(mountLabelStorage[i]), "Mount %d (None)", i + 1);
+                }
+                mountLabels[i] = mountLabelStorage[i];
+            }
+
             int mountIdx = game::Dye::GetActiveMount();
-            if (ui::Combo(LOC("Target Mount"), &mountIdx, kMountNames, 4, LOC("Select active horse or mount to dye.")))
+            if (mountIdx >= comboCount) mountIdx = 0;
+            if (ui::Combo(LOC("Target Mount"), &mountIdx, mountLabels, comboCount, LOC("Select active horse or mount to dye.")))
             {
                 game::Dye::SetActiveMount(mountIdx);
             }
@@ -353,6 +412,23 @@ namespace trinity::gui
                 ui::Toast(LOC("All dyes injected into save data"));
             else
                 ui::Toast(LOC("Dye save injection completed"));
+        }
+
+        if (!isMount)
+        {
+            if (ui::Option(LOC("Dye All Equipped Armor (Full Set)"),
+                           LOC("Apply the selected color to all worn armor pieces (Helm, Chest, Gloves, Boots, Cloak) across all zones in one click.")))
+            {
+                SendDyeAllEquipped(game::kDyeFamilies[s_dyeFamily].key, s_dyeR, s_dyeG, s_dyeB);
+            }
+        }
+        else
+        {
+            if (ui::Option(LOC("Dye All Mount Gear (Full Set)"),
+                           LOC("Apply the selected color to all equipped horse gear pieces (Chamfron, Barding, Saddle, Stirrup, Horseshoe) across all zones in one click.")))
+            {
+                SendDyeAllEquipped(game::kDyeFamilies[s_dyeFamily].key, s_dyeR, s_dyeG, s_dyeB);
+            }
         }
 
         const int n = game::Dye::SlotCount();
@@ -526,6 +602,13 @@ namespace trinity::gui
             }
         }
 
+        const bool isMountDye = (game::Dye::GetTargetMode() == 1);
+        if (ui::Option(isMountDye ? LOC("Apply Current Color to All Mount Gear") : LOC("Apply Current Color to All Equipped Armor"),
+                       LOC("Dye all worn equipment pieces across all zones with the selected color.")))
+        {
+            SendDyeAllEquipped(fam.key, s_dyeR, s_dyeG, s_dyeB);
+        }
+
         ui::Submenu(LOC("Custom Color"), "dyecustom", LOC("Mix your own color instead of a preset."));
 
         if (ui::Option(LOC("Remove All Dye (Reset)"), LOC("Clears all dye from this piece back to its natural default color.")))
@@ -578,6 +661,15 @@ namespace trinity::gui
                           LOC("Dye it with this exact color.")) == 0)
             SendDye(game::kDyeFamilies[s_dyeFamily].key, s_dyeR, s_dyeG, s_dyeB);
 
+        const bool isMountCustom = (game::Dye::GetTargetMode() == 1);
+        static int s_applyAllCursor = 0;
+        if (ui::SwatchRow(isMountCustom ? LOC("Apply Color to All Mount Gear") : LOC("Apply Color to All Equipped Armor"),
+                          &mix, 1, &s_applyAllCursor, -1,
+                          LOC("Dye the entire equipped outfit/gear set with this exact color in one click.")) == 0)
+        {
+            SendDyeAllEquipped(game::kDyeFamilies[s_dyeFamily].key, s_dyeR, s_dyeG, s_dyeB);
+        }
+
         if (ui::Option(LOC("Load Current"), LOC("Load the zone's current color.")))
         {
             const int ch = (s_dyeChan == 0) ? 0 : s_dyeChan - 1;
@@ -611,7 +703,7 @@ namespace trinity::gui
     static char     s_eqFind[48] = "";// gear picker search
     static int      s_eqRefine = 0;   // refinement stepper value (seeded on select)
     static int      s_eqCharFilter = 1; // 0 = All Characters, 1 = Current Character Only, 2 = Kliff, 3 = Damiane, 4 = Oongka
-    static int      s_eqCategoryFilter = 1; // 0 = All Categories, 1 = Matching Slot Only, 2 = Weapons, 3 = Shields & Off-Hand, 4 = Armor, 5 = Accessories
+    static int      s_eqCategoryFilter = 0; // 0 = Matching Slot Only, 1 = All Equipment, 2 = Weapons, 3 = Shields & Off-Hand, 4 = Armor, 5 = Accessories
 
     // Locate the live snapshot slot for a tag (SlotCount() rebuilds it first).
     static bool EqSlotForTag(uint16_t tag, game::Equipment::SlotInfo* out)
@@ -627,16 +719,19 @@ namespace trinity::gui
     {
         ui::Begin();
 
-        static const char* const kCharNames[] = { "Kliff", "Damiane", "Oongka" };
+        static const char* const kCharNames[] = { "Kliff", "Damiane", "Oongka", "Mount" };
         int eqChar = game::Equipment::GetActiveCharacter();
-        if (ui::Combo(LOC("Character"), &eqChar, kCharNames, 3, LOC("Select which character's equipment to view and edit.")))
+        if (ui::Combo(LOC("Character"), &eqChar, kCharNames, 4, LOC("Select which character's equipment to view and edit.")))
         {
             game::Equipment::SetActiveCharacter(eqChar);
         }
 
         if (!game::Equipment::Ready())
         {
-            if (eqChar > 0)
+            if (eqChar == 3)
+                ui::Option(LOC("Mount not summoned"),
+                           LOC("Your mount/horse is not currently active in the world."));
+            else if (eqChar > 0)
                 ui::Option(LOC("Character not loaded"),
                            LOC("This companion is not currently loaded in memory."));
             else
@@ -670,6 +765,24 @@ namespace trinity::gui
                 ui::Toast(LOC("Unlocked sockets on %d piece%s"), unlocked, unlocked == 1 ? "" : "s");
             else
                 ui::Toast(LOC("No equipped gear found"));
+        }
+
+        if (ui::Option(LOC("Unlock All Bag Sockets"), LOC("Opens all 5 sockets on all equipment pieces in your inventory bag.")))
+        {
+            int modCount = 0;
+            if (game::Inventory::UnlockAllBagSockets(5, &modCount))
+                ui::Toast(LOC("Unlocked all sockets on %d bag/equipped items"), modCount);
+            else
+                ui::Toast(LOC("No equipment found in bag"));
+        }
+
+        if (ui::Option(LOC("Max Refine All Bag Gear (+10)"), LOC("Refines all weapons and armor in your inventory bag to +10.")))
+        {
+            int modCount = 0;
+            if (game::Inventory::RefineAllBagEquipment(10, &modCount))
+                ui::Toast(LOC("Refined %d bag/equipped items to +10"), modCount);
+            else
+                ui::Toast(LOC("No refinable equipment found in bag"));
         }
 
         const int n = game::Equipment::SlotCount();
@@ -736,7 +849,7 @@ namespace trinity::gui
                            LOC("Removes every abyss gear from this piece, leaving the sockets open.")))
             {
                 if (game::Equipment::ClearAll(si.tag))
-                    ui::Toast(LOC("All sockets cleared"));
+                    ui::Toast(LOC("All sockets cleared - open inventory to confirm"));
                 else
                     ui::Toast(LOC("Could not clear - see the log"));
             }
@@ -752,8 +865,11 @@ namespace trinity::gui
             {
                 s_eqRefine = lvl;
                 bool p = false;
+                const int charIdx = game::Equipment::GetActiveCharacter();
+                const char* charName = game::Equipment::CharacterName(charIdx);
                 if (game::Equipment::SetRefine(si.tag, lvl, &p))
-                    ui::Toast(p ? LOC("Refinement set") : LOC("Refinement set (this session)"));
+                    ui::Toast(p ? LOC("[%s] Refinement +%d set - visible in inventory now") : LOC("[%s] Refinement +%d set (auto-restored)"),
+                              charName, lvl);
                 else
                     ui::Toast(LOC("Could not set refinement - see the log"));
             }
@@ -764,6 +880,8 @@ namespace trinity::gui
                             LOC("Directly replace and equip any weapon, shield, or armor to this slot.")))
         {
             s_eqFind[0] = 0;
+            s_eqCategoryFilter = 0; // Default to matching slot
+            s_eqCharFilter = 1;     // Default to current character
             ui::ResetMenu("equipswap");
         }
 
@@ -830,8 +948,8 @@ namespace trinity::gui
 
         // 2. Category / Slot Filter
         static const char* const kCategoryFilters[] = {
-            "All Categories",
             "Matching Slot Only",
+            "All Equipment",
             "Weapons",
             "Shields & Off-Hand",
             "Armor",
@@ -853,6 +971,19 @@ namespace trinity::gui
         int shown = 0;
         for (int c = 0; c < nCats && shown < 200; ++c)
         {
+            const char* catName = game::Inventory::CatalogCategoryName(c);
+            if (!catName) continue;
+
+            // Only iterate through equipment categories in the Equip Swap menu
+            const bool isEquipCat = (
+                strstr(catName, "Weapon") || strstr(catName, "Shield") || strstr(catName, "Dagger") ||
+                strstr(catName, "Armor") || strstr(catName, "Helm") || strstr(catName, "Cloak") ||
+                strstr(catName, "Glove") || strstr(catName, "Boot") || strstr(catName, "Necklace") ||
+                strstr(catName, "Ring") || strstr(catName, "Earring") || strstr(catName, "Glasses") ||
+                strstr(catName, "Mask") || strstr(catName, "Riding")
+            );
+            if (!isEquipCat) continue;
+
             const int nItems = game::Inventory::CatalogItemCount(c);
             for (int i = 0; i < nItems && shown < 200; ++i)
             {
@@ -865,10 +996,14 @@ namespace trinity::gui
                     continue;
 
                 // Category & Slot Filter
-                if (s_eqCategoryFilter == 1) // Matching Slot Only
+                if (s_eqCategoryFilter == 0) // Matching Slot Only
                 {
                     if (!game::Equipment::IsItemForSlot(s_eqTag, it.typeId, it.name, it.key))
                         continue;
+                }
+                else if (s_eqCategoryFilter == 1) // All Equipment
+                {
+                    // passes through all equipment categories
                 }
                 else if (s_eqCategoryFilter == 2) // Weapons
                 {
@@ -902,10 +1037,9 @@ namespace trinity::gui
                 ++shown;
 
                 char desc[192];
-                const char* catName = game::Inventory::CatalogCategoryName(c);
                 snprintf(desc, sizeof(desc), "%s [%s]",
                          LOC("Equip to active slot - bypasses quest & class lock"),
-                         catName ? LOC(catName) : "");
+                         LOC(catName));
 
                 if (ui::OptionItem(it.name, it.icon[0] ? it.icon : nullptr, desc))
                 {
@@ -1209,6 +1343,8 @@ namespace trinity::gui
             const auto res = game::Teleport::TeleportToMarker(st.markerFallbackHeight);
             switch (res)
             {
+            case game::Teleport::MarkerStatus::Queued:
+                break;
             case game::Teleport::MarkerStatus::Success:
                 ui::Toast(LOC("Teleported to destination"));
                 break;
@@ -3153,6 +3289,14 @@ namespace trinity::gui
         // Detected Game Version Information
         const char* verStr = core::GetGameVersionDisplay();
         ui::Option(verStr, LOC("Game version automatically detected by Trinity engine."));
+
+        // Detected Controller Information
+        if (hooks::IsDualSenseConnected())
+        {
+            char ctrlBuf[128];
+            snprintf(ctrlBuf, sizeof(ctrlBuf), "%s: %s", LOC("Controller"), hooks::GetDualSenseName());
+            ui::Option(ctrlBuf, LOC("Native PlayStation DualSense / DualShock input active."));
+        }
 
         if (ui::Toggle(LOC("Auto Save Features"), &st.autoSave,
                        LOC("Saves your settings automatically and restores them next time.")))

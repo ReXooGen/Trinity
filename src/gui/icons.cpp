@@ -13,6 +13,7 @@
 #include "../core/logger.h"
 #include "../core/state.h"
 #include "../core/version_detect.h"
+#include "../hooks/xinput_hook.h"
 #include "../game/pak.h"
 #include "ps_atlas_raw.h"
 
@@ -469,7 +470,8 @@ namespace trinity::ui
         if (i <= 0 || i >= static_cast<int>(Icon::Count) || height <= 0.0f)
             return ImVec2(0, 0);
 
-        if (State::Get().playstationIcons && ic >= Icon::PadA && ic <= Icon::PadDpad)
+        const bool usePS = State::Get().playstationIcons || hooks::IsDualSenseConnected();
+        if (usePS && ic >= Icon::PadA && ic <= Icon::PadDpad)
         {
             // All PS icons in the raw atlas are 64x64 (aspect 1.0)
             return ImVec2(height, height);
@@ -486,7 +488,8 @@ namespace trinity::ui
         if (!g_ready || !dl || i <= 0 || i >= static_cast<int>(Icon::Count))
             return;
 
-        if (State::Get().playstationIcons && ic >= Icon::PadA && ic <= Icon::PadDpad)
+        const bool usePS = State::Get().playstationIcons || hooks::IsDualSenseConnected();
+        if (usePS && ic >= Icon::PadA && ic <= Icon::PadDpad)
         {
             const Atlas& a = g_atlas[A_PS_PAD];
             if (!a.tex || a.w <= 0 || a.h <= 0) return;

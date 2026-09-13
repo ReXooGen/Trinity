@@ -1,7 +1,7 @@
 # Complete Reverse Engineering & Binary Architecture Guide: Trinity Mod Menu
 > **Target Game**: Crimson Desert (BlackSpace Engine)  
 > **Mod Base**: Trinity Native ASI Mod (v1.2.4)  
-> **Cross-Version Coverage**: Title Update 1.10 – 1.18+ (Universal Backwards Compatibility)  
+> **Cross-Version Coverage**: Title Update 1.10 – **2.02.00** (PE 1.0.0.2850) (Universal Backwards Compatibility)  
 > **Author / Reference**: Lian
 
 ---
@@ -50,10 +50,11 @@ The engine executes two parallel internal worlds inside a single `CrimsonDesert.
 ```
 
 ### The Per-Thread TLS Realm Flag
-The engine determines which realm a thread is operating on via a flag in Thread Local Storage (TLS):
+The engine determines which realm a thread is operating on via a flag in Thread Local Storage (TLS). **The flag slot moved in TU 2.01 (PE rev >= 2760 / 1.0.0.2760+)**:
 ```cpp
-inline constexpr uintptr_t kOff_Teb_TlsPointer = 0x58; // TEB.ThreadLocalStoragePointer
-inline constexpr uintptr_t kTls_RealmFlag      = 498;  // u8: 0 = Client, 1 = Server
+inline constexpr uintptr_t kOff_Teb_TlsPointer = 0x58;  // TEB.ThreadLocalStoragePointer
+inline constexpr uintptr_t kTls_RealmFlag_TU201 = 509;  // u8: 0 = Client, 1 = Server (TU 2.01+ / PE rev >= 2760, 0x1FD)
+inline constexpr uintptr_t kTls_RealmFlag       = 498;  // u8: 0 = Client, 1 = Server (TU 2.00 and earlier, 0x1F2)
 ```
 
 > [!IMPORTANT]
@@ -103,17 +104,22 @@ struct CharMgrAnchor {
 };
 
 inline constexpr CharMgrAnchor kCharMgrAnchors[] = {
-    // sub_22E6330: mov rax,cs:G / mov rcx,[rax] / mov r8,[r8] / shr r8,20h
-    {"48 8B 05 ?? ?? ?? ?? 48 8B 08 4D 8B 00 49 C1 E8 20", 0},
-    // Modern Anchor (TU 1.17 - 1.18+): Reads struct offset +0x158
-    {"48 8B 05 ?? ?? ?? ?? 44 8B 81 58 01 00 00 48 8D 55 ?? 48 8B 08 E8", 0},
-    // Legacy Anchor (TU 1.10 - 1.16): Reads struct offset +0x160
-    {"48 8B 05 ?? ?? ?? ?? 44 8B 81 60 01 00 00 48 8D 55 ?? 48 8B 08 E8", 0},
-    // Fallback Anchor
-    {"48 8B 05 ?? ?? ?? ?? 44 8B 07 48 8D 54 24 ?? 48 8B 08 E8", 0},
+    // TU 2.01.00+ consensus anchors (all 9 uniquely verified against qword_146C29C88).
+    // Each anchor keys only on ABI-fixed bytes between the load and the call
+    // (`mov rcx,[rax]` = manager is arg1) plus literal struct offsets.
+    // movOff = offset of the 7-byte `mov rax,cs:<global>` within the match.
+    {"4D 8B 00 49 C1 E8 20 48 8D 54 24 ?? 48 8B 0D ?? ?? ?? ?? 48 8B 09 E8", 12},
+    {"44 8B 82 90 00 00 00 48 8D 54 24 ?? 48 8B 0D ?? ?? ?? ?? 48 8B 09 E8", 12},
+    {"44 8B 81 80 01 00 00 48 8D 55 ?? 48 8B 0D ?? ?? ?? ?? 48 8B 09 E8", 11},
+    {"45 8B 07 48 8D 55 ?? 48 8B 0D ?? ?? ?? ?? 48 8B 09 E8", 7},
+    {"44 8B 45 C0 48 8D 55 C8 48 8B 0D ?? ?? ?? ?? 48 8B 09 E8", 8},
+    {"44 8B C3 48 8D 54 24 58 48 8B 0D ?? ?? ?? ?? 48 8B 09 E8", 8},
+    {"45 8B 06 48 8D 54 24 30 48 8B 0D ?? ?? ?? ?? 48 8B 09 E8", 8},
+    {"44 8B 03 48 8D 54 24 30 48 8B 0D ?? ?? ?? ?? 48 8B 09 E8", 8},
+    {"C1 E8 20 48 8D 54 24 78 48 8B 0D ?? ?? ?? ?? 48 8B 09 E8", 8},
 };
 ```
-During initialization, all anchors vote on the target global address. The consensus address wins, preventing broken signatures in new patches from corrupting state.
+During initialization, all anchors vote on the target global address. The consensus address wins, preventing broken signatures in new patches from corrupting state. On TU 2.02.00 the related game-core global (`kSig_GameCoreGlobal`) had to be pinned to its true site by a 22-byte form — the old 11-byte shape matched 2 sites (one false positive) — and its RIP target preserved the recorded `charMgr − 0x528` relationship, confirming the `[rcx+0x58]` deref contract is unchanged.
 
 ---
 
@@ -209,13 +215,15 @@ void hkLocoStep(void* comp, float dt, float* vel, char a4, char a5, char a6, cha
 
 ### Cross-Version Binary Layout Comparison Table
 
-| Parameter / Offset | TU 1.10 – 1.15 | TU 1.16 | TU 1.17 – 1.18+ | Description |
-| :--- | :--- | :--- | :--- | :--- |
-| **Slot Stride** | `0xC0` (192 bytes) | `0xC8` (200 bytes) | `0xC8` (200 bytes) | Memory distance between items in bag array |
-| **`TrItemValue` Buffer** | `0xC0` (192 bytes) | `0x108` (264 bytes)| `0x108` (264 bytes)| Working allocation size for item values |
-| **Item Definition Array**| `table + 0x50` | `table + 0x50` | `table + 0x58` | Pointer array holding item definition rows |
-| **Abyss Sockets Pointer**| `+0x58` | `+0x58` | `+0x60` | Offset to 5-slot socket vector in item value |
-| **Bucket Type Offset** | `+0x410` | `+0x410` | `+0x418` | Category bucket type index inside container |
+| Parameter / Offset | TU 1.10 – 1.15 | TU 1.16 | TU 1.17 – 1.18+ | TU 2.00 | TU 2.01 – 2.02 | Description |
+| :--- | :--- | :--- | :--- | :--- | :--- | :--- |
+| **Slot Stride** | `0xC0` (192 bytes) | `0xC8` (200 bytes) | `0xC8` (200 bytes) | `0xC8` (200 bytes) | `0xC8` (200 bytes) | Memory distance between items in bag array |
+| **`TrItemValue` Buffer** | `0xC0` (192 bytes) | `0x108` (264 bytes)| `0x108` (264 bytes)| `0x108` (264 bytes)| `0x108` (264 bytes)| Working allocation size for item values |
+| **Item Definition Array**| `table + 0x50` | `table + 0x50` | `table + 0x58` | `table + 0x58` | `table + 0x58` | Pointer array holding item definition rows |
+| **Abyss Sockets Pointer**| `+0x58` | `+0x58` | `+0x60` | `+0x60` | `+0x60` | Offset to 5-slot socket vector in item value |
+| **Bucket Type Offset** | `+0x410` | `+0x410` | `+0x418` | **`+0x428`** | **`+0x428`** | Category bucket type index inside container |
+| **Equip Entry Stride** | — | — | `0xD0` (tag `+0xC8`) | `0xD0` (tag `+0xC8`) | `0xD0` (tag `+0xC8`), `0xC8`/`+0xC0` as scored fallback | Per-equipped-slot record in the equip component table |
+| **TLS Realm Flag** | `498` | `498` | `498` | `498` | **`509` (`0x1FD`)** | Client/server selector byte in TLS |
 
 ### Dynamic Slot Stride Dispatcher
 ```cpp
@@ -227,6 +235,12 @@ uintptr_t GetSlotStride()
     return 0xC8;     // 200 bytes on TU >= 1.16
 }
 ```
+
+### Bucket Type & Slot-Expansion Setter on TU 2.00+
+Since TU 2.00.00 (PE rev >= 2625) `GetItemDefBucketTypeOffset()` returns `0x428` (confirmed from `InvHolderInsert` / `InvCommitPlacement` binary audits). The engine's own slot-expansion setter kept its 5-arg prototype `f(holder, int* outErr, void* unused, u16 bucketType, u16 count)` through TU 2.01, then **TU 2.02 dropped the dead 3rd pointer arg**: `f(holder, int* outErr, u16 bucketType, u16 count)` — bucketType arrives in `r8` and count in `r9`. The detour prototype must match the target convention or MinHook's trampoline misroutes the registers. The legacy 5-arg signatures must never be tried while the 2.02 signature resolves (one of them lands on an unrelated function — the root cause of the "engine re-stamps vanilla expansion" bug).
+
+### The Free-Space Gate (Never Hooked)
+The "inventory full" pre-check before the insert planner (free = `(i16)cap(+0x14) - (i16)used(+0x12)` for non-stackables, a stack-max formula for stackables) has **no unique byte shape** in the 2.02 image (static hunts on the ~375 MB EXE found none — the refusal error is runtime-resolved). The mod keeps the gate inputs healthy instead: `RepairUsedSlots` recounts `used` downward to physical occupancy, and the anti-shrink guards in `ApplySlotCapToHolder` / `StampExpandOverride` keep expansion overrides in place.
 
 ### The 4-Step Anti-Save-Corruption Spawner Recipe
 Writing arbitrary bytes directly into empty inventory slots bricks save files because the item lacks an allocated tracking ID. Trinity spawns items using the official engine creation pipeline:
@@ -257,6 +271,10 @@ $$\text{Actor} \longrightarrow \text{*(*(actor + 0x68) + 0x38)} = \text{Equip Co
 * **Cross-Version Fallback**:
   * Modern TU 1.17+: Stack frame size `0x50` (`kSig_DyeApplyBatch`).
   * Legacy TU 1.10–1.16: Stack frame size `0x120` (`kSig_DyeApplyBatch_Legacy`).
+* **TU 2.02 Status**:
+  * `kSig_DyeApplyBatch` (VA `0x1409165D0`), `kSig_DyeUpsert` (`0x142355870`), `kSig_DyeVisualSet` (`0x1409170C0`) and `kSig_DyeVisualClear` (`0x140918770`) all carry over.
+  * The per-slot applier (`kSig_DyeApplySlot`) is a **false positive on 2.02**: it resolves to `0x142B41E60`, a hash/registry utility (the 2.02 ABI had also swapped args 3/4). Calling it with dye arguments corrupts the record buffer — the mount-dye freeze/crash. The per-slot path is disabled on 2.02; visuals ride on `DyeApplyBatch` (possessed player) and the visual-set leaves, data writes on `DyeUpsert`.
+  * `DyeRecordRemove` is gone as a standalone function: 2.02 inlined the channel scan into `DyeApplyBatch`'s clear branch and factored the record shift-out into a helper with a different `(vecWrapper, INDEX)` contract. The mod's in-place removal fallback covers the path.
 
 ### C. Abyss Sockets Architecture
 Each weapon and armor piece contains a 5-record socket structure:
@@ -284,13 +302,37 @@ Freezing time requires locking both layers:
 ### The Static PE Header Trap
 In Steam releases of Crimson Desert, Pearl Abyss leaves the Windows PE resource header `dwFileVersion` statically fixed at `1.0.0.2474` regardless of Title Updates. Relying on `GetFileVersionInfoW` results in false detections.
 
-### The Live Machine Code Fingerprint Solution
+### The PE Revision Ladder (TU 2.00+)
+From TU 2.00.00 onward the PE revision **does** move per title update, so Trinity reads it first and falls back to live machine-code fingerprinting only below `2625`:
+
+| PE Revision | Title Update |
+| :--- | :--- |
+| `1.0.0.2474` | TU 1.18.02 (static header value) |
+| `1.0.0.2625` | TU 2.00.00 |
+| `1.0.0.2658` | TU 2.00.01 |
+| `1.0.0.2692` | TU 2.00.02 |
+| `1.0.0.2760` | TU 2.01.00 |
+| `1.0.0.2850` | **TU 2.02.00** (detected at `revision >= 2800`) |
+
+### The Live Machine Code Fingerprint Solution (legacy fallback, TU <= 1.18)
 Trinity analyzes live assembly byte patterns in committed executable memory:
 ```cpp
 const bool hasModernDyeBatch = (mem::FindPattern(game::kSig_DyeApplyBatch) != 0);
 const bool hasLegacyDyeBatch = (mem::FindPattern(game::kSig_DyeApplyBatch_Legacy) != 0);
 
-if (hasModernDyeBatch) {
+if (g_versionInfo.revision >= 2800) {
+    g_versionInfo.tu = GameTU::TU_1_18_01_Plus;
+    snprintf(g_versionInfo.displayStr, sizeof(g_versionInfo.displayStr),
+             "Crimson Desert TU 2.02.00 (Active)");
+} else if (g_versionInfo.revision >= 2750) {
+    /* ... TU 2.01.00 ... */
+} else if (g_versionInfo.revision >= 2690) {
+    /* ... TU 2.00.02 ... */
+} else if (g_versionInfo.revision >= 2650) {
+    /* ... TU 2.00.01 ... */
+} else if (g_versionInfo.revision >= 2625) {
+    /* ... TU 2.00.00 ... */
+} else if (hasModernDyeBatch) {
     g_versionInfo.tu = GameTU::TU_1_18_01_Plus;
     snprintf(g_versionInfo.displayStr, sizeof(g_versionInfo.displayStr),
              "Crimson Desert TU 1.18.02 (Active)");
@@ -314,11 +356,16 @@ This section documents the exact memory offsets, struct layouts, and C++ impleme
 > The BlackSpace engine enforces a strict server-side sanity check on RPC transaction ledgers. Trust/Affinity multipliers that inject a massive instantaneous `delta` (e.g., > 20 points) during `FriendlySetNpc` trigger a ledger desynchronization, resulting in an immediate kick to the main menu.
 
 #### 1. Trust Record Layout
+The per-relationship record is 0x58 bytes and is copied by 4 SIMD stores at `+0x00/+0x20/+0x40/+0x50`:
+
 | Offset | Type | Description |
 | :--- | :--- | :--- |
 | `0x00` | `uint32_t` | Key (`0` = System baseline) |
 | `0x04` | `uint16_t` | Group (Faction/Family ID) |
-| `0x10` | `int64_t` | Absolute Trust Score Value |
+| `0x28` | `int64_t` | Absolute Trust Score Value (confirmed QWORD @ `+0x28` in TU 2.00; carried through TU 2.02) |
+
+> [!NOTE]
+> **TU 2.02 hook-site change**: the trust hook lands on the copy-loop tail's `vmovups [rcx+0x20],ymm1` store at sig+0x14. The 2.02 record-stride growth widened the `+0x40` copy from XMM to YMM (`0xF8` → `0xFC` bytes); Site A (`0x141E2C1F8`, SetNpc) and Site B (`0x14D87BE28`, SetPet) are byte-identical to each other.
 
 #### 2. Implementation Methodology
 To safely scale the trust gain without tripping the anti-cheat, we intercept the transaction, filter out internal system updates (`key == 0`), and strictly clamp the maximum `delta`:
@@ -402,10 +449,13 @@ void CallDyeApplySlot(...) {
 > Title Update 1.18+ shifted `TrItemValue` socket pointers by exactly 8 bytes. We now resolve this dynamically based on runtime binary fingerprinting.
 
 #### 1. Cross-Version Offsets
-| Target Field | Legacy (TU 1.10 - 1.16) | Modern (TU 1.18+) |
+| Target Field | Legacy (TU 1.10 - 1.16) | Modern (TU 1.18+ – 2.02) |
 | :--- | :--- | :--- |
 | `SocketData` | `+0x58` | `+0x60` |
 | `UnlockedCount`| `+0x68` | `+0x70` |
+
+> [!IMPORTANT]
+> **TU 2.02 Unlocked-Count Rule (unchanged)**: the unlocked-socket count at `+0x70` shares its DWORD with engine flags (live value `0xFFFFFF02`) — write the **LOW BYTE ONLY**. Also note `kSig_ResizeSocketVector_TU201` is unusable on 2.02 (the linker cloned the function 51×, all byte-identical); socket edits resolve through `EquipEffectRefresh` instead.
 
 #### 2. Triple Identification Strategy (TypeIDs)
 We abandoned string matching in favor of hardcoded weapon `TypeID` ranges to definitively identify characters regardless of language localization.

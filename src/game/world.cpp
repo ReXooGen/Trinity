@@ -452,46 +452,65 @@ namespace trinity::game
     {
         bool ok = true;
 
-        const uintptr_t bodyAddr = mem::FindPattern(kSig_FrameTimerBody);
-        if (bodyAddr)
+        uintptr_t funcEntry = 0;
+        const uintptr_t timerMatch = mem::FindPattern(kSig_FrameTimerBody);
+        if (timerMatch)
         {
-            uintptr_t funcEntry = 0;
-            // Scan backwards up to 0x80 bytes for function prologue (48 8B C4)
-            for (uintptr_t p = bodyAddr - 0x10; p >= bodyAddr - 0x80; --p)
+            const uint8_t* b = reinterpret_cast<const uint8_t*>(timerMatch);
+            if (b[0] == 0x48 && b[1] == 0x8B && b[2] == 0xC4)
             {
-                const uint8_t* b = reinterpret_cast<const uint8_t*>(p);
-                if (b[0] == 0x48 && b[1] == 0x8B && b[2] == 0xC4)
-                {
-                    funcEntry = p;
-                    break;
-                }
-            }
-
-            if (funcEntry)
-            {
-                g_frameTimerUpdateTarget = reinterpret_cast<void*>(funcEntry);
-                if (MH_CreateHook(g_frameTimerUpdateTarget, reinterpret_cast<void*>(&hkFrameTimerUpdate),
-                                  reinterpret_cast<void**>(&oFrameTimerUpdate)) == MH_OK &&
-                    MH_EnableHook(g_frameTimerUpdateTarget) == MH_OK)
-                {
-                    LOG_OK("world: FrameTimerUpdate hook installed @ 0x%p (true game time scale engine control).", g_frameTimerUpdateTarget);
-                }
-                else
-                {
-                    LOG_ERR("world: Failed to install FrameTimerUpdate hook.");
-                    g_frameTimerUpdateTarget = nullptr;
-                    ok = false;
-                }
+                funcEntry = timerMatch; // Direct function entry
             }
             else
             {
-                LOG_ERR("world: FrameTimerUpdate prologue not found from body match.");
+                // Scan backwards up to 0x100 bytes for function prologue (48 8B C4)
+                for (uintptr_t p = timerMatch - 0x10; p >= timerMatch - 0x100; --p)
+                {
+                    const uint8_t* pb = reinterpret_cast<const uint8_t*>(p);
+                    if (pb[0] == 0x48 && pb[1] == 0x8B && pb[2] == 0xC4)
+                    {
+                        funcEntry = p;
+                        break;
+                    }
+                }
+            }
+        }
+        else
+        {
+            const uintptr_t legacyBody = mem::FindPattern(kSig_FrameTimerBody_Legacy);
+            if (legacyBody)
+            {
+                for (uintptr_t p = legacyBody - 0x10; p >= legacyBody - 0x100; --p)
+                {
+                    const uint8_t* pb = reinterpret_cast<const uint8_t*>(p);
+                    if (pb[0] == 0x48 && pb[1] == 0x8B && pb[2] == 0xC4)
+                    {
+                        funcEntry = p;
+                        break;
+                    }
+                }
+            }
+        }
+
+        if (funcEntry)
+        {
+            g_frameTimerUpdateTarget = reinterpret_cast<void*>(funcEntry);
+            if (MH_CreateHook(g_frameTimerUpdateTarget, reinterpret_cast<void*>(&hkFrameTimerUpdate),
+                              reinterpret_cast<void**>(&oFrameTimerUpdate)) == MH_OK &&
+                MH_EnableHook(g_frameTimerUpdateTarget) == MH_OK)
+            {
+                LOG_OK("world: FrameTimerUpdate hook installed @ 0x%p (true game time scale engine control).", g_frameTimerUpdateTarget);
+            }
+            else
+            {
+                LOG_ERR("world: Failed to install FrameTimerUpdate hook.");
+                g_frameTimerUpdateTarget = nullptr;
                 ok = false;
             }
         }
         else
         {
-            LOG_ERR("world: FrameTimerBody signature not found - Game Speed disabled.");
+            LOG_ERR("world: FrameTimerUpdate signature not found - Game Speed disabled.");
             ok = false;
         }
 
@@ -508,10 +527,14 @@ namespace trinity::game
         // which holds the numeric clock)...
         // Independent of both the globals above and Game Speed - each can drift
         // without disabling the others.
-        if (!mem::InstallHook("world: field-time tick", kSig_FieldTimeTick,
-                              "Freeze Time of Day disabled", hkFieldTimeTick,
-                              &oFieldTimeTick, &g_fieldTimeTickTarget))
-            ok = false;
+        if (!mem::InstallHook("world: field-time tick", kSig_FieldTimeTick, "",
+                              hkFieldTimeTick, &oFieldTimeTick, &g_fieldTimeTickTarget))
+        {
+            if (!mem::InstallHook("world: field-time tick (legacy)", kSig_FieldTimeTick_Legacy,
+                                  "Freeze Time of Day disabled", hkFieldTimeTick,
+                                  &oFieldTimeTick, &g_fieldTimeTickTarget))
+                ok = false;
+        }
 
         // ...and the render-manager clamp holds the visible SUN (the field-time
         // tick alone does not - the sun rides its own accumulator). Resolve the
@@ -552,9 +575,13 @@ namespace trinity::game
         mem::InstallHook("world: dust intensity", kSig_WeatherDust,
                          "Dust control disabled", hkGetDustIntensity,
                          &oGetDustIntensity, &g_dustIntensityTarget);
-        mem::InstallHook("world: wind pack", kSig_WindPack,
-                         "Cloud and Fog control disabled", hkWindPack,
-                         &oWindPack, &g_windPackTarget);
+        if (!mem::InstallHook("world: wind pack", kSig_WindPack, "",
+                              hkWindPack, &oWindPack, &g_windPackTarget))
+        {
+            mem::InstallHook("world: wind pack (legacy)", kSig_WindPack_Legacy,
+                             "Cloud and Fog control disabled", hkWindPack,
+                             &oWindPack, &g_windPackTarget);
+        }
 
         // Safe EnvManager pointer resolution for Atmosphere & Weather (Zero hooks)
         {

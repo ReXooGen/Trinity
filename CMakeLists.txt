@@ -75,6 +75,7 @@ add_library(Trinity SHARED
     src/hooks/dx12_hook.cpp
     src/hooks/input.cpp
     src/hooks/xinput_hook.cpp
+    src/hooks/dualsense.cpp
     src/gui/framework.cpp
     src/gui/widgets.cpp
     src/gui/icons.cpp
@@ -85,7 +86,7 @@ add_library(Trinity SHARED
 target_include_directories(Trinity PRIVATE src)
 # Resolve #include "core/version.h" from the .rc via an explicit /I for the RC compiler.
 target_include_directories(Trinity PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/src)
-target_link_libraries(Trinity PRIVATE imgui minhook d3d12 dxgi dwmapi imm32 xinput9_1_0 version)
+target_link_libraries(Trinity PRIVATE imgui minhook d3d12 dxgi dwmapi imm32 xinput9_1_0 version hid setupapi)
 target_compile_definitions(Trinity PRIVATE
     WIN32_LEAN_AND_MEAN
     NOMINMAX

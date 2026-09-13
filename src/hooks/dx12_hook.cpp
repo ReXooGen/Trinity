@@ -14,6 +14,7 @@
 #include "xinput_hook.h"
 #include "hdr_composite_shader.h"
 #include "../core/logger.h"
+#include "../core/localization.h"
 #include "../core/settings.h"
 #include "../core/state.h"
 #include "../game/player.h"
@@ -834,7 +835,7 @@ namespace trinity::hooks
         if (frame.fenceValue != 0 && g_fence->GetCompletedValue() < frame.fenceValue)
         {
             g_fence->SetEventOnCompletion(frame.fenceValue, g_fenceEvent);
-            WaitForSingleObject(g_fenceEvent, 1000);
+            WaitForSingleObject(g_fenceEvent, 2000);
         }
 
         frame.commandAllocator->Reset();
@@ -1422,24 +1423,15 @@ namespace trinity::hooks
         factory->Release();
     }
 
-    // Arm DRED so a later device removal is diagnosable. MUST run before the game
-    // creates its D3D12 device - we do, because the ASI loader (winmm.dll) injects
-    // us at process start, well ahead of the engine's renderer init. Global process
-    // setting: applies to the device the game subsequently creates. Cheap; the
-    // breadcrumb ring adds negligible overhead. See DumpDred.
+    // Arm DRED so a later device removal is diagnosable. Page fault tracking is enabled,
+    // while auto-breadcrumbs are kept non-forced to avoid stalling NVIDIA DLSS Frame Generation / Optical Flow.
     static void EnableDredIfAvailable()
     {
         ID3D12DeviceRemovedExtendedDataSettings* dred = nullptr;
         if (SUCCEEDED(D3D12GetDebugInterface(IID_PPV_ARGS(&dred))) && dred)
         {
-            dred->SetAutoBreadcrumbsEnablement(D3D12_DRED_ENABLEMENT_FORCED_ON);
             dred->SetPageFaultEnablement(D3D12_DRED_ENABLEMENT_FORCED_ON);
             dred->Release();
-            LOG("DRED armed - a device removal will report GPU breadcrumbs + page faults.");
-        }
-        else
-        {
-            LOG("DRED unavailable on this system - device-removed causes stay opaque.");
         }
     }
 

@@ -55,10 +55,30 @@ namespace trinity::game
         static uintptr_t GetActor(int index);
         static uintptr_t GetOwner(int index = 0);
         static int GetTrackedPlayerCount();
+        static int GetActiveCharacterIdx();
+        static uintptr_t GetCharMgrGlobal();
+        static uintptr_t GetProfileOwner(int index);
+        static uintptr_t GetProfileActor(int index);
+        static uintptr_t GetProfileEquipComp(int index);
 
         // Active mount / vehicle actor tracking (Horse, Dragon, Wagon, Mount).
+        struct MountDescriptor
+        {
+            uintptr_t actor = 0;
+            uintptr_t owner = 0;
+            uintptr_t equipComp = 0;
+            float     distance = 0.0f;
+            bool      isRidden = false;
+            bool      hasHorseGear = false;
+            char      name[64] = {};
+            char      gearSummary[64] = {};
+            char      label[128] = {};
+        };
+
         static uintptr_t GetMountActor(int index = 0);
+        static uintptr_t GetMountOwner(int index = 0);
         static int GetTrackedMountCount();
+        static bool GetMountDescriptor(int index, MountDescriptor* out);
 
         // DEBUG: dump every player-ish character in the manager vector to the
         // console - class tag, vtable, possessor round-trip, vital-chain status

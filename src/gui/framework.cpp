@@ -431,7 +431,7 @@ namespace trinity::ui
         static ULONGLONG s_nextRetry = 0;
 
         const ULONGLONG now = GetTickCount64();
-        if (!s_connected && now < s_nextRetry)
+        if (!s_connected && now < s_nextRetry && !hooks::IsDualSenseConnected())
             return false;
 
         ZeroMemory(&out, sizeof(out));

@@ -24,7 +24,23 @@ namespace trinity::game
     //    save-data sublist we do not reproduce, so it reverts on reload.
     //
     // The equip component is reached by the same per-realm walk the dye editor
-    // uses, off each realm's player character (Inventory::Client/ServerCharacterAddr).
+    // Equipment components are owned by the outer gameplay-character object;
+    // the inner actor is only a fallback for older captures.
+    inline uintptr_t PreferEquipmentOwner(uintptr_t owner, uintptr_t actor)
+    {
+        return actor ? actor : owner;
+    }
+
+    // A recognized equipment identity wins over runtime party ordering;
+    // party position is only a fallback for an unidentified component.
+    inline bool AcceptCharacterComponent(int selectedIndex, int identifiedIndex, int partyIndex)
+    {
+        if (selectedIndex < 0 || selectedIndex > 2) return false;
+        if (identifiedIndex >= 0)
+            return identifiedIndex == selectedIndex;
+        return partyIndex == selectedIndex;
+    }
+
     class Equipment
     {
     public:
@@ -34,6 +50,7 @@ namespace trinity::game
         // True once the client equip component reads back sane (i.e. the player
         // has loaded into the world). Mirrors Dye::Ready().
         static bool Ready();
+        static void ForceRefresh();
 
         // True once the server-authority equip component is resolvable, i.e.
         // add/clear edits will persist. Until then they apply visually but a
@@ -44,6 +61,8 @@ namespace trinity::game
         static void        SetActiveCharacter(int index);
         static int         GetActiveCharacter();
         static const char* CharacterName(int index);
+        static uintptr_t   ClientCompFor(int charIdx);
+        static uintptr_t   ServerCompFor(int charIdx);
         static bool        IsItemForCharacter(int charIdx, uint16_t typeId, const char* name = nullptr, const char* key = nullptr);
         static bool        IsItemForSlot(uint16_t slotTag, uint16_t typeId, const char* name = nullptr, const char* key = nullptr);
         static const char* SlotNameForTag(uint16_t tag);
@@ -142,6 +161,10 @@ namespace trinity::game
         // Force unlock all sockets (all 5 sockets) on every equipped gear
         static bool UnlockAllGears(int* unlockedCount = nullptr);
 
+        // Direct low-level entry socket vector management
+        static uintptr_t EnsureSocketVector(uintptr_t entry);
+        static void      OpenAllSockets(uintptr_t entry, int maxSock = 5);
+
         // --- Persistent Disk Profiles (Auto-Saved & Auto-Restored) ----------
         static void SaveEquipProfilesToDisk();
         static void LoadEquipProfilesFromDisk();
@@ -155,5 +178,6 @@ namespace trinity::game
         // Driven from the same per-frame game-thread driver as Dye::Tick();
         // never call from the render thread.
         static void Tick();
+        static void TriggerEquipEffectRefresh(uintptr_t targetComp = 0);
     };
 }
