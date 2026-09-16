@@ -1,4 +1,5 @@
 #include "inventory.h"
+#include "inventory_scan.h"
 
 #include <Windows.h>
 #include <atomic>
@@ -17,6 +18,7 @@
 #include "offsets.h"
 #include "player.h"
 #include "equipment.h"
+#include "equipment_table.h"
 #include "dye.h"
 #include "item_names.h"
 #include "../mem/scanner.h"
@@ -247,7 +249,8 @@ namespace trinity::game
         // All periodic container writes (RepairUsedSlots, SetAllSlotSizes, etc.)
         // must check this flag and SKIP to avoid racing with quest/trade/reward
         // transactions that read container metadata for packet validation.
-        std::atomic<bool> g_commitActive{false};
+        std::atomic<unsigned> g_commitActive{0}; // nesting/concurrent hook depth
+        std::atomic<uint64_t> g_inventoryMutation{1};
 
         void EnsureTablesResolved();
 
@@ -1577,60 +1580,50 @@ namespace trinity::game
 
             const ULONGLONG now     = GetTickCount64();
             const uintptr_t cached  = g_serverHolder.load(std::memory_order_acquire);
+            const uintptr_t cachedC = g_serverContainer.load(std::memory_order_acquire);
             // 1. Fast path: if cached holder is valid and mirrors client buckets
-            if (cached && cached != clientH && HolderLooksValid(cached) && HolderBucketCount(cached) == want)
+            if (cached && cached != clientH && cachedC != clientC && IsLiveCharacter(cachedC) &&
+                HolderForContainer(cachedC) == cached && HolderBucketCount(cached) == want)
             {
                 g_serverTick.store(now, std::memory_order_relaxed);
                 return cached;
             }
 
             // 2. Scan candidate list captured from engine commits
+            static SRWLOCK scanLock = SRWLOCK_INIT;
+            if (!TryAcquireSRWLockExclusive(&scanLock)) return 0;
+            struct UnlockScan { SRWLOCK* lock; ~UnlockScan() { ReleaseSRWLockExclusive(lock); } } unlock{&scanLock};
+            static ULONGLONG nextScan = 0;
+            static uintptr_t scanClient = 0, scanData = 0;
+            static uint32_t scanIndex = 0;
+            if (scanClient != clientC) { scanClient = clientC; scanData = 0; scanIndex = 0; }
+            if (now < nextScan) return 0;
+            nextScan = now + 100;
             Candidate snap[kMaxCandidates] = {};
             const int n = SnapshotCandidates(snap);
             for (int i = 0; i < n; ++i)
             {
                 const uintptr_t c = snap[i].container;
-                if (!c || c == clientC) continue;
+                if (!c || c == clientC || !IsLiveCharacter(c)) continue;
 
                 uintptr_t h = HolderForContainer(c);
-                if (!h) h = snap[i].holder; // walk did not apply; captured pair is all we have
                 if (!h || h == clientH) continue;
                 if (!HolderLooksValid(h)) continue;
-                if (HolderBucketCount(h) != want && HolderBucketCount(h) < 1) continue;
+                if (HolderBucketCount(h) != want) continue;
                 g_serverHolder.store(h, std::memory_order_release);
                 g_serverContainer.store(c, std::memory_order_release);
                 g_serverTick.store(now, std::memory_order_relaxed);
                 return h;
             }
 
-            // 3. Fallback: if cached holder is still valid in memory, keep it!
-            if (cached && cached != clientH && HolderLooksValid(cached))
-            {
-                return cached;
-            }
-
-            // 4. Any valid candidate holder distinct from client
-            for (int i = 0; i < n; ++i)
-            {
-                const uintptr_t c = snap[i].container;
-                if (!c || c == clientC) continue;
-                uintptr_t h = snap[i].holder ? snap[i].holder : HolderForContainer(c);
-                if (h && h != clientH && HolderLooksValid(h))
-                {
-                    g_serverHolder.store(h, std::memory_order_release);
-                    g_serverContainer.store(c, std::memory_order_release);
-                    return h;
-                }
-            }
-
-            // 5. Proactive search across tracked characters and CharacterManager list
+            // Proactive search uses the same liveness checks as captures.
             for (int p = 0; p < 3; ++p)
             {
                 const uintptr_t own = Player::GetOwner(p);
-                if (own && own != clientC)
+                if (own && own != clientC && IsLiveCharacter(own))
                 {
                     uintptr_t h = HolderForContainer(own);
-                    if (h && h != clientH && HolderLooksValid(h))
+                    if (h && h != clientH && HolderBucketCount(h) == want)
                     {
                         g_serverHolder.store(h, std::memory_order_release);
                         g_serverContainer.store(own, std::memory_order_release);
@@ -1639,10 +1632,10 @@ namespace trinity::game
                     }
                 }
                 const uintptr_t act = Player::GetActor(p);
-                if (act && act != clientC)
+                if (act && act != clientC && IsLiveCharacter(act))
                 {
                     uintptr_t h = HolderForContainer(act);
-                    if (h && h != clientH && HolderLooksValid(h))
+                    if (h && h != clientH && HolderBucketCount(h) == want)
                     {
                         g_serverHolder.store(h, std::memory_order_release);
                         g_serverContainer.store(act, std::memory_order_release);
@@ -1663,11 +1656,14 @@ namespace trinity::game
                     if (ReadPtr(mgr + kOff_CharMgr_ListData, &data) && data >= kMinPointer &&
                         Read32(mgr + kOff_CharMgr_ListCount, &cCount) && cCount > 0 && cCount <= kCharList_MaxCount)
                     {
-                        for (uint32_t i = 0; i < cCount; ++i)
+                        if (scanData != data) { scanData = data; scanIndex = 0; }
+                        for (uint32_t inspected = 0; inspected < cCount && inspected < 64; ++inspected)
                         {
+                            if (scanIndex >= cCount) scanIndex = 0;
+                            const uint32_t i = scanIndex++;
                             uintptr_t candOwner = 0;
                             if (ReadPtr(data + static_cast<uintptr_t>(i) * 8, &candOwner) &&
-                                candOwner >= kMinPointer && candOwner != clientC)
+                                candOwner >= kMinPointer && candOwner != clientC && IsLiveCharacter(candOwner))
                             {
                                 uint64_t td = 0;
                                 uint8_t tag = 0;
@@ -1677,7 +1673,7 @@ namespace trinity::game
                                     if (((tag - 1) & 0xF7) == 0 || tag == 4 || tag == 59 || tag == 0x3B)
                                     {
                                         uintptr_t h = HolderForContainer(candOwner);
-                                        if (h && h != clientH && HolderLooksValid(h))
+                                        if (h && h != clientH && HolderBucketCount(h) == want)
                                         {
                                             g_serverHolder.store(h, std::memory_order_release);
                                             g_serverContainer.store(candOwner, std::memory_order_release);
@@ -1717,8 +1713,9 @@ namespace trinity::game
                 g_holder.store(walked, std::memory_order_release);
                 return walked;
             }
-            const uintptr_t h = g_holder.load(std::memory_order_relaxed);
-            return HolderLooksValid(h) ? h : 0;
+            // Readability is not current-world provenance after a reload.
+            // A missing native chain must not revive the old captured holder.
+            return 0;
         }
 
         // TU 2.00 diagnostics: dump the live holder's bucket table (count, each
@@ -1855,7 +1852,9 @@ namespace trinity::game
             int keep = 0;
             for (int i = 0; i < cnt; ++i)
             {
-                if (now - g_cand[i].tick > kCandGraceMs && !HolderLooksValid(g_cand[i].holder))
+                if (now - g_cand[i].tick > kCandGraceMs &&
+                    (!HolderLooksValid(g_cand[i].holder) ||
+                     HolderForContainer(g_cand[i].container) != g_cand[i].holder))
                     continue;
                 g_cand[keep++] = g_cand[i];
             }
@@ -1887,6 +1886,13 @@ namespace trinity::game
                 cnt = g_candCount.load(std::memory_order_relaxed);
             }
             if (at < 0 && cnt < kMaxCandidates) at = cnt;
+            if (at < 0 && cnt == kMaxCandidates)
+            {
+                // Readable old heap objects must not block captures from a new load.
+                at = 0;
+                for (int i = 1; i < cnt; ++i)
+                    if (g_cand[i].tick < g_cand[at].tick) at = i;
+            }
             if (at >= 0)
             {
                 g_cand[at].container = c;
@@ -1906,14 +1912,6 @@ namespace trinity::game
             uintptr_t c = 0;
             ReadPtr(h + kOff_InvHolder_Container, &c);
 
-            const uintptr_t clientH = CurrentHolder();
-            if (h != clientH)
-            {
-                g_serverHolder.store(h, std::memory_order_release);
-                if (c >= kMinPointer)
-                    g_serverContainer.store(c, std::memory_order_release);
-            }
-
             const ULONGLONG now = GetTickCount64();
             EnterCriticalSection(&g_candLock);
             int cnt = g_candCount.load(std::memory_order_relaxed);
@@ -1932,6 +1930,12 @@ namespace trinity::game
                 cnt = g_candCount.load(std::memory_order_relaxed);
             }
             if (at < 0 && cnt < kMaxCandidates) at = cnt;
+            if (at < 0 && cnt == kMaxCandidates)
+            {
+                at = 0;
+                for (int i = 1; i < cnt; ++i)
+                    if (g_cand[i].tick < g_cand[at].tick) at = i;
+            }
             if (at >= 0)
             {
                 g_cand[at].container = c;
@@ -1947,15 +1951,15 @@ namespace trinity::game
                                   void* out, uint8_t a6, uint8_t a7)
         {
             if (!oCommit) return nullptr;
+            g_commitActive.fetch_add(1, std::memory_order_acq_rel);
             __try
             {
-                NoteHolder(holder);
+                __try { NoteHolder(holder); } __except (EXCEPTION_EXECUTE_HANDLER) {}
+                void* ret = oCommit(holder, err, a3, items, out, a6, a7);
+                __try { NoteHolder(holder); } __except (EXCEPTION_EXECUTE_HANDLER) {}
+                return ret;
             }
-            __except (EXCEPTION_EXECUTE_HANDLER) {}
-            g_commitActive.store(true, std::memory_order_release);
-            void* ret = oCommit(holder, err, a3, items, out, a6, a7);
-            g_commitActive.store(false, std::memory_order_release);
-            return ret;
+            __finally { g_inventoryMutation.fetch_add(1, std::memory_order_release); g_commitActive.fetch_sub(1, std::memory_order_release); }
         }
 
         // --- The holder-insert hook: second capture path ---------------------
@@ -1963,11 +1967,15 @@ namespace trinity::game
                                         uint16_t a5, void* a6, uint8_t a7, uint8_t a8, uint8_t a9)
         {
             if (!oHolderInsert) return nullptr;
-            __try { NoteContainer(container); } __except (EXCEPTION_EXECUTE_HANDLER) {}
-            g_commitActive.store(true, std::memory_order_release);
-            void* ret = oHolderInsert(bucket, err, container, itemArr, a5, a6, a7, a8, a9);
-            g_commitActive.store(false, std::memory_order_release);
-            return ret;
+            g_commitActive.fetch_add(1, std::memory_order_acq_rel);
+            __try
+            {
+                __try { NoteContainer(container); } __except (EXCEPTION_EXECUTE_HANDLER) {}
+                void* ret = oHolderInsert(bucket, err, container, itemArr, a5, a6, a7, a8, a9);
+                __try { NoteContainer(container); } __except (EXCEPTION_EXECUTE_HANDLER) {}
+                return ret;
+            }
+            __finally { g_inventoryMutation.fetch_add(1, std::memory_order_release); g_commitActive.fetch_sub(1, std::memory_order_release); }
         }
 
         bool OverrideExpandForType(uint16_t type, int value, uint16_t* out,
@@ -2132,51 +2140,22 @@ namespace trinity::game
                 if (!ReadPtr(bucket + kOff_InvBucket_Slots, &slots) || slots < kMinPointer) continue;
                 if (!Read16(bucket + kOff_InvBucket_Count, &scount) || scount > 4096) continue;
 
+                // Count only; item attributes must never be reinitialized here.
                 uint16_t occ = 0;
+                bool complete = true;
                 for (uint16_t i = 0; i < scount; ++i)
                 {
                     const uintptr_t slot = slots + static_cast<uintptr_t>(i) * SlotStride();
                     uint16_t tid = 0;
                     int64_t  qty = 0;
-                    if (!Read16(slot + kOff_InvSlot_TypeId, &tid) || tid == kInvSlot_EmptyType || tid == 0) continue;
-                    if (!Read64(slot + kOff_InvSlot_Quantity, &qty) || qty <= 0) continue;
+                    if (!Read16(slot + kOff_InvSlot_TypeId, &tid)) { complete = false; break; }
+                    if (tid == kInvSlot_EmptyType || tid == 0) continue;
+                    if (!Read64(slot + kOff_InvSlot_Quantity, &qty)) { complete = false; break; }
+                    if (qty <= 0) continue;
                     ++occ;
-
-                    // Auto-heal corrupted gear item attributes (missing subtype / 0 durability / deactivated state)
-                    EnsureTablesResolved();
-                    if (g_itemTableGlobal)
-                    {
-                        uintptr_t def = 0;
-                        if (DefForRow(g_itemTableGlobal, tid, &def) && def >= kMinPointer)
-                        {
-                            uint16_t sub = 0;
-                            Read16(slot + kOff_ItemVal_Subtype, &sub);
-                            uint16_t defSub = 0;
-                            Read16(def + 0x218, &defSub);
-
-                            uint16_t maxD = 0, curD = 0;
-                            Read16(slot + 0x40, &maxD);
-                            Read16(slot + 0x42, &curD);
-                            uint16_t defD = 0;
-                            Read16(def + 0x400, &defD);
-
-                            uint16_t st = 0;
-                            Read16(slot + 0xA0, &st);
-
-                            if (defSub != 0 && sub == 0)
-                                Write16(slot + kOff_ItemVal_Subtype, defSub);
-                            if (defD > 0 && (maxD == 0 || curD == 0))
-                            {
-                                Write16(slot + 0x40, defD);
-                                Write16(slot + 0x42, defD);
-                            }
-                            if (st == 0 && (defSub != 0 || defD > 0))
-                                Write16(slot + 0xA0, 1);
-                        }
-                    }
                 }
 
-                if (occ != used)
+                if (complete && occ < used && !g_commitActive.load(std::memory_order_acquire))
                     Write16(bucket + kOff_InvBucket_UsedSlots, occ);
             }
         }
@@ -2351,22 +2330,17 @@ namespace trinity::game
             return oEvaluateCrimeWantedState ? oEvaluateCrimeWantedState(wantedMgr, actorCtx) : 0;
         }
 
-        using RegisterCrimeEvent_t = uint8_t(__fastcall*)(void* wantedMgr, uint32_t crimeId, void* outInfo, void* a4);
-        RegisterCrimeEvent_t oRegisterCrimeEvent = nullptr;
-        void* g_registerCrimeTarget = nullptr;
-
-        uint8_t __fastcall hkRegisterCrimeEvent(void* wantedMgr, uint32_t crimeId, void* outInfo, void* a4)
-        {
-            const State& st = State::Get();
-            if (st.noBounty)
-            {
-                // Completely suppress Murder, Assault, Theft, and Property Destruction:
-                // Prevents the on-screen "Crime: Murder" / "Crime: Assault" banner,
-                // prevents the minimap red wanted circle, and keeps guards 100% peaceful!
-                return 0;
-            }
-            return oRegisterCrimeEvent ? oRegisterCrimeEvent(wantedMgr, crimeId, outInfo, a4) : 0;
-        }
+        // REMOVED (v1.4.5): RegisterCrimeEvent hook was misidentified.
+        // The function at CrimsonDesert.exe+0x1E4F170 receives a 64-bit C-string
+        // pointer in RDX (crime name), not a uint32_t crimeId. The compiled
+        // wrapper truncated the pointer (mov esi,edx / mov edx,esi), causing
+        // read access violation at 0x1E4F217 during world loading when the
+        // engine dereferenced the truncated pointer.
+        //
+        // This function is called during ordinary world loading (not just crime),
+        // so suppressing it with No Bounty OFF still crashes. The separate
+        // wanted-state evaluator and WantedInfo bounty-price handling remain
+        // unchanged and provide the No Bounty feature without this hook.
     }
 
     bool Inventory::Install()
@@ -2375,9 +2349,10 @@ namespace trinity::game
                          "Witnessed/Assault crime bypass disabled",
                          &hkEvaluateCrimeWantedState, &oEvaluateCrimeWantedState, &g_evalWantedTarget, 0);
 
-        mem::InstallHook("world: register-crime-event", kSig_RegisterCrimeEvent,
-                         "Crime event dispatch & UI banner bypass disabled",
-                         &hkRegisterCrimeEvent, &oRegisterCrimeEvent, &g_registerCrimeTarget, 0);
+        // REMOVED (v1.4.5): register-crime-event hook misidentified the target
+        // function signature (uint32_t vs const char*), causing pointer truncation
+        // and crash at 0x1E4F217 during world loading. No Bounty feature still
+        // works via hkEvaluateCrimeWantedState above.
 
         if (!mem::InstallHook("inventory: item-count accessor", kSig_InvGetItemQty, nullptr,
                               &hkGetItemQty, &oGetItemQty, &g_qtyTarget, 4))
@@ -2593,7 +2568,7 @@ namespace trinity::game
         mem::RemoveHook(&g_expandTarget); // after the restore above, which
                                           // still calls its trampoline
         mem::RemoveHook(&g_evalWantedTarget);
-        mem::RemoveHook(&g_registerCrimeTarget);
+        // REMOVED (v1.4.5): g_registerCrimeTarget no longer exists
         g_holder.store(0);
         g_serverHolder.store(0);
         g_serverContainer.store(0);
@@ -2616,10 +2591,6 @@ namespace trinity::game
 
         const uintptr_t holder = CurrentHolder();
         if (!holder) return;
-
-        RepairUsedSlots(holder);
-        const uintptr_t sh = ServerHolder();
-        if (sh) RepairUsedSlots(sh);
 
         uintptr_t buckets = 0;
         uint32_t  bcount  = 0;
@@ -3248,16 +3219,6 @@ namespace trinity::game
         if (ApplySlotCapToHolder(CurrentHolder(), enable, v)) any = true;
         if (ApplySlotCapToHolder(ServerHolder(), enable, v))  any = true;
 
-        Candidate snap[kMaxCandidates] = {};
-        const int n = SnapshotCandidates(snap);
-        for (int i = 0; i < n; ++i)
-        {
-            if (snap[i].holder && HolderLooksValid(snap[i].holder))
-            {
-                if (ApplySlotCapToHolder(snap[i].holder, enable, v)) any = true;
-            }
-        }
-
         // Restores are one-shot: once every live bucket has been put back,
         // the captures have served their purpose, and holding them would only
         // let a recycled address hand a stale expansion to a later load.
@@ -3282,93 +3243,118 @@ namespace trinity::game
             char     key[64]{};
             char     icon[96]{};
         };
-        static std::vector<TrackedItemState> g_trackedItems;
-        static bool g_hasInitialTrackerState = false;
-
         void TrackInventoryChanges()
         {
-            if (!Player::Ready()) return;
+            static InventoryScan scan{};
+            static std::map<uint16_t, int64_t> previous, current;
+            static uintptr_t previousHolder = 0, previousWorld = 0;
+            static bool initialized = false;
+            static bool comparing = false;
+            static std::map<uint16_t, int64_t>::const_iterator compareAt;
+            static ULONGLONG nextLap = 0;
+            if (!Player::Ready()) { scan = {}; current.clear(); initialized = comparing = false; return; }
+            if (Inventory::IsTransactionActive()) return;
+            const ULONGLONG now = GetTickCount64();
+            if (now < nextLap) return;
             const uintptr_t holder = CurrentHolder();
-            if (!holder) return;
-
-            uintptr_t buckets = 0;
-            uint32_t  bcount  = 0;
-            if (!ReadPtr(holder + kOff_InvHolder_Buckets, &buckets) || buckets < kMinPointer) return;
-            if (!Read32(holder + kOff_InvHolder_Count, &bcount) || bcount == 0 || bcount > 4096) return;
-
-            std::map<uint16_t, TrackedItemState> currentItems;
-            for (uint32_t b = 0; b < bcount; ++b)
+            const uintptr_t world = Player::GetControlledOwner();
+            const uint64_t mutation = g_inventoryMutation.load(std::memory_order_acquire);
+            if (holder != previousHolder || world != previousWorld)
             {
-                uintptr_t bucket = 0;
-                if (!ReadPtr(buckets + static_cast<uintptr_t>(b) * 8, &bucket)) break;
-                if (bucket < kMinPointer) continue;
-                uintptr_t slots = 0;
-                uint16_t  scount = 0;
-                if (!ReadPtr(bucket + kOff_InvBucket_Slots, &slots) || slots < kMinPointer) continue;
-                if (!Read16(bucket + kOff_InvBucket_Count, &scount) || scount == 0 || scount > 8192) continue;
-
-                for (uint16_t i = 0; i < scount; ++i)
-                {
-                    const uintptr_t slot = slots + static_cast<uintptr_t>(i) * SlotStride();
+                previousHolder = holder; previousWorld = world;
+                initialized = comparing = false; previous.clear(); current.clear(); scan = {};
+            }
+            if (!comparing)
+            {
+                if (!scan.Bind(holder, SlotStride(), mutation)) { scan = {}; current.clear(); return; }
+                const auto result = scan.Slice([&](uintptr_t slot) {
                     uint16_t tid = 0;
-                    int64_t  qty = 0;
-                    if (!Read16(slot + kOff_InvSlot_TypeId, &tid) || tid == kInvSlot_EmptyType || tid == 0) continue;
-                    if (!Read64(slot + kOff_InvSlot_Quantity, &qty) || qty <= 0) continue;
-
-                    auto& entry = currentItems[tid];
-                    entry.typeId = tid;
-                    entry.qty += qty;
-                    if (!entry.name[0])
+                    int64_t qty = 0;
+                    if (!Read16(slot + kOff_InvSlot_TypeId, &tid)) return false;
+                    if (!tid || tid == kInvSlot_EmptyType) return true;
+                    if (!Read64(slot + kOff_InvSlot_Quantity, &qty)) return false;
+                    if (qty > 0)
                     {
-                        if (!DisplayNameForType(tid, entry.name, sizeof(entry.name)))
-                        {
-                            if (KeyForType(tid, entry.key, sizeof(entry.key)))
-                                Prettify(entry.key, entry.name, sizeof(entry.name));
-                            else
-                                snprintf(entry.name, sizeof(entry.name), "Item #%u", tid);
-                        }
-                        if (!entry.key[0]) KeyForType(tid, entry.key, sizeof(entry.key));
-                        if (!entry.icon[0]) IconForType(tid, entry.icon, sizeof(entry.icon));
+                        auto& total = current[tid];
+                        if (qty > INT64_MAX - total) return false;
+                        total += qty;
                     }
+                    return true;
+                }, [](const InventoryScan&) { return true; });
+                if (result == InventoryScan::Result::Invalid || Inventory::IsTransactionActive() ||
+                    !scan.Bind(CurrentHolder(), SlotStride(), g_inventoryMutation.load(std::memory_order_acquire)))
+                {
+                    scan = {}; current.clear(); return;
+                }
+                if (result != InventoryScan::Result::Complete) return;
+                compareAt = previous.cbegin();
+                comparing = true;
+            }
+            // Resolve names only for actual losses, never every item each lap.
+            // Bound final comparison too; one history-file update per visit.
+            unsigned compared = 0;
+            if (initialized) while (compareAt != previous.cend() && compared++ < 32)
+            {
+                const auto old = *compareAt++;
+                const auto it = current.find(old.first);
+                const int64_t qty = it == current.end() ? 0 : it->second;
+                if (qty < old.second && !Equipment::IsItemEquippedOnAnyCharacter(old.first))
+                {
+                    TrackedItemState info{};
+                    DisplayNameForType(old.first, info.name, sizeof(info.name));
+                    KeyForType(old.first, info.key, sizeof(info.key));
+                    IconForType(old.first, info.icon, sizeof(info.icon));
+                    Inventory::RecordLostItem(old.first, old.second - qty, info.name, info.key, info.icon, "Sold / Discarded");
+                    break;
                 }
             }
+            if (initialized && compareAt != previous.cend()) return;
+            previous.swap(current); current.clear(); initialized = true;
+            comparing = false; scan = {}; nextLap = now + 3000;
+        }
 
-            if (!g_hasInitialTrackerState)
+        void RepairInventorySlice()
+        {
+            static InventoryScan scan{};
+            static uint16_t occupied = 0;
+            static bool server = false;
+            static ULONGLONG nextLap = 0;
+            const ULONGLONG now = GetTickCount64();
+            if (now < nextLap || Inventory::IsTransactionActive()) return;
+            const uintptr_t holder = server ? ServerHolder() : CurrentHolder();
+            const uint64_t mutation = g_inventoryMutation.load(std::memory_order_acquire);
+            if (!scan.Bind(holder, SlotStride(), mutation))
             {
-                g_trackedItems.clear();
-                for (const auto& kv : currentItems)
-                    g_trackedItems.push_back(kv.second);
-                g_hasInitialTrackerState = true;
+                scan = {}; occupied = 0;
+                if (!holder) { server = !server; nextLap = now + 1000; }
                 return;
             }
-
-            // Compare previous tracked state vs current state
-            for (const auto& old : g_trackedItems)
+            const auto result = scan.Slice([&](uintptr_t slot) {
+                uint16_t tid = 0; int64_t qty = 0;
+                if (!Read16(slot + kOff_InvSlot_TypeId, &tid)) return false;
+                if (!tid || tid == kInvSlot_EmptyType) return true;
+                if (!Read64(slot + kOff_InvSlot_Quantity, &qty)) return false;
+                if (qty > 0) ++occupied;
+                return true;
+            }, [&](const InventoryScan& finished) {
+                uint16_t used = 0;
+                if (Inventory::IsTransactionActive() || mutation != g_inventoryMutation.load(std::memory_order_acquire) ||
+                    !scan.Bind(server ? ServerHolder() : CurrentHolder(), SlotStride(), g_inventoryMutation.load(std::memory_order_acquire)) ||
+                    !finished.BucketCurrent() ||
+                    !Read16(finished.bucket + kOff_InvBucket_UsedSlots, &used)) return false;
+                if (occupied < used) Write16(finished.bucket + kOff_InvBucket_UsedSlots, occupied);
+                occupied = 0;
+                return true;
+            });
+            if (result != InventoryScan::Result::Pending)
             {
-                auto it = currentItems.find(old.typeId);
-                const int64_t curQty = (it != currentItems.end()) ? it->second.qty : 0;
-                if (curQty < old.qty)
-                {
-                    // Do not record as lost/sold if the item was merely equipped on a protagonist!
-                    if (Equipment::IsItemEquippedOnAnyCharacter(old.typeId))
-                    {
-                        continue;
-                    }
-
-                    const int64_t diff = old.qty - curQty;
-                    // The item was genuinely sold, discarded, or consumed!
-                    Inventory::RecordLostItem(old.typeId, diff, old.name, old.key, old.icon, "Sold / Discarded");
-                }
+                scan = {}; occupied = 0;
+                if (result == InventoryScan::Result::Complete) { server = !server; nextLap = now + 1000; }
             }
-
-            // Update tracked state
-            g_trackedItems.clear();
-            for (const auto& kv : currentItems)
-                g_trackedItems.push_back(kv.second);
         }
     }
 
-    void Inventory::Tick()
+    static void InventoryTickImpl()
     {
         __try
         {
@@ -3379,53 +3365,42 @@ namespace trinity::game
             // must never do.
             RunPendingAdd();
 
-            // TU 2.00 diagnostics: the game no longer routes quantity queries
-            // through our hooked accessor, so dump the holder's bucket table
-            // from here instead (self-throttled to once per 30s).
-            if (Player::Ready())
-                LogHolderBuckets(CurrentHolder());
-
             // Real-time tracker for items sold, discarded, or removed
             if (Player::Ready())
             {
                 static ULONGLONG s_lastTrack = 0;
                 const ULONGLONG now = GetTickCount64();
-                if (now - s_lastTrack >= 3000)
+                if (now - s_lastTrack >= 50)
                 {
                     s_lastTrack = now;
                     TrackInventoryChanges();
                 }
             }
 
-            // Heal the used-slot accounting that quantity edits bend and reloads
-            // detonate (the "inventory full beside empty slots" bug). Always on;
-            // throttled to 2000ms (0.5 Hz) to keep game-thread overhead near zero; a strict no-op on buckets the engine's own accounting produced.
+            // Heal accounting in bounded slices; only lower used counts after a
+            // complete bucket and unchanged holder/transaction epoch.
             if (Player::Ready())
             {
                 static ULONGLONG s_lastRepair = 0;
                 const ULONGLONG now = GetTickCount64();
-                if (now - s_lastRepair >= 2000)
+                if (now - s_lastRepair >= 50)
                 {
                     s_lastRepair = now;
-                    RepairUsedSlots(CurrentHolder());
-                    RepairUsedSlots(ServerHolder());
-                    Candidate snap[kMaxCandidates] = {};
-                    const int n = SnapshotCandidates(snap);
-                    for (int i = 0; i < n; ++i)
-                    {
-                        if (snap[i].holder && HolderLooksValid(snap[i].holder))
-                            RepairUsedSlots(snap[i].holder);
-                    }
-
+                    RepairInventorySlice();
                     // Keep Money_Copper's max stack count raised and cap flag neutral so money never splits or drops (TU <= 1.18 only)
                     if (core::GetGameVersion().revision < 2625)
                     {
-                        const uint16_t moneyTid = FindTypeIdByKey("Money_Copper");
-                        uintptr_t moneyDef = 0;
-                        if (moneyTid != 0 && DefForRow(g_itemTableGlobal, moneyTid, &moneyDef))
+                        static ULONGLONG lastLegacyMoney = 0;
+                        if (now - lastLegacyMoney >= 2000)
                         {
-                            Write64(moneyDef + kOff_ItemDef_MaxStackCount, 999999999999ULL);
-                            Write8(moneyDef + kOff_ItemDef_ApplyMaxStackCap, 0);
+                            lastLegacyMoney = now;
+                            const uint16_t moneyTid = Inventory::FindTypeIdByKey("Money_Copper");
+                            uintptr_t moneyDef = 0;
+                            if (moneyTid != 0 && DefForRow(g_itemTableGlobal, moneyTid, &moneyDef))
+                            {
+                                Write64(moneyDef + kOff_ItemDef_MaxStackCount, 999999999999ULL);
+                                Write8(moneyDef + kOff_ItemDef_ApplyMaxStackCap, 0);
+                            }
                         }
                     }
                 }
@@ -3435,7 +3410,7 @@ namespace trinity::game
             {
                 if (!g_stackApplied || g_stackAppliedVal != st.invStackSizeVal)
                 {
-                    if (SetAllMaxStackSizes(true, st.invStackSizeVal))
+                    if (Inventory::SetAllMaxStackSizes(true, st.invStackSizeVal))
                     {
                         g_stackApplied    = true;
                         g_stackAppliedVal = st.invStackSizeVal;
@@ -3444,7 +3419,7 @@ namespace trinity::game
             }
             else if (g_stackApplied)
             {
-                if (SetAllMaxStackSizes(false, 0))
+                if (Inventory::SetAllMaxStackSizes(false, 0))
                     g_stackApplied = false;
             }
 
@@ -3454,10 +3429,10 @@ namespace trinity::game
             {
                 static ULONGLONG s_lastSlotTick = 0;
                 const ULONGLONG now = GetTickCount64();
-                if (now - s_lastSlotTick >= 100)
+                if (now - s_lastSlotTick >= 1000)
                 {
                     s_lastSlotTick = now;
-                    if (SetAllSlotSizes(true, st.invSlotSizeVal))
+                    if (Inventory::SetAllSlotSizes(true, st.invSlotSizeVal))
                     {
                         g_slotApplied    = true;
                         g_slotAppliedVal = st.invSlotSizeVal;
@@ -3466,7 +3441,7 @@ namespace trinity::game
             }
             else if (g_slotApplied)
             {
-                if (SetAllSlotSizes(false, 0))
+                if (Inventory::SetAllSlotSizes(false, 0))
                     g_slotApplied = false;
             }
         }
@@ -3476,6 +3451,14 @@ namespace trinity::game
     bool Inventory::IsTransactionActive()
     {
         return g_commitActive.load(std::memory_order_acquire);
+    }
+
+    void Inventory::Tick()
+    {
+        static std::atomic_flag busy = ATOMIC_FLAG_INIT;
+        if (busy.test_and_set(std::memory_order_acquire)) return;
+        __try { InventoryTickImpl(); }
+        __finally { busy.clear(std::memory_order_release); }
     }
     namespace
     {
@@ -3599,6 +3582,7 @@ namespace trinity::game
 
         // The client mirror (what the list is built from) must take the write.
         if (!Write64(it.slot + kOff_InvSlot_Quantity, value)) return false;
+        g_inventoryMutation.fetch_add(1, std::memory_order_release);
 
         // ...and the server authority, or a per-frame reconcile reverts it.
         // Best-effort: if the server holder has not been captured yet (no
@@ -3607,6 +3591,7 @@ namespace trinity::game
         WriteServerMirror(it.bucketIdx, it.slotIdx, it.typeId, it.qty, value);
 
         it.qty = value; // reflect immediately until next Refresh
+        g_inventoryMutation.fetch_add(1, std::memory_order_release);
         return true;
     }
 
@@ -3648,13 +3633,9 @@ namespace trinity::game
     uintptr_t Inventory::ClientCharacterAddr()
     {
         // Prioritize the live controlled player
-        const int liveIdx = Player::GetActiveCharacterIdx();
-        if (liveIdx >= 0 && liveIdx < 3)
-        {
-            const uintptr_t liveOwner = Player::GetOwner(liveIdx);
-            if (liveOwner >= kMinPointer && IsLiveCharacter(liveOwner))
-                return liveOwner;
-        }
+        const uintptr_t liveOwner = Player::GetControlledOwner();
+        if (liveOwner >= kMinPointer && IsLiveCharacter(liveOwner))
+            return liveOwner;
 
         const uintptr_t c = ResolveClientContainer();
         return IsLiveCharacter(c) ? c : 0;
@@ -3674,17 +3655,16 @@ namespace trinity::game
     // walk from) can be identified too - that is what makes
     // ActivePlayerCharacterIdx() correct in Chapter 4: Royal Oath /
     // OneHandRapier on the live component is the one Damiane signal that does
-    // not depend on any container walk succeeding. Table offsets try the
-    // modern TU 1.17+ layout (+0x80) FIRST: this is 1.18.02, and probing the
-    // legacy +0x88 slot first risks matching a stale pointer and reading
-    // garbage with a plausible count.
+    // not depend on any container walk succeeding. The shared table validator
+    // keeps identity and both editors on the same descriptor and stride.
     // NOTE: named ...CharacterIdentity (not ...CharacterComp) so it can never
     // collide with the Inventory::IdentifyCharacterFromComp re-export below -
     // an unqualified call inside that member would otherwise resolve to the
     // member itself and recurse forever.
     static int IdentifyCharacterIdentity(uintptr_t comp)
     {
-        if (comp < kMinPointer) return -1;
+        const EquipTableDesc table = ReadNativeEquipmentTable(comp);
+        if (!table.valid) return -1;
 
         __try
         {
@@ -3692,56 +3672,26 @@ namespace trinity::game
             uintptr_t owner = 0;
             if (!ReadPtr(comp + kOff_EquipComp_Owner, &owner) || owner < kMinPointer) return -1;
 
-            // 0. Authoritative engine party index: 1 = Kliff (0), 2 = Damiane (1), 3 = Oongka (2)
+            // TU 2.02 owner+50 is an entity ID, not a party index. A nested
+            // subcontainer's coincidental 1..3 must not override its gear identity.
             uint32_t pIdx = 0;
-            if (Read32(owner + kOff_Owner_PartyIndex, &pIdx) && pIdx >= 1 && pIdx <= 3)
+            if (core::GetGameVersion().revision < 2800 &&
+                Read32(owner + kOff_Owner_PartyIndex, &pIdx) && pIdx >= 1 && pIdx <= 3)
                 return static_cast<int>(pIdx - 1);
 
             uintptr_t nestedOwner = 0;
-            if (ReadPtr(owner + kOff_Owner_Actor, &nestedOwner) && nestedOwner >= kMinPointer)
+            if (core::GetGameVersion().revision < 2800 &&
+                ReadPtr(owner + kOff_Owner_Actor, &nestedOwner) && nestedOwner >= kMinPointer)
             {
                 if (Read32(nestedOwner + kOff_Owner_PartyIndex, &pIdx) && pIdx >= 1 && pIdx <= 3)
                     return static_cast<int>(pIdx - 1);
             }
 
-            // 1. Direct match against active controlled character
-            const int liveCharIdx = Player::GetActiveCharacterIdx();
-            if (liveCharIdx >= 0 && liveCharIdx < 3)
-            {
-                if (owner == Player::GetActor(liveCharIdx) || owner == Player::GetOwner(liveCharIdx) ||
-                    (nestedOwner && (nestedOwner == Player::GetActor(liveCharIdx) || nestedOwner == Player::GetOwner(liveCharIdx))))
-                {
-                    return liveCharIdx;
-                }
-            }
-
-            // 2. Direct match against remaining party characters
-            for (int c = 0; c < 3; ++c)
-            {
-                if (c == liveCharIdx) continue;
-                if (owner == Player::GetActor(c) || owner == Player::GetOwner(c) ||
-                    (nestedOwner && (nestedOwner == Player::GetActor(c) || nestedOwner == Player::GetOwner(c))))
-                {
-                    return c;
-                }
-            }
-
-            uintptr_t desc = 0, array = 0;
-            uint32_t count = 0;
-
-            const uintptr_t tableOffsets[] = { 0x90, 0x88, 0x80, 0x50, 0x78, 0x38, 0x40, 0x48, 0x60, 0x70 };
-            bool foundTable = false;
-            for (uintptr_t tOff : tableOffsets)
-            {
-                if (!ReadPtr(comp + tOff, &desc) || desc < kMinPointer) continue;
-                if (ReadPtr(desc + kOff_EquipTable_Array, &array) && array >= kMinPointer &&
-                    Read32(desc + kOff_EquipTable_Count, &count) && count >= 1 && count <= 64)
-                {
-                    foundTable = true;
-                    break;
-                }
-            }
-            if (!foundTable) return -1;
+            // Never infer identity from Player's cache: Player calls this while
+            // discovering those very handles, and old aliases survive reloads.
+            const uintptr_t array = table.array;
+            const uint32_t count = table.count;
+            const uintptr_t stride = table.stride;
 
             auto ContainsCi = [](const char* haystack, const char* needle) -> bool {
                 if (!haystack || !needle || !*needle) return false;
@@ -3754,25 +3704,21 @@ namespace trinity::game
                 return false;
             };
 
-            const uintptr_t candidateStrides[] = { 0xD0, 0xC8 };
-
-            for (uintptr_t stride : candidateStrides)
+            // Mount gear must not provide a protagonist identity.
+            for (uint32_t i = 0; i < count; ++i)
             {
-                // Mount gear rejection: If this component holds saddle/champron/barding/stirrups, it is a Mount (NOT a player protagonist)
-                for (uint32_t i = 0; i < count; ++i)
+                const uintptr_t entry = array + static_cast<uintptr_t>(i) * stride;
+                uint16_t tid = 0;
+                if (!Read16(entry + kOff_InvSlot_TypeId, &tid) || tid == kInvSlot_EmptyType || tid == 0) continue;
+                char key[96] = "";
+                if (KeyForType(tid, key, sizeof(key)) && key[0] != 0)
                 {
-                    const uintptr_t entry = array + static_cast<uintptr_t>(i) * stride;
-                    uint16_t tid = 0;
-                    if (!Read16(entry + kOff_InvSlot_TypeId, &tid) || tid == kInvSlot_EmptyType || tid == 0) continue;
-                    char key[96] = "";
-                    if (KeyForType(tid, key, sizeof(key)) && key[0] != 0)
-                    {
-                        if (ContainsCi(key, "Chamfron") || ContainsCi(key, "Champron") ||
-                            ContainsCi(key, "Barding") || ContainsCi(key, "Saddle") ||
-                            ContainsCi(key, "Stirrup") || ContainsCi(key, "Exclaire"))
-                            return -1; // Mount
-                    }
+                    if (ContainsCi(key, "Chamfron") || ContainsCi(key, "Champron") ||
+                        ContainsCi(key, "Barding") || ContainsCi(key, "Saddle") ||
+                        ContainsCi(key, "Stirrup") || ContainsCi(key, "Exclaire"))
+                        return -1;
                 }
+            }
 
             for (uint32_t i = 0; i < count; ++i)
             {
@@ -3782,7 +3728,7 @@ namespace trinity::game
 
                 // Direct TypeID recognition (fast, zero memory overhead)
                 // Damiane (1): Demian_OneHandRapier (200901 / row 6142), Royal Oath (53935), Demenissian Hero's Musket (6324), White Wind Rapier (6382), rapier line
-                if (tid == 200901 || tid == 6142 || tid == 53935 || tid == 6324 || tid == 6382 || tid == 6041 || tid == 5306 || tid == 5300 ||
+                if (tid == 6142 || tid == 53935 || tid == 6324 || tid == 6382 || tid == 6041 || tid == 5306 || tid == 5300 ||
                     tid == 5297 || tid == 5277 || tid == 3463 || (tid >= 5450 && tid <= 5468) ||
                     (tid >= 5270 && tid <= 5310) || (tid >= 6320 && tid <= 6330) || (tid >= 6380 && tid <= 6390))
                     return 1;
@@ -3838,7 +3784,6 @@ namespace trinity::game
                         return 0; // Kliff
                 }
             }
-            }
         }
         __except (EXCEPTION_EXECUTE_HANDLER)
         {
@@ -3853,40 +3798,23 @@ namespace trinity::game
     {
         if (container < kMinPointer) return -1;
 
-        // 0. Direct check if container itself is already an EquipComp
-        const int directId = IdentifyCharacterIdentity(container);
-        if (directId >= 0) return directId;
-
         // 1. Authoritative party index on container
         uint32_t partyIdx = 0;
-        if (Read32(container + kOff_Owner_PartyIndex, &partyIdx) && partyIdx >= 1 && partyIdx <= 3)
+        if (core::GetGameVersion().revision < 2800 &&
+            Read32(container + kOff_Owner_PartyIndex, &partyIdx) && partyIdx >= 1 && partyIdx <= 3)
             return static_cast<int>(partyIdx - 1);
 
         uintptr_t nestedOwner = 0;
-        if (ReadPtr(container + kOff_Owner_Actor, &nestedOwner) && nestedOwner >= kMinPointer)
+        if (core::GetGameVersion().revision < 2800 &&
+            ReadPtr(container + kOff_Owner_Actor, &nestedOwner) && nestedOwner >= kMinPointer)
         {
             if (Read32(nestedOwner + kOff_Owner_PartyIndex, &partyIdx) && partyIdx >= 1 && partyIdx <= 3)
                 return static_cast<int>(partyIdx - 1);
         }
 
-        // 2. Direct match against active character
-        const int liveCharIdx = Player::GetActiveCharacterIdx();
-        if (liveCharIdx >= 0 && liveCharIdx < 3)
-        {
-            if (container == Player::GetActor(liveCharIdx) || container == Player::GetOwner(liveCharIdx) ||
-                (nestedOwner && (nestedOwner == Player::GetActor(liveCharIdx) || nestedOwner == Player::GetOwner(liveCharIdx))))
-                return liveCharIdx;
-        }
-
-        // 3. Direct match against remaining party actors/owners
-        for (int c = 0; c < 3; ++c)
-        {
-            if (c == liveCharIdx) continue;
-            if (container == Player::GetActor(c) || container == Player::GetOwner(c) ||
-                (nestedOwner && (nestedOwner == Player::GetActor(c) || nestedOwner == Player::GetOwner(c))))
-                return c;
-        }
-
+        // A raw component is accepted only after the shared table validator.
+        const int directId = IdentifyCharacterIdentity(container);
+        if (directId >= 0) return directId;
 
         uintptr_t sub = 0, comp = 0;
 
@@ -3940,23 +3868,6 @@ namespace trinity::game
             }
         }
 
-        const uintptr_t subOffsets[] = { 0x60, 0x70, 0x58, 0x78, 0x80, 0x88, 0x90 };
-        const uintptr_t compOffsets[] = { 0x38, 0x30, 0x40, 0x28, 0x48, 0x50, 0x60, 0x68, 0x168 };
-        for (uintptr_t sOff : subOffsets)
-        {
-            if (ReadPtr(container + sOff, &sub) && sub >= kMinPointer)
-            {
-                for (uintptr_t cOff : compOffsets)
-                {
-                    if (ReadPtr(sub + cOff, &comp) && comp >= kMinPointer)
-                    {
-                        const int id = IdentifyCharacterIdentity(comp);
-                        if (id >= 0) return id;
-                    }
-                }
-            }
-        }
-
         return -1;
     }
 
@@ -4003,14 +3914,15 @@ namespace trinity::game
     // it holds her weapons even if nothing on the container side cooperates.
     static int LiveCharacterIdentity()
     {
-        const uintptr_t clientC = ResolveClientContainer();
+        const uintptr_t clientC = Inventory::ClientCharacterAddr();
         if (clientC)
         {
             const int ident = Inventory::IdentifyCharacterFromEquip(clientC);
             if (ident >= 0) return ident;
         }
         const uintptr_t liveComp = Dye::HookedClientComp();
-        if (liveComp)
+        uintptr_t owner = 0;
+        if (liveComp && clientC && ReadPtr(liveComp + kOff_EquipComp_Owner, &owner) && owner == clientC)
         {
             const int ident = IdentifyCharacterIdentity(liveComp);
             if (ident >= 0) return ident;
@@ -4041,7 +3953,7 @@ namespace trinity::game
         };
 
         const uintptr_t clientC = ResolveClientContainer();
-        if (clientC && ActivePlayerCharacterIdx() == index)
+        if (clientC && IdentifyCharacterFromEquip(clientC) == index)
             addMatch(clientC);
 
         // 1. Direct party actor and owner for this character
@@ -4097,7 +4009,13 @@ namespace trinity::game
         Candidate snap[kMaxCandidates] = {};
         const int snapN = SnapshotCandidates(snap);
         for (int i = 0; i < snapN; ++i)
-            addCand(snap[i].container);
+        {
+            // Offscreen data comes from current manager/profile roots, never a
+            // merely readable capture left behind by a previous save.
+            if (IsLiveCharacter(snap[i].container) &&
+                HolderForContainer(snap[i].container) == snap[i].holder)
+                addCand(snap[i].container);
+        }
 
         // Accept only candidates whose equipped gear identifies as `index`
         for (int i = 0; i < candCount; ++i)
@@ -4156,7 +4074,7 @@ namespace trinity::game
             return pIdx;
         const int ident = LiveCharacterIdentity();
         if (ident >= 0) return ident;
-        return 0; // Default to Kliff (0)
+        return -1; // Loading/unknown must not silently select Kliff.
     }
 
     uintptr_t Inventory::RealmFlagAddress(uint8_t* outVal) { return RealmFlagAddr(outVal); }
@@ -6112,6 +6030,9 @@ namespace trinity::game
         return ServerHolder();
     }
 
+    uint64_t Inventory::MutationEpoch() { return g_inventoryMutation.load(std::memory_order_acquire); }
+    uintptr_t Inventory::ItemStride() { return SlotStride(); }
+
     uintptr_t Inventory::FindSlotByInstance(uintptr_t holder, int64_t targetInstId)
     {
         return FindSlotByInstanceHelper(holder, targetInstId);
@@ -6119,7 +6040,9 @@ namespace trinity::game
 
     int Inventory::FindAndApplyAllHolders(int64_t targetInstId, SlotApplyFn fn, void* userData, uint16_t targetTypeId)
     {
-        if ((targetInstId <= 0 && targetTypeId == 0) || !fn) return 0;
+        // A type match cannot authorize overwriting every copy of an item.
+        // Equipped companion data is synchronized via native components instead.
+        if (targetInstId <= 0 || !fn || IsTransactionActive()) return 0;
 
         uintptr_t visitedHolders[128] = {};
         int visitedCount = 0;
@@ -6157,16 +6080,8 @@ namespace trinity::game
                         if (!Read16(slot + kOff_InvSlot_TypeId, &tid) || tid == 0 || tid == kInvSlot_EmptyType) continue;
                         int64_t inst = 0;
                         Read64(slot + kOff_ItemVal_InstanceId, &inst);
-                        // Match by instance id when given; typeId is a
-                        // DUAL-match when present (not just a fallback): the
-                        // native inspect UI reads a companion copy whose
-                        // instanceId differs from the equipped comp's, so
-                        // instId-only matching always missed it. Bleeding onto
-                        // other same-type copies is intended here - every
-                        // instance of the character's piece must carry the edit
-                        // (refine/socket), that is the whole point of the sync.
-                        const bool isMatch = (targetInstId > 0 && inst == targetInstId) ||
-                                             (targetTypeId > 0 && tid == targetTypeId);
+                        const bool isMatch = inst == targetInstId &&
+                                             (targetTypeId == 0 || tid == targetTypeId);
                         if (isMatch)
                         {
                             fn(slot, userData);
@@ -6186,113 +6101,8 @@ namespace trinity::game
             matched += applyHolder(CurrentHolder());
             matched += applyHolder(ServerHolder());
 
-            // 2. All 3 Player Characters' Containers (Kliff = 0, Damiane = 1, Oongka = 2)
-            for (int c = 0; c < 3; ++c)
-            {
-                uintptr_t copies[16] = {};
-                const int nCopies = CharacterAddrs(c, copies, 16);
-                for (int i = 0; i < nCopies; ++i)
-                {
-                    const uintptr_t candChar = copies[i];
-                    if (candChar < kMinPointer) continue;
-
-                    uintptr_t h = HolderForContainer(candChar);
-                    if (h) matched += applyHolder(h);
-
-                    uintptr_t sub = 0;
-                    if (ReadPtr(candChar + kOff_Container_Sub, &sub) && sub >= kMinPointer)
-                    {
-                        for (uintptr_t off = 0x50; off <= 0x200; off += 8)
-                        {
-                            uintptr_t subH = 0;
-                            if (ReadPtr(sub + off, &subH) && subH >= kMinPointer && HolderLooksValid(subH))
-                                matched += applyHolder(subH);
-                        }
-                    }
-
-                    uintptr_t compRoot = 0;
-                    if (ReadPtr(candChar + 0x68, &compRoot) && compRoot >= kMinPointer)
-                    {
-                        uintptr_t actContainer = 0;
-                        if (ReadPtr(compRoot + 0xB8, &actContainer) && actContainer >= kMinPointer)
-                        {
-                            uintptr_t actH = HolderForContainer(actContainer);
-                            if (actH) matched += applyHolder(actH);
-                        }
-                    }
-                }
-
-                const uintptr_t wAct = Player::GetActor(c);
-                if (wAct >= kMinPointer)
-                {
-                    uintptr_t sub = 0;
-                    if (ReadPtr(wAct + kOff_Container_Sub, &sub) && sub >= kMinPointer)
-                    {
-                        for (uintptr_t off = 0x50; off <= 0x200; off += 8)
-                        {
-                            uintptr_t subH = 0;
-                            if (ReadPtr(sub + off, &subH) && subH >= kMinPointer && HolderLooksValid(subH))
-                                matched += applyHolder(subH);
-                        }
-                    }
-                }
-            }
-
-            // 3. Scan all CharMgr entities directly for character, companion, and mount holders (fallback if not matched yet)
-            const uintptr_t charMgrGlobal = (matched == 0) ? Player::GetCharMgrGlobal() : 0;
-            if (charMgrGlobal >= kMinPointer)
-            {
-                uintptr_t p = 0, mgr = 0, data = 0;
-                if (ReadPtr(charMgrGlobal, &p) && p >= kMinPointer &&
-                    ReadPtr(p, &mgr) && mgr >= kMinPointer)
-                {
-                    uint32_t cCount = 0;
-                    bool listOk = (ReadPtr(mgr + kOff_CharMgr_ListData, &data) && data >= kMinPointer &&
-                                   Read32(mgr + kOff_CharMgr_ListCount, &cCount) && cCount > 0 && cCount <= kCharList_MaxCount);
-                    if (!listOk)
-                    {
-                        listOk = (ReadPtr(mgr + 0xB0, &data) && data >= kMinPointer &&
-                                  Read32(mgr + 0x9C, &cCount) && cCount > 0 && cCount <= kCharList_MaxCount);
-                    }
-                    if (listOk)
-                    {
-                        for (uint32_t i = 0; i < cCount; ++i)
-                        {
-                            uintptr_t candOwner = 0;
-                            if (!ReadPtr(data + static_cast<uintptr_t>(i) * 8, &candOwner) || candOwner < kMinPointer)
-                                continue;
-
-                            uintptr_t candAct = 0;
-                            ReadPtr(candOwner + kOff_Owner_Actor, &candAct);
-
-                            const uintptr_t tryList[] = { candAct, candOwner };
-                            for (uintptr_t cand : tryList)
-                            {
-                                if (cand < kMinPointer) continue;
-                                uintptr_t h = HolderForContainer(cand);
-                                if (h) matched += applyHolder(h);
-
-                                uintptr_t hB8 = 0;
-                                if (ReadPtr(cand + 0xB8, &hB8) && hB8 >= kMinPointer && HolderLooksValid(hB8))
-                                    matched += applyHolder(hB8);
-                            }
-                        }
-                    }
-                }
-            }
-
-            // 4. Snapshot Candidates (All captured engine holders from commits)
-            Candidate snap[kMaxCandidates] = {};
-            const int n = SnapshotCandidates(snap);
-            for (int i = 0; i < n; ++i)
-            {
-                if (snap[i].holder) matched += applyHolder(snap[i].holder);
-                if (snap[i].container)
-                {
-                    uintptr_t h = HolderForContainer(snap[i].container);
-                    if (h) matched += applyHolder(h);
-                }
-            }
+            // Never scan arbitrary subcomponent fields or historical captures
+            // for write targets: pointer-bearing engine arrays can look like slots.
         }
         __except (EXCEPTION_EXECUTE_HANDLER) {}
 
@@ -6397,25 +6207,27 @@ namespace trinity::game
     bool Inventory::UnlockAllBagSockets(int maxSock, int* modifiedCount)
     {
         if (modifiedCount) *modifiedCount = 0;
+        if (maxSock < 0 || maxSock > kSocket_Max || !Player::Ready() || IsTransactionActive()) return false;
         int count = 0;
 
-        uint8_t oldFlag = 0;
-        const uintptr_t flagAddr = RealmFlagAddress(&oldFlag);
-        if (flagAddr) RawWrite8(flagAddr, 1);
+        // Match Equipment's explicit socket layout; never probe alternate fields.
+        const uintptr_t socketOffset = core::GetGameVersion().revision >= 2625
+            ? kOff_ItemVal_SocketData : core::GetItemValSocketOffset();
 
-        uintptr_t visitedHolders[128] = {};
+        uintptr_t visitedHolders[2] = {};
         int visitedCount = 0;
 
-        auto processHolder = [&](uintptr_t h) {
+        auto processHolder = [&](uintptr_t h, bool server) {
+            if (maxSock == 0 || !Player::Ready() || IsTransactionActive()) return;
             if (h < kMinPointer || !HolderLooksValid(h)) return;
             for (int v = 0; v < visitedCount; ++v)
                 if (visitedHolders[v] == h) return;
-            if (visitedCount < 128) visitedHolders[visitedCount++] = h;
+            visitedHolders[visitedCount++] = h;
 
             uintptr_t buckets = 0;
             uint32_t bcount = 0;
-            if (!ReadPtr(h + kOff_InvHolder_Buckets, &buckets)) return;
-            if (!Read32(h + kOff_InvHolder_Count, &bcount) || bcount > 4096) return;
+            if (!ReadPtr(h + kOff_InvHolder_Buckets, &buckets) || buckets < kMinPointer) return;
+            if (!Read32(h + kOff_InvHolder_Count, &bcount) || bcount == 0 || bcount > 4096) return;
 
             const uintptr_t stride = SlotStride();
             for (uint32_t b = 0; b < bcount; ++b)
@@ -6429,15 +6241,31 @@ namespace trinity::game
                 if (!ReadPtr(bucket + kOff_InvBucket_Slots, &slots) || slots < kMinPointer) continue;
                 if (!Read16(bucket + kOff_InvBucket_Count, &scount) || scount == 0 || scount > 8192) continue;
 
+                auto sourceStillCurrent = [&]() {
+                    uintptr_t liveBuckets = 0, liveBucket = 0, liveSlots = 0;
+                    uint32_t liveBcount = 0;
+                    uint16_t liveScount = 0;
+                    return Player::Ready() && !IsTransactionActive() &&
+                        (server ? ServerHolder() : CurrentHolder()) == h && SlotStride() == stride &&
+                        ReadPtr(h + kOff_InvHolder_Buckets, &liveBuckets) && liveBuckets == buckets &&
+                        Read32(h + kOff_InvHolder_Count, &liveBcount) && liveBcount == bcount &&
+                        ReadPtr(buckets + static_cast<uintptr_t>(b) * 8, &liveBucket) && liveBucket == bucket &&
+                        ReadPtr(bucket + kOff_InvBucket_Slots, &liveSlots) && liveSlots == slots &&
+                        Read16(bucket + kOff_InvBucket_Count, &liveScount) && liveScount == scount;
+                };
+
                 for (uint16_t i = 0; i < scount; ++i)
                 {
                     const uintptr_t slot = slots + static_cast<uintptr_t>(i) * stride;
                     uint16_t tid = 0;
+                    int64_t qty = 0, inst = 0;
                     if (!Read16(slot + kOff_InvSlot_TypeId, &tid) || tid == 0 || tid == kInvSlot_EmptyType) continue;
+                    if (!Read64(slot + kOff_InvSlot_Quantity, &qty) || qty <= 0) continue;
+                    if (!Read64(slot + kOff_ItemVal_InstanceId, &inst) || inst <= 0) continue;
 
                     char key[64] = {};
                     char name[64] = {};
-                    KeyForType(tid, key, sizeof(key));
+                    if (!KeyForType(tid, key, sizeof(key)) || !key[0]) continue;
                     DisplayNameForType(tid, name, sizeof(name));
                     const char* cat = DeduceCategoryFromItem(key, name);
                     if (!cat || !cat[0]) continue;
@@ -6447,89 +6275,68 @@ namespace trinity::game
                         strstr(cat, "Boot") || strstr(cat, "Cloak") || strstr(cat, "Necklace") ||
                         strstr(cat, "Earring") || strstr(cat, "Ring") || strstr(cat, "Horse Gear"))
                     {
-                        Equipment::EnsureSocketVector(slot);
+                        auto slotStillCurrent = [&]() {
+                            uint16_t liveTid = 0;
+                            int64_t liveQty = 0, liveInst = 0;
+                            return sourceStillCurrent() &&
+                                Read16(slot + kOff_InvSlot_TypeId, &liveTid) && liveTid == tid &&
+                                Read64(slot + kOff_InvSlot_Quantity, &liveQty) && liveQty == qty &&
+                                Read64(slot + kOff_ItemVal_InstanceId, &liveInst) && liveInst == inst &&
+                                Player::Ready() && !IsTransactionActive();
+                        };
+
+                        if (!slotStillCurrent()) return;
+                        if (!Equipment::EnsureSocketVector(slot)) continue;
+                        const uintptr_t unlockedAddr = slot + socketOffset + 0x10;
+                        uint8_t before = 0;
+                        if (!Read8(unlockedAddr, &before) || before >= static_cast<uint32_t>(maxSock)) continue;
+
+                        if (!slotStillCurrent()) return;
                         Equipment::OpenAllSockets(slot, maxSock);
-                        count++;
+                        uint8_t after = 0;
+                        if (slotStillCurrent() && Read8(unlockedAddr, &after) &&
+                            after > before && after <= static_cast<uint32_t>(maxSock))
+                            ++count;
                     }
                 }
             }
         };
 
-        // 1. Current Client Holder & Server Holder
-        processHolder(CurrentHolder());
-        processHolder(ServerHolder());
-
-        // 2. All 3 Player Characters' Containers
-        for (int c = 0; c < 3; ++c)
-        {
-            uintptr_t copies[16] = {};
-            const int nCopies = CharacterAddrs(c, copies, 16);
-            for (int i = 0; i < nCopies; ++i)
-            {
-                const uintptr_t candChar = copies[i];
-                if (candChar < kMinPointer) continue;
-                uintptr_t h = HolderForContainer(candChar);
-                if (h) processHolder(h);
-
-                uintptr_t sub = 0;
-                if (ReadPtr(candChar + kOff_Container_Sub, &sub) && sub >= kMinPointer)
-                {
-                    for (uintptr_t off = 0x50; off <= 0x200; off += 8)
-                    {
-                        uintptr_t subH = 0;
-                        if (ReadPtr(sub + off, &subH) && subH >= kMinPointer && HolderLooksValid(subH))
-                            processHolder(subH);
-                    }
-                }
-            }
-        }
-
-        // 3. Snapshot Candidates
-        Candidate snap[kMaxCandidates] = {};
-        const int nSnap = SnapshotCandidates(snap);
-        for (int i = 0; i < nSnap; ++i)
-        {
-            if (snap[i].holder) processHolder(snap[i].holder);
-            if (snap[i].container)
-            {
-                uintptr_t h = HolderForContainer(snap[i].container);
-                if (h) processHolder(h);
-            }
-        }
-
-        if (flagAddr) RawWrite8(flagAddr, oldFlag);
+        // These writes remain inline on the caller's thread. Revalidation narrows
+        // stale-pointer exposure but does not serialize against engine mutations.
+        processHolder(CurrentHolder(), false);
+        processHolder(ServerHolder(), true);
 
         int eqUnlocked = 0;
-        Equipment::UnlockAllGears(&eqUnlocked);
+        if (Player::Ready() && !IsTransactionActive())
+            Equipment::UnlockAllGears(&eqUnlocked);
 
-        ForceRefresh();
+        if (Player::Ready() && !IsTransactionActive()) ForceRefresh();
         if (modifiedCount) *modifiedCount = count;
-        LOG("inventory: Unlocked all %d sockets on %d bag items and %d equipped pieces.", maxSock, count, eqUnlocked);
+        LOG("inventory: Unlocked sockets (up to %d) on %d bag items and %d equipped pieces.", maxSock, count, eqUnlocked);
         return count > 0 || eqUnlocked > 0;
     }
 
     bool Inventory::RefineAllBagEquipment(int level, int* modifiedCount)
     {
         if (modifiedCount) *modifiedCount = 0;
+        if (level < 0 || level > kRefine_Max || !Player::Ready() || IsTransactionActive()) return false;
         int count = 0;
 
-        uint8_t oldFlag = 0;
-        const uintptr_t flagAddr = RealmFlagAddress(&oldFlag);
-        if (flagAddr) RawWrite8(flagAddr, 1);
-
-        uintptr_t visitedHolders[128] = {};
+        uintptr_t visitedHolders[2] = {};
         int visitedCount = 0;
 
-        auto processHolder = [&](uintptr_t h) {
+        auto processHolder = [&](uintptr_t h, bool server) {
+            if (!Player::Ready() || IsTransactionActive()) return;
             if (h < kMinPointer || !HolderLooksValid(h)) return;
             for (int v = 0; v < visitedCount; ++v)
                 if (visitedHolders[v] == h) return;
-            if (visitedCount < 128) visitedHolders[visitedCount++] = h;
+            visitedHolders[visitedCount++] = h;
 
             uintptr_t buckets = 0;
             uint32_t bcount = 0;
-            if (!ReadPtr(h + kOff_InvHolder_Buckets, &buckets)) return;
-            if (!Read32(h + kOff_InvHolder_Count, &bcount) || bcount > 4096) return;
+            if (!ReadPtr(h + kOff_InvHolder_Buckets, &buckets) || buckets < kMinPointer) return;
+            if (!Read32(h + kOff_InvHolder_Count, &bcount) || bcount == 0 || bcount > 4096) return;
 
             const uintptr_t stride = SlotStride();
             for (uint32_t b = 0; b < bcount; ++b)
@@ -6543,15 +6350,31 @@ namespace trinity::game
                 if (!ReadPtr(bucket + kOff_InvBucket_Slots, &slots) || slots < kMinPointer) continue;
                 if (!Read16(bucket + kOff_InvBucket_Count, &scount) || scount == 0 || scount > 8192) continue;
 
+                auto sourceStillCurrent = [&]() {
+                    uintptr_t liveBuckets = 0, liveBucket = 0, liveSlots = 0;
+                    uint32_t liveBcount = 0;
+                    uint16_t liveScount = 0;
+                    return Player::Ready() && !IsTransactionActive() &&
+                        (server ? ServerHolder() : CurrentHolder()) == h && SlotStride() == stride &&
+                        ReadPtr(h + kOff_InvHolder_Buckets, &liveBuckets) && liveBuckets == buckets &&
+                        Read32(h + kOff_InvHolder_Count, &liveBcount) && liveBcount == bcount &&
+                        ReadPtr(buckets + static_cast<uintptr_t>(b) * 8, &liveBucket) && liveBucket == bucket &&
+                        ReadPtr(bucket + kOff_InvBucket_Slots, &liveSlots) && liveSlots == slots &&
+                        Read16(bucket + kOff_InvBucket_Count, &liveScount) && liveScount == scount;
+                };
+
                 for (uint16_t i = 0; i < scount; ++i)
                 {
                     const uintptr_t slot = slots + static_cast<uintptr_t>(i) * stride;
                     uint16_t tid = 0;
+                    int64_t qty = 0, inst = 0;
                     if (!Read16(slot + kOff_InvSlot_TypeId, &tid) || tid == 0 || tid == kInvSlot_EmptyType) continue;
+                    if (!Read64(slot + kOff_InvSlot_Quantity, &qty) || qty <= 0) continue;
+                    if (!Read64(slot + kOff_ItemVal_InstanceId, &inst) || inst <= 0) continue;
 
                     char key[64] = {};
                     char name[64] = {};
-                    KeyForType(tid, key, sizeof(key));
+                    if (!KeyForType(tid, key, sizeof(key)) || !key[0]) continue;
                     DisplayNameForType(tid, name, sizeof(name));
                     const char* cat = DeduceCategoryFromItem(key, name);
                     if (!cat || !cat[0]) continue;
@@ -6562,64 +6385,33 @@ namespace trinity::game
                          strstr(cat, "Earring") || strstr(cat, "Ring")) &&
                         !strstr(cat, "Tool") && !strstr(name, "Pickaxe") && !strstr(name, "Lantern"))
                     {
-                        Write16(slot + kOff_ItemVal_RefineLevel, static_cast<uint16_t>(level));
-                        Write8(slot + kOff_ItemVal_RefineLevel, static_cast<uint8_t>(level));
-                        count++;
+                        if (!sourceStillCurrent()) return;
+                        uint16_t liveTid = 0, currentLevel = 0;
+                        int64_t liveQty = 0, liveInst = 0;
+                        if (!Read16(slot + kOff_InvSlot_TypeId, &liveTid) || liveTid != tid ||
+                            !Read64(slot + kOff_InvSlot_Quantity, &liveQty) || liveQty != qty ||
+                            !Read64(slot + kOff_ItemVal_InstanceId, &liveInst) || liveInst != inst) continue;
+                        if (!Read16(slot + kOff_ItemVal_RefineLevel, &currentLevel) || currentLevel == level) continue;
+                        if (!Player::Ready() || IsTransactionActive()) return;
+                        if (Write16(slot + kOff_ItemVal_RefineLevel, static_cast<uint16_t>(level)))
+                            ++count;
                     }
                 }
             }
         };
 
-        // 1. Current Client Holder & Server Holder
-        processHolder(CurrentHolder());
-        processHolder(ServerHolder());
+        // Bag writes are still inline, not game-thread queued; header/identity
+        // checks cannot eliminate the remaining check-to-write race.
+        processHolder(CurrentHolder(), false);
+        processHolder(ServerHolder(), true);
 
-        // 2. All 3 Player Characters' Containers
-        for (int c = 0; c < 3; ++c)
-        {
-            uintptr_t copies[16] = {};
-            const int nCopies = CharacterAddrs(c, copies, 16);
-            for (int i = 0; i < nCopies; ++i)
-            {
-                const uintptr_t candChar = copies[i];
-                if (candChar < kMinPointer) continue;
-                uintptr_t h = HolderForContainer(candChar);
-                if (h) processHolder(h);
+        int eqQueued = 0;
+        if (Player::Ready() && !IsTransactionActive())
+            Equipment::RefineAll(level, &eqQueued);
 
-                uintptr_t sub = 0;
-                if (ReadPtr(candChar + kOff_Container_Sub, &sub) && sub >= kMinPointer)
-                {
-                    for (uintptr_t off = 0x50; off <= 0x200; off += 8)
-                    {
-                        uintptr_t subH = 0;
-                        if (ReadPtr(sub + off, &subH) && subH >= kMinPointer && HolderLooksValid(subH))
-                            processHolder(subH);
-                    }
-                }
-            }
-        }
-
-        // 3. Snapshot Candidates
-        Candidate snap[kMaxCandidates] = {};
-        const int nSnap = SnapshotCandidates(snap);
-        for (int i = 0; i < nSnap; ++i)
-        {
-            if (snap[i].holder) processHolder(snap[i].holder);
-            if (snap[i].container)
-            {
-                uintptr_t h = HolderForContainer(snap[i].container);
-                if (h) processHolder(h);
-            }
-        }
-
-        if (flagAddr) RawWrite8(flagAddr, oldFlag);
-
-        int eqRefined = 0;
-        Equipment::RefineAll(level, &eqRefined);
-
-        ForceRefresh();
+        if (Player::Ready() && !IsTransactionActive()) ForceRefresh();
         if (modifiedCount) *modifiedCount = count;
-        LOG("inventory: Refined %d bag items and %d equipped pieces to +%d.", count, eqRefined, level);
-        return count > 0 || eqRefined > 0;
+        LOG("inventory: Refined %d bag items to +%d; queued refinement for %d equipped pieces.", count, level, eqQueued);
+        return count > 0 || eqQueued > 0;
     }
 }

@@ -2,6 +2,7 @@
 
 #include <cstddef>
 #include <cstdint>
+#include "equipment_logic.h"
 
 namespace trinity::game
 {
@@ -13,49 +14,33 @@ namespace trinity::game
     //    modifiers ("buffs") all come from Abyss Gears socketed into it. So an
     //    equipment editor is a socket editor: put any abyss gear into a socket,
     //    clear one, or unlock more sockets.
-    //  - Socket state lives ON the item value, right beside the dye vector: a
-    //    pre-allocated 5-record vector at +0x58 (record[i] = socket i) plus an
-    //    unlocked-socket count at +0x68. Because it is pre-allocated, editing a
-    //    socket is a plain record overwrite - no allocation, no engine call.
-    //  - Add/clear is durable: the game's own Witch-socket touches only the
-    //    record bytes, and those ride with the item value on save, so we mirror
-    //    the write into both realms (like the dye editor) and it persists.
+    //  - Socket state lives ON the item value: modern vector at +0x60 (legacy
+    //    +0x58), followed by one unlock byte at vector+0x10. Only the native
+    //    constructed size (0..5) is editable; capacity may exceed five. See
+    //    socket_layout.h for guarded reads/writes that preserve native storage.
+    //  - Add/clear/refine synchronize exact item copies across client/server.
+    //    Synced confirms those memory writes; save/load and effect recomputation
+    //    are separate native behaviors and require runtime verification.
     //  - Unlock renders live but is NOT durable yet: a real unlock also grows a
     //    save-data sublist we do not reproduce, so it reverts on reload.
     //
-    // The equip component is reached by the same per-realm walk the dye editor
-    // Equipment components are owned by the outer gameplay-character object;
-    // the inner actor is only a fallback for older captures.
-    inline uintptr_t PreferEquipmentOwner(uintptr_t owner, uintptr_t actor)
-    {
-        return actor ? actor : owner;
-    }
-
-    // A recognized equipment identity wins over runtime party ordering;
-    // party position is only a fallback for an unidentified component.
-    inline bool AcceptCharacterComponent(int selectedIndex, int identifiedIndex, int partyIndex)
-    {
-        if (selectedIndex < 0 || selectedIndex > 2) return false;
-        if (identifiedIndex >= 0)
-            return identifiedIndex == selectedIndex;
-        return partyIndex == selectedIndex;
-    }
-
     class Equipment
     {
     public:
         static bool Install();
         static void Remove();
 
-        // True once the client equip component reads back sane (i.e. the player
-        // has loaded into the world). Mirrors Dye::Ready().
+        // Readiness of the copied UI snapshot (200 ms refresh; up to 750 ms
+        // grace for failed table reads in the same world/selection).
         static bool Ready();
         static void ForceRefresh();
 
-        // True once the server-authority equip component is resolvable, i.e.
-        // add/clear edits will persist. Until then they apply visually but a
-        // reload will not keep them - the UI can warn with this.
+        // Historical API name: true means the snapshot source has Server RTTI.
+        // It is not an acknowledgement of an edit or a completed native save.
         static bool EditsPersist();
+        enum class EditState { Idle, Pending, Synced, DataOnly, Failed };
+        static EditState Status();
+        static bool HasEditResult();
 
         // Character selection (0 = Kliff, 1 = Damiane, 2 = Oongka)
         static void        SetActiveCharacter(int index);
@@ -86,9 +71,14 @@ namespace trinity::game
             uint16_t tag;           // engine slot tag (helm 3, chest 4, main-hand 0, ...)
             uint16_t typeId;        // the equipped item
             int64_t  instanceId;
+            // Value-only identity stamp for displayed-target validation. The
+            // owner token is compared, never used as a cached write pointer.
+            int      characterIndex = -1;
+            uintptr_t controlledOwner = 0;
+            bool     socketsAvailable = false; // false = unreadable, not "no sockets"
             int      unlockedCount; // sockets currently usable (0..5)
-            int      filledCount;   // of those, how many hold a gear
-            int      maxSockets;    // natural max capacity for this equipment piece (0..5)
+            int      filledCount;   // constructed records holding a gear
+            int      maxSockets;    // constructed native size (0..5), not allocation capacity
             int      refineLevel;   // refinement/enhancement level (0..10)
             int      durability;    // durability (e.g. 10000 = 100%)
             int      attack;        // total weapon/gear attack power
@@ -100,7 +90,7 @@ namespace trinity::game
             char     icon[96];      // sprite name for ui::DrawItemIcon
             Socket   sockets[kMaxSockets];
         };
-        static int  SlotCount();                 // refreshes the snapshot
+        static int  SlotCount();                 // shares the throttled Ready() snapshot
         static bool GetSlot(int idx, SlotInfo* out);
         static int  MaxSocketsForTag(uint16_t tag);
 
@@ -113,40 +103,37 @@ namespace trinity::game
         static const char* GetGearBuffDescription(const char* name);
 
         // --- Edits -----------------------------------------------------------
-        // Raw record writes (no engine call), so these run inline and return
-        // right away - no queue, unlike the dye/add-item paths. Each writes the
-        // client realm (renders) and, when resolvable, the server realm (persists).
+        // Queued, identity-stamped writes consumed one per game tick. true means
+        // queued; Status reports client/server synchronization separately.
         //
         // socketIdx is 0..unlockedCount-1. AddGear puts `gearTypeId` in it;
-        // ClearGear empties it. `persisted` (optional) reports whether the
-        // durable server write also landed.
-        static bool AddGear(uint16_t tag, int socketIdx, uint16_t gearTypeId, bool* persisted = nullptr);
-        static bool ClearGear(uint16_t tag, int socketIdx, bool* persisted = nullptr);
+        // ClearGear empties it. `persisted` stays false at enqueue time.
+        // UI callers MUST pass the displayed row as expected. Its character,
+        // world, tag, type and positive instance ID must match fresh native
+        // reads; cached rows never authorize writes by tag/type alone. A row
+        // without a positive instance ID cannot safely identify a cached item.
+        // nullptr is for fresh native/batch operations, independent of UI state.
+        static bool AddGear(uint16_t tag, int socketIdx, uint16_t gearTypeId, bool* persisted = nullptr, const SlotInfo* expected = nullptr);
+        static bool ClearGear(uint16_t tag, int socketIdx, bool* persisted = nullptr, const SlotInfo* expected = nullptr);
 
-        // Set this piece's refinement level (0..kRefineMax). Writes +0x0A on the
-        // client realm (so the piece reads back at the new level) and mirrors it
-        // into the server realm so it persists like the gear writes. `persisted`
-        // (optional) reports whether the durable server write also landed.
-        //
-        // Live-verify caveats (see offsets.h): whether the stat change actually
-        // takes hold - or only the displayed level - and whether the server keeps
-        // an out-of-band level, can only be confirmed in-game. On success the
-        // state is marked dirty so the next Tick runs the same effect refresh a
-        // socket edit does, the best available "apply now" lever.
-        static bool SetRefine(uint16_t tag, int level, bool* persisted = nullptr);
+        // Enqueues an identity-stamped game-thread refinement (0..kRefineMax).
+        // true means queued; persisted stays false, with actual writes logged
+        // by Tick. UI expected identity is checked before enqueue and the native
+        // stamp is revalidated at apply time. Socket availability is independent.
+        static bool SetRefine(uint16_t tag, int level, bool* persisted = nullptr, const SlotInfo* expected = nullptr);
 
         // Check whether this equipment slot is refinable (weapons, armor, accessories).
         // Strictly excludes utility items (Lantern, Axiom Bracelet, Tools, Mount Gear)
         // to prevent engine 0xC0000005 crashes during effect stat recomputation.
         static bool IsRefinableTag(uint16_t tag);
 
-        // Unlock every socket on the piece (open all five). Durable, like the
-        // gear writes - both realms get every record a real index.
-        static bool UnlockAll(uint16_t tag);
+        // Unlock only constructed sockets; preserves the byte-sized unlock
+        // field's neighbors. Native save-list growth is not reproduced.
+        static bool UnlockAll(uint16_t tag, const SlotInfo* expected = nullptr);
 
         // Empty every unlocked socket on the piece (remove all gears, keep the
         // sockets open). Durable, both realms.
-        static bool ClearAll(uint16_t tag);
+        static bool ClearAll(uint16_t tag, const SlotInfo* expected = nullptr);
 
         // --- 1-Click Batch Enhancers -----------------------------------------
         // Restore durability to 100% on all equipped weapons & armor
@@ -156,16 +143,18 @@ namespace trinity::game
         static bool RefineAll(int level = 10, int* refinedCount = nullptr);
 
         // Equip any weapon, shield, or armor directly to slot, bypassing quest progression locks
-        static bool EquipItemToSlot(uint16_t tag, uint16_t typeId, int64_t instId = 0);
+        // expected identifies the displayed item being replaced, not the new item.
+        static bool EquipItemToSlot(uint16_t tag, uint16_t typeId, int64_t instId = 0, const SlotInfo* expected = nullptr);
 
-        // Force unlock all sockets (all 5 sockets) on every equipped gear
+        // Unlock constructed sockets (up to five) on freshly resolved equipment.
         static bool UnlockAllGears(int* unlockedCount = nullptr);
 
         // Direct low-level entry socket vector management
         static uintptr_t EnsureSocketVector(uintptr_t entry);
         static void      OpenAllSockets(uintptr_t entry, int maxSock = 5);
 
-        // --- Persistent Disk Profiles (Auto-Saved & Auto-Restored) ----------
+        // Historical profiles: saves are debounced/value-copied to an I/O worker;
+        // loading never automatically replays equipment writes.
         static void SaveEquipProfilesToDisk();
         static void LoadEquipProfilesFromDisk();
         static void SavePlayerEquipSlot(int charIdx, uint16_t tag, uint16_t refineLvl, int maxSock, const uint16_t* gems);

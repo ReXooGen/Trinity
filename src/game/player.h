@@ -10,16 +10,13 @@ namespace trinity::game
     // How it works, and why it survives game updates (everything is located by
     // byte signature, never a baked address):
     //  - Crimson Desert is a three-protagonist game (Kliff plus two companions,
-    //    all controllable/summonable and able to coexist), so RefreshSelf()
-    //    resolves the whole PLAYER SET fresh every game tick from the engine's
-    //    gameplay-character manager (kCharMgrAnchors): the manager owns a
-    //    vector of every character and we collect each one whose class tag is
-    //    player (SelfPlayer / OtherPlayer). From each we walk to its stat entries
-    //    and battle-damage identity and cache just those. Because the resolve is
-    //    fresh, a body transition (mount / transform / character swap) that
-    //    reallocates a character is picked up on the next tick - there is no
-    //    stale-pointer cache to churn. The movement-update tick drives the
-    //    refresh on the game thread.
+    //    all controllable/summonable and able to coexist), so Tick() periodically
+    //    resolves the PLAYER SET from the gameplay-character manager
+    //    (kCharMgrAnchors). The controlled body requires a possessor round-trip
+    //    and valid health chain; character-indexed handles additionally require
+    //    native party/equipment identity. Stat and combat slots are independent
+    //    of those indices. Body transitions are picked up on the next resolve,
+    //    and roots absent from the manager are dropped even if still readable.
     //  - We hook the engine's single stat-commit funnel (every HP/Stamina/
     //    Spirit write - damage, drain, heal, regen - passes through it) and,
     //    for whichever tracked-player entry a toggle applies to, force current
@@ -38,25 +35,29 @@ namespace trinity::game
         static bool Install();
         static void Remove();
 
-        // Re-resolve the player set fresh from the character-manager global and
-        // refresh every tracked protagonist's stat entries. Churn-proof (no
-        // cache): a body transition or character swap that reallocates a
-        // character is picked up here. Must run on the game thread; the
-        // Game-thread tick to resolve player and mount entities fresh from the character manager
+        // Periodically resolve current player/mount roots from the character manager,
+        // dropping unavailable handles on each resolve. Must run on the game thread.
+        // Internal combat slot 0 remains the controlled body, independent of identity.
         static void Tick();
 
-        // Refresh/pin current player and mount stat entries. Safe to call from render thread.
+        // Refresh/pin revalidated player and mount stat entries; game-thread pump.
         static void RefreshSelf();
 
-        // True once at least one protagonist's health entry has been observed.
+        // True while the controlled body's health entry and actor are available.
         static bool Ready();
 
-        // Returns the tracked actor address (0 = Primary/Kliff, 1 = Companion 1, 2 = Companion 2).
+        // Fresh character-indexed handles: 0 = Kliff, 1 = Damiane, 2 = Oongka.
+        // Unavailable/unidentified characters return 0; index 0 is NOT the active-player slot.
         static uintptr_t GetActor(int index);
         static uintptr_t GetOwner(int index = 0);
+        // Controlled body, independent of whether its character identity is known.
+        static uintptr_t GetControlledOwner();
+        // Counts identified character handles, not internal combat/stat slots.
         static int GetTrackedPlayerCount();
+        // Controlled character identity (0..2), or -1 while unknown/unavailable.
         static int GetActiveCharacterIdx();
         static uintptr_t GetCharMgrGlobal();
+        // Fresh core-profile lookup; valid, matching equipment takes priority over render state.
         static uintptr_t GetProfileOwner(int index);
         static uintptr_t GetProfileActor(int index);
         static uintptr_t GetProfileEquipComp(int index);
@@ -86,5 +87,7 @@ namespace trinity::game
         // companions) are actually represented at runtime. Read-only and
         // SEH-guarded; safe to call from the menu thread.
         static void DumpCharacters();
+    private:
+        static void TickImpl();
     };
 }

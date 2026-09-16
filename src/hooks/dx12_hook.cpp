@@ -1,4 +1,5 @@
 #include "dx12_hook.h"
+#include "overlay_sync.h"
 
 #include <Windows.h>
 #include <d3d12.h>
@@ -14,6 +15,7 @@
 #include "xinput_hook.h"
 #include "hdr_composite_shader.h"
 #include "../core/logger.h"
+#include "../core/tick_metrics.h"
 #include "../core/localization.h"
 #include "../core/settings.h"
 #include "../core/state.h"
@@ -82,11 +84,16 @@ namespace trinity::hooks
     // --- Rendering resources ------------------------------------------------
     struct FrameContext
     {
-        ID3D12CommandAllocator*     commandAllocator = nullptr;
         ID3D12Resource*             renderTarget     = nullptr;
         D3D12_CPU_DESCRIPTOR_HANDLE rtvHandle        = {};
-        UINT64                      fenceValue       = 0; // GPU signal for this frame's overlay work
     };
+    struct OverlaySubmission
+    {
+        ID3D12CommandAllocator* commandAllocator = nullptr;
+        UINT64 fenceValue = 0;
+    };
+    static OverlaySubmission g_submissions[kOverlayFramesInFlight]{};
+    static UINT64 g_overlaySubmitted = 0;
 
     static ID3D12Device*              g_device      = nullptr;
     static ID3D12DescriptorHeap*      g_rtvHeap     = nullptr;
@@ -401,24 +408,17 @@ namespace trinity::hooks
 
     // Block until our last overlay submit has retired so it is safe to release
     // the resources it referenced. Cheap when nothing is in flight.
-    static void WaitForOverlayIdle()
+    static bool WaitForOverlayIdle()
     {
-        if (g_fence && g_fenceValue && g_fenceEvent &&
-            g_fence->GetCompletedValue() < g_fenceValue)
-        {
-            g_fence->SetEventOnCompletion(g_fenceValue, g_fenceEvent);
-            WaitForSingleObject(g_fenceEvent, 1000);
-        }
+        return WaitForOverlayFence(g_fence, g_fenceEvent, g_fenceValue);
     }
 
-    // Rebuild the RTV heap and per-frame command allocators for a new back-buffer
+    // Rebuild the RTV heap for a new back-buffer
     // count. The caller must have flushed our overlay work first (WaitForOverlayIdle)
     // and must call CreateRenderTargets afterwards to repopulate the views.
     static bool ResizeFrameResources(UINT newCount)
     {
         CleanupRenderTargets();
-        for (auto& f : g_frames)
-            if (f.commandAllocator) { f.commandAllocator->Release(); f.commandAllocator = nullptr; }
         if (g_rtvHeap) { g_rtvHeap->Release(); g_rtvHeap = nullptr; }
 
         g_bufferCount = newCount;
@@ -435,16 +435,6 @@ namespace trinity::hooks
             return false;
         }
 
-        for (UINT i = 0; i < newCount; ++i)
-        {
-            if (FAILED(g_device->CreateCommandAllocator(
-                    D3D12_COMMAND_LIST_TYPE_DIRECT,
-                    IID_PPV_ARGS(&g_frames[i].commandAllocator))))
-            {
-                LOG_ERR("ResizeFrameResources: command allocator %u creation failed.", i);
-                return false;
-            }
-        }
         return true;
     }
 
@@ -471,7 +461,7 @@ namespace trinity::hooks
         {
             for (const auto& f : g_frames)
             {
-                if (!f.renderTarget || !f.commandAllocator)
+                if (!f.renderTarget)
                 {
                     buffersValid = false;
                     break;
@@ -505,7 +495,7 @@ namespace trinity::hooks
         }
 
         // Our last submit referenced the old buffers/allocators - retire it first.
-        WaitForOverlayIdle();
+        if (!WaitForOverlayIdle()) return false;
 
         if (desc.BufferCount != g_bufferCount || g_rtvHeap == nullptr || g_frames.size() != desc.BufferCount)
         {
@@ -603,12 +593,12 @@ namespace trinity::hooks
             }
         }
 
-        // One command allocator per frame + a single command list.
-        for (UINT i = 0; i < g_bufferCount; ++i)
+        // Fixed overlay submission ring, matching ImGui's upload-buffer ring.
+        for (UINT i = 0; i < kOverlayFramesInFlight; ++i)
         {
             if (FAILED(g_device->CreateCommandAllocator(
                     D3D12_COMMAND_LIST_TYPE_DIRECT,
-                    IID_PPV_ARGS(&g_frames[i].commandAllocator))))
+                    IID_PPV_ARGS(&g_submissions[i].commandAllocator))))
             {
                 LOG_ERR("InitImGui: command allocator %u creation failed.", i);
                 return false;
@@ -617,7 +607,7 @@ namespace trinity::hooks
 
         if (FAILED(g_device->CreateCommandList(
                 0, D3D12_COMMAND_LIST_TYPE_DIRECT,
-                g_frames[0].commandAllocator, nullptr,
+                g_submissions[0].commandAllocator, nullptr,
                 IID_PPV_ARGS(&g_commandList))))
         {
             LOG_ERR("InitImGui: command list creation failed.");
@@ -666,7 +656,7 @@ namespace trinity::hooks
         // above. The composite pass (EnsureCompositePipeline) is what actually
         // targets g_scFormat.
         ImGui_ImplDX12_Init(
-            g_device, g_bufferCount, DXGI_FORMAT_R8G8B8A8_UNORM, g_srvHeap,
+            g_device, kOverlayFramesInFlight, DXGI_FORMAT_R8G8B8A8_UNORM, g_srvHeap,
             g_srvHeap->GetCPUDescriptorHandleForHeapStart(),
             g_srvHeap->GetGPUDescriptorHandleForHeapStart());
 
@@ -686,6 +676,7 @@ namespace trinity::hooks
 
         LOG_OK("Overlay ready - %ux%u, %u back buffers.",
                desc.BufferDesc.Width, desc.BufferDesc.Height, g_bufferCount);
+        LOG("overlay: %u submission slots; allocator/upload fences independent of back-buffer index.", kOverlayFramesInFlight);
         return true;
     }
 
@@ -798,13 +789,10 @@ namespace trinity::hooks
         if (ui::g_needFontRebuild)
         {
             // Wait for all in-flight frames to finish on the GPU before destroying the old font texture
-            for (auto& f : g_frames)
+            if (!WaitForOverlayIdle())
             {
-                if (f.fenceValue != 0 && g_fence->GetCompletedValue() < f.fenceValue)
-                {
-                    g_fence->SetEventOnCompletion(f.fenceValue, g_fenceEvent);
-                    WaitForSingleObject(g_fenceEvent, INFINITE);
-                }
+                submitQueue->Release();
+                return;
             }
             ImGui_ImplDX12_InvalidateDeviceObjects();
             ui::InitStyle((static_cast<float>(g_scHeight) / 1080.0f) * State::Get().menuScale);
@@ -821,6 +809,15 @@ namespace trinity::hooks
 
         ImGui::Render();
 
+        // WantsDraw already skips a closed overlay. Also skip a final empty
+        // draw list (e.g. a toast expired while building this frame).
+        const ImDrawData* drawData = ImGui::GetDrawData();
+        if (!drawData || drawData->TotalVtxCount == 0 || drawData->DisplaySize.x <= 0 || drawData->DisplaySize.y <= 0)
+        {
+            submitQueue->Release();
+            return;
+        }
+
         const UINT idx = swapChain->GetCurrentBackBufferIndex();
         if (idx >= g_frames.size() || !g_frames[idx].renderTarget)
         {
@@ -832,14 +829,25 @@ namespace trinity::hooks
         }
         FrameContext& frame = g_frames[idx];
 
-        if (frame.fenceValue != 0 && g_fence->GetCompletedValue() < frame.fenceValue)
+        OverlaySubmission& submission = g_submissions[OverlaySubmissionSlot(g_overlaySubmitted)];
+        const LONGLONG waitStart = core::TickMetrics::Now();
+        const bool retired = WaitForOverlayFence(g_fence, g_fenceEvent, submission.fenceValue);
+        core::TickMetrics::RecordOverlayWait(waitStart);
+        if (!retired)
         {
-            g_fence->SetEventOnCompletion(frame.fenceValue, g_fenceEvent);
-            WaitForSingleObject(g_fenceEvent, 2000);
+            LOG_ERR("overlay: submission fence failed/timed out; resources kept intact, overlay disabled.");
+            g_renderDisabled = true;
+            submitQueue->Release();
+            return;
         }
 
-        frame.commandAllocator->Reset();
-        g_commandList->Reset(frame.commandAllocator, nullptr);
+        if (FAILED(submission.commandAllocator->Reset()) || FAILED(g_commandList->Reset(submission.commandAllocator, nullptr)))
+        {
+            LOG_ERR("overlay: allocator/command-list reset failed.");
+            g_renderDisabled = true;
+            submitQueue->Release();
+            return;
+        }
 
         // --- Pass 1: ImGui draws into the offscreen SDR target -------------
         D3D12_RESOURCE_BARRIER offscreenBarrier = {};
@@ -906,14 +914,20 @@ namespace trinity::hooks
 
         if (FAILED(g_commandList->Close()))
         {
+            g_renderDisabled = true; // backend ring advanced; do not reuse out of step
             submitQueue->Release();
             return;
         }
 
         ID3D12CommandList* toExec[] = { g_commandList };
         submitQueue->ExecuteCommandLists(1, toExec);
-        submitQueue->Signal(g_fence, ++g_fenceValue);
-        frame.fenceValue = g_fenceValue;
+        if (FAILED(submitQueue->Signal(g_fence, ++g_fenceValue)))
+        {
+            LOG_ERR("overlay: queue fence signal failed; overlay disabled.");
+            g_renderDisabled = true;
+        }
+        submission.fenceValue = g_fenceValue;
+        ++g_overlaySubmitted;
         submitQueue->Release();
     }
 
@@ -1001,6 +1015,7 @@ namespace trinity::hooks
             }
         }
 
+        core::TickMetrics::Report();
         if (!gui::WantsDraw())
         {
             ImGui::GetIO().MouseDrawCursor = false;
@@ -1010,8 +1025,9 @@ namespace trinity::hooks
         bool drew = false;
         __try
         {
+            const UINT64 before = g_overlaySubmitted;
             DrawOverlay(swapChain);
-            drew = true;
+            drew = g_overlaySubmitted != before;
         }
         __except (EXCEPTION_EXECUTE_HANDLER)
         {
@@ -1098,11 +1114,12 @@ namespace trinity::hooks
 
     // Shared ResizeBuffers handling: retire our work + drop views, let the real
     // resize happen (caller), then rebuild from the post-resize truth.
-    static void PreResizeCleanup()
+    static bool PreResizeCleanup()
     {
-        if (!g_imguiReady) return;
-        WaitForOverlayIdle();
+        if (!g_imguiReady) return true;
+        if (!WaitForOverlayIdle()) return false;
         CleanupRenderTargets();
+        return true;
     }
     static void PostResizeRebuild(IDXGISwapChain3* swapChain)
     {
@@ -1129,7 +1146,7 @@ namespace trinity::hooks
     // untouched - under DLSS-G the native present is Streamline's read-only frame.
     static HRESULT WINAPI hkPresent(IDXGISwapChain3* swapChain, UINT syncInterval, UINT flags)
     {
-        const bool drew = RenderOverlay(swapChain, !g_wrapperActive);
+        const bool drew = !(flags & DXGI_PRESENT_TEST) && RenderOverlay(swapChain, !g_wrapperActive);
         const HRESULT hr = oPresent(swapChain, syncInterval, flags);
         PostPresentDeviceCheck(drew);
         return hr;
@@ -1141,7 +1158,7 @@ namespace trinity::hooks
     {
         if (!g_imguiReady || g_wrapperActive)
             return oResizeBuffers(swapChain, bufferCount, width, height, format, flags);
-        PreResizeCleanup();
+        if (!PreResizeCleanup()) return DXGI_ERROR_WAS_STILL_DRAWING;
         const HRESULT hr = oResizeBuffers(swapChain, bufferCount, width, height, format, flags);
         if (SUCCEEDED(hr)) PostResizeRebuild(swapChain);
         return hr;
@@ -1217,7 +1234,7 @@ namespace trinity::hooks
         // IDXGISwapChain ----------------------------------------------------
         HRESULT STDMETHODCALLTYPE Present(UINT syncInterval, UINT flags) override
         {
-            const bool drew = RenderOverlay(m_inner, true);
+            const bool drew = !(flags & DXGI_PRESENT_TEST) && RenderOverlay(m_inner, true);
             const HRESULT hr = m_inner->Present(syncInterval, flags);
             PostPresentDeviceCheck(drew);
             return hr;
@@ -1228,7 +1245,7 @@ namespace trinity::hooks
         HRESULT STDMETHODCALLTYPE GetDesc(DXGI_SWAP_CHAIN_DESC* d) override { return m_inner->GetDesc(d); }
         HRESULT STDMETHODCALLTYPE ResizeBuffers(UINT bc, UINT w, UINT h, DXGI_FORMAT f, UINT fl) override
         {
-            PreResizeCleanup();
+            if (!PreResizeCleanup()) return DXGI_ERROR_WAS_STILL_DRAWING;
             const HRESULT hr = m_inner->ResizeBuffers(bc, w, h, f, fl);
             if (SUCCEEDED(hr)) PostResizeRebuild(m_inner);
             return hr;
@@ -1245,7 +1262,7 @@ namespace trinity::hooks
         HRESULT STDMETHODCALLTYPE GetCoreWindow(REFIID riid, void** pp) override { return m_inner->GetCoreWindow(riid, pp); }
         HRESULT STDMETHODCALLTYPE Present1(UINT syncInterval, UINT flags, const DXGI_PRESENT_PARAMETERS* pp) override
         {
-            const bool drew = RenderOverlay(m_inner, true);
+            const bool drew = !(flags & DXGI_PRESENT_TEST) && RenderOverlay(m_inner, true);
             const HRESULT hr = m_inner->Present1(syncInterval, flags, pp);
             PostPresentDeviceCheck(drew);
             return hr;
@@ -1277,7 +1294,7 @@ namespace trinity::hooks
         }
         HRESULT STDMETHODCALLTYPE ResizeBuffers1(UINT bc, UINT w, UINT h, DXGI_FORMAT f, UINT fl, const UINT* nodeMask, IUnknown* const* pQueues) override
         {
-            PreResizeCleanup();
+            if (!PreResizeCleanup()) return DXGI_ERROR_WAS_STILL_DRAWING;
             const HRESULT hr = m_inner->ResizeBuffers1(bc, w, h, f, fl, nodeMask, pQueues);
             if (SUCCEEDED(hr)) PostResizeRebuild(m_inner);
             return hr;
@@ -1574,6 +1591,8 @@ namespace trinity::hooks
         input::Shutdown();
         hooks::RemoveXInputHooks();
 
+        if (!WaitForOverlayIdle()) return;
+
         if (g_imguiReady)
         {
             ui::IconsShutdown();
@@ -1584,7 +1603,7 @@ namespace trinity::hooks
         }
 
         CleanupRenderTargets();
-        for (auto& f : g_frames)
+        for (auto& f : g_submissions)
             if (f.commandAllocator) { f.commandAllocator->Release(); f.commandAllocator = nullptr; }
         g_frames.clear();
         g_swapChain   = nullptr;

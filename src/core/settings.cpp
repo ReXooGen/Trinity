@@ -1,4 +1,5 @@
 #include "settings.h"
+#include "tick_metrics.h"
 
 #include <Windows.h>
 #include <cstdio>
@@ -125,6 +126,7 @@ namespace trinity
             else if (!strcmp(key, "tooltipImageScale"))    vals.tooltipImageScale   = strtof(val, nullptr);
             else if (!strcmp(key, "showItemTooltip"))     vals.showItemTooltip     = atoi(val) != 0;
             else if (!strcmp(key, "fileLogging"))         vals.fileLogging         = atoi(val) != 0;
+            else if (!strcmp(key, "perfLogging"))         vals.perfLogging         = atoi(val) != 0;
             else if (!strcmp(key, "themeIndex"))          vals.themeIndex          = atoi(val);
             else if (!strcmp(key, "playstationIcons"))    vals.playstationIcons    = atoi(val) != 0;
             else if (!strcmp(key, "language"))
@@ -189,6 +191,8 @@ namespace trinity
         State& st  = State::Get();
         st.autoSave      = vals.autoSave;
         st.fileLogging   = vals.fileLogging;
+        st.perfLogging   = vals.perfLogging;
+        core::TickMetrics::SetEnabled(st.perfLogging);
         st.themeIndex    = vals.themeIndex;
         st.playstationIcons = vals.playstationIcons;
         st.useCustomFont = vals.useCustomFont;
@@ -357,6 +361,7 @@ namespace trinity
                 "tooltipImageScale=%.3f\n"
                 "showItemTooltip=%d\n"
                 "fileLogging=%d\n"
+                "perfLogging=%d\n"
                 "themeIndex=%d\n"
                 "playstationIcons=%d\n"
                 "language=%s\n"
@@ -422,6 +427,7 @@ namespace trinity
                 st.tooltipImageScale,
                 st.showItemTooltip ? 1 : 0,
                 st.fileLogging ? 1 : 0,
+                st.perfLogging ? 1 : 0,
                 st.themeIndex,
                 st.playstationIcons ? 1 : 0,
                 loc::GetLanguageCode(st.languageIndex),
@@ -487,6 +493,8 @@ namespace trinity
         st.invStackSize         = def.invStackSize;
         st.invStackSizeVal      = def.invStackSizeVal;
         st.showFps              = def.showFps;
+        st.perfLogging          = def.perfLogging;
+        core::TickMetrics::SetEnabled(st.perfLogging);
     }
 
     void Settings::ResetBinds()

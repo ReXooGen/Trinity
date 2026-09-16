@@ -1,4 +1,5 @@
 #include "teleport.h"
+#include "../core/tick_metrics.h"
 
 #include <Windows.h>
 #include <TlHelp32.h>
@@ -1991,23 +1992,33 @@ namespace trinity::game
             // refresh the current-player stat entries from a fresh char-manager
             // walk so god mode / infinite stamina / spirit always target the
             // live player (this is the movement tick the mod already owns).
+            LONGLONG tickStart = core::TickMetrics::Now();
             Player::Tick();
+            core::TickMetrics::Record(core::TickPart::Player, tickStart);
 
             // Apply Game Speed here too: the fixed-timestep override must be
             // held on the game thread, once per frame, same as the resolve.
+            tickStart = core::TickMetrics::Now();
             World::Tick();
+            core::TickMetrics::Record(core::TickPart::World, tickStart);
 
             // Slot Size / Max Stack Size table overrides: same reasoning as
             // Game Speed - held/retried on the game thread, not the render one.
+            tickStart = core::TickMetrics::Now();
             Inventory::Tick();
+            core::TickMetrics::Record(core::TickPart::Inventory, tickStart);
 
             // Run a queued armor-dye apply (calls engine code, so it must be
             // here on the game thread, same as the inventory add path).
+            tickStart = core::TickMetrics::Now();
             Dye::Tick();
+            core::TickMetrics::Record(core::TickPart::Dye, tickStart);
 
             // Re-apply equipped effects after an abyss-gear socket edit (same
             // engine pass, same game-thread requirement as the dye apply).
+            tickStart = core::TickMetrics::Now();
             Equipment::Tick();
+            core::TickMetrics::Record(core::TickPart::Equipment, tickStart);
 
             // Upkeep Trust Multiplier hook state (only engaged when toggle is on)
             Friendly::Tick();

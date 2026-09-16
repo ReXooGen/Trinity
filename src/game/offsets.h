@@ -333,7 +333,7 @@ namespace trinity::game
     // = a player-class character (see also sub_30DF50, the same tag switch).
     // This tag reads a stable 1 on the player. It is the ONLY type read used.
     inline constexpr uintptr_t kOff_Owner_TypeDesc   = 0x88; // -> type descriptor (tag byte at +1)
-    inline constexpr uintptr_t kOff_Owner_PartyIndex = 0x50; // u32 party/entity ID (1=Kliff, 2=Damiane, 3=Oongka, 5=Mount)
+    inline constexpr uintptr_t kOff_Owner_PartyIndex = 0x50; // legacy party index; TU 2.02 ENTITY ID, never character/mount identity
 
     // A resolved character IS the god-mode "owner" object (vtable 0x50B9A10):
     // its ObjectType is at +0x48 (kOff_Owner_ObjectType) and its vital chain is
@@ -1302,11 +1302,16 @@ namespace trinity::game
     inline constexpr const char* kSig_EvaluateCrimeWantedState =
         "48 89 5C 24 08 48 8B 41 40 45 33 D2 8B 49 48 48 8B DA 4C 6B D9 38 41 B0 07";
 
-    // Central Crime Event Dispatcher & Territory Wanted State Register (sub_141595BC0):
-    // Intercepts and completely suppresses Murder, Assault, Theft, and Property Destruction events.
-    // Suppresses the on-screen "Crime: Murder / Assault" UI banner, minimap red wanted circle, and guard hostility.
-    inline constexpr const char* kSig_RegisterCrimeEvent =
-        "48 89 5C 24 10 55 56 57 41 54 41 55 41 56 41 57 48 8D 6C 24 D9 48 81 EC C0 00 00 00 4D 8B F0";
+    // REMOVED (v1.4.5): kSig_RegisterCrimeEvent was misidentified.
+    // The function at CrimsonDesert.exe+0x1E4F170 receives a 64-bit C-string
+    // pointer in RDX (crime name), not a uint32_t crimeId. Hooking it with
+    // the wrong signature caused pointer truncation and crash at 0x1E4F217.
+    // This function is called during ordinary world loading, so suppressing
+    // it crashes the game even with No Bounty OFF. No Bounty feature works
+    // via kSig_EvaluateCrimeWantedState alone.
+    //
+    // inline constexpr const char* kSig_RegisterCrimeEvent =
+    //     "48 89 5C 24 10 55 56 57 41 54 41 55 41 56 41 57 48 8D 6C 24 D9 48 81 EC C0 00 00 00 4D 8B F0";
 
     // --- Category icons the game ships but never names ------------------------
     // A handful of displayed categories have NO usable _iconPath: the sprite
@@ -1854,7 +1859,7 @@ namespace trinity::game
     inline constexpr uintptr_t kOff_ItemVal_SocketData_Legacy = 0x58; // Legacy: -> record[]
     inline constexpr uintptr_t kOff_ItemVal_SocketSize        = 0x68; // u32 vector size (always 5)
     inline constexpr uintptr_t kOff_ItemVal_SocketCap         = 0x6C; // u32 vector capacity (5)
-    inline constexpr uintptr_t kOff_ItemVal_SocketUnlocked    = 0x70; // u32 unlocked-socket count
+    inline constexpr uintptr_t kOff_ItemVal_SocketUnlocked    = 0x70; // u8 unlocked count; +71..73 are padding
     inline constexpr uintptr_t kSocketRec_Stride              = 6;
     inline constexpr int       kSocket_Max                    = 5;    // absolute max (matches the vector capacity)
     // Record layout (6 bytes):
@@ -1907,7 +1912,9 @@ namespace trinity::game
     // do not rebuild it, so they did nothing on a raw write. Live trace of the
     // Witch's socketing found sub_7C88A0 as the real entry.)
     // Signature: void* f(equipComponent, int* out).
-    // TU 2.01+ EquipEffectRefresh (100% unique match @ 0x140E7BAC0)
+    // DO NOT CALL ON TU 2.02/rev2850: this pattern matches 0x140E7C580,
+    // UIGamePlayControlChallengeDescription's virtual member (vtable +8),
+    // not equipment refresh. Retained solely for the older-build path.
     inline constexpr const char* kSig_EquipEffectRefresh =
         "48 89 5C 24 10 55 56 57 48 83 EC 40 48 8B DA 48 8B F9 80 49 22 20 4C 8D";
     // Modern TU 1.17 - 1.18+ EquipEffectRefresh

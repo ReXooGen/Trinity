@@ -14,6 +14,7 @@
 #include "../core/state.h"
 #include "../core/text.h"
 #include "../core/logger.h"
+#include "../core/tick_metrics.h"
 #include "../core/localization.h"
 #include "../game/player.h"
 #include "../game/teleport.h"
@@ -40,7 +41,7 @@ namespace trinity::gui
     bool WantsDraw()
     {
         const State& st = State::Get();
-        return st.menuOpen || st.showFps || ui::ToastsActive();
+        return st.menuOpen || st.showFps || ui::ToastsActive() || game::Equipment::HasEditResult() || game::Dye::HasResult();
     }
 
     static void DrawFpsCounter()
@@ -218,7 +219,7 @@ namespace trinity::gui
 
             if (targetMode == 1) // Mount
             {
-                ui::Toast(LOC("Dye saved to mount! (Renders live when mounted or upon travel/reload)"));
+                ui::Toast(LOC("Mount dye updated - visual refresh requested"));
             }
             else if (targetIdx == 1 || targetIdx == 2) // Damiane or Oongka
             {
@@ -234,7 +235,11 @@ namespace trinity::gui
         {
             const int targetMode = game::Dye::GetTargetMode();
             const int targetIdx = (targetMode == 0) ? game::Dye::GetActiveCharacter() : -1;
-            if (targetIdx == 1 || targetIdx == 2)
+            if (targetMode == 1)
+            {
+                ui::Toast(LOC("Mount dye data updated - try re-equipping the piece if the color has not changed"));
+            }
+            else if (targetIdx == 1 || targetIdx == 2)
             {
                 const char* name = game::Equipment::CharacterName(targetIdx);
                 ui::Toast(LOC("Dye saved to %s (visual pending reload)"), name);
@@ -246,6 +251,13 @@ namespace trinity::gui
         }
         else if (s == game::Dye::OpState::Failed)
             ui::Toast(LOC("Could not dye that - see the log"));
+        else if (s == game::Dye::OpState::ProfileSaved)
+            ui::Toast(LOC("Dye profile saved"));
+        else if (s == game::Dye::OpState::ProfileSaveFailed)
+        {
+            const std::string error = game::Dye::ProfileError();
+            ui::Toast("%s", error.empty() ? LOC("Could not capture dye profile - select the item again") : error.c_str());
+        }
     }
 
     static void SendDye(uint32_t familyKey, int r, int g, int b)
@@ -363,7 +375,11 @@ namespace trinity::gui
             }
 
             int mountIdx = game::Dye::GetActiveMount();
-            if (mountIdx >= comboCount) mountIdx = 0;
+            if (mountIdx < 0 || mountIdx >= comboCount)
+            {
+                mountIdx = 0;
+                game::Dye::SetActiveMount(mountIdx);
+            }
             if (ui::Combo(LOC("Target Mount"), &mountIdx, mountLabels, comboCount, LOC("Select active horse or mount to dye.")))
             {
                 game::Dye::SetActiveMount(mountIdx);
@@ -384,7 +400,11 @@ namespace trinity::gui
             if (isMount)
             {
                 int mountIdx = game::Dye::GetActiveMount();
-                if (mountIdx > 0)
+                game::Player::MountDescriptor mount{};
+                if (game::Player::GetMountDescriptor(mountIdx, &mount))
+                    ui::Option(LOC("Mount equipment loading"),
+                               LOC("The mount is detected. Waiting for its equipped items and dye data."));
+                else if (mountIdx > 0)
                     ui::Option(LOC("Mount Not Detected in World"),
                                LOC("This mount is not currently spawned or present in the game world."));
                 else
@@ -515,6 +535,146 @@ namespace trinity::gui
         ui::End();
     }
 
+    static game::Dye::SlotInfo s_profileItem{};
+    static int s_profileMode = -1, s_profileCharacter = -1, s_profileMount = -1;
+    static uint32_t s_profileId = 0;
+    static char s_profileName[64] = "";
+    static char s_profileRename[64] = "";
+    static int s_profilePreviewZone = 1;
+
+    static bool ProfileItemCurrent()
+    {
+        if (game::Dye::GetTargetMode() != s_profileMode || game::Dye::GetActiveCharacter() != s_profileCharacter ||
+            game::Dye::GetActiveMount() != s_profileMount || !game::Dye::Ready()) return false;
+        const int n = game::Dye::SlotCount();
+        for (int i = 0; i < n; ++i)
+        {
+            game::Dye::SlotInfo current{};
+            if (game::Dye::GetSlot(i, &current) && current.tag == s_profileItem.tag &&
+                current.typeId == s_profileItem.typeId && current.instanceId == s_profileItem.instanceId) return true;
+        }
+        return false;
+    }
+
+    static bool SelectedDyeProfile(game::DyeProfile& out)
+    {
+        for (const auto& profile : game::Dye::Profiles())
+            if (profile.id == s_profileId) { out = profile; return true; }
+        return false;
+    }
+
+    static void ProfileStoreFailure()
+    {
+        const std::string error = game::Dye::ProfileError();
+        ui::Toast("%s", error.empty() ? LOC("Could not update dye profile") : error.c_str());
+    }
+
+    static void RenderDyeProfiles()
+    {
+        ui::Begin(LOC("Dye Profiles"));
+        if (!ProfileItemCurrent())
+        {
+            ui::Option(LOC("Equipment changed"), LOC("Return to the equipment list and select the piece again."));
+            ui::End();
+            return;
+        }
+        ui::Option(s_profileItem.itemName, LOC("Profiles restore all zones, materials and condition for this equipment type."));
+        if (game::Dye::Busy())
+        {
+            ui::Option(LOC("Dye operation in progress"), LOC("Wait for the current dye action to finish before saving or applying a profile."));
+        }
+        else
+        {
+            ui::TextInput(LOC("Profile Name"), s_profileName, sizeof(s_profileName), LOC("Name this appearance, then choose Save Current Dye."));
+            if (ui::Option(LOC("Save Current Dye"), LOC("Capture the equipment's actual dye data in all zones, including natural zones. Saved across restarts.")))
+            {
+                s_dyeRetouch = false;
+                if (game::Dye::SaveProfile(s_profileItem.tag, s_profileName)) ui::Toast(LOC("Saving dye profile..."));
+                else ui::Toast(LOC("Enter a profile name and wait for the equipment to load"));
+            }
+        }
+        unsigned shown = 0;
+        for (const auto& profile : game::Dye::Profiles())
+        {
+            if (!game::DyeProfileCompatible(profile, core::GetGameVersion().revision, s_profileItem.typeId, s_profileMode)) continue;
+            ++shown;
+            char label[104];
+            snprintf(label, sizeof(label), "%s  (#%u)", profile.name, profile.id);
+            if (ui::Submenu(label, "dyeprofiledetail", LOC("Preview, apply, rename, overwrite or delete this saved appearance.")))
+            {
+                s_profileId = profile.id;
+                s_profilePreviewZone = 1;
+                strcpy_s(s_profileRename, profile.name);
+                ui::ResetMenu("dyeprofiledetail");
+            }
+        }
+        if (!shown) ui::Option(LOC("No saved profiles for this equipment"), LOC("Save a look before experimenting with other colors."));
+        const std::string error = game::Dye::ProfileError();
+        if (!error.empty()) ui::Option(error.c_str(), LOC("The existing profile file is retained if a save fails."));
+        ui::End();
+    }
+
+    static void RenderDyeProfileDetail()
+    {
+        ui::Begin(LOC("Dye Profile"));
+        game::DyeProfile profile{};
+        if (!ProfileItemCurrent() || !SelectedDyeProfile(profile) ||
+            !game::DyeProfileCompatible(profile, core::GetGameVersion().revision, s_profileItem.typeId, s_profileMode))
+        {
+            ui::Option(LOC("Profile or equipment changed"), LOC("Return to Dye Profiles and select the profile again."));
+            ui::End();
+            return;
+        }
+        ui::Option(profile.name, LOC("Saved appearance. Applying replaces every zone on this piece."));
+        ui::IntOption(LOC("Preview Zone"), &s_profilePreviewZone, 1, 12, 1, 1,
+                      LOC("Inspect the saved color, material and condition for each zone."));
+        uint32_t colors[12]{};
+        bool dyed[12]{};
+        for (unsigned ch = 0; ch < 12; ++ch)
+        {
+            const auto& rec = profile.records[ch];
+            dyed[ch] = (profile.mask & (1u << ch)) && !(rec[4] == 0xFF && rec[5] == 0xFF &&
+                !rec[7] && !rec[8] && !rec[9] && !rec[10] && (rec[11] & 0x80) && !rec[12]);
+            colors[ch] = uint32_t{rec[7]} << 16 | uint32_t{rec[8]} << 8 | rec[9];
+        }
+        const int preview = s_profilePreviewZone - 1;
+        const auto& previewRecord = profile.records[preview];
+        const int material = dyed[preview] ? (int{previewRecord[4]} | (int{previewRecord[5]} << 8)) : 0;
+        const int condition = !dyed[preview] || previewRecord[11] == 0xFF ? 100 :
+            100 - ((previewRecord[11] & 0x7F) * 100 + 63) / 127;
+        ui::SetDyePreviewTooltip(s_profileItem.itemName, s_profileItem.icon, profile.name,
+                                s_profilePreviewZone, colors[preview], material == 0xFFFF ? 0 : material,
+                                condition, 12, colors, dyed);
+        if (game::Dye::Busy()) ui::Option(LOC("Dye operation in progress"));
+        else
+        {
+            if (ui::Option(LOC("Apply Profile"), LOC("Restore saved colors, material and condition. Zones saved as natural are cleared.")))
+            {
+                s_dyeRetouch = false;
+                if (game::Dye::ApplyProfile(s_profileItem.tag, profile.id)) ui::Toast(LOC("Applying dye profile..."));
+                else ui::Toast(LOC("Could not apply profile - select the equipment again"));
+            }
+            ui::TextInput(LOC("Name"), s_profileRename, sizeof(s_profileRename));
+            if (ui::Option(LOC("Save Profile Name")))
+            {
+                if (game::Dye::RenameProfile(profile.id, s_profileRename)) ui::Toast(LOC("Dye profile renamed"));
+                else ProfileStoreFailure();
+            }
+            if (ui::Option(LOC("Overwrite With Current Dye"), LOC("Replace this saved appearance with the current dye on the selected equipment.")))
+            {
+                s_dyeRetouch = false;
+                if (game::Dye::SaveProfile(s_profileItem.tag, profile.name, profile.id)) ui::Toast(LOC("Saving dye profile..."));
+                else ui::Toast(LOC("Could not capture current dye"));
+            }
+            if (ui::Option(LOC("Delete Profile"), LOC("Delete this preset from Trinity. The equipment's current appearance stays as it is.")))
+            {
+                if (game::Dye::DeleteProfile(profile.id)) { ui::Toast(LOC("Dye profile deleted")); ui::PopMenu(); }
+                else ProfileStoreFailure();
+            }
+        }
+        ui::End();
+    }
+
     static void RenderDyeEdit()
     {
         ui::Begin(s_dyeItem[0] ? s_dyeItem : nullptr);
@@ -531,6 +691,18 @@ namespace trinity::gui
             }
         }
         const int maxZones = 12;
+
+        if (haveSlot && game::Dye::GetTargetMode() <= 1 &&
+            ui::Submenu(LOC("Dye Profiles"), "dyeprofiles", LOC("Save this appearance and restore it after trying other colors.")))
+        {
+            s_dyeRetouch = false;
+            s_profileItem = curSlot;
+            s_profileMode = game::Dye::GetTargetMode();
+            s_profileCharacter = game::Dye::GetActiveCharacter();
+            s_profileMount = game::Dye::GetActiveMount();
+            snprintf(s_profileName, sizeof(s_profileName), "Look %u", static_cast<unsigned>(game::Dye::Profiles().size()) + 1);
+            ui::ResetMenu("dyeprofiles");
+        }
 
         static const char* const kZoneItems[] = {
             "All zones", "Zone 1", "Zone 2", "Zone 3", "Zone 4", "Zone 5", "Zone 6",
@@ -698,6 +870,7 @@ namespace trinity::gui
     // sockets renders this session only (see game/equipment.h).
 
     static uint16_t s_eqTag = 0xFFFF; // selected piece's engine tag
+    static game::Equipment::SlotInfo s_eqTarget{}; // copied navigation identity; never a write pointer
     static char     s_eqItem[64] = "";// its item name - the edit/picker title
     static int      s_eqSocket = 0;   // socket index the picker is editing
     static char     s_eqFind[48] = "";// gear picker search
@@ -705,13 +878,21 @@ namespace trinity::gui
     static int      s_eqCharFilter = 1; // 0 = All Characters, 1 = Current Character Only, 2 = Kliff, 3 = Damiane, 4 = Oongka
     static int      s_eqCategoryFilter = 0; // 0 = Matching Slot Only, 1 = All Equipment, 2 = Weapons, 3 = Shields & Off-Hand, 4 = Armor, 5 = Accessories
 
-    // Locate the live snapshot slot for a tag (SlotCount() rebuilds it first).
+    static bool EqTargetMatches(const game::Equipment::SlotInfo& row)
+    {
+        return row.tag == s_eqTarget.tag && row.typeId == s_eqTarget.typeId &&
+            row.instanceId == s_eqTarget.instanceId && row.characterIndex == s_eqTarget.characterIndex &&
+            row.controlledOwner == s_eqTarget.controlledOwner;
+    }
+
+    // A refreshed row must still be the item selected when opening this page.
+    // Names/tags alone cannot bind a gear picker to the original equipment.
     static bool EqSlotForTag(uint16_t tag, game::Equipment::SlotInfo* out)
     {
         const int n = game::Equipment::SlotCount();
         for (int i = 0; i < n; ++i)
             if (game::Equipment::GetSlot(i, out) && out->tag == tag)
-                return true;
+                return EqTargetMatches(*out);
         return false;
     }
 
@@ -753,7 +934,7 @@ namespace trinity::gui
         {
             int refined = 0;
             if (game::Equipment::RefineAll(10, &refined))
-                ui::Toast(LOC("Refined %d piece%s to +10"), refined, refined == 1 ? "" : "s");
+                ui::Toast(LOC("Queued refinement to +10 for %d piece%s"), refined, refined == 1 ? "" : "s");
             else
                 ui::Toast(LOC("No equipped gear to refine"));
         }
@@ -762,7 +943,7 @@ namespace trinity::gui
         {
             int unlocked = 0;
             if (game::Equipment::UnlockAllGears(&unlocked))
-                ui::Toast(LOC("Unlocked sockets on %d piece%s"), unlocked, unlocked == 1 ? "" : "s");
+                ui::Toast(LOC("Queued socket unlocks on %d piece%s"), unlocked, unlocked == 1 ? "" : "s");
             else
                 ui::Toast(LOC("No equipped gear found"));
         }
@@ -792,7 +973,10 @@ namespace trinity::gui
             if (!game::Equipment::GetSlot(i, &si)) continue;
 
             char label[176];
-            if (si.maxSockets > 0)
+            if (!si.socketsAvailable)
+                snprintf(label, sizeof(label), "%s - %s  (%s)",
+                         LOC(si.slotName), si.itemName, LOC("Socket data loading"));
+            else if (si.maxSockets > 0)
                 snprintf(label, sizeof(label), "%s - %s  (%d/%d %s)",
                          LOC(si.slotName), si.itemName, si.filledCount, si.maxSockets,
                          LOC("sockets used"));
@@ -804,9 +988,10 @@ namespace trinity::gui
                                      LOC("Refine this piece and edit its abyss-gear sockets.")))
             {
                 // A different piece gets a fresh picker page.
-                if (s_eqTag != si.tag || strcmp(s_eqItem, si.itemName) != 0)
+                if (!EqTargetMatches(si))
                     ui::ResetMenu("equipgear");
                 s_eqTag = si.tag;
+                s_eqTarget = si;
                 s_eqRefine = si.refineLevel; // seed the stepper from the live level
                 snprintf(s_eqItem, sizeof(s_eqItem), "%s", si.itemName);
             }
@@ -824,7 +1009,7 @@ namespace trinity::gui
         game::Equipment::SlotInfo si{};
         if (!EqSlotForTag(s_eqTag, &si))
         {
-            ui::Option(LOC("Not equipped"), LOC("This piece is no longer equipped."));
+            ui::Option(LOC("Equipment changed"), LOC("Return to the equipment list and select the piece again."));
             ui::End();
             return;
         }
@@ -837,8 +1022,8 @@ namespace trinity::gui
             snprintf(desc, sizeof(desc), "%s (%d).", LOC("Opens every socket on this piece"), si.maxSockets);
             if (ui::Option(LOC("Unlock all sockets"), desc))
             {
-                if (game::Equipment::UnlockAll(si.tag))
-                    ui::Toast(LOC("All sockets unlocked"));
+                if (game::Equipment::UnlockAll(si.tag, &si))
+                    ui::Toast(LOC("Socket unlock queued"));
                 else
                     ui::Toast(LOC("Could not unlock - see the log"));
             }
@@ -848,16 +1033,15 @@ namespace trinity::gui
             if (ui::Option(LOC("Clear all sockets"),
                            LOC("Removes every abyss gear from this piece, leaving the sockets open.")))
             {
-                if (game::Equipment::ClearAll(si.tag))
-                    ui::Toast(LOC("All sockets cleared - open inventory to confirm"));
+                if (game::Equipment::ClearAll(si.tag, &si))
+                    ui::Toast(LOC("Socket clear queued"));
                 else
                     ui::Toast(LOC("Could not clear - see the log"));
             }
         }
 
-        // Refinement (0..10) - applies to every piece, sockets or not, so it sits
-        // above the socket-only early-out. Left/Right steps the level; each change
-        // writes both realms and persists.
+        // Refinement is independent of socket availability. Queue the displayed
+        // item's identity; the game thread revalidates it before applying.
         {
             int lvl = s_eqRefine;
             if (ui::IntOption(LOC("Refinement"), &lvl, 0, game::Equipment::kRefineMax, 1, si.refineLevel,
@@ -867,8 +1051,8 @@ namespace trinity::gui
                 bool p = false;
                 const int charIdx = game::Equipment::GetActiveCharacter();
                 const char* charName = game::Equipment::CharacterName(charIdx);
-                if (game::Equipment::SetRefine(si.tag, lvl, &p))
-                    ui::Toast(p ? LOC("[%s] Refinement +%d set - visible in inventory now") : LOC("[%s] Refinement +%d set (auto-restored)"),
+                if (game::Equipment::SetRefine(si.tag, lvl, &p, &si))
+                    ui::Toast(LOC("[%s] Refinement +%d queued"),
                               charName, lvl);
                 else
                     ui::Toast(LOC("Could not set refinement - see the log"));
@@ -885,6 +1069,12 @@ namespace trinity::gui
             ui::ResetMenu("equipswap");
         }
 
+        if (!si.socketsAvailable)
+        {
+            ui::Option(LOC("Socket data loading"), LOC("Socket data is temporarily unavailable. Refinement remains available."));
+            ui::End();
+            return;
+        }
         if (si.maxSockets == 0)
         {
             ui::Option(LOC("No sockets"), LOC("This equipment type does not support abyss sockets."));
@@ -893,8 +1083,8 @@ namespace trinity::gui
         }
 
         if (!game::Equipment::EditsPersist())
-            ui::Option(LOC("Note: not saving yet"),
-                       LOC("Your save is still loading - gear edits apply visually but revert on reload until this clears."));
+            ui::Option(LOC("Server copy not confirmed"),
+                       LOC("Edits are queued. Wait for the synchronization result before checking the game inventory."));
 
         for (int k = 0; k < si.maxSockets; ++k)
         {
@@ -905,8 +1095,8 @@ namespace trinity::gui
                 snprintf(label, sizeof(label), "%s %d: %s", LOC("Socket"), k + 1, LOC("Locked"));
                 if (ui::Option(label, LOC("This socket is locked. Click to unlock all sockets on this piece.")))
                 {
-                    if (game::Equipment::UnlockAll(si.tag))
-                        ui::Toast(LOC("Sockets unlocked!"));
+                    if (game::Equipment::UnlockAll(si.tag, &si))
+                        ui::Toast(LOC("Equipment edit queued"));
                 }
             }
             else
@@ -934,6 +1124,14 @@ namespace trinity::gui
         const char* slotName = game::Equipment::SlotNameForTag(s_eqTag);
         snprintf(title, sizeof(title), "%s - %s [%s]", LOC("Equip Item"), s_eqItem, slotName ? LOC(slotName) : "");
         ui::Begin(title);
+
+        game::Equipment::SlotInfo si{};
+        if (!EqSlotForTag(s_eqTag, &si))
+        {
+            ui::Option(LOC("Equipment changed"), LOC("Return to the equipment list and select the piece again."));
+            ui::End();
+            return;
+        }
 
         // 1. Character Filter
         static const char* const kCharFilters[] = {
@@ -1043,10 +1241,11 @@ namespace trinity::gui
 
                 if (ui::OptionItem(it.name, it.icon[0] ? it.icon : nullptr, desc))
                 {
-                    if (game::Equipment::EquipItemToSlot(s_eqTag, it.typeId))
+                    if (game::Equipment::EquipItemToSlot(s_eqTag, it.typeId, 0, &si))
                     {
                         ui::Toast(LOC("Equipped %s!"), it.name);
-                        snprintf(s_eqItem, sizeof(s_eqItem), "%s", it.name);
+                        // Replacement has a new identity. Re-select it from the
+                        // list rather than silently rebinding the old edit page.
                         ui::PopMenu();
                     }
                     else
@@ -1073,14 +1272,34 @@ namespace trinity::gui
         snprintf(title, sizeof(title), "%s - Socket %d", s_eqItem, s_eqSocket + 1);
         ui::Begin(title);
 
+        game::Equipment::SlotInfo si{};
+        if (!EqSlotForTag(s_eqTag, &si))
+        {
+            ui::Option(LOC("Equipment changed"), LOC("Return to the equipment list and select the piece again."));
+            ui::End();
+            return;
+        }
+        if (!si.socketsAvailable)
+        {
+            ui::Option(LOC("Socket data loading"), LOC("Socket data is temporarily unavailable."));
+            ui::End();
+            return;
+        }
+        if (s_eqSocket < 0 || s_eqSocket >= si.maxSockets || !si.sockets[s_eqSocket].unlocked)
+        {
+            ui::Option(LOC("Socket unavailable"), LOC("Return to the equipment piece and select an unlocked socket."));
+            ui::End();
+            return;
+        }
+
         // Clearing the socket is always the first choice (icon box left empty so
         // it lines up with the gear rows below).
         if (ui::OptionItem(LOC("- Empty this socket -"), nullptr, LOC("Remove whatever gear is in this socket.")))
         {
             bool p = false;
-            if (game::Equipment::ClearGear(s_eqTag, s_eqSocket, &p))
+            if (game::Equipment::ClearGear(s_eqTag, s_eqSocket, &p, &si))
             {
-                ui::Toast(p ? LOC("Socket cleared") : LOC("Socket cleared (this session)"));
+                ui::Toast(LOC("Socket clear queued"));
                 ui::PopMenu();
             }
             else
@@ -1114,9 +1333,9 @@ namespace trinity::gui
             if (ui::OptionItemWithBuff(name, (icon && icon[0]) ? icon : nullptr, buff, LOC("Socket this abyss gear.")))
             {
                 bool p = false;
-                if (game::Equipment::AddGear(s_eqTag, s_eqSocket, tid, &p))
+                if (game::Equipment::AddGear(s_eqTag, s_eqSocket, tid, &p, &si))
                 {
-                    ui::Toast(p ? LOC("Socketed %s") : LOC("Socketed %s (this session)"), name);
+                    ui::Toast(LOC("Socket edit queued: %s"), name);
                     ui::PopMenu();
                 }
                 else
@@ -3277,6 +3496,13 @@ namespace trinity::gui
         
         save |= ui::Toggle(LOC("Show FPS Counter"), &st.showFps, LOC("Shows your FPS in the corner of the screen.")) && st.autoSave;
 
+        if (ui::Toggle(LOC("Performance Diagnostics"), &st.perfLogging,
+                       LOC("Log subsystem timing every 10 seconds when a call exceeds 2 ms. Off by default.")))
+        {
+            core::TickMetrics::SetEnabled(st.perfLogging);
+            save |= st.autoSave;
+        }
+
         if (ui::Toggle(LOC("Show Console Window"), &st.showConsole, LOC("Shows the debug console window. (Instantly toggles)")))
         {
             save |= st.autoSave;
@@ -3336,6 +3562,13 @@ namespace trinity::gui
         // the user is (the "Applying dye..." toast keeps this path drawing
         // even if they closed the menu right after).
         ReportPendingDye();
+        switch (game::Equipment::Status())
+        {
+        case game::Equipment::EditState::Synced: ui::Toast(LOC("Equipment client/server copies updated")); break;
+        case game::Equipment::EditState::DataOnly: ui::Toast(LOC("Equipment sync incomplete - see Trinity.log")); break;
+        case game::Equipment::EditState::Failed: ui::Toast(LOC("Equipment edit failed - select the item again")); break;
+        default: break;
+        }
 
         if (st.showFps)
             DrawFpsCounter();
@@ -3375,6 +3608,8 @@ namespace trinity::gui
         else if (!strcmp(cur, "ftnodes"))  RenderFastTravelNodes();
         else if (!strcmp(cur, "dyeslots"))  RenderDyeSlots();
         else if (!strcmp(cur, "dyeedit"))   RenderDyeEdit();
+        else if (!strcmp(cur, "dyeprofiles")) RenderDyeProfiles();
+        else if (!strcmp(cur, "dyeprofiledetail")) RenderDyeProfileDetail();
         else if (!strcmp(cur, "dyecustom")) RenderDyeCustom();
         else if (!strcmp(cur, "equipslots")) RenderEquipSlots();
         else if (!strcmp(cur, "equipedit"))  RenderEquipEdit();

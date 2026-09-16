@@ -2,7 +2,8 @@
 param(
     [ValidateSet('Release', 'RelWithDebInfo', 'Debug')]
     [string]$Configuration = 'Release',
-    [switch]$WithDLC
+    [switch]$WithDLC,
+    [switch]$BuildOnly
 )
 
 $ErrorActionPreference = 'Stop'
@@ -66,6 +67,11 @@ $asi = Get-ChildItem -LiteralPath $build -Recurse -Filter '*.asi' |
     Sort-Object LastWriteTime -Descending |
     Select-Object -First 1
 if (-not $asi) { throw 'Build completed, but Trinity.asi was not found.' }
+
+if ($BuildOnly) {
+    Write-Host "Built (without packaging/deployment): $($asi.FullName)"
+    return
+}
 
 $releaseDir = Join-Path $source 'build\Release'
 if (-not (Test-Path -LiteralPath $releaseDir)) {

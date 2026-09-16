@@ -378,6 +378,8 @@ namespace trinity::game
         static uintptr_t RealmFlagAddress(uint8_t* outVal);
         static uintptr_t ClientHolderAddr();
         static uintptr_t ServerHolderAddr();
+        static uint64_t MutationEpoch();
+        static uintptr_t ItemStride();
         static uintptr_t FindSlotByInstance(uintptr_t holder, int64_t targetInstId);
 
         using SlotApplyFn = void(*)(uintptr_t slotEntry, void* userData);

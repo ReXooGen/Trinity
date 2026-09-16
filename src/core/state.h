@@ -177,6 +177,7 @@ namespace trinity
         bool showFps = false;
         bool showConsole = true;
         bool fileLogging = true; // mirror the console to Trinity.log
+        bool perfLogging = false; // opt-in subsystem timing diagnostics
 
         // UI customizations
         float menuScale = 1.0f;

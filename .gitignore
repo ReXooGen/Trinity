@@ -67,3 +67,5 @@ tools/live_combat_monitor.py
 # Scratch / dev scripts (moved from scripts/)
 scratch/scripts/
 scratch/
+
+/work/

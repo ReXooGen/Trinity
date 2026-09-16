@@ -2,6 +2,7 @@
 
 #include <cstddef>
 #include <cstdint>
+#include "dye_profiles.h"
 
 namespace trinity::game
 {
@@ -34,6 +35,7 @@ namespace trinity::game
         // (or, worst case, until they change any equipment piece once).
         static bool Ready();
         static uintptr_t ActiveClientComp();
+        static uintptr_t ClientRegistryGlobal(); // resolved native anchor, read-only consumers
 
         // The raw equip-batch hook capture (g_comp), validated, WITHOUT any
         // character routing. Deliberately recursion-free - ActivePlayerCharacterIdx()
@@ -92,17 +94,36 @@ namespace trinity::game
         // engine code, so the request is queued and Tick() runs it within a
         // frame - same pattern as Inventory::AddItem.
         static bool Apply(uint16_t tag, int channel, const Channel& c);
+        // Material/condition-only edit of existing dyed zones. Debounced on the
+        // game-thread queue; each zone retains its color. Flags select which
+        // field changes so material edits cannot reset per-zone condition.
+        static bool Retouch(uint16_t tag, int channel, bool materialChanged, uint16_t material,
+                            bool conditionChanged, uint8_t condition);
         static bool ApplyAllEquipped(const Channel& c);
         static bool Clear(uint16_t tag, int channel);
         static bool InjectAllToSave();
 
+        // Named, on-demand presets read from the currently loaded equipment.
+        // Saving/application is queued and bound to the displayed native item.
+        static bool SaveProfile(uint16_t tag, const char* name, uint32_t replaceId = 0);
+        static bool ApplyProfile(uint16_t tag, uint32_t id);
+        static std::vector<DyeProfile> Profiles();
+        static bool RenameProfile(uint32_t id, const char* name);
+        static bool DeleteProfile(uint32_t id);
+        static std::string ProfileError();
+        static bool Busy();
+        static bool HasResult();
+
         // Outcome of the most recent request, for a toast. Read-and-clear: a
         // Done/Failed is reported once, then the state returns to Idle.
-        enum class OpState { Idle, Pending, Done, DoneDataOnly, Failed };
+        enum class OpState { Idle, Pending, Done, DoneDataOnly, Failed, ProfileSaved, ProfileSaveFailed, NoDyedZones };
         static OpState Status();
 
         // Game-thread pump - runs a queued Apply/Clear. Called from the same
         // per-frame driver as Inventory::Tick(); never from the render thread.
         static void Tick();
+        // Game-thread only; bounded registry discovery with exact item matching.
+        static uintptr_t FindClientEquipmentReplica(uintptr_t source, int character, uint16_t tag,
+                                                    uint16_t type, int64_t instance);
     };
 }

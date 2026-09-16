@@ -67,7 +67,9 @@ add_library(Trinity SHARED
     src/game/inventory.cpp
     src/game/world.cpp
     src/game/dye.cpp
+    src/game/dye_profiles.cpp
     src/game/equipment.cpp
+    src/game/equipment_logic.cpp
     src/game/friendly.cpp
     ${EXTENDED_SOURCES}
     src/game/item_names.cpp
@@ -109,4 +111,43 @@ if(MSVC)
     target_compile_options(Trinity PRIVATE /guard:cf)
     target_link_options(Trinity PRIVATE
         /DYNAMICBASE /HIGHENTROPYVA /NXCOMPAT /guard:cf)
+endif()
+
+include(CTest)
+if(BUILD_TESTING)
+    add_executable(TrinityDyeProfileTests tests/dye_profiles_tests.cpp src/game/dye_profiles.cpp)
+    target_include_directories(TrinityDyeProfileTests PRIVATE src)
+    target_compile_definitions(TrinityDyeProfileTests PRIVATE WIN32_LEAN_AND_MEAN NOMINMAX)
+    add_test(NAME TrinityDyeProfileTests COMMAND TrinityDyeProfileTests)
+    add_executable(TrinityOverlaySyncTests tests/overlay_sync_tests.cpp)
+    target_include_directories(TrinityOverlaySyncTests PRIVATE src)
+    target_compile_definitions(TrinityOverlaySyncTests PRIVATE WIN32_LEAN_AND_MEAN NOMINMAX)
+    target_link_libraries(TrinityOverlaySyncTests PRIVATE d3d12 dxgi)
+    add_test(NAME TrinityOverlaySyncTests COMMAND TrinityOverlaySyncTests)
+    set_tests_properties(TrinityOverlaySyncTests PROPERTIES TIMEOUT 30)
+    add_executable(TrinityDyeRecordTests tests/dye_record_tests.cpp)
+    target_include_directories(TrinityDyeRecordTests PRIVATE src)
+    add_test(NAME TrinityDyeRecordTests COMMAND TrinityDyeRecordTests)
+    add_executable(TrinityInventoryScanTests tests/inventory_scan_tests.cpp)
+    target_include_directories(TrinityInventoryScanTests PRIVATE src)
+    target_compile_definitions(TrinityInventoryScanTests PRIVATE WIN32_LEAN_AND_MEAN NOMINMAX)
+    add_test(NAME TrinityInventoryScanTests COMMAND TrinityInventoryScanTests)
+    add_executable(TrinityEquipmentTableTests
+        tests/equipment_table_tests.cpp
+        src/game/equipment_logic.cpp)
+    target_include_directories(TrinityEquipmentTableTests PRIVATE src)
+    target_compile_definitions(TrinityEquipmentTableTests PRIVATE WIN32_LEAN_AND_MEAN NOMINMAX)
+    add_test(NAME TrinityEquipmentTableTests COMMAND TrinityEquipmentTableTests)
+    add_executable(TrinitySocketLayoutTests tests/socket_layout_tests.cpp)
+    target_include_directories(TrinitySocketLayoutTests PRIVATE src)
+    target_compile_definitions(TrinitySocketLayoutTests PRIVATE WIN32_LEAN_AND_MEAN NOMINMAX)
+    add_test(NAME TrinitySocketLayoutTests COMMAND TrinitySocketLayoutTests)
+    add_executable(TrinityDamagePolicyTests tests/damage_policy_tests.cpp)
+    target_include_directories(TrinityDamagePolicyTests PRIVATE src)
+    add_test(NAME TrinityDamagePolicyTests COMMAND TrinityDamagePolicyTests)
+    find_package(Python3 COMPONENTS Interpreter)
+    if(Python3_Interpreter_FOUND)
+        add_test(NAME TrinityReloadSourceTests
+            COMMAND ${Python3_EXECUTABLE} -B ${CMAKE_CURRENT_SOURCE_DIR}/tests/reload_source_tests.py)
+    endif()
 endif()
