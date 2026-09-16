@@ -152,7 +152,7 @@ name = (off < size) ? (data + off) : "";
 - Earlier reload-stat and mount-visual changes were confirmed working by the user. The later frame-time and material patches have local build/fixture coverage; their latest visual/FPS results still need in-game confirmation.
 - `DyeVisualSet` and `DyeVisualClear` remain active, including staged mount updates. Disabling the unrelated `DyeApplySlot` does not disable all live per-channel rendering.
 - Diagnose freezes from a matching build stamp, log, and reproduction. Neither an incomplete edit nor a freeze alone establishes a corrupted save.
-- Material-fix build `Sep 16 2026 20:47:43`: 8/8 CTest suites, including 21 source guards, passed. See [the report](2026-09-16_fix-dye-material-report.md).
+- Latest build `Sep 16 2026 22:27:27`: 10/10 CTest suites passed (adds `TrinityDyeEditorTests` and `TrinityCharacterIdentityTests` for the Dye Equipment NPC-misidentification fix). SHA-256 `54D518FB2C26C1ACCCFF3421DC20C123E27049B90F8D98B545E9513B29A92772`, MD5 `4BB83BE9C2E1594B0B565E706E7209E2`. See [the material fix report](2026-09-16_fix-dye-material-report.md).
 
 ---
 

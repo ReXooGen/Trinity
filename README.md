@@ -36,7 +36,7 @@ Trinity is an in-game DirectX 12 mod menu for **Crimson Desert**, originally cre
 - **Optional performance diagnostics**: **SYSTEM → Performance Diagnostics**, default **OFF** (`perfLogging=0`).
 - **Overlay synchronization**: four submission slots fence allocator/upload reuse independently of the swapchain's back-buffer index.
 
-Latest verified local material-fix build: **`Sep 16 2026 20:47:43`**, SHA-256 `B9CEFD550960B41C7D2C5E6BB2A76D2F2A347C384FAE5BB9E70A96E718D824D8`. All **8 CTest suites**, including **21 source guards**, passed for that build. These are local checks; the material appearance and frame-time changes still need in-game retesting on the new artifact. See the [material fix report](2026-09-16_fix-dye-material-report.md).
+Latest verified local build: **`Sep 16 2026 22:27:27`**, SHA-256 `54D518FB2C26C1ACCCFF3421DC20C123E27049B90F8D98B545E9513B29A92772`, MD5 `4BB83BE9C2E1594B0B565E706E7209E2`. All **10 CTest suites** passed for that build — adds `TrinityDyeEditorTests` and `TrinityCharacterIdentityTests` for the Dye Equipment NPC-misidentification fix (native character identity via `owner+68 → sub+20 → status+30 → characterinfo` exact-key lookup, snapshot-item locking, `SlotInfo::SameTarget`). These are local checks; in-game retest for the new artifact is still pending. See the [material fix report](2026-09-16_fix-dye-material-report.md).
 
 ## Earlier release notes
 

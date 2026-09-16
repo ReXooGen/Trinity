@@ -153,10 +153,11 @@ See [the material-fix report](2026-09-16_fix-dye-material-report.md) for Evidenc
 
 | Item | Result |
 |---|---|
-| Material-fix artifact | `build-clean/Trinity.asi` |
-| Build stamp | `Sep 16 2026 20:47:43` |
-| SHA-256 | `B9CEFD550960B41C7D2C5E6BB2A76D2F2A347C384FAE5BB9E70A96E718D824D8` |
-| CTest | 8/8 passed, including 21 source guards |
+| Artifact | `build-clean/Trinity.asi` |
+| Build stamp | `Sep 16 2026 22:27:27` |
+| SHA-256 | `54D518FB2C26C1ACCCFF3421DC20C123E27049B90F8D98B545E9513B29A92772` |
+| MD5 | `4BB83BE9C2E1594B0B565E706E7209E2` |
+| CTest | 10/10 passed (adds `TrinityDyeEditorTests` + `TrinityCharacterIdentityTests` for Dye Equipment NPC-misidentification fix) |
 | In-game material/FPS retest | Not yet verified for this artifact |
 | Build workflow | `-Configuration Release -BuildOnly`; no deployment by the agent |
 
