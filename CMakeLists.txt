@@ -149,5 +149,10 @@ if(BUILD_TESTING)
     if(Python3_Interpreter_FOUND)
         add_test(NAME TrinityReloadSourceTests
             COMMAND ${Python3_EXECUTABLE} -B ${CMAKE_CURRENT_SOURCE_DIR}/tests/reload_source_tests.py)
+        add_test(NAME TrinityDyeEditorTests
+            COMMAND ${Python3_EXECUTABLE} -B ${CMAKE_CURRENT_SOURCE_DIR}/tests/dye_editor_tests.py)
+        add_test(NAME TrinityCharacterIdentityTests
+            COMMAND ${Python3_EXECUTABLE} -B ${CMAKE_CURRENT_SOURCE_DIR}/tests/character_identity_tests.py)
+        set_tests_properties(TrinityDyeEditorTests TrinityCharacterIdentityTests PROPERTIES TIMEOUT 90)
     endif()
 endif()

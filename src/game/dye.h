@@ -74,6 +74,21 @@ namespace trinity::game
             char     slotName[24];
             char     itemName[64];
             char     icon[96];   // game sprite name ("ItemIcon_Prefab_...")
+            // Navigation identity only. Never use these copies as write pointers.
+            int characterIndex = -1, targetMode = 0, mountIndex = 0;
+            uintptr_t controlledOwner = 0, worldRoot = 0;
+            uintptr_t sourceComp = 0, sourceEntry = 0, sourceOwner = 0;
+            uint64_t selectionGeneration = 0, worldGeneration = 0;
+            bool SameTarget(const SlotInfo& other) const
+            {
+                return sourceComp && sourceEntry && tag == other.tag && typeId == other.typeId &&
+                    instanceId == other.instanceId && characterIndex == other.characterIndex &&
+                    targetMode == other.targetMode && mountIndex == other.mountIndex &&
+                    controlledOwner == other.controlledOwner && worldRoot == other.worldRoot &&
+                    sourceComp == other.sourceComp && sourceEntry == other.sourceEntry &&
+                    sourceOwner == other.sourceOwner && selectionGeneration == other.selectionGeneration &&
+                    worldGeneration == other.worldGeneration;
+            }
         };
         static int  SlotCount();               // refreshes the snapshot
         static bool GetSlot(int idx, SlotInfo* out);
@@ -87,26 +102,27 @@ namespace trinity::game
             uint16_t materialId; // 0xFFFF = natural
             uint8_t  repair;     // 0 pristine .. 127 weathered (0xFF legacy)
         };
-        static bool GetChannel(uint16_t tag, int channel, Channel* out);
+        static bool GetChannel(uint16_t tag, int channel, Channel* out, const SlotInfo* expected = nullptr);
 
         // --- Apply / clear (queued to the game thread) -----------------------
         // `channel` 0..11, or -1 for all 12 channels at once. Calls into
         // engine code, so the request is queued and Tick() runs it within a
         // frame - same pattern as Inventory::AddItem.
-        static bool Apply(uint16_t tag, int channel, const Channel& c);
+        static bool Apply(uint16_t tag, int channel, const Channel& c, const SlotInfo* expected = nullptr);
         // Material/condition-only edit of existing dyed zones. Debounced on the
         // game-thread queue; each zone retains its color. Flags select which
         // field changes so material edits cannot reset per-zone condition.
         static bool Retouch(uint16_t tag, int channel, bool materialChanged, uint16_t material,
-                            bool conditionChanged, uint8_t condition);
+                            bool conditionChanged, uint8_t condition, const SlotInfo* expected = nullptr);
+        static void CancelRetouch(); // cancel only the unstarted debounce, never a staged native apply
         static bool ApplyAllEquipped(const Channel& c);
-        static bool Clear(uint16_t tag, int channel);
+        static bool Clear(uint16_t tag, int channel, const SlotInfo* expected = nullptr);
         static bool InjectAllToSave();
 
         // Named, on-demand presets read from the currently loaded equipment.
         // Saving/application is queued and bound to the displayed native item.
-        static bool SaveProfile(uint16_t tag, const char* name, uint32_t replaceId = 0);
-        static bool ApplyProfile(uint16_t tag, uint32_t id);
+        static bool SaveProfile(uint16_t tag, const char* name, uint32_t replaceId = 0, const SlotInfo* expected = nullptr);
+        static bool ApplyProfile(uint16_t tag, uint32_t id, const SlotInfo* expected = nullptr);
         static std::vector<DyeProfile> Profiles();
         static bool RenameProfile(uint32_t id, const char* name);
         static bool DeleteProfile(uint32_t id);

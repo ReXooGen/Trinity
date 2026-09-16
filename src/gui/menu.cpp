@@ -200,12 +200,22 @@ namespace trinity::gui
 
     static uint16_t s_dyeTag = 0;    // selected slot's engine tag
     static char s_dyeItem[64];       // its item name - the edit pages' title
+    static game::Dye::SlotInfo s_dyeTarget{};
     static int s_dyeChan   = 0;      // 0 = all zones, 1..12 = one zone
     static int s_dyeFamily = 0;      // index into kDyeFamilies
     static int s_dyeR = 200, s_dyeG = 30, s_dyeB = 40; // the custom mix
     static int s_dyeMat    = 0;      // 0 = natural, 1..10 = engine material template
     static int s_dyeRepair = 100;    // 100 = pristine .. 0 = battle-worn
     static int s_dyeCursor[1 + game::kDyeGridRows]; // swatch focus per grid row
+
+    static bool SelectedDyeSlot(game::Dye::SlotInfo& out)
+    {
+        const int count = game::Dye::SlotCount();
+        for (int i = 0; i < count; ++i)
+            if (game::Dye::GetSlot(i, &out) && out.tag == s_dyeTag)
+                return s_dyeTarget.SameTarget(out);
+        return false;
+    }
 
     // Poll the queued apply for its one-shot outcome (Status is read-and-clear).
     static void ReportPendingDye()
@@ -251,6 +261,8 @@ namespace trinity::gui
         }
         else if (s == game::Dye::OpState::Failed)
             ui::Toast(LOC("Could not dye that - see the log"));
+        else if (s == game::Dye::OpState::NoDyedZones)
+            ui::Toast(LOC("Choose a dye color first; material and condition are ready for the next color."));
         else if (s == game::Dye::OpState::ProfileSaved)
             ui::Toast(LOC("Dye profile saved"));
         else if (s == game::Dye::OpState::ProfileSaveFailed)
@@ -269,8 +281,10 @@ namespace trinity::gui
         c.b          = static_cast<uint8_t>(b);
         c.materialId = (s_dyeMat == 0) ? uint16_t(0xFFFF) : static_cast<uint16_t>(s_dyeMat);
         c.repair     = static_cast<uint8_t>(((100 - s_dyeRepair) * 127) / 100);
-        if (game::Dye::Apply(s_dyeTag, s_dyeChan - 1, c))
+        if (game::Dye::Apply(s_dyeTag, s_dyeChan - 1, c, &s_dyeTarget))
             ui::Toast(LOC("Applying dye..."));
+        else
+            ui::Toast(LOC("Dye is busy or equipment changed; select the item again."));
         // The custom rows follow whatever was applied last, so the Custom
         // Color page always opens on the color the item just got.
         s_dyeR = r; s_dyeG = g; s_dyeB = b;
@@ -290,36 +304,6 @@ namespace trinity::gui
         s_dyeR = r; s_dyeG = g; s_dyeB = b;
     }
 
-    // Material / condition edits on an already-dyed zone re-apply that zone's
-    // own color with the new settings, so scrubbing the value previews live.
-    // Debounced (the queue takes one request at a time), single-zone only: an
-    // "all zones" retouch would repaint every zone with zone 1's color.
-    static bool      s_dyeRetouch   = false;
-    static ULONGLONG s_dyeRetouchAt = 0;
-
-    static void PumpDyeRetouch()
-    {
-        if (!s_dyeRetouch || GetTickCount64() - s_dyeRetouchAt < 350)
-            return;
-        if (s_dyeChan == 0) { s_dyeRetouch = false; return; }
-
-        game::Dye::Channel cc{};
-        if (!game::Dye::GetChannel(s_dyeTag, s_dyeChan - 1, &cc))
-        {
-            // Nothing dyed here yet - the settings ride along with the next
-            // color pick instead.
-            s_dyeRetouch = false;
-            return;
-        }
-        game::Dye::Channel c{};
-        c.groupKey   = cc.groupKey;
-        c.r = cc.r; c.g = cc.g; c.b = cc.b;
-        c.materialId = (s_dyeMat == 0) ? uint16_t(0xFFFF) : static_cast<uint16_t>(s_dyeMat);
-        c.repair     = static_cast<uint8_t>(((100 - s_dyeRepair) * 127) / 100);
-        if (game::Dye::Apply(s_dyeTag, s_dyeChan - 1, c))
-            s_dyeRetouch = false; // else the queue was busy - retry next frame
-    }
-
     static void UpdateDyeTooltip(const game::Dye::SlotInfo& curSlot, uint32_t activeRGB, int activeZone)
     {
         uint32_t zoneColors[12] = {};
@@ -327,7 +311,7 @@ namespace trinity::gui
         for (int z = 0; z < 12; ++z)
         {
             game::Dye::Channel c{};
-            if (game::Dye::GetChannel(curSlot.tag, z, &c))
+            if (game::Dye::GetChannel(curSlot.tag, z, &c, &curSlot))
             {
                 zoneColors[z] = (uint32_t(c.r) << 16) | (uint32_t(c.g) << 8) | c.b;
                 zoneDyed[z] = true;
@@ -506,13 +490,14 @@ namespace trinity::gui
             {
                 // A different piece gets fresh pages (selection, scroll); the
                 // same piece keeps them, so hopping out and back in is free.
-                if (s_dyeTag != si.tag || strcmp(s_dyeItem, si.itemName) != 0)
+                if (!s_dyeTarget.SameTarget(si))
                 {
                     ui::ResetMenu("dyeedit");
                     ui::ResetMenu("dyecustom");
-                    s_dyeRetouch = false;
+                    game::Dye::CancelRetouch();
                 }
                 s_dyeTag = si.tag;
+                s_dyeTarget = si;
                 snprintf(s_dyeItem, sizeof(s_dyeItem), "%s", si.itemName);
             }
         }
@@ -550,8 +535,7 @@ namespace trinity::gui
         for (int i = 0; i < n; ++i)
         {
             game::Dye::SlotInfo current{};
-            if (game::Dye::GetSlot(i, &current) && current.tag == s_profileItem.tag &&
-                current.typeId == s_profileItem.typeId && current.instanceId == s_profileItem.instanceId) return true;
+            if (game::Dye::GetSlot(i, &current) && s_profileItem.SameTarget(current)) return true;
         }
         return false;
     }
@@ -588,8 +572,8 @@ namespace trinity::gui
             ui::TextInput(LOC("Profile Name"), s_profileName, sizeof(s_profileName), LOC("Name this appearance, then choose Save Current Dye."));
             if (ui::Option(LOC("Save Current Dye"), LOC("Capture the equipment's actual dye data in all zones, including natural zones. Saved across restarts.")))
             {
-                s_dyeRetouch = false;
-                if (game::Dye::SaveProfile(s_profileItem.tag, s_profileName)) ui::Toast(LOC("Saving dye profile..."));
+                game::Dye::CancelRetouch();
+                if (game::Dye::SaveProfile(s_profileItem.tag, s_profileName, 0, &s_profileItem)) ui::Toast(LOC("Saving dye profile..."));
                 else ui::Toast(LOC("Enter a profile name and wait for the equipment to load"));
             }
         }
@@ -650,8 +634,8 @@ namespace trinity::gui
         {
             if (ui::Option(LOC("Apply Profile"), LOC("Restore saved colors, material and condition. Zones saved as natural are cleared.")))
             {
-                s_dyeRetouch = false;
-                if (game::Dye::ApplyProfile(s_profileItem.tag, profile.id)) ui::Toast(LOC("Applying dye profile..."));
+                game::Dye::CancelRetouch();
+                if (game::Dye::ApplyProfile(s_profileItem.tag, profile.id, &s_profileItem)) ui::Toast(LOC("Applying dye profile..."));
                 else ui::Toast(LOC("Could not apply profile - select the equipment again"));
             }
             ui::TextInput(LOC("Name"), s_profileRename, sizeof(s_profileRename));
@@ -662,8 +646,8 @@ namespace trinity::gui
             }
             if (ui::Option(LOC("Overwrite With Current Dye"), LOC("Replace this saved appearance with the current dye on the selected equipment.")))
             {
-                s_dyeRetouch = false;
-                if (game::Dye::SaveProfile(s_profileItem.tag, profile.name, profile.id)) ui::Toast(LOC("Saving dye profile..."));
+                game::Dye::CancelRetouch();
+                if (game::Dye::SaveProfile(s_profileItem.tag, profile.name, profile.id, &s_profileItem)) ui::Toast(LOC("Saving dye profile..."));
                 else ui::Toast(LOC("Could not capture current dye"));
             }
             if (ui::Option(LOC("Delete Profile"), LOC("Delete this preset from Trinity. The equipment's current appearance stays as it is.")))
@@ -680,22 +664,20 @@ namespace trinity::gui
         ui::Begin(s_dyeItem[0] ? s_dyeItem : nullptr);
 
         game::Dye::SlotInfo curSlot{};
-        bool haveSlot = false;
-        const int nSlots = game::Dye::SlotCount();
-        for (int i = 0; i < nSlots; ++i)
+        const bool haveSlot = SelectedDyeSlot(curSlot);
+        if (!haveSlot)
         {
-            if (game::Dye::GetSlot(i, &curSlot) && curSlot.tag == s_dyeTag)
-            {
-                haveSlot = true;
-                break;
-            }
+            game::Dye::CancelRetouch();
+            ui::Option(LOC("Equipment changed"), LOC("Return to the equipment list and select the piece again."));
+            ui::End();
+            return;
         }
         const int maxZones = 12;
 
         if (haveSlot && game::Dye::GetTargetMode() <= 1 &&
             ui::Submenu(LOC("Dye Profiles"), "dyeprofiles", LOC("Save this appearance and restore it after trying other colors.")))
         {
-            s_dyeRetouch = false;
+            game::Dye::CancelRetouch();
             s_profileItem = curSlot;
             s_profileMode = game::Dye::GetTargetMode();
             s_profileCharacter = game::Dye::GetActiveCharacter();
@@ -720,8 +702,9 @@ namespace trinity::gui
             s_famInit = true;
         }
 
-        ui::Combo(LOC("Dye Zone"), &s_dyeChan, kZoneItems, comboCount,
-                  LOC("Which zone of the item to color (Supports Zones 1-12)."));
+        if (ui::Combo(LOC("Dye Zone"), &s_dyeChan, kZoneItems, comboCount,
+                      LOC("Which zone of the item to color (Supports Zones 1-12).")))
+            game::Dye::CancelRetouch();
         ui::Combo(LOC("Color Family"), &s_dyeFamily, s_famItems, game::kDyeFamilyCount,
                   LOC("Pick a color family to browse its shades below."));
 
@@ -730,7 +713,7 @@ namespace trinity::gui
         // The zone's current color, marked with a dot on its swatch below.
         game::Dye::Channel cur{};
         const bool haveCur = game::Dye::GetChannel(
-            s_dyeTag, (s_dyeChan == 0) ? 0 : s_dyeChan - 1, &cur);
+            s_dyeTag, (s_dyeChan == 0) ? 0 : s_dyeChan - 1, &cur, &s_dyeTarget);
 
         // Row 0: the family's 9 neutral tones, led by a "remove dye" swatch so
         // the row is 10 wide like the rest and clearing lives right in the
@@ -763,7 +746,7 @@ namespace trinity::gui
             {
                 if (neutral && hit == 0)
                 {
-                    if (game::Dye::Clear(s_dyeTag, s_dyeChan - 1))
+                    if (game::Dye::Clear(s_dyeTag, s_dyeChan - 1, &s_dyeTarget))
                         ui::Toast(LOC("Removing dye..."));
                 }
                 else
@@ -785,15 +768,22 @@ namespace trinity::gui
 
         if (ui::Option(LOC("Remove All Dye (Reset)"), LOC("Clears all dye from this piece back to its natural default color.")))
         {
-            if (game::Dye::Clear(s_dyeTag, -1))
+            if (game::Dye::Clear(s_dyeTag, -1, &s_dyeTarget))
                 ui::Toast(LOC("All dye removed"));
         }
 
-        bool touched = false;
-        touched |= ui::IntOption(LOC("Material"), &s_dyeMat, 0, 10, 1, 0,
-                      LOC("Swap the fabric or metal look. 0 keeps it natural."));
-        touched |= ui::IntOption(LOC("Condition %"), &s_dyeRepair, 0, 100, 5, 100,
-                      LOC("How worn the piece looks. 100 is pristine, 0 is battle-scarred."));
+        const bool materialChanged = ui::IntOption(LOC("Material"), &s_dyeMat, 0, 10, 1, 0,
+                      LOC("Change the selected dyed zones' material while keeping their colors. 0 = natural. Choose a color first for undyed zones."));
+        const bool conditionChanged = ui::IntOption(LOC("Condition %"), &s_dyeRepair, 0, 100, 5, 100,
+                      LOC("Change wear on the selected dyed zones. 100 = pristine, 0 = battle-scarred. Colors stay unchanged."));
+        if (materialChanged || conditionChanged)
+        {
+            const uint16_t material = s_dyeMat == 0 ? uint16_t{0xFFFF} : static_cast<uint16_t>(s_dyeMat);
+            const uint8_t condition = static_cast<uint8_t>(((100 - s_dyeRepair) * 127) / 100);
+            if (!haveSlot || !game::Dye::Retouch(s_dyeTag, s_dyeChan - 1,
+                    materialChanged, material, conditionChanged, condition, &s_dyeTarget))
+                ui::Toast(LOC("Dye is busy or equipment changed; retry the material/condition adjustment."));
+        }
         uint32_t activePreviewRGB = 0;
         if (haveCur)
             activePreviewRGB = (uint32_t(cur.r) << 16) | (uint32_t(cur.g) << 8) | cur.b;
@@ -801,8 +791,6 @@ namespace trinity::gui
             activePreviewRGB = (uint32_t(s_dyeR) << 16) | (uint32_t(s_dyeG) << 8) | s_dyeB;
 
         UpdateDyeTooltip(curSlot, activePreviewRGB, s_dyeChan);
-
-        PumpDyeRetouch();
 
         ui::End();
     }
@@ -812,11 +800,12 @@ namespace trinity::gui
         ui::Begin(s_dyeItem[0] ? s_dyeItem : nullptr);
 
         game::Dye::SlotInfo curSlot{};
-        const int nSlots = game::Dye::SlotCount();
-        for (int i = 0; i < nSlots; ++i)
+        if (!SelectedDyeSlot(curSlot))
         {
-            if (game::Dye::GetSlot(i, &curSlot) && curSlot.tag == s_dyeTag)
-                break;
+            game::Dye::CancelRetouch();
+            ui::Option(LOC("Equipment changed"), LOC("Return to the equipment list and select the piece again."));
+            ui::End();
+            return;
         }
 
         ui::IntOption(LOC("Red"),   &s_dyeR, 0, 255, 5, 200, LOC("Red 0-255."));
@@ -846,7 +835,7 @@ namespace trinity::gui
         {
             const int ch = (s_dyeChan == 0) ? 0 : s_dyeChan - 1;
             game::Dye::Channel c{};
-            if (game::Dye::GetChannel(s_dyeTag, ch, &c))
+            if (game::Dye::GetChannel(s_dyeTag, ch, &c, &s_dyeTarget))
             {
                 s_dyeR = c.r; s_dyeG = c.g; s_dyeB = c.b;
                 s_dyeMat    = (c.materialId == 0xFFFF || c.materialId > 10) ? 0 : c.materialId;

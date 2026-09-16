@@ -318,6 +318,40 @@ class ReloadSourceTests(unittest.TestCase):
             identity = body(self.inventory, signature)
             self.assertIn("core::GetGameVersion().revision < 2800", identity)
 
+    def test_material_control_queues_stamped_color_preserving_retouch(self):
+        dye = (SRC / "dye.cpp").read_text(encoding="utf-8")
+        menu = (SRC.parent / "gui" / "menu.cpp").read_text(encoding="utf-8")
+        editor = body(menu, "static void RenderDyeEdit(")
+        self.assertIn("if (materialChanged || conditionChanged)", editor)
+        self.assertIn("game::Dye::Retouch(s_dyeTag, s_dyeChan - 1", editor)
+        self.assertNotIn("PumpDyeRetouch", menu)
+        queue = body(dye, "bool EnqueueDye(")
+        self.assertIn("g_req.recordsPrepared", queue)
+        self.assertIn("req.item.sourceEntry != g_req.item.sourceEntry", queue)
+        self.assertIn("RequestStillValid(g_req)", queue)
+        self.assertIn("retouchFields |= g_req.retouchFields", queue)
+        prepare = body(dye, "void ProcessRequest(").split("const Request req = g_req;", 1)[0]
+        self.assertIn("ReadRecords(g_req.item.sourceEntry", prepare)
+        self.assertIn("BuildDyeRetouchRecords", prepare)
+        self.assertIn("RequestStillValid(g_req)", prepare)
+        self.assertNotIn("CallDye", prepare)
+        encoder = body(dye, "void BuildSetRecord(")
+        self.assertIn("&c.materialId", encoder)
+        self.assertNotIn("0x0001", encoder)
+
+    def test_dye_snapshot_requires_positive_native_wearer(self):
+        dye = (SRC / "dye.cpp").read_text(encoding="utf-8")
+        snapshot = body(dye, "bool RebuildSnapshot(")
+        self.assertIn("Inventory::IdentifyCharacterFromComp(comp) != key.character", snapshot)
+        find = body(dye, "uintptr_t FindEquipCompFromActor(")
+        self.assertIn("identity == targetIdx", find)
+        profile = body(dye, "uintptr_t ProfileComp(")
+        self.assertIn("id == targetIdx", profile)
+        fallback = body(dye, "uintptr_t FindCharacterFallback(")
+        self.assertIn("core::GetGameVersion().revision < 2800 && world", fallback)
+        queue = body(dye, "bool EnqueueDye(")
+        self.assertIn("expected->SameTarget(g_slots[i])", queue)
+
     def test_mount_dye_resolves_client_renderer_and_slices_channels(self):
         dye = (SRC / "dye.cpp").read_text(encoding="utf-8")
         resolve = body(dye, "DyeRenderTarget ResolveDyeRenderTarget(")

@@ -19,6 +19,7 @@
 #include "player.h"
 #include "equipment.h"
 #include "equipment_table.h"
+#include "native_character_identity.h"
 #include "dye.h"
 #include "item_names.h"
 #include "../mem/scanner.h"
@@ -143,6 +144,7 @@ namespace trinity::game
         // Address at which the item-info table object pointer is stored
         // (resolved once from the "iteminfo" string anchor at Install).
         uintptr_t g_itemTableGlobal = 0;
+        uintptr_t g_characterTableGlobal = 0; // resolved at install; identity does no scans
 
         // Same, for the "ItemGroupInfo" table (the inventory category tree), the
         // "stringinfo" table (icon sprite names), the "InventoryInfo" table
@@ -2538,6 +2540,10 @@ namespace trinity::game
         // Item defs (optional - resolved lazily when inventory is opened).
         g_itemTableGlobal = FindTableGlobal(kStr_ItemInfoTable);
 
+        // TU 2.02 wearer identity comes from native CharacterInfo, not equipment.
+        // This resolves the table address once; callers only read resident rows.
+        g_characterTableGlobal = FindTableGlobal("characterinfo");
+
         // The category tree (optional - without it everything lands in one group).
         g_grpTableGlobal = FindTableGlobal(kStr_ItemGroupInfoTable);
 
@@ -2946,7 +2952,6 @@ namespace trinity::game
         std::vector<int64_t> g_origRespawnTimes;
         bool g_cooltimesCaptured = false;
 
-        uintptr_t g_characterTableGlobal = 0;
         bool g_charCooltimesCaptured = false;
         std::vector<int64_t> g_origCharCooltimes;
 
@@ -3671,6 +3676,9 @@ namespace trinity::game
             // Self-validating back-reference (comp+0x08 -> owning actor)
             uintptr_t owner = 0;
             if (!ReadPtr(comp + kOff_EquipComp_Owner, &owner) || owner < kMinPointer) return -1;
+
+            if (core::GetGameVersion().revision >= 2800)
+                return ReadNativeCharacterIdentity(owner, g_characterTableGlobal);
 
             // TU 2.02 owner+50 is an entity ID, not a party index. A nested
             // subcontainer's coincidental 1..3 must not override its gear identity.

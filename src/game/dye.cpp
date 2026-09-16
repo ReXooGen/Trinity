@@ -331,9 +331,11 @@ namespace trinity::game
             auto accept = [&](uintptr_t candidate) {
                 if (!IsValidCanonicalPtr(candidate) || candidate == seen) return false;
                 seen = candidate;
-                return CompValid(candidate) && (targetIdx < 0 ||
-                    AcceptCharacterComponent(targetIdx,
-                        Inventory::IdentifyCharacterFromComp(candidate), rootIdx));
+                if (!CompValid(candidate)) return false;
+                if (targetIdx < 0) return true;
+                const int identity = Inventory::IdentifyCharacterFromComp(candidate);
+                return core::GetGameVersion().revision >= 2800 ? identity == targetIdx :
+                    AcceptCharacterComponent(targetIdx, identity, rootIdx);
             };
 
             // 1. Direct component at actor + 0x38 (actor is SubContainer)
@@ -443,6 +445,7 @@ namespace trinity::game
             if (!CompValid(comp)) return 0;
             const int id = Inventory::IdentifyCharacterFromComp(comp);
             if (identity) *identity = id;
+            if (core::GetGameVersion().revision >= 2800) return id == targetIdx ? comp : 0;
             return AcceptCharacterComponent(targetIdx, id, targetIdx) ? comp : 0;
         }
 
@@ -476,7 +479,7 @@ namespace trinity::game
             const uintptr_t world = Player::GetControlledOwner();
             const uint64_t generation = s_worldGeneration.load(std::memory_order_acquire);
             const uintptr_t global = Player::GetCharMgrGlobal();
-            if (world && global && ReadPtr(global, &root) && IsValidCanonicalPtr(root) &&
+            if (core::GetGameVersion().revision < 2800 && world && global && ReadPtr(global, &root) && IsValidCanonicalPtr(root) &&
                 ReadPtr(root, &manager) && IsValidCanonicalPtr(manager) &&
                 ReadPtr(manager + kOff_CharMgr_ListData, &data) && IsValidCanonicalPtr(data) &&
                 Read32(manager + kOff_CharMgr_ListCount, &count) && count <= kCharList_MaxCount)
@@ -590,9 +593,10 @@ namespace trinity::game
                         ReadPtr(hooked + kOff_EquipComp_Owner, &hookedOwner);
                     if (!liveChar || (ownerKnown && hookedOwner == liveChar))
                     {
-                        if (AcceptCharacterComponent(targetIdx,
-                            Inventory::IdentifyCharacterFromComp(hooked),
-                            liveChar && ownerKnown && hookedOwner == liveChar ? liveIdx : -1))
+                        const int identity = Inventory::IdentifyCharacterFromComp(hooked);
+                        if (core::GetGameVersion().revision >= 2800 ? identity == targetIdx :
+                            AcceptCharacterComponent(targetIdx, identity,
+                                liveChar && ownerKnown && hookedOwner == liveChar ? liveIdx : -1))
                             return hooked;
                     }
                 }
@@ -753,6 +757,8 @@ namespace trinity::game
                 !Read64(entry + kOff_ItemVal_InstanceId, &instance) ||
                 !ReadPtr(comp + kOff_EquipComp_Owner, &owner)) return 0;
 
+            if (item.mode == 0 && core::GetGameVersion().revision >= 2800 &&
+                Inventory::IdentifyCharacterFromComp(comp) != item.character) return 0;
             const bool hasParty = core::GetGameVersion().revision < 2800 &&
                 Read32(owner + kOff_Owner_PartyIndex, &party) && party >= 1 && party <= 3;
             if (item.mode == 0 && hasParty && party != static_cast<uint32_t>(item.character + 1)) return 0;
@@ -2130,6 +2136,16 @@ namespace trinity::game
             slot.tag = tag;
             slot.typeId = type;
             slot.instanceId = instance;
+            slot.characterIndex = key.character;
+            slot.targetMode = key.mode;
+            slot.mountIndex = key.mount;
+            slot.controlledOwner = key.controlledOwner;
+            slot.worldRoot = key.worldRoot;
+            slot.sourceComp = comp;
+            slot.sourceEntry = entry;
+            slot.sourceOwner = owner;
+            slot.selectionGeneration = key.generation;
+            slot.worldGeneration = key.worldGeneration;
             slot.maxZones = 12;
             slot.dyeable = true;
             for (uint32_t mask = row.mask; mask; mask &= mask - 1) ++slot.dyeCount;
@@ -2186,6 +2202,8 @@ namespace trinity::game
             const EquipTableDesc table = ReadNativeEquipmentTable(comp);
             uintptr_t owner = 0;
             if (!table.valid || !ReadPtr(comp + kOff_EquipComp_Owner, &owner)) return false;
+            if (key.mode == 0 && core::GetGameVersion().revision >= 2800 &&
+                Inventory::IdentifyCharacterFromComp(comp) != key.character) return false;
             for (uint32_t i = 0; i < table.count && snapshot.count < kMaxSlots; ++i)
             {
                 const uintptr_t entry = table.array + static_cast<uintptr_t>(i) * table.stride;
@@ -2264,7 +2282,7 @@ namespace trinity::game
 
         bool EnqueueDye(uint16_t tag, int channel, bool clear, const Dye::Channel& value,
                         const DyeProfile* profile = nullptr, bool saveProfile = false, uint32_t replaceId = 0,
-                        unsigned retouchFields = 0)
+                        unsigned retouchFields = 0, const Dye::SlotInfo* expected = nullptr)
         {
             DyeOperationGuard operation;
             if (!operation.acquired || channel < -1 || channel >= static_cast<int>(kDye_MaxChannels)) return false;
@@ -2281,7 +2299,12 @@ namespace trinity::game
             if (!UiSnapshotUsable()) return false;
             const DyeSnapshotRow* selectedRow = nullptr;
             for (int i = 0; i < g_slotCount; ++i)
-                if (g_slots[i].tag == tag) { selectedRow = &s_uiRows[i]; break; }
+                if (g_slots[i].tag == tag)
+                {
+                    if (expected && !expected->SameTarget(g_slots[i])) return false;
+                    selectedRow = &s_uiRows[i];
+                    break;
+                }
             if (!selectedRow) return false;
             if (req.mode == 2)
             {
@@ -2317,7 +2340,7 @@ namespace trinity::game
             if (pending)
             {
                 if (!RequestStillValid(g_req) || req.selectionGeneration != g_req.selectionGeneration ||
-                    req.tag != g_req.tag || req.channel != g_req.channel ||
+                    req.tag != g_req.tag || (retouchFields && req.channel != g_req.channel) ||
                     req.item.type != g_req.item.type || req.item.instance != g_req.item.instance ||
                     req.item.sourceComp != g_req.item.sourceComp || req.item.sourceEntry != g_req.item.sourceEntry ||
                     req.item.worldGeneration != g_req.item.worldGeneration) return false;
@@ -2476,13 +2499,14 @@ namespace trinity::game
                     if (realm.active && RequestStillValid(req))
                         written = UpsertDyeMask(clientSlot, item, recs, mask, 0, item.sourceComp);
                 }
-                const bool serverOk = RequestStillValid(req) && MirrorToServer(item, recs, written);
+                const bool readback = ProfileReadbackMatches(req, clientSlot);
+                const bool serverOk = readback && RequestStillValid(req) && MirrorToServer(item, recs, written);
                 if (!RequestStillValid(req))
                 {
                     g_state.store(static_cast<int>(Dye::OpState::Failed), std::memory_order_release);
                     return;
                 }
-                g_state.store(static_cast<int>((written == mask && serverOk) ? Dye::OpState::Done :
+                g_state.store(static_cast<int>((written == mask && serverOk && readback) ? Dye::OpState::Done :
                                               written ? Dye::OpState::DoneDataOnly : Dye::OpState::Failed),
                               std::memory_order_release);
                 return;
@@ -2582,6 +2606,9 @@ namespace trinity::game
                 LOG("dye: mount tag=%u instance=%lld data=%03X visual=%03X client=%p mirror=%d (native calls; verify appearance)",
                     req.tag, item.instance, g_req.mountDataMask, g_req.mountVisualMask,
                     reinterpret_cast<void*>(render.comp), durableOk ? 1 : 0);
+                if (req.retouchFields)
+                    LOG("dye: mount retouch tag=%u zones=%03X fields=%u material=0x%04X condition=%u (per-zone colors preserved).",
+                        req.tag, requested, req.retouchFields, req.value.materialId, req.value.repair);
                 g_state.store(static_cast<int>(RequestStillValid(req) && profileComplete && (upsertOk || durableOk)
                                               ? (visualComplete ? Dye::OpState::Done : Dye::OpState::DoneDataOnly) : Dye::OpState::Failed),
                               std::memory_order_release);
@@ -3078,14 +3105,19 @@ namespace trinity::game
         return true;
     }
 
-    bool Dye::GetChannel(uint16_t tag, int channel, Channel* out)
+    bool Dye::GetChannel(uint16_t tag, int channel, Channel* out, const SlotInfo* expected)
     {
         if (!out) return false;
         if (channel < 0 || channel >= static_cast<int>(kDye_MaxChannels)) return false;
         if (!UiSnapshotUsable()) return false;
         const DyeSnapshotRow* row = nullptr;
         for (int i = 0; i < g_slotCount; ++i)
-            if (g_slots[i].tag == tag) { row = &s_uiRows[i]; break; }
+            if (g_slots[i].tag == tag)
+            {
+                if (expected && !expected->SameTarget(g_slots[i])) return false;
+                row = &s_uiRows[i];
+                break;
+            }
         if (!row || !(row->mask & (1u << channel))) return false;
         const uint8_t* r = row->records[channel];
         memcpy(&out->groupKey, r + 0, 4);
@@ -3095,13 +3127,13 @@ namespace trinity::game
         return true;
     }
 
-    bool Dye::Apply(uint16_t tag, int channel, const Channel& c)
+    bool Dye::Apply(uint16_t tag, int channel, const Channel& c, const SlotInfo* expected)
     {
-        return EnqueueDye(tag, channel, false, c);
+        return EnqueueDye(tag, channel, false, c, nullptr, false, 0, 0, expected);
     }
 
     bool Dye::Retouch(uint16_t tag, int channel, bool materialChanged, uint16_t material,
-                      bool conditionChanged, uint8_t condition)
+                      bool conditionChanged, uint8_t condition, const SlotInfo* expected)
     {
         const unsigned fields = (materialChanged ? DyeRetouchMaterial : 0u) |
                                 (conditionChanged ? DyeRetouchCondition : 0u);
@@ -3110,12 +3142,20 @@ namespace trinity::game
         Channel value{};
         value.materialId = material;
         value.repair = condition;
-        return EnqueueDye(tag, channel, false, value, nullptr, false, 0, fields);
+        return EnqueueDye(tag, channel, false, value, nullptr, false, 0, fields, expected);
     }
 
-    bool Dye::Clear(uint16_t tag, int channel)
+    void Dye::CancelRetouch()
     {
-        return EnqueueDye(tag, channel, true, Channel{});
+        DyeOperationGuard operation;
+        if (operation.acquired && g_req.retouchFields && !g_req.recordsPrepared &&
+            g_state.load(std::memory_order_acquire) == static_cast<int>(OpState::Pending))
+            g_state.store(static_cast<int>(OpState::Idle), std::memory_order_release);
+    }
+
+    bool Dye::Clear(uint16_t tag, int channel, const SlotInfo* expected)
+    {
+        return EnqueueDye(tag, channel, true, Channel{}, nullptr, false, 0, 0, expected);
     }
 
     Dye::OpState Dye::Status()
@@ -3136,18 +3176,18 @@ namespace trinity::game
     std::string Dye::ProfileError() { return s_profiles.Error(); }
     bool Dye::RenameProfile(uint32_t id, const char* name) { return !Busy() && s_profiles.Rename(id, name); }
     bool Dye::DeleteProfile(uint32_t id) { return !Busy() && s_profiles.Erase(id); }
-    bool Dye::SaveProfile(uint16_t tag, const char* name, uint32_t replaceId)
+    bool Dye::SaveProfile(uint16_t tag, const char* name, uint32_t replaceId, const SlotInfo* expected)
     {
         if (!name || !*name || strnlen_s(name, 64) >= 64) return false;
         DyeProfile profile{};
         strcpy_s(profile.name, name);
-        return EnqueueDye(tag, -1, false, Channel{}, &profile, true, replaceId);
+        return EnqueueDye(tag, -1, false, Channel{}, &profile, true, replaceId, 0, expected);
     }
-    bool Dye::ApplyProfile(uint16_t tag, uint32_t id)
+    bool Dye::ApplyProfile(uint16_t tag, uint32_t id, const SlotInfo* expected)
     {
         DyeProfile profile{};
         if (!s_profiles.Get(id, profile)) return false;
-        return EnqueueDye(tag, -1, false, Channel{}, &profile);
+        return EnqueueDye(tag, -1, false, Channel{}, &profile, false, 0, 0, expected);
     }
 
     void Dye::Tick()
