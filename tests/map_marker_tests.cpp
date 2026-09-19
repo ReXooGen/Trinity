@@ -66,6 +66,19 @@ namespace
 int main()
 {
     using namespace trinity::game;
+
+    // PE 2944 still exposes the active map destination directly through the
+    // UI object. The older capture detours may all be unavailable, so requiring
+    // one here would leave a visible destination permanently unusable.
+    Expect(MarkerTeleportCanUseDestination(true, true, 0),
+           "direct map destination keeps marker teleport available without legacy capture hooks");
+    Expect(MarkerTeleportCanUseDestination(false, true, 1),
+           "a legacy capture hook remains a valid fallback marker source");
+    Expect(!MarkerTeleportCanUseDestination(false, true, 0),
+           "marker teleport is unavailable when neither marker source exists");
+    Expect(!MarkerTeleportCanUseDestination(true, false, 0),
+           "marker teleport remains unavailable without a verified origin");
+
     MapMarkerPosition out{};
     const auto read = [&] { return ReadCurrentMapMarker(global, ReadPointer, ReadPosition, out); };
     Expect(read() && out.x == current.x && out.z == current.z,

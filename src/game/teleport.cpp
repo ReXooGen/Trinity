@@ -510,6 +510,7 @@ namespace trinity::game
             g_markerProtectFlag.store(0, std::memory_order_relaxed);
             g_protectionStartTime.store(0, std::memory_order_relaxed);
             g_markerCachedCandidate = -1;
+            g_markerOriginAddress = 0;
             g_markerDestinationGlobal = 0;
             for (auto& slot : g_markerCandidates)
             {
@@ -527,10 +528,25 @@ namespace trinity::game
             if (destinationRefs.size() == 1)
                 g_markerDestinationGlobal = mem::ResolveRipAt(destinationRefs.front(), 7);
 
-            if (markers.size() != kExpected_MarkerMatches || origins.size() < 6)
+            // PE 2944 can resolve the active map destination directly from the
+            // UI state even when every older capture detour is unavailable.
+            // Keep those detours as a fallback only; do not let their failure
+            // hide a verified direct marker reader from the travel menu.
+            const bool hasDirectDestination = g_markerDestinationGlobal >= kMinPointer;
+            if (!hasDirectDestination)
             {
-                LOG_WARN("teleport: marker signatures count mismatch (markers=%zu exp=%zu, origins=%zu)",
-                         markers.size(), kExpected_MarkerMatches, origins.size());
+                LOG_WARN("teleport: direct map-destination reference not found; legacy capture hooks are required.");
+            }
+
+            if (markers.size() != kExpected_MarkerMatches)
+            {
+                LOG_WARN("teleport: marker capture signature count mismatch (markers=%zu exp=%zu); direct reader will be used when available.",
+                         markers.size(), kExpected_MarkerMatches);
+            }
+            if (origins.size() < 6)
+            {
+                LOG_WARN("teleport: marker origin signature count mismatch (origins=%zu); marker teleport disabled.",
+                         origins.size());
                 return false;
             }
 
@@ -571,32 +587,42 @@ namespace trinity::game
             }
 
             size_t installedHooks = 0;
-            for (size_t i = 0; i < markers.size(); ++i)
+            if (markers.size() == kExpected_MarkerMatches)
             {
-                if (InstallMarkerHook(markers[i] + 4, g_markerCandidates[i]))
+                for (size_t i = 0; i < markers.size(); ++i)
                 {
-                    ++installedHooks;
-                }
-                else
-                {
-                    LOG_WARN("teleport: marker hook index %zu skipped (best-effort).", i);
+                    if (InstallMarkerHook(markers[i] + 4, g_markerCandidates[i]))
+                    {
+                        ++installedHooks;
+                    }
+                    else
+                    {
+                        LOG_WARN("teleport: marker hook index %zu skipped (best-effort).", i);
+                    }
                 }
             }
 
             if (installedHooks == 0)
             {
-                LOG_WARN("teleport: no marker hooks could be installed.");
+                LOG_WARN("teleport: no marker hooks could be installed; using direct map destination when available.");
                 RemoveMarkerHooks();
-                return false;
             }
 
             if (protections.size() == 1)
                 g_markerProtectionReady = InstallMarkerProtectionHook(protections.front());
 
-            g_markerReady = true;
-            LOG_OK("teleport: map marker teleport subsystem initialized (origin=0x%p, hooks=%zu/%zu, protection=%s).",
-                   reinterpret_cast<void*>(g_markerOriginAddress), installedHooks, markers.size(),
-                   g_markerProtectionReady ? "yes" : "no");
+            g_markerReady = MarkerTeleportCanUseDestination(hasDirectDestination,
+                                                              g_markerOriginAddress >= kMinPointer,
+                                                              installedHooks);
+            if (!g_markerReady)
+            {
+                LOG_WARN("teleport: no usable marker source with a verified origin; marker teleport disabled.");
+                return false;
+            }
+
+            LOG_OK("teleport: map marker teleport subsystem initialized (origin=0x%p, direct=%s, hooks=%zu/%zu, protection=%s).",
+                   reinterpret_cast<void*>(g_markerOriginAddress), hasDirectDestination ? "yes" : "no",
+                   installedHooks, markers.size(), g_markerProtectionReady ? "yes" : "no");
             return true;
         }
 
