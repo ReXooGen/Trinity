@@ -1,0 +1,5 @@
+[
+  { "label": "strings Movement-update", "tool": "bn_string_list", "args": { "query": "Movement-update", "limit": 40 } },
+  { "label": "strings MovementUpdate", "tool": "bn_string_list", "args": { "query": "MovementUpdate", "limit": 40 } },
+  { "label": "strings MoveUpdate", "tool": "bn_string_list", "args": { "query": "MoveUpdate", "limit": 40 } }
+]

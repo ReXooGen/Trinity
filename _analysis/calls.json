@@ -1,0 +1,4 @@
+[
+  { "tool": "bn_comment_get", "args": { "comment": "0x140654ED0" } },
+  { "tool": "bn_comment_get", "args": { "comment": "0x1406550b0" } }
+]

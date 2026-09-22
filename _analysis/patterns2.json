@@ -1,0 +1,14 @@
+[
+  {
+    "name": "VIBE_LevelGimmickSceneObjectInfoTable_GetById 0x1404A2630 prologue (CORRECTED 48 bytes)",
+    "pattern": "48 89 5C 24 10 48 89 6C 24 18 56 57 41 56 48 83 EC 50 8B 39 48 8B 1D DD BD 8C 06 3B 7B 08 0F 83 E2 00 00 00 48 8D 34 FD 00 00 00 00 48 8B 43 58"
+  },
+  {
+    "name": "table-name string anchor: LevelGimmickSceneObjectInfo",
+    "text": "LevelGimmickSceneObjectInfo"
+  },
+  {
+    "name": "table-name string anchor: FieldLevelNameTableInfo",
+    "text": "FieldLevelNameTableInfo"
+  }
+]

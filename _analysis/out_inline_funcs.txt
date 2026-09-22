@@ -1,0 +1,58 @@
+########## [1] socket resize container  (bn_function_list)
+---
+tool: "bn_function_list"
+start: "0x14488c300"
+length: "0x180"
+offset: 0
+limit: 20
+count: 3
+total: 3
+nextOffset: null
+truncated: false
+---
+
+| function | arch | name | platform | lowestAddress | highestAddress | definition | basicBlockCount | exported | autoDiscovered |
+| --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |
+| 0x14488c270 | x86_64 | sub_14488c270 | windows-x86_64 | 0x14488c270 | 0x14488c35f | uint64_t(void* arg1, int32_t arg2, int32_t arg3, int32_t arg4) | 23 | false | false |
+| 0x14488c360 | x86_64 | sub_14488c360 | windows-x86_64 | 0x14488c360 | 0x14488c466 | struct icu_78::StringTrieBuilder::LinearMatchNode::icu_78::UCharsTrieBuilder::UCTLinearMatchNode::VTable**(void* arg1, int32_t arg2, int32_t arg3, int32_t arg4, void* arg5) | 15 | false | false |
+| 0x14488c468 | x86_64 | sub_14488c468 | windows-x86_64 | 0x14488c468 | 0x14488c4f8 | void*(void* arg1, int32_t arg2) | 9 | false | false |
+
+
+########## [2] marker dest global container  (bn_function_list)
+---
+tool: "bn_function_list"
+start: "0x140defc00"
+length: "0x110"
+offset: 0
+limit: 20
+count: 1
+total: 1
+nextOffset: null
+truncated: false
+---
+
+| function | arch | name | platform | lowestAddress | highestAddress | definition | basicBlockCount | exported | autoDiscovered |
+| --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |
+| 0x140def890 | x86_64 | sub_140def890 | windows-x86_64 | 0x140def890 | 0x140defd6a | int64_t(int64_t arg1, double (* arg2)[0x2], double* arg3) | 63 | false | false |
+
+
+########## [3] equip effect refresh legacy 0x140659510  (bn_function_list)
+---
+tool: "bn_function_list"
+start: "0x140659510"
+offset: 0
+limit: 3
+count: 1
+total: 1
+nextOffset: null
+truncated: false
+---
+
+| function | arch | name | platform | lowestAddress | highestAddress | definition | basicBlockCount | exported | autoDiscovered |
+| --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |
+| 0x140659510 | x86_64 | sub_140659510 | windows-x86_64 | 0x140659510 | 0x1406597b6 | int64_t(int64_t* arg1, int64_t* arg2) | 40 | false | false |
+
+
+########## [4] equip effect refresh legacy other hits  (bn_aob_check)
+ERROR: {"code":-32602,"message":"Unknown tool: bn_aob_check"}
+

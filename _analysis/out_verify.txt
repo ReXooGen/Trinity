@@ -1,0 +1,137 @@
+########## [1] loco stepper symbol  (bn_symbol_list)
+---
+tool: "bn_symbol_list"
+start: "0x14369ff60"
+offset: 0
+limit: 5
+count: 1
+total: 1
+nextOffset: null
+truncated: false
+---
+
+| symbol | name | type | namespace | ordinal | binding | fullName | autoDefined |
+| --- | --- | --- | --- | --- | --- | --- | --- |
+| 0x14369ff60 | VIBE_Locomotion_StepDriveVelocity | FunctionSymbol | BNINTERNALNAMESPACE | 0 | NoBinding | VIBE_Locomotion_StepDriveVelocity | false |
+
+
+########## [2] moveupdate symbol  (bn_symbol_list)
+---
+tool: "bn_symbol_list"
+start: "0x144282080"
+offset: 0
+limit: 5
+count: 1
+total: 1
+nextOffset: null
+truncated: false
+---
+
+| symbol | name | type | namespace | ordinal | binding | fullName | autoDefined |
+| --- | --- | --- | --- | --- | --- | --- | --- |
+| 0x144282080 | VIBE_Locomotion_MoveUpdateIntegrator | FunctionSymbol | BNINTERNALNAMESPACE | 0 | NoBinding | VIBE_Locomotion_MoveUpdateIntegrator | false |
+
+
+########## [3] worker patch comment  (bn_comment_get)
+{"comment":"0x14214be8c","text":"Trinity WORKER PATCH SITE (PE 2944). This JNZ +0x95 (to 0x14214BF27) is the worker grade-selector branch. Trinity rewrites these 6 bytes to E9 96 00 00 00 90 (JMP +0x96 ; NOP) so the same destination 0x14214BF27 is always taken, forcing the top grade tier (5) = max worker level and all abilities. Locator kSig_WorkerMaxLevelAndSkills (src/game/offsets.h:1849-1850) = 0F 85 95 00 00 00 48 8B 7C 24 20 41 0F B7 D5, exactly 1 match in the whole image. Original/patched byte arrays: src/game/offsets.h:1841-1845. Apply/restore: src/game/worker.cpp Worker::SetEnabled / Worker::Shutdown. Never patch this without confirming the current 6 bytes are exactly the recorded original - the transition is memcmp-gated and must fail closed.","warnings":[]}
+
+########## [4] vibe count  (bn_function_search)
+---
+tool: "bn_function_search"
+query: "VIBE_"
+offset: 0
+limit: 1000
+count: 83
+total: 83
+nextOffset: null
+truncated: false
+---
+
+| function | arch | name | platform | lowestAddress | highestAddress | definition | basicBlockCount | exported | autoDiscovered |
+| --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |
+| 0x1403880a0 | x86_64 | VIBE_SkillTable_GetById | windows-x86_64 | 0x1403880a0 | 0x1403881c7 | int64_t(int16_t* arg1) | 13 | false | false |
+| 0x140388ac0 | x86_64 | j_VIBE_ItemInfoTable_GetById | windows-x86_64 | 0x140388ac0 | 0x140388ac4 | int64_t(int16_t* arg1) | 1 | false | true |
+| 0x1403891b0 | x86_64 | j_VIBE_MercenaryInfoTable_GetRecordById | windows-x86_64 | 0x1403891b0 | 0x1403891b4 | int64_t(int16_t* arg1) | 1 | false | true |
+| 0x140389570 | x86_64 | VIBE_CharacterInfoTable_GetRecordById | windows-x86_64 | 0x140389570 | 0x140389697 | int64_t(int16_t* arg1) | 13 | false | false |
+| 0x14038ab60 | x86_64 | VIBE_ItemInfoTable_GetById | windows-x86_64 | 0x14038ab60 | 0x14038ac87 | int64_t(int16_t* arg1) | 13 | false | false |
+| 0x140393df0 | x86_64 | VIBE_ScopedRef_Acquire | windows-x86_64 | 0x140393df0 | 0x140393e7d | int64_t*(int64_t* arg1, uint64_t arg2) | 8 | false | false |
+| 0x14042cc40 | x86_64 | VIBE_UiList_BuildSlotEntriesByLoadout | windows-x86_64 | 0x14042cc40 | 0x14042db3c | int32_t*(void* arg1, int32_t* arg2, int16_t arg3, int32_t arg4, int32_t arg5, int32_t arg6) | 207 | false | false |
+| 0x140430020 | x86_64 | VIBE_FactionNodeTable_GetById | windows-x86_64 | 0x140430020 | 0x140430147 | int64_t(int16_t* arg1) | 13 | false | false |
+| 0x140436380 | x86_64 | VIBE_Map_FindOrCreateValueSlot | windows-x86_64 | 0x140436380 | 0x140436674 | void**(int32_t* arg1, int64_t* arg2, int32_t arg3, int64_t* arg4, char* arg5 @ 0x30, void** arg6, void** arg7) | 36 | false | false |
+| 0x1404a2010 | x86_64 | VIBE_FieldInfoTable_GetById | windows-x86_64 | 0x1404a2010 | 0x1404a2137 | int64_t(int16_t* arg1) | 13 | false | false |
+| 0x1404a2630 | x86_64 | VIBE_LevelGimmickSceneObjectInfoTable_GetById | windows-x86_64 | 0x1404a2630 | 0x1404a2755 | int64_t(int32_t* arg1) | 13 | false | false |
+| 0x1405835f0 | x86_64 | VIBE_StatusInfoTable_GetById | windows-x86_64 | 0x1405835f0 | 0x140583717 | int64_t(int16_t* arg1) | 13 | false | false |
+| 0x1405d1e40 | x86_64 | VIBE_QuestGaugeInfoTable_GetById | windows-x86_64 | 0x1405d1e40 | 0x1405d1f67 | int64_t(int16_t* arg1) | 13 | false | false |
+| 0x140636580 | x86_64 | VIBE_StatusGroupInfoTable_GetById | windows-x86_64 | 0x140636580 | 0x1406366a7 | int64_t(int16_t* arg1) | 13 | false | false |
+| 0x14064f490 | x86_64 | VIBE_ScopeAttacher_ClientActor_InitGlobal | windows-x86_64 | 0x14064f490 | 0x14064f4c6 | struct pa::UserOrCharacterValidLoginedScopeAttacher::pa::ScopeAttacher<class pa::ClientActor>::VTable**(int64_t arg1, struct pa::UserOrCharacterValidLoginedScopeAttacher::pa::ScopeAttacher<class pa::ClientActor>::VTable** arg2) | 1 | false | false |
+| 0x140654ed0 | x86_64 | VIBE_FastTravel_SelectDestination | windows-x86_64 | 0x140654ed0 | 0x1406550a5 | uint64_t(int64_t arg1, int32_t arg2, int32_t arg3) | 22 | false | false |
+| 0x1406550b0 | x86_64 | VIBE_FastTravel_TryAcceptRequest | windows-x86_64 | 0x1406550b0 | 0x14065558a | bool(void* unusedActor, int32_t sceneId, int32_t nodeIndex, int32_t mercenaryHandle) | 43 | false | false |
+| 0x14065fbd0 | x86_64 | VIBE_GetRecordCopyForActor | windows-x86_64 | 0x14065fbd0 | 0x14065fecf | int64_t*(int64_t* arg1, int64_t* arg2, int64_t arg3) | 41 | false | false |
+| 0x14065fee0 | x86_64 | VIBE_ScopedActor_GetActiveSlotIndex | windows-x86_64 | 0x14065fee0 | 0x14066000a | uint64_t(int64_t* arg1, int64_t arg2) | 16 | false | false |
+| 0x14066b500 | x86_64 | VIBE_ComputeStatusValueForKey | windows-x86_64 | 0x14066b500 | 0x14066b7ff | int64_t(int64_t arg1, int32_t arg2, char arg3, char arg4, int16_t arg5) | 35 | false | false |
+| 0x14066f620 | x86_64 | VIBE_BuffInfoTable_GetById | windows-x86_64 | 0x14066f620 | 0x14066f747 | int64_t(int16_t* arg1) | 13 | false | false |
+| 0x1408b4480 | x86_64 | VIBE_ScopeAttacher_ClientActor_Init | windows-x86_64 | 0x1408b4480 | 0x1408b450a | struct pa::UserOrCharacterValidLoginedScopeAttacher::pa::ScopeAttacher<class pa::ClientActor>::VTable**(void* arg1, struct pa::UserOrCharacterValidLoginedScopeAttacher::pa::ScopeAttacher<class pa::ClientActor>::VTable** arg2) | 5 | false | false |
+| 0x140951440 | x86_64 | VIBE_World_EvalTimeCurve | windows-x86_64 | 0x140951440 | 0x140951622 | void* const*(int64_t arg1, char arg2, float arg3, int32_t arg4[0x4] @ zmm5) | 26 | false | false |
+| 0x140952080 | x86_64 | VIBE_World_GetTimeScale | windows-x86_64 | 0x140952080 | 0x1409520ec | int64_t(void* arg1) __location("zmm0") | 4 | false | false |
+| 0x140a9a8d0 | x86_64 | VIBE_FastTravel_Execute | windows-x86_64 | 0x140a9a8d0 | 0x140a9ab17 | int64_t(void* arg1, int32_t arg2, int32_t arg3, int32_t arg4, int64_t arg5) | 21 | false | false |
+| 0x140ad23f0 | x86_64 | VIBE_World_FrameUpdate | windows-x86_64 | 0x140ad23f0 | 0x140ad3058 | int64_t(int64_t* arg1) | 167 | false | false |
+| 0x140d243c0 | x86_64 | VIBE_SumRecordSlotStatValues | windows-x86_64 | 0x140d243c0 | 0x140d24510 | uint64_t(int64_t* arg1, int16_t arg2) | 11 | false | false |
+| 0x140dbc6c0 | x86_64 | VIBE_FastTravel_FlushPendingRequest | windows-x86_64 | 0x140dbc6c0 | 0x140dbc81a | void(int64_t* arg1, int64_t arg2, char arg3) | 15 | false | false |
+| 0x140edf480 | x86_64 | VIBE_CompareRecordsBySlotStatValue | windows-x86_64 | 0x140edf480 | 0x140edfb4b | uint64_t(int64_t* arg1, int64_t* arg2, int64_t* arg3, int128_t arg4 @ zmm6, int128_t arg5 @ zmm7) | 96 | false | false |
+| 0x140f27200 | x86_64 | VIBE_UiList_BuildSlotEntries | windows-x86_64 | 0x140f27200 | 0x140f275d7 | int64_t(void* arg1, int32_t arg2[0x4] @ zmm6) | 32 | false | false |
+| 0x140f6e050 | x86_64 | VIBE_UiList_BuildSlotEntriesAndSum | windows-x86_64 | 0x140f6e050 | 0x140f6f4b2 | uint64_t(int64_t* arg1, int32_t arg2[0x4] @ zmm6) | 252 | false | false |
+| 0x141416b70 | x86_64 | VIBE_Engine_GetTimeValue | windows-x86_64 | 0x141416b70 | 0x141416bf7 | int64_t() | 4 | false | false |
+| 0x141480810 | x86_64 | VIBE_GamePlayVariableInfoTable_GetById | windows-x86_64 | 0x141480810 | 0x141480937 | int64_t(int16_t* arg1) | 13 | false | false |
+| 0x1414e07a0 | x86_64 | VIBE_Int16Vector_Append | windows-x86_64 | 0x1414e07a0 | 0x1414e0884 | void(int64_t* arg1, int16_t* arg2, int32_t arg3) | 12 | false | false |
+| 0x14176dec0 | x86_64 | VIBE_UiList_BuildSlotEntriesFromFactionNode | windows-x86_64 | 0x14176dec0 | 0x14176e3ff | int32_t*(void* arg1, int32_t* arg2, int16_t arg3, int32_t* arg4) | 70 | false | false |
+| 0x141776000 | x86_64 | VIBE_GetRecordSlotStatValue | windows-x86_64 | 0x141776000 | 0x141776120 | int32_t(void* arg1, int16_t arg2, int32_t arg3[0x4] @ zmm0, int32_t arg4[0x4] @ zmm6) __location("zmm0")[0x4] | 11 | false | false |
+| 0x1417862f0 | x86_64 | VIBE_UiList_SumRowSkillValues | windows-x86_64 | 0x1417862f0 | 0x141786534 | void*(void* arg1, int64_t* arg2, int64_t* arg3) | 29 | false | false |
+| 0x141786540 | x86_64 | VIBE_UiList_ContainsRowStatus | windows-x86_64 | 0x141786540 | 0x141786675 | uint64_t(void* arg1, int64_t* arg2) | 21 | false | false |
+| 0x1417aad30 | x86_64 | VIBE_CharacterStatus_RebuildSlotValues | windows-x86_64 | 0x1417aad30 | 0x1417ab941 | int32_t*(int64_t* arg1, int32_t* arg2, int128_t arg3 @ zmm6, int128_t arg4 @ zmm7, int128_t arg5 @ zmm8, int128_t arg6 @ zmm9, int128_t arg7 @ zmm10, int128_t arg8 @ zmm11, int128_t arg9 @ zmm12) | 74 | false | false |
+| 0x1417ac0c0 | x86_64 | VIBE_CharacterStatus_ApplyDeltaPrimary | windows-x86_64 | 0x1417ac0c0 | 0x1417aca41 | uint64_t(int64_t* arg1, void* arg2, int64_t arg3, int64_t* arg4, char arg5, char arg6, char arg7, char arg8, char arg9, char arg10) | 92 | false | false |
+| 0x1417ad6f0 | x86_64 | VIBE_CharacterStatus_GetAccumulatedValue | windows-x86_64 | 0x1417ad6f0 | 0x1417ad882 | int64_t*(int64_t* arg1, int64_t* arg2, int16_t arg3, int64_t arg4) | 11 | false | false |
+| 0x1417add40 | x86_64 | VIBE_CharacterStatus_GetGroupSlotEntry | windows-x86_64 | 0x1417add40 | 0x1417addc5 | int64_t(int64_t* arg1, int16_t arg2) | 3 | false | false |
+| 0x1417ae530 | x86_64 | VIBE_CharacterStatus_ApplyDelta | windows-x86_64 | 0x1417ae530 | 0x1417ae8f7 | uint64_t(int64_t* arg1, int16_t arg2, int64_t arg3, int64_t arg4, void* arg5) | 41 | false | false |
+| 0x1417af690 | x86_64 | VIBE_Time_ComputeDeltaTicks | windows-x86_64 | 0x1417af690 | 0x1417af7b5 | int64_t*(int64_t arg1, int64_t* arg2, int64_t* arg3, int64_t* arg4) | 14 | false | false |
+| 0x1417b0650 | x86_64 | VIBE_CharacterStatus_IsStatusGroupActive | windows-x86_64 | 0x1417b0650 | 0x1417b06de | void*(int64_t* arg1, int16_t arg2) | 4 | false | false |
+| 0x1417b2b30 | x86_64 | VIBE_CharacterStatus_AccumulateSlotValue | windows-x86_64 | 0x1417b2b30 | 0x1417b2c07 | int64_t(int64_t* arg1, int16_t arg2, int64_t arg3, int64_t arg4) | 8 | false | false |
+| 0x1417b2ec0 | x86_64 | VIBE_CharacterStatus_ComputeSlotEntries | windows-x86_64 | 0x1417b2ec0 | 0x1417b32ab | void*(int64_t arg1, int64_t* arg2, int128_t arg3 @ zmm6) | 47 | false | false |
+| 0x1417e6cb0 | x86_64 | VIBE_IdMap_GetGamePlayVariableValue | windows-x86_64 | 0x1417e6cb0 | 0x1417e6d49 | uint64_t(void* arg1, int16_t arg2) | 10 | false | false |
+| 0x1417fa740 | x86_64 | VIBE_Actor_GetFieldAttacher | windows-x86_64 | 0x1417fa740 | 0x1417fa77a | int64_t(void* arg1, int64_t arg2) | 1 | false | false |
+| 0x141abc170 | x86_64 | VIBE_FindTargetActorByFriendship | windows-x86_64 | 0x141abc170 | 0x141abc508 | int64_t*(void* registry, int64_t* outId, void* actor, char requireRowFlag) | 53 | false | false |
+| 0x141abcdf0 | x86_64 | VIBE_TargetFilter_GetBitIndex | windows-x86_64 | 0x141abcdf0 | 0x141abce72 | uint64_t(void* arg1, int32_t arg2) | 11 | false | false |
+| 0x141ec9f70 | x86_64 | VIBE_Friendship_GetTierCode | windows-x86_64 | 0x141ec9f70 | 0x141ec9ffd | int64_t(int64_t arg1) | 14 | false | true |
+| 0x141eca2d0 | x86_64 | VIBE_Trust_FindRecordById_L18 | windows-x86_64 | 0x141eca2d0 | 0x141eca34d | int64_t(void* arg1, int16_t arg2) | 9 | false | false |
+| 0x141ecb640 | x86_64 | VIBE_Trust_FindRecordByActor_L38 | windows-x86_64 | 0x141ecb640 | 0x141ecb745 | int32_t*(void* arg1, void* arg2) | 16 | false | false |
+| 0x141ecb750 | x86_64 | VIBE_Trust_FindRecordById_L38 | windows-x86_64 | 0x141ecb750 | 0x141ecb7cd | int64_t(void* arg1, int16_t arg2) | 9 | false | false |
+| 0x141eccd40 | x86_64 | VIBE_Vector68_Grow | windows-x86_64 | 0x141eccd40 | 0x141ecce5e | uint64_t(uint64_t* arg1, uint32_t arg2) | 15 | false | false |
+| 0x141f3cb00 | x86_64 | j_VIBE_CharacterStatus_CollectRowEntries | windows-x86_64 | 0x141f3cb00 | 0x141f3cb04 | void(void* arg1, int32_t arg2, int32_t arg3, char arg4, int64_t* arg5) | 1 | false | true |
+| 0x141f3cf90 | x86_64 | VIBE_CharacterStatus_GetRowField18 | windows-x86_64 | 0x141f3cf90 | 0x141f3d093 | int64_t*(void* arg1, int64_t* arg2, int16_t arg3, int32_t arg4) | 9 | false | false |
+| 0x141f3d0a0 | x86_64 | VIBE_CharacterStatus_GetRowField10 | windows-x86_64 | 0x141f3d0a0 | 0x141f3d173 | int64_t*(void* arg1, int64_t* arg2, int16_t arg3, int32_t arg4) | 8 | false | false |
+| 0x141f3d180 | x86_64 | VIBE_CharacterStatus_GetRowField00 | windows-x86_64 | 0x141f3d180 | 0x141f3d281 | int64_t*(void* arg1, int64_t* arg2, int16_t arg3, int32_t arg4) | 9 | false | false |
+| 0x141f3d290 | x86_64 | VIBE_CharacterStatus_GetRowField08 | windows-x86_64 | 0x141f3d290 | 0x141f3d393 | int64_t*(void* arg1, int64_t* arg2, int16_t arg3, int32_t arg4) | 9 | false | false |
+| 0x141f3d3a0 | x86_64 | VIBE_CharacterStatus_GetRowField20 | windows-x86_64 | 0x141f3d3a0 | 0x141f3d473 | int64_t*(void* arg1, int64_t* arg2, int16_t arg3, int32_t arg4) | 8 | false | false |
+| 0x141f3d480 | x86_64 | VIBE_CharacterStatus_GetRowFieldByRowTable | windows-x86_64 | 0x141f3d480 | 0x141f3d522 | uint64_t(void* arg1, int16_t arg2, int32_t arg3) | 7 | false | false |
+| 0x141f3e250 | x86_64 | VIBE_CharacterStatus_InterpolateTierValue | windows-x86_64 | 0x141f3e250 | 0x141f3e350 | int64_t(void* arg1, int16_t arg2, int64_t arg3, char arg4, int32_t arg5) | 18 | false | true |
+| 0x142146110 | x86_64 | VIBE_HashMap_LookupValue | windows-x86_64 | 0x142146110 | 0x14214617c | int64_t(void* arg1, int64_t arg2) | 9 | false | false |
+| 0x14214bd30 | x86_64 | VIBE_GetActiveSlotIndexForRecord | windows-x86_64 | 0x14214bd30 | 0x14214bf8f | int32_t(void* ctx, int64_t recordKey) | 22 | false | false |
+| 0x142153350 | x86_64 | VIBE_GetCharacterStatusValueForSlot | windows-x86_64 | 0x142153350 | 0x14215353f | int64_t*(void* arg1, int64_t* arg2, int64_t arg3, int16_t arg4) | 22 | false | false |
+| 0x142155520 | x86_64 | VIBE_Record_ConstructDefault | windows-x86_64 | 0x142155520 | 0x1421557a4 | int32_t*(int64_t* arg1) | 18 | false | false |
+| 0x142156370 | x86_64 | VIBE_Record_AssignCopy | windows-x86_64 | 0x142156370 | 0x1421567c1 | int32_t*(int32_t* arg1, int32_t* arg2) | 24 | false | false |
+| 0x142156b40 | x86_64 | VIBE_Record_EvalSlotStat | windows-x86_64 | 0x142156b40 | 0x142156f36 | void(void* arg1, char arg2, char arg3, int16_t arg4, int32_t arg5, int64_t arg6, int64_t* arg7) | 31 | false | false |
+| 0x142157010 | x86_64 | VIBE_Record_GetSlotStatValue | windows-x86_64 | 0x142157010 | 0x1421570f6 | int32_t(void* arg1, int32_t arg2) __location("zmm0")[0x4] | 1 | false | false |
+| 0x1421a1d40 | x86_64 | VIBE_Actor_TryGetGaugeTime | windows-x86_64 | 0x1421a1d40 | 0x1421a1e84 | uint64_t(int64_t* arg1, int256_t* arg2) | 11 | false | false |
+| 0x14240ecc0 | x86_64 | VIBE_Record_Entry_SumTierValues | windows-x86_64 | 0x14240ecc0 | 0x14240f09c | int64_t(void* arg1, int16_t arg2, char arg3, char arg4) | 57 | false | false |
+| 0x14240f6a0 | x86_64 | VIBE_CharacterStatus_GetTierIndexForStatus | windows-x86_64 | 0x14240f6a0 | 0x14240f725 | uint64_t(void* arg1, int16_t arg2) | 1 | false | false |
+| 0x142414870 | x86_64 | VIBE_Record_Entry_GetStatusTierIndex | windows-x86_64 | 0x142414870 | 0x142414900 | uint64_t(void* arg1, int16_t arg2, int16_t arg3) | 9 | false | false |
+| 0x142414c10 | x86_64 | VIBE_Record_Entry_ComputeTierValue | windows-x86_64 | 0x142414c10 | 0x142414e9a | int64_t(void* arg1, int16_t arg2, int64_t* arg3) | 40 | false | false |
+| 0x1427990d0 | x86_64 | VIBE_ApplyRecordToCharacter | windows-x86_64 | 0x1427990d0 | 0x142799a23 | int32_t*(int64_t* arg1, int32_t* arg2, int64_t arg3, void* arg4) | 119 | false | false |
+| 0x142845130 | x86_64 | VIBE_UiList_QuerySlotEntries | windows-x86_64 | 0x142845130 | 0x1428464b7 | int32_t*(uint64_t arg1, int32_t* arg2, int16_t arg3, int32_t arg4) | 251 | false | false |
+| 0x14284fab0 | x86_64 | VIBE_UiList_QuerySlotEntriesFiltered | windows-x86_64 | 0x14284fab0 | 0x1428500f8 | int32_t*(uint64_t arg1, int32_t* arg2, int16_t arg3, int32_t* arg4, int32_t arg5[0x4] @ zmm6, char arg6, int32_t* arg7, int64_t* arg8) | 49 | false | false |
+| 0x14369ff60 | x86_64 | VIBE_Locomotion_StepDriveVelocity | windows-x86_64 | 0x14369ff60 | 0x1436a0fe0 | int64_t*(void* arg1, int32_t arg2[0x4] @ zmm1, int32_t (* arg3)[0x4], char arg4, int32_t arg5[0x4] @ zmm0, int32_t arg6[0x4] @ zmm7, int32_t arg7[0x4] @ zmm11, int128_t arg8 @ zmm12, int128_t arg9 @ zmm13, int128_t arg10 @ zmm14, int128_t arg11 @ zmm15, int32_t* arg12, char arg13, char arg14) | 123 | false | false |
+| 0x144282080 | x86_64 | VIBE_Locomotion_MoveUpdateIntegrator | windows-x86_64 | 0x144282080 | 0x1442832d9 | int64_t(void* arg1, int32_t* arg2, void* arg3, float (* arg4)[0x4], float arg5[0x4] @ zmm7, int128_t arg6 @ zmm8, int64_t* arg7, int64_t* arg8, int64_t* arg9) | 142 | false | false |
+| 0x148946aa0 | x86_64 | VIBE_MercenaryInfoTable_GetRecordById | windows-x86_64 | 0x148946aa0 | 0x148946bc7 | int64_t(int16_t* arg1) | 13 | false | false |
+| 0x14e0aa810 | x86_64 | VIBE_CharacterStatus_CollectRowEntries | windows-x86_64 | 0x14e0aa810 | 0x14e0aa8dc | void(void* arg1, int32_t arg2, int32_t arg3, char arg4, int64_t* arg5) | 15 | false | false |
+
+
+

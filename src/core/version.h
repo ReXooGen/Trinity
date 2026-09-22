@@ -6,6 +6,6 @@
 #define TRINITY_VERSION_MAJOR 1
 #define TRINITY_VERSION_MINOR 3
 #define TRINITY_VERSION_PATCH 5
-#define TRINITY_VERSION_BUILD 2
+#define TRINITY_VERSION_BUILD 4
 
-#define TRINITY_VERSION "1.3.5.2 (vUpdate by mul0)"
+#define TRINITY_VERSION "1.3.5.4 (vUpdate by mul0)"

@@ -1,0 +1,6 @@
+[
+  { "label": "loco stepper symbol", "tool": "bn_symbol_list", "args": { "address": "0x14369ff60", "limit": 5 } },
+  { "label": "moveupdate symbol", "tool": "bn_symbol_list", "args": { "address": "0x144282080", "limit": 5 } },
+  { "label": "worker patch comment", "tool": "bn_comment_get", "args": { "comment": "0x14214be8c" } },
+  { "label": "vibe count", "tool": "bn_function_search", "args": { "query": "VIBE_", "limit": 1000 } }
+]

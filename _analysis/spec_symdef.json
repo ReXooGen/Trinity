@@ -1,0 +1,4 @@
+[
+  { "label": "define loco stepper symbol", "tool": "bn_symbol_define", "args": { "symbol": "0x14369ff60", "name": "VIBE_Locomotion_StepDriveVelocity", "type": "FunctionSymbol" } },
+  { "label": "verify", "tool": "bn_symbol_list", "args": { "address": "0x14369ff60", "limit": 10 } }
+]

@@ -2,6 +2,16 @@
 
 namespace trinity::game
 {
+    bool CanTransitionPickupCapacityPatch(PickupCapacityPatchState from,
+                                          PickupCapacityPatchState to,
+                                          const uint8_t* current,
+                                          const uint8_t* expected,
+                                          size_t size)
+    {
+        return current && expected && size == 2 && from != to &&
+               current[0] == expected[0] && current[1] == expected[1];
+    }
+
     bool CanCommitAuthoritativeAdd(bool primitivesReady, bool haveDefinition,
                                    uintptr_t clientHolder, uintptr_t serverHolder)
     {
@@ -41,5 +51,19 @@ namespace trinity::game
         if (lastAttemptMs == 0) return true;
         if (nowMs < lastAttemptMs) return true;
         return nowMs - lastAttemptMs >= retryIntervalMs;
+    }
+
+    bool ShouldInspectPassiveHolderCandidate(uintptr_t cachedServerHolder,
+                                             uintptr_t candidateContainer,
+                                             uintptr_t candidateHolder,
+                                             uintptr_t clientHolder,
+                                             uint32_t clientBucketCount,
+                                             uint32_t candidateBucketCount)
+    {
+        if (cachedServerHolder != 0) return false;
+        if (candidateContainer == 0 || candidateHolder == 0) return false;
+        if (clientHolder != 0 && candidateHolder == clientHolder) return false;
+        if (clientBucketCount != 0 && candidateBucketCount != clientBucketCount) return false;
+        return true;
     }
 }

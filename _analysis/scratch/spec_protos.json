@@ -1,0 +1,569 @@
+[
+  {
+    "label": "VIBE_SkillTable_GetById",
+    "tool": "bn_function_prototype_get",
+    "args": {
+      "function": "0x1403880A0"
+    }
+  },
+  {
+    "label": "j_VIBE_ItemInfoTable_GetById",
+    "tool": "bn_function_prototype_get",
+    "args": {
+      "function": "0x140388AC0"
+    }
+  },
+  {
+    "label": "j_VIBE_MercenaryInfoTable_GetRecordById",
+    "tool": "bn_function_prototype_get",
+    "args": {
+      "function": "0x1403891B0"
+    }
+  },
+  {
+    "label": "VIBE_CharacterInfoTable_GetRecordById",
+    "tool": "bn_function_prototype_get",
+    "args": {
+      "function": "0x140389570"
+    }
+  },
+  {
+    "label": "VIBE_ItemInfoTable_GetById",
+    "tool": "bn_function_prototype_get",
+    "args": {
+      "function": "0x14038AB60"
+    }
+  },
+  {
+    "label": "VIBE_ScopedRef_Acquire",
+    "tool": "bn_function_prototype_get",
+    "args": {
+      "function": "0x140393DF0"
+    }
+  },
+  {
+    "label": "VIBE_UiList_BuildSlotEntriesByLoadout",
+    "tool": "bn_function_prototype_get",
+    "args": {
+      "function": "0x14042CC40"
+    }
+  },
+  {
+    "label": "VIBE_FactionNodeTable_GetById",
+    "tool": "bn_function_prototype_get",
+    "args": {
+      "function": "0x140430020"
+    }
+  },
+  {
+    "label": "VIBE_Map_FindOrCreateValueSlot",
+    "tool": "bn_function_prototype_get",
+    "args": {
+      "function": "0x140436380"
+    }
+  },
+  {
+    "label": "VIBE_FieldInfoTable_GetById",
+    "tool": "bn_function_prototype_get",
+    "args": {
+      "function": "0x1404A2010"
+    }
+  },
+  {
+    "label": "VIBE_LevelGimmickSceneObjectInfoTable_GetById",
+    "tool": "bn_function_prototype_get",
+    "args": {
+      "function": "0x1404A2630"
+    }
+  },
+  {
+    "label": "VIBE_StatusInfoTable_GetById",
+    "tool": "bn_function_prototype_get",
+    "args": {
+      "function": "0x1405835F0"
+    }
+  },
+  {
+    "label": "VIBE_QuestGaugeInfoTable_GetById",
+    "tool": "bn_function_prototype_get",
+    "args": {
+      "function": "0x1405D1E40"
+    }
+  },
+  {
+    "label": "VIBE_StatusGroupInfoTable_GetById",
+    "tool": "bn_function_prototype_get",
+    "args": {
+      "function": "0x140636580"
+    }
+  },
+  {
+    "label": "VIBE_ScopeAttacher_ClientActor_InitGlobal",
+    "tool": "bn_function_prototype_get",
+    "args": {
+      "function": "0x14064F490"
+    }
+  },
+  {
+    "label": "VIBE_FastTravel_SelectDestination",
+    "tool": "bn_function_prototype_get",
+    "args": {
+      "function": "0x140654ED0"
+    }
+  },
+  {
+    "label": "VIBE_FastTravel_TryAcceptRequest",
+    "tool": "bn_function_prototype_get",
+    "args": {
+      "function": "0x1406550B0"
+    }
+  },
+  {
+    "label": "VIBE_GetRecordCopyForActor",
+    "tool": "bn_function_prototype_get",
+    "args": {
+      "function": "0x14065FBD0"
+    }
+  },
+  {
+    "label": "VIBE_ScopedActor_GetActiveSlotIndex",
+    "tool": "bn_function_prototype_get",
+    "args": {
+      "function": "0x14065FEE0"
+    }
+  },
+  {
+    "label": "VIBE_ComputeStatusValueForKey",
+    "tool": "bn_function_prototype_get",
+    "args": {
+      "function": "0x14066B500"
+    }
+  },
+  {
+    "label": "VIBE_BuffInfoTable_GetById",
+    "tool": "bn_function_prototype_get",
+    "args": {
+      "function": "0x14066F620"
+    }
+  },
+  {
+    "label": "VIBE_ScopeAttacher_ClientActor_Init",
+    "tool": "bn_function_prototype_get",
+    "args": {
+      "function": "0x1408B4480"
+    }
+  },
+  {
+    "label": "VIBE_World_EvalTimeCurve",
+    "tool": "bn_function_prototype_get",
+    "args": {
+      "function": "0x140951440"
+    }
+  },
+  {
+    "label": "VIBE_World_GetTimeScale",
+    "tool": "bn_function_prototype_get",
+    "args": {
+      "function": "0x140952080"
+    }
+  },
+  {
+    "label": "VIBE_FastTravel_Execute",
+    "tool": "bn_function_prototype_get",
+    "args": {
+      "function": "0x140A9A8D0"
+    }
+  },
+  {
+    "label": "VIBE_World_FrameUpdate",
+    "tool": "bn_function_prototype_get",
+    "args": {
+      "function": "0x140AD23F0"
+    }
+  },
+  {
+    "label": "VIBE_SumRecordSlotStatValues",
+    "tool": "bn_function_prototype_get",
+    "args": {
+      "function": "0x140D243C0"
+    }
+  },
+  {
+    "label": "VIBE_FastTravel_FlushPendingRequest",
+    "tool": "bn_function_prototype_get",
+    "args": {
+      "function": "0x140DBC6C0"
+    }
+  },
+  {
+    "label": "VIBE_CompareRecordsBySlotStatValue",
+    "tool": "bn_function_prototype_get",
+    "args": {
+      "function": "0x140EDF480"
+    }
+  },
+  {
+    "label": "VIBE_UiList_BuildSlotEntries",
+    "tool": "bn_function_prototype_get",
+    "args": {
+      "function": "0x140F27200"
+    }
+  },
+  {
+    "label": "VIBE_UiList_BuildSlotEntriesAndSum",
+    "tool": "bn_function_prototype_get",
+    "args": {
+      "function": "0x140F6E050"
+    }
+  },
+  {
+    "label": "VIBE_Engine_GetTimeValue",
+    "tool": "bn_function_prototype_get",
+    "args": {
+      "function": "0x141416B70"
+    }
+  },
+  {
+    "label": "VIBE_GamePlayVariableInfoTable_GetById",
+    "tool": "bn_function_prototype_get",
+    "args": {
+      "function": "0x141480810"
+    }
+  },
+  {
+    "label": "VIBE_Int16Vector_Append",
+    "tool": "bn_function_prototype_get",
+    "args": {
+      "function": "0x1414E07A0"
+    }
+  },
+  {
+    "label": "VIBE_UiList_BuildSlotEntriesFromFactionNode",
+    "tool": "bn_function_prototype_get",
+    "args": {
+      "function": "0x14176DEC0"
+    }
+  },
+  {
+    "label": "VIBE_GetRecordSlotStatValue",
+    "tool": "bn_function_prototype_get",
+    "args": {
+      "function": "0x141776000"
+    }
+  },
+  {
+    "label": "VIBE_UiList_SumRowSkillValues",
+    "tool": "bn_function_prototype_get",
+    "args": {
+      "function": "0x1417862F0"
+    }
+  },
+  {
+    "label": "VIBE_UiList_ContainsRowStatus",
+    "tool": "bn_function_prototype_get",
+    "args": {
+      "function": "0x141786540"
+    }
+  },
+  {
+    "label": "VIBE_CharacterStatus_RebuildSlotValues",
+    "tool": "bn_function_prototype_get",
+    "args": {
+      "function": "0x1417AAD30"
+    }
+  },
+  {
+    "label": "VIBE_CharacterStatus_ApplyDeltaPrimary",
+    "tool": "bn_function_prototype_get",
+    "args": {
+      "function": "0x1417AC0C0"
+    }
+  },
+  {
+    "label": "VIBE_CharacterStatus_GetAccumulatedValue",
+    "tool": "bn_function_prototype_get",
+    "args": {
+      "function": "0x1417AD6F0"
+    }
+  },
+  {
+    "label": "VIBE_CharacterStatus_GetGroupSlotEntry",
+    "tool": "bn_function_prototype_get",
+    "args": {
+      "function": "0x1417ADD40"
+    }
+  },
+  {
+    "label": "VIBE_CharacterStatus_ApplyDelta",
+    "tool": "bn_function_prototype_get",
+    "args": {
+      "function": "0x1417AE530"
+    }
+  },
+  {
+    "label": "VIBE_Time_ComputeDeltaTicks",
+    "tool": "bn_function_prototype_get",
+    "args": {
+      "function": "0x1417AF690"
+    }
+  },
+  {
+    "label": "VIBE_CharacterStatus_IsStatusGroupActive",
+    "tool": "bn_function_prototype_get",
+    "args": {
+      "function": "0x1417B0650"
+    }
+  },
+  {
+    "label": "VIBE_CharacterStatus_AccumulateSlotValue",
+    "tool": "bn_function_prototype_get",
+    "args": {
+      "function": "0x1417B2B30"
+    }
+  },
+  {
+    "label": "VIBE_CharacterStatus_ComputeSlotEntries",
+    "tool": "bn_function_prototype_get",
+    "args": {
+      "function": "0x1417B2EC0"
+    }
+  },
+  {
+    "label": "VIBE_IdMap_GetGamePlayVariableValue",
+    "tool": "bn_function_prototype_get",
+    "args": {
+      "function": "0x1417E6CB0"
+    }
+  },
+  {
+    "label": "VIBE_Actor_GetFieldAttacher",
+    "tool": "bn_function_prototype_get",
+    "args": {
+      "function": "0x1417FA740"
+    }
+  },
+  {
+    "label": "VIBE_FindTargetActorByFriendship",
+    "tool": "bn_function_prototype_get",
+    "args": {
+      "function": "0x141ABC170"
+    }
+  },
+  {
+    "label": "VIBE_TargetFilter_GetBitIndex",
+    "tool": "bn_function_prototype_get",
+    "args": {
+      "function": "0x141ABCDF0"
+    }
+  },
+  {
+    "label": "VIBE_Friendship_GetTierCode",
+    "tool": "bn_function_prototype_get",
+    "args": {
+      "function": "0x141EC9F70"
+    }
+  },
+  {
+    "label": "VIBE_Trust_FindRecordById_L18",
+    "tool": "bn_function_prototype_get",
+    "args": {
+      "function": "0x141ECA2D0"
+    }
+  },
+  {
+    "label": "VIBE_Trust_FindRecordByActor_L38",
+    "tool": "bn_function_prototype_get",
+    "args": {
+      "function": "0x141ECB640"
+    }
+  },
+  {
+    "label": "VIBE_Trust_FindRecordById_L38",
+    "tool": "bn_function_prototype_get",
+    "args": {
+      "function": "0x141ECB750"
+    }
+  },
+  {
+    "label": "VIBE_Vector68_Grow",
+    "tool": "bn_function_prototype_get",
+    "args": {
+      "function": "0x141ECCD40"
+    }
+  },
+  {
+    "label": "j_VIBE_CharacterStatus_CollectRowEntries",
+    "tool": "bn_function_prototype_get",
+    "args": {
+      "function": "0x141F3CB00"
+    }
+  },
+  {
+    "label": "VIBE_CharacterStatus_GetRowField18",
+    "tool": "bn_function_prototype_get",
+    "args": {
+      "function": "0x141F3CF90"
+    }
+  },
+  {
+    "label": "VIBE_CharacterStatus_GetRowField10",
+    "tool": "bn_function_prototype_get",
+    "args": {
+      "function": "0x141F3D0A0"
+    }
+  },
+  {
+    "label": "VIBE_CharacterStatus_GetRowField00",
+    "tool": "bn_function_prototype_get",
+    "args": {
+      "function": "0x141F3D180"
+    }
+  },
+  {
+    "label": "VIBE_CharacterStatus_GetRowField08",
+    "tool": "bn_function_prototype_get",
+    "args": {
+      "function": "0x141F3D290"
+    }
+  },
+  {
+    "label": "VIBE_CharacterStatus_GetRowField20",
+    "tool": "bn_function_prototype_get",
+    "args": {
+      "function": "0x141F3D3A0"
+    }
+  },
+  {
+    "label": "VIBE_CharacterStatus_GetRowFieldByRowTable",
+    "tool": "bn_function_prototype_get",
+    "args": {
+      "function": "0x141F3D480"
+    }
+  },
+  {
+    "label": "VIBE_CharacterStatus_InterpolateTierValue",
+    "tool": "bn_function_prototype_get",
+    "args": {
+      "function": "0x141F3E250"
+    }
+  },
+  {
+    "label": "VIBE_HashMap_LookupValue",
+    "tool": "bn_function_prototype_get",
+    "args": {
+      "function": "0x142146110"
+    }
+  },
+  {
+    "label": "VIBE_GetActiveSlotIndexForRecord",
+    "tool": "bn_function_prototype_get",
+    "args": {
+      "function": "0x14214BD30"
+    }
+  },
+  {
+    "label": "VIBE_GetCharacterStatusValueForSlot",
+    "tool": "bn_function_prototype_get",
+    "args": {
+      "function": "0x142153350"
+    }
+  },
+  {
+    "label": "VIBE_Record_ConstructDefault",
+    "tool": "bn_function_prototype_get",
+    "args": {
+      "function": "0x142155520"
+    }
+  },
+  {
+    "label": "VIBE_Record_AssignCopy",
+    "tool": "bn_function_prototype_get",
+    "args": {
+      "function": "0x142156370"
+    }
+  },
+  {
+    "label": "VIBE_Record_EvalSlotStat",
+    "tool": "bn_function_prototype_get",
+    "args": {
+      "function": "0x142156B40"
+    }
+  },
+  {
+    "label": "VIBE_Record_GetSlotStatValue",
+    "tool": "bn_function_prototype_get",
+    "args": {
+      "function": "0x142157010"
+    }
+  },
+  {
+    "label": "VIBE_Actor_TryGetGaugeTime",
+    "tool": "bn_function_prototype_get",
+    "args": {
+      "function": "0x1421A1D40"
+    }
+  },
+  {
+    "label": "VIBE_Record_Entry_SumTierValues",
+    "tool": "bn_function_prototype_get",
+    "args": {
+      "function": "0x14240ECC0"
+    }
+  },
+  {
+    "label": "VIBE_CharacterStatus_GetTierIndexForStatus",
+    "tool": "bn_function_prototype_get",
+    "args": {
+      "function": "0x14240F6A0"
+    }
+  },
+  {
+    "label": "VIBE_Record_Entry_GetStatusTierIndex",
+    "tool": "bn_function_prototype_get",
+    "args": {
+      "function": "0x142414870"
+    }
+  },
+  {
+    "label": "VIBE_Record_Entry_ComputeTierValue",
+    "tool": "bn_function_prototype_get",
+    "args": {
+      "function": "0x142414C10"
+    }
+  },
+  {
+    "label": "VIBE_ApplyRecordToCharacter",
+    "tool": "bn_function_prototype_get",
+    "args": {
+      "function": "0x1427990D0"
+    }
+  },
+  {
+    "label": "VIBE_UiList_QuerySlotEntries",
+    "tool": "bn_function_prototype_get",
+    "args": {
+      "function": "0x142845130"
+    }
+  },
+  {
+    "label": "VIBE_UiList_QuerySlotEntriesFiltered",
+    "tool": "bn_function_prototype_get",
+    "args": {
+      "function": "0x14284FAB0"
+    }
+  },
+  {
+    "label": "VIBE_MercenaryInfoTable_GetRecordById",
+    "tool": "bn_function_prototype_get",
+    "args": {
+      "function": "0x148946AA0"
+    }
+  },
+  {
+    "label": "VIBE_CharacterStatus_CollectRowEntries",
+    "tool": "bn_function_prototype_get",
+    "args": {
+      "function": "0x14E0AA810"
+    }
+  }
+]

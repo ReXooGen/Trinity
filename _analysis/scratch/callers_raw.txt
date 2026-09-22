@@ -1,0 +1,241 @@
+########## [1] callers_Vector68_Grow  (bn_function_callers)
+---
+tool: "bn_function_callers"
+function: "0x141eccd40"
+arch: "x86_64"
+name: "VIBE_Vector68_Grow"
+platform: "windows-x86_64"
+offset: 0
+limit: 40
+count: 3
+total: 3
+nextOffset: null
+truncated: false
+---
+
+| Callsite | Architecture | Caller Function |
+| --- | --- | --- |
+| 0x141ecb986 | x86_64 | NPC::TrustMultiplier (0x141ecb7d0 (x86_64)) |
+| 0x14295debd | x86_64 | sub_14295dcd0 (0x14295dcd0 (x86_64)) |
+| 0x14df6dc23 | x86_64 | Pet_and_mount::TrustMultiplier (0x14df6da50 (x86_64)) |
+
+
+########## [2] callers_Map_FindOrCreateValueSlot  (bn_function_callers)
+---
+tool: "bn_function_callers"
+function: "0x140436380"
+arch: "x86_64"
+name: "VIBE_Map_FindOrCreateValueSlot"
+platform: "windows-x86_64"
+offset: 0
+limit: 40
+count: 40
+total: 59
+nextOffset: 40
+truncated: true
+---
+
+| Callsite | Architecture | Caller Function |
+| --- | --- | --- |
+| 0x14042c2ca | x86_64 | sub_14042bf20 (0x14042bf20 (x86_64)) |
+| 0x1405bf224 | x86_64 | GSI1::packSym(GSI1* this, struct SYMTYPE* __ptr64, long* __ptr64, enum SPD* __ptr64) (0x1405bef50 (x86_64)) |
+| 0x1406f4551 | x86_64 | sub_1406f4190 (0x1406f4190 (x86_64)) |
+| 0x140dd0032 | x86_64 | sub_140dcfef0 (0x140dcfef0 (x86_64)) |
+| 0x140ee8a65 | x86_64 | sub_140ee8400 (0x140ee8400 (x86_64)) |
+| 0x1413b5ecd | x86_64 | sub_1413b5c80 (0x1413b5c80 (x86_64)) |
+| 0x1428654c6 | x86_64 | sub_1414723e6 (0x1414723e6 (x86_64)) |
+| 0x14152cf1f | x86_64 | sub_14152cd10 (0x14152cd10 (x86_64)) |
+| 0x14152d7f2 | x86_64 | sub_14152d6a0 (0x14152d6a0 (x86_64)) |
+| 0x1415a6301 | x86_64 | sub_1415a60e0 (0x1415a60e0 (x86_64)) |
+| 0x1415a6446 | x86_64 | sub_1415a60e0 (0x1415a60e0 (x86_64)) |
+| 0x1415d56dc | x86_64 | sub_1415d5420 (0x1415d5420 (x86_64)) |
+| 0x1415d59d9 | x86_64 | sub_1415d5420 (0x1415d5420 (x86_64)) |
+| 0x1415d5c19 | x86_64 | sub_1415d5420 (0x1415d5420 (x86_64)) |
+| 0x14180f24a | x86_64 | sub_14180ec00 (0x14180ec00 (x86_64)) |
+| 0x141ac16d0 | x86_64 | sub_141ac15b0 (0x141ac15b0 (x86_64)) |
+| 0x141ecb8bc | x86_64 | NPC::TrustMultiplier (0x141ecb7d0 (x86_64)) |
+| 0x141eeecf9 | x86_64 | sub_141eeebf0 (0x141eeebf0 (x86_64)) |
+| 0x141f3f3b6 | x86_64 | sub_141f3ef30 (0x141f3ef30 (x86_64)) |
+| 0x141f3fe82 | x86_64 | sub_141f3fcb0 (0x141f3fcb0 (x86_64)) |
+| 0x141f40c3d | x86_64 | sub_141f3fcb0 (0x141f3fcb0 (x86_64)) |
+| 0x141f40cdb | x86_64 | sub_141f3fcb0 (0x141f3fcb0 (x86_64)) |
+| 0x1422d398d | x86_64 | sub_1422d3760 (0x1422d3760 (x86_64)) |
+| 0x14234d5ee | x86_64 | sub_14234d1d0 (0x14234d1d0 (x86_64)) |
+| 0x142429bda | x86_64 | sub_1424296a0 (0x1424296a0 (x86_64)) |
+| 0x14245603b | x86_64 | sub_142455e90 (0x142455e90 (x86_64)) |
+| 0x1425a00f8 | x86_64 | sub_14259fc60 (0x14259fc60 (x86_64)) |
+| 0x1425cf45b | x86_64 | sub_1425cf370 (0x1425cf370 (x86_64)) |
+| 0x142c97af2 | x86_64 | sub_14263ddf6 (0x14263ddf6 (x86_64)) |
+| 0x14271aa4d | x86_64 | sub_14271a650 (0x14271a650 (x86_64)) |
+| 0x14271ca10 | x86_64 | sub_14271c6d0 (0x14271c6d0 (x86_64)) |
+| 0x1427f0189 | x86_64 | sub_1427ee360 (0x1427ee360 (x86_64)) |
+| 0x14282cbf0 | x86_64 | sub_14282ca30 (0x14282ca30 (x86_64)) |
+| 0x14283c3a4 | x86_64 | sub_14283b830 (0x14283b830 (x86_64)) |
+| 0x142851dba | x86_64 | sub_1428518e0 (0x1428518e0 (x86_64)) |
+| 0x1428654c6 | x86_64 | sub_142865040 (0x142865040 (x86_64)) |
+| 0x142881e07 | x86_64 | sub_142881870 (0x142881870 (x86_64)) |
+| 0x14288a64b | x86_64 | sub_142889d40 (0x142889d40 (x86_64)) |
+| 0x1428d1c71 | x86_64 | sub_1428d1300 (0x1428d1300 (x86_64)) |
+| 0x142c97af2 | x86_64 | sub_142c973a0 (0x142c973a0 (x86_64)) |
+
+
+########## [3] callers_ItemInfoTable_GetById  (bn_function_callers)
+---
+tool: "bn_function_callers"
+function: "0x14038ab60"
+arch: "x86_64"
+name: "VIBE_ItemInfoTable_GetById"
+platform: "windows-x86_64"
+offset: 0
+limit: 40
+count: 40
+total: 3126
+nextOffset: 40
+truncated: true
+---
+
+| Callsite | Architecture | Caller Function |
+| --- | --- | --- |
+| 0x14036c141 | x86_64 | sub_14036c040 (0x14036c040 (x86_64)) |
+| 0x1403706d1 | x86_64 | sub_140370430 (0x140370430 (x86_64)) |
+| 0x1403765e1 | x86_64 | sub_140376450 (0x140376450 (x86_64)) |
+| 0x140376896 | x86_64 | sub_140376450 (0x140376450 (x86_64)) |
+| 0x140376bfe | x86_64 | sub_140376aa0 (0x140376aa0 (x86_64)) |
+| 0x14037720c | x86_64 | sub_1403770e0 (0x1403770e0 (x86_64)) |
+| 0x140377391 | x86_64 | sub_140377240 (0x140377240 (x86_64)) |
+| 0x14037744e | x86_64 | sub_140377240 (0x140377240 (x86_64)) |
+| 0x1403780f7 | x86_64 | PortablePDB::CollectMethodInfo(PortablePDB* this) (0x140377ef0 (x86_64)) |
+| 0x140378126 | x86_64 | PortablePDB::CollectMethodInfo(PortablePDB* this) (0x140377ef0 (x86_64)) |
+| 0x14037b622 | x86_64 | sub_14037b550 (0x14037b550 (x86_64)) |
+| 0x14037c064 | x86_64 | sub_14037bfc0 (0x14037bfc0 (x86_64)) |
+| 0x14037fb4b | x86_64 | sub_14037f9f0 (0x14037f9f0 (x86_64)) |
+| 0x14037fbec | x86_64 | sub_14037f9f0 (0x14037f9f0 (x86_64)) |
+| 0x14037fd0b | x86_64 | sub_14037f9f0 (0x14037f9f0 (x86_64)) |
+| 0x14037fde2 | x86_64 | sub_14037f9f0 (0x14037f9f0 (x86_64)) |
+| 0x1406614d9 | x86_64 | sub_140381440 (0x140381440 (x86_64)) |
+| 0x140388ac0 | x86_64 | j_VIBE_ItemInfoTable_GetById (0x140388ac0 (x86_64)) |
+| 0x1403e4bd2 | x86_64 | sub_1403e48f0 (0x1403e48f0 (x86_64)) |
+| 0x14042ca0b | x86_64 | sub_14042c980 (0x14042c980 (x86_64)) |
+| 0x14042d58f | x86_64 | VIBE_UiList_BuildSlotEntriesByLoadout (0x14042cc40 (x86_64)) |
+| 0x14042d677 | x86_64 | VIBE_UiList_BuildSlotEntriesByLoadout (0x14042cc40 (x86_64)) |
+| 0x14042dc39 | x86_64 | sub_14042db40 (0x14042db40 (x86_64)) |
+| 0x14042e1f5 | x86_64 | sub_14042e080 (0x14042e080 (x86_64)) |
+| 0x140499653 | x86_64 | sub_140499510 (0x140499510 (x86_64)) |
+| 0x14049984d | x86_64 | sub_140499510 (0x140499510 (x86_64)) |
+| 0x14049f72c | x86_64 | sub_14049f3d0 (0x14049f3d0 (x86_64)) |
+| 0x14049f763 | x86_64 | sub_14049f3d0 (0x14049f3d0 (x86_64)) |
+| 0x1404a0816 | x86_64 | sub_1404a0790 (0x1404a0790 (x86_64)) |
+| 0x1404a08a3 | x86_64 | sub_1404a0790 (0x1404a0790 (x86_64)) |
+| 0x1404a08d9 | x86_64 | sub_1404a0790 (0x1404a0790 (x86_64)) |
+| 0x1404a094e | x86_64 | sub_1404a0790 (0x1404a0790 (x86_64)) |
+| 0x1404b186d | x86_64 | sub_1404b17a0 (0x1404b17a0 (x86_64)) |
+| 0x1404bdb20 | x86_64 | sub_1404bd9d0 (0x1404bd9d0 (x86_64)) |
+| 0x1404be092 | x86_64 | sub_1404bdfc0 (0x1404bdfc0 (x86_64)) |
+| 0x1404be0e6 | x86_64 | sub_1404bdfc0 (0x1404bdfc0 (x86_64)) |
+| 0x1404be129 | x86_64 | sub_1404bdfc0 (0x1404bdfc0 (x86_64)) |
+| 0x1404be1ea | x86_64 | sub_1404bdfc0 (0x1404bdfc0 (x86_64)) |
+| 0x1404be243 | x86_64 | sub_1404bdfc0 (0x1404bdfc0 (x86_64)) |
+| 0x1404be292 | x86_64 | sub_1404bdfc0 (0x1404bdfc0 (x86_64)) |
+
+
+########## [4] callers_UiList_QuerySlotEntriesFiltered  (bn_function_callers)
+---
+tool: "bn_function_callers"
+function: "0x14284fab0"
+arch: "x86_64"
+name: "VIBE_UiList_QuerySlotEntriesFiltered"
+platform: "windows-x86_64"
+offset: 0
+limit: 40
+count: 1
+total: 1
+nextOffset: null
+truncated: false
+---
+
+| Callsite | Architecture | Caller Function |
+| --- | --- | --- |
+| 0x1429c7acd | x86_64 | sub_1429c76f0 (0x1429c76f0 (x86_64)) |
+
+
+########## [5] callers_World_GetTimeScale  (bn_function_callers)
+---
+tool: "bn_function_callers"
+function: "0x140952080"
+arch: "x86_64"
+name: "VIBE_World_GetTimeScale"
+platform: "windows-x86_64"
+offset: 0
+limit: 40
+count: 3
+total: 3
+nextOffset: null
+truncated: false
+---
+
+| Callsite | Architecture | Caller Function |
+| --- | --- | --- |
+| 0x140ad17e9 | x86_64 | World:: FrameTimerUpdate (0x140ad1370 (x86_64)) |
+| 0x140ad184a | x86_64 | World:: FrameTimerUpdate (0x140ad1370 (x86_64)) |
+| 0x140ad1992 | x86_64 | World:: FrameTimerUpdate (0x140ad1370 (x86_64)) |
+
+
+########## [6] callers_SkillTable_GetById  (bn_function_callers)
+---
+tool: "bn_function_callers"
+function: "0x1403880a0"
+arch: "x86_64"
+name: "VIBE_SkillTable_GetById"
+platform: "windows-x86_64"
+offset: 0
+limit: 40
+count: 40
+total: 574
+nextOffset: 40
+truncated: true
+---
+
+| Callsite | Architecture | Caller Function |
+| --- | --- | --- |
+| 0x140362ea4 | x86_64 | sub_140362df0 (0x140362df0 (x86_64)) |
+| 0x140362f04 | x86_64 | sub_140362df0 (0x140362df0 (x86_64)) |
+| 0x140362f9f | x86_64 | sub_140362df0 (0x140362df0 (x86_64)) |
+| 0x140362ff5 | x86_64 | sub_140362df0 (0x140362df0 (x86_64)) |
+| 0x140367f0a | x86_64 | sub_140367600 (0x140367600 (x86_64)) |
+| 0x140367ff1 | x86_64 | sub_140367600 (0x140367600 (x86_64)) |
+| 0x140368025 | x86_64 | sub_140367600 (0x140367600 (x86_64)) |
+| 0x140387661 | x86_64 | sub_140386080 (0x140386080 (x86_64)) |
+| 0x14039d83e | x86_64 | sub_14039d790 (0x14039d790 (x86_64)) |
+| 0x140450a62 | x86_64 | sub_140450930 (0x140450930 (x86_64)) |
+| 0x1404b9fb2 | x86_64 | sub_1404b9ee0 (0x1404b9ee0 (x86_64)) |
+| 0x140646cc7 | x86_64 | sub_1406466a0 (0x1406466a0 (x86_64)) |
+| 0x14065379a | x86_64 | sub_140653740 (0x140653740 (x86_64)) |
+| 0x1406537f5 | x86_64 | sub_140653740 (0x140653740 (x86_64)) |
+| 0x14065c1ff | x86_64 | sub_14065c0f0 (0x14065c0f0 (x86_64)) |
+| 0x14065c24d | x86_64 | sub_14065c0f0 (0x14065c0f0 (x86_64)) |
+| 0x14065c275 | x86_64 | sub_14065c0f0 (0x14065c0f0 (x86_64)) |
+| 0x14065c294 | x86_64 | sub_14065c0f0 (0x14065c0f0 (x86_64)) |
+| 0x14065c2b3 | x86_64 | sub_14065c0f0 (0x14065c0f0 (x86_64)) |
+| 0x14065c2d8 | x86_64 | sub_14065c0f0 (0x14065c0f0 (x86_64)) |
+| 0x14065c2fd | x86_64 | sub_14065c0f0 (0x14065c0f0 (x86_64)) |
+| 0x14065c326 | x86_64 | sub_14065c0f0 (0x14065c0f0 (x86_64)) |
+| 0x14066030b | x86_64 | sub_140660140 (0x140660140 (x86_64)) |
+| 0x140660344 | x86_64 | sub_140660140 (0x140660140 (x86_64)) |
+| 0x14066e59b | x86_64 | sub_14066e560 (0x14066e560 (x86_64)) |
+| 0x14066e65b | x86_64 | sub_14066e560 (0x14066e560 (x86_64)) |
+| 0x14066e770 | x86_64 | sub_14066e560 (0x14066e560 (x86_64)) |
+| 0x14066e885 | x86_64 | sub_14066e850 (0x14066e850 (x86_64)) |
+| 0x14066e944 | x86_64 | sub_14066e850 (0x14066e850 (x86_64)) |
+| 0x14066ea11 | x86_64 | sub_14066e850 (0x14066e850 (x86_64)) |
+| 0x14066eb27 | x86_64 | sub_14066e850 (0x14066e850 (x86_64)) |
+| 0x14070d7cc | x86_64 | sub_14070d0d0 (0x14070d0d0 (x86_64)) |
+| 0x14070d7de | x86_64 | sub_14070d0d0 (0x14070d0d0 (x86_64)) |
+| 0x14070de74 | x86_64 | sub_14070db20 (0x14070db20 (x86_64)) |
+| 0x14070deac | x86_64 | sub_14070db20 (0x14070db20 (x86_64)) |
+| 0x140a14ece | x86_64 | sub_14080f0a0 (0x14080f0a0 (x86_64)) |
+| 0x140a14f4f | x86_64 | sub_14080f0a0 (0x14080f0a0 (x86_64)) |
+| 0x140a15115 | x86_64 | sub_14080f0a0 (0x14080f0a0 (x86_64)) |
+| 0x140a15263 | x86_64 | sub_14080f0a0 (0x14080f0a0 (x86_64)) |
+| 0x14101ce87 | x86_64 | sub_14084ecf4 (0x14084ecf4 (x86_64)) |
+
+

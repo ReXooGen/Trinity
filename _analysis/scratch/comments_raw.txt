@@ -1,0 +1,243 @@
+########## [1] VIBE_SkillTable_GetById  (bn_comment_get)
+{"comment":"0x1403880a0","text":"","warnings":[]}
+
+########## [2] j_VIBE_ItemInfoTable_GetById  (bn_comment_get)
+{"comment":"0x140388ac0","text":"","warnings":[]}
+
+########## [3] j_VIBE_MercenaryInfoTable_GetRecordById  (bn_comment_get)
+{"comment":"0x1403891b0","text":"","warnings":[]}
+
+########## [4] VIBE_CharacterInfoTable_GetRecordById  (bn_comment_get)
+{"comment":"0x140389570","text":"","warnings":[]}
+
+########## [5] VIBE_ItemInfoTable_GetById  (bn_comment_get)
+{"comment":"0x14038ab60","text":"","warnings":[]}
+
+########## [6] VIBE_ScopedRef_Acquire  (bn_comment_get)
+{"comment":"0x140393df0","text":"","warnings":[]}
+
+########## [7] VIBE_UiList_BuildSlotEntriesByLoadout  (bn_comment_get)
+{"comment":"0x14042cc40","text":"","warnings":[]}
+
+########## [8] VIBE_FactionNodeTable_GetById  (bn_comment_get)
+{"comment":"0x140430020","text":"","warnings":[]}
+
+########## [9] VIBE_Map_FindOrCreateValueSlot  (bn_comment_get)
+{"comment":"0x140436380","text":"VIBE_Map_FindOrCreateValueSlot(map, keySrc, key, outHandle, outKey, outScratch, outValue) -> outValue\n\nFind-or-create for the open-addressed map used by the trust tables.\n\nmap layout: +0x00 int32 bucketCount, +0x04 int32 capacity, +0x08 int32 count,\n            +0x0C int32 probe counter, +0x10 ptr buckets (0x100 B each), +0x18 ptr nodes.\n\nIf bucketCount is 0 the table is initialised with sub_140391680. The bucket is\nkey % bucketCount; if the bucket is already full (entry count == 0x1F) it rehashes. A new\nnode is allocated (0x18 bytes) with the bucket/hash at +0x00 and the key at +0x04, the\nbucket's {hash, nodeIndex} pair is appended, and the node's value pointer is returned through\nthe last out-parameter. When the entry already exists the existing value is returned instead.\nThe outHandle parameter receives a temporary owner handle that the caller releases.","warnings":[]}
+
+########## [10] VIBE_FieldInfoTable_GetById  (bn_comment_get)
+{"comment":"0x1404a2010","text":"VIBE_FieldInfoTable_GetById(uint16_t* pId) -> record\n\nTable accessor for the global \"fieldinfo\" table (data_146D6E410), with data_146CF9830 as the\nshared empty record. Used by the fast-travel paths to obtain the id of the field the actor\nbelongs to (read from the record at +0x28).","warnings":[]}
+
+########## [11] VIBE_LevelGimmickSceneObjectInfoTable_GetById  (bn_comment_get)
+{"comment":"0x1404a2630","text":"VIBE_LevelGimmickSceneObjectInfoTable_GetById(int32_t* pId) -> record\n\nTable accessor for the global \"LevelGimmickSceneObjectInfo\" table (data_146D6E428), with\ndata_146CDE128 as the shared empty record; null slots are lazily deserialised and cached.\n\nThe record holds the scene's travel nodes: +0x20 pointer to an array of 0xD8-byte node\nentries and +0x28 their count. Both are used by VIBE_FastTravel_TryAcceptRequest.","warnings":[]}
+
+########## [12] VIBE_StatusInfoTable_GetById  (bn_comment_get)
+{"comment":"0x1405835f0","text":"","warnings":[]}
+
+########## [13] VIBE_QuestGaugeInfoTable_GetById  (bn_comment_get)
+{"comment":"0x1405d1e40","text":"","warnings":[]}
+
+########## [14] VIBE_StatusGroupInfoTable_GetById  (bn_comment_get)
+{"comment":"0x140636580","text":"","warnings":[]}
+
+########## [15] VIBE_ScopeAttacher_ClientActor_InitGlobal  (bn_comment_get)
+{"comment":"0x14064f490","text":"","warnings":[]}
+
+########## [16] VIBE_FastTravel_SelectDestination  (bn_comment_get)
+{"comment":"0x140654ed0","text":"Trinity record (PE 2944 travel dossier, Phase 0) - role and ABI above are unchanged.\nTrinity feature: Travel / Native Fast Travel - world-map destination selection gate.\nPE evidence: PE 2944 (CrimsonDesert.exe 1.0.0.2944). VA 0x140654ED0 / RVA 0x654ED0, .code, 470 bytes, 22 basic blocks.\nLocator: kSig_TravelToNode_PE2944 (31 bytes, see src/game/offsets.h) -> exactly 1 match in the whole image at this VA (all 12 PE sections scanned). NOTE: the offsets.h prose calls it a \"32-byte prologue\"; the string is actually 31 byte tokens.\nABI (confirmed from the caller's setup at 0x140DBC362-0x140DBC38A):\n  RCX = int32* sceneId - pointer to the CALLER'S LOCAL copy (lea rcx,[rbp+0x1320] at 0x140DBC374). It is dereferenced by the table resolver, so it must stay valid for the synchronous call and must never be null.\n  EDX = int32 sceneId by value (mov edx,edi at 0x140DBC388)\n  R8D = int32 nodeIndex (mov r8d,ebx at 0x140DBC385)\n  R9  = not part of this entry point's contract\n  return AL: 1 = selection accepted (test al,al / je at 0x140DBC38F).\nData: record = VIBE_LevelGimmickSceneObjectInfoTable_GetById(RCX); record+0x28 u32 nodeCount (caller bounds-checks nodeIndex < nodeCount with cmp ebx,[rax+0x28] / jae at 0x140DBC380); record+0x20 ptr nodeArray; node stride 0xD8; sub_1415DF310 copies one 0xD8-byte node entry. Map-UI selection source: [mapUI+0x5C0] -> +0xC8 xmm (low dword = sceneId, high dword = nodeIndex), +0xD0 kind byte compared against 0xE.\nFlow: single caller sub_140DBAC20 (world-map UI dispatch) at 0x140DBC38A. On AL=1 that caller stages the pending request as [rsi+0x960] = sceneId and [rsi+0x964] = nodeIndex, which VIBE_FastTravel_FlushPendingRequest later feeds to VIBE_FastTravel_TryAcceptRequest with R9D = 0. Callees: VIBE_ScopeAttacher_ClientActor_InitGlobal (0x14064F490), sub_14064F4D0 (field attacher), VIBE_LevelGimmickSceneObjectInfoTable_GetById (0x1404A2630), sub_1415DF310 (node-entry copy), sub_1417EDAC0 (888-byte validation/commit step - NOT identified; candidate, do not assume it is a modal).\nTrinity: src/game/teleport.cpp Teleport::Install() PE 2944 branch resolves this address with mem::FindPattern(kSig_TravelToNode_PE2944) purely as a presence/contract check. Trinity does NOT call it - g_travelFn is bound to the dispatcher VIBE_FastTravel_TryAcceptRequest at 0x1406550B0. Do not pass nullptr in RCX if a future change ever calls it directly.\nProof: static = decompilation + caller register setup disassembly + shared registry/node contract with the confirmed dispatcher + shared pending-request staging. live = none in this pass.\nConfidence: strong candidate. Role (map-UI destination selection/validation, AL=accepted) is supported by two independent sources; the older note that it \"opens CommonModalMessage\" is NOT proven and is recorded as an open question in docs/binary-ninja/dossiers/travel.md.","warnings":[]}
+
+########## [17] VIBE_FastTravel_TryAcceptRequest  (bn_comment_get)
+{"comment":"0x1406550b0","text":"VIBE_FastTravel_TryAcceptRequest(unusedActor, sceneId, nodeIndex, mercenaryHandle) -> bool\n\nValidates a pending fast-travel request and performs it when it is acceptable. Returns AL =\nwhether the request was accepted.\n\nConfirmed calling contract (matches every call site):\n  rcx / unusedActor      IGNORED. The function always works on the global ClientActor via\n                         VIBE_ScopeAttacher_ClientActor_InitGlobal, so callers pass a stale or\n                         null register value here.\n  edx / sceneId          LevelGimmickSceneObjectInfo id, or -1 for \"no scene\".\n  r8d / nodeIndex        index into that record's node array.\n  r9d / mercenaryHandle  0 selects the ordinary fast-travel path; any other value selects the\n                         mercenary/character path and is the actor handle to resolve.\nReturn: AL.\n\nPath A - mercenaryHandle != 0 (mercenary / character branch):\n  1. Attach the global ClientActor scope and its field attacher.\n  2. sub_1408AE8E0 resolves the actor for mercenaryHandle; its characterinfo\n     (*(*(actor+0x68)+0x20)+0x30) supplies the mercenary id at +0xBE.\n  3. Reject (return false) when the id is 0xFFFF, or when the MercenaryInfo record has +0x5B\n     clear.\n  4. Otherwise resolve the character's field info (VIBE_FieldInfoTable_GetById with the id at\n     *(*(*(clientActor+0x68)+0x1A0)+0x28)) and the travel scope (sub_1408B4510), build a\n     request object (sub_1407782C0 / sub_140778A50) and hand it to\n     sub_140C04D80(*(actorManager+0x18), requestObj, &out, fieldInfo, ..., &handleCopy,\n     &nodeEntry, &idScratch). Accepted is set to true on BOTH branches of the travel-scope\n     check, i.e. merely getting past the mercenary gate counts as accepted.\n\nPath B - mercenaryHandle == 0 (ordinary fast travel):\n  1. Reject immediately when sceneId == -1.\n  2. record = VIBE_LevelGimmickSceneObjectInfoTable_GetById(&sceneId); reject when\n     record->count (+0x28) <= nodeIndex.\n  3. Attach the global ClientActor scope and its field attacher.\n  4. Resolve the travel target id: the value parsed from the global object at data_146CE5B28\n     (sub_14E877080 -> idScratch) is looked up in the id map at data_146D6AA40 (bucketCount\n     +0x68, buckets +0x78, nodes +0x80). Any failure, or a node value of 0xFFFFFFFF at\n     node+0x08, rejects the request.\n  5. sub_1415DF310 copies the 0xD8-byte node entry\n     (record->nodes(+0x20) + nodeIndex*0xD8) into nodeEntry, then\n     VIBE_FastTravel_Execute(actorManager, targetId, *fieldInfo, 0, &nodeEntry) performs it.\n  6. Accepted is true.\n\nNote: the \"field attacher\" and ClientActor scopes are released on every exit path through the\npa::ScopeAttacherBase vtable.\n\n--- PE 2944 Trinity travel record (Phase 0 dossier; supersedes nothing above) ---\nTrinity feature: Travel / Native Fast Travel - the final post-confirmation dispatcher.\nPE evidence: PE 2944 = CrimsonDesert.exe 1.0.0.2944, SHA-256 6D348BE9D52F81BD35CF7C55E73A5DBFC96CC8268438387C91F7F62C82381FA7. VA 0x1406550B0 / RVA 0x6550B0, .code, 1243 bytes, 43 basic blocks.\nLocator: kSig_TravelDispatcher_PE2944 (44 bytes) -> exactly 1 match in the whole image at this VA (all 12 PE sections scanned under Trinity's section filter).\nABI proved from this function's own prologue:\n  0x1406550B5  mov dword [rsp+0x10 {sceneId_1}], edx   -> EDX = int32 sceneId\n  0x1406550B9  mov qword [rsp+0x8 {unusedActor_1}], rcx -> RCX is only spilled, never dereferenced here\n  0x1406550D4  mov edi, r9d                            -> R9D = 4th argument (0 = ordinary fast travel)\n  0x1406550D7  mov r15d, r8d                           -> R8D = int32 nodeIndex\n  0x1406550DA/0x1406550?? test r9d,r9d                 -> R9D selects scene path (0) vs mercenary path (!=0)\n  return AL, built from BL (0x140655344 mov bl,1 / 0x140655348 xor bl,bl)\nRCX safety for Trinity (which passes nullptr): the only consumer is VIBE_ScopeAttacher_ClientActor_InitGlobal (0x14064F490), whose whole body is VIBE_ScopeAttacher_ClientActor_Init(*(data_146D691B0+0x30), out) - it never touches its first parameter. Two independent sources: that body, and two callers passing different RCX values with identical behaviour. Passing nullptr is therefore safe on PE 2944.\nCallers (all three): VIBE_FastTravel_FlushPendingRequest (0x140DBC6C0) scene path 0x140DBC7BD with R9D explicitly zeroed by \"xor r9d,r9d\" at 0x140DBC7BA, and mercenary path 0x140DBC7E8 (sceneId=-1, nodeIndex=-1, R9D=handle); plus sub_140D9E6C0 at 0x140D9E858.\nKey callee: VIBE_FastTravel_Execute (0x140A9A8D0) called at 0x140655566 - it performs the actual travel.\nTrinity: src/game/teleport.cpp Teleport::Install() PE 2944 branch binds g_travelFn to this address via kSig_TravelDispatcher_PE2944 and only uses it when the selection locator also matches; src/game/travel_logic.h PrepareNativeTravelCall() builds the call as context=nullptr, sceneId, nodeIndex, travelMode=0; the call is fired on the game thread and its AL result is logged as accepted/refused.\nProof: static = prologue disassembly + decompilation + all three callers + unique 44-byte AOB. live = this session performed none; the accepted/refused logging path is the intended runtime check.\nConfidence: confirmed.","warnings":[]}
+
+########## [18] VIBE_GetRecordCopyForActor  (bn_comment_get)
+{"comment":"0x14065fbd0","text":"","warnings":[]}
+
+########## [19] VIBE_ScopedActor_GetActiveSlotIndex  (bn_comment_get)
+{"comment":"0x14065fee0","text":"","warnings":[]}
+
+########## [20] VIBE_ComputeStatusValueForKey  (bn_comment_get)
+{"comment":"0x14066b500","text":"","warnings":[]}
+
+########## [21] VIBE_BuffInfoTable_GetById  (bn_comment_get)
+{"comment":"0x14066f620","text":"","warnings":[]}
+
+########## [22] VIBE_ScopeAttacher_ClientActor_Init  (bn_comment_get)
+{"comment":"0x1408b4480","text":"","warnings":[]}
+
+########## [23] VIBE_World_EvalTimeCurve  (bn_comment_get)
+{"comment":"0x140951440","text":"VIBE_World_EvalTimeCurve(worldSub, uint8 curveIndex, float x) -> float\n\nPiecewise curve evaluation over the curve descriptor array at\nworldSub + ((curveIndex + 0xCC) << 4), i.e. worldSub+0xCC0 for index 0 and worldSub+0xCD0 for\nindex 1. Each descriptor holds a count followed by {key, value, span} float triplets; the\nfunction interpolates between them, clamping the blend to [0, 1], and returns the smallest\nvalue seen (3.40282347e+38 = FLT_MAX when nothing applies).\n\nCalled by World::FrameTimerUpdate to derive the frame's time-dilation factor.","warnings":[]}
+
+########## [24] VIBE_World_GetTimeScale  (bn_comment_get)
+{"comment":"0x140952080","text":"VIBE_World_GetTimeScale(worldSub) -> float\n\nReturns the world time scale passed to the frame dispatch. When worldSub+0x107E == 1 and\nsub_1409520F0 agrees, the constant data_146D614D8 is returned; otherwise the scale is read\nfrom sub-object worldSub+0x1258 -> virtual +0xC0 -> +0x68 -> +0x78 -> +0x6D0.","warnings":[]}
+
+########## [25] VIBE_FastTravel_Execute  (bn_comment_get)
+{"comment":"0x140a9a8d0","text":"VIBE_FastTravel_Execute(actorManager, int32 targetId, int32 fieldId, int32 flags, int64 nodeEntry)\n\nPerforms the actual fast travel. It attaches the global travel scope\n(sub_1408B4510), optionally fills a travel descriptor from the actor at +0x60\n(j_sub_14EADDF90), builds a request object (sub_1407782C0) and issues it through the manager.\n\n`nodeEntry` is the 0xD8-byte scene node copied by the caller, and `targetId` is the resolved\ntravel target.\n\n--- PE 2944 travel record ---\nLocator: 48-byte prologue AOB \"44 89 4C 24 20 44 89 44 24 18 89 54 24 10 55 53 56 57 41 56 48 8D AC 24 10 FF FF FF 48 81 EC F0 01 00 00 48 8B F1 48 8D 54 24 48 48 8B 0D FE E8\" -> exactly 1 match in the whole image at 0x140A9A8D0 (RVA 0xA9A8D0, .code, 584 bytes, 21 basic blocks).\nRole in the Trinity travel chain: sole travel-performing callee of VIBE_FastTravel_TryAcceptRequest (called at 0x140655566 with the 0xD8-byte node entry copied by sub_1415DF310).\nTrinity: not called or hooked directly; reachable only through the dispatcher. Recorded as the end of the flow so a future PE can be re-anchored from either end.\nConfidence: confirmed (locator + existing decompilation).","warnings":[]}
+
+########## [26] VIBE_World_FrameUpdate  (bn_comment_get)
+{"comment":"0x140ad23f0","text":"VIBE_World_FrameUpdate(world) -> ...\n\nPer-frame world update entry point. It calls World::FrameTimerUpdate(world) first and then\nruns the frame on every subsystem with the delta the timer produced: the vibration/impulse\naccumulators at world->[0xA]+0x38 (clamped to 300), the clock sub-object, the per-entity\nupdate loop over world->[0x18]->[0x88]->[0x78], and the audio/physics bridges\n(sub_1408B77B0 / sub_1408B7AF0 / sub_1434DA010 / sub_1409412E0) with\ntimer->[0x64] and timer->[0x68].","warnings":[]}
+
+########## [27] VIBE_SumRecordSlotStatValues  (bn_comment_get)
+{"comment":"0x140d243c0","text":"","warnings":[]}
+
+########## [28] VIBE_FastTravel_FlushPendingRequest  (bn_comment_get)
+{"comment":"0x140dbc6c0","text":"VIBE_FastTravel_FlushPendingRequest(this, key, cancel)\n\nConsumes the pending fast-travel request stored on `this` and clears it:\n  +0x958 pending key (must equal the supplied key, otherwise the function returns immediately)\n  +0x960 pending sceneId\n  +0x964 pending nodeIndex\n  +0x968 pending mercenaryHandle\n\nWhen `cancel` is set the request is dropped without being performed. Otherwise the scene path\nis taken when +0x960 (the sceneId) is not -1:\n     VIBE_FastTravel_TryAcceptRequest(<rcx ignored>, +0x960, +0x964, 0)\n     then +0x960 and +0x964 are set to -1.\nOtherwise, when +0x968 (the mercenary handle) is non-zero, the mercenary path is taken:\n     VIBE_FastTravel_TryAcceptRequest(<rcx ignored>, -1, -1, +0x968)\n     then +0x968 is cleared.\n\nThis is the caller that fixes the calling convention of VIBE_FastTravel_TryAcceptRequest:\nsceneId in edx, nodeIndex in r8d, mercenaryHandle in r9d, rcx unused.\n\n--- PE 2944 travel record ---\nLocator: 48-byte prologue AOB \"40 53 48 83 EC 20 48 8B D9 48 39 91 58 09 00 00 0F 85 3F 01 00 00 48 89 7C 24 38 48 C7 81 58 09 00 00 00 00 00 00 83 B9 60 09 00 00 FF 48 89 74\" -> exactly 1 match in the whole image at 0x140DBC6C0 (RVA 0xDBC6C0, .code, 347 bytes, 15 basic blocks).\nABI: RCX = this (the map-UI object carrying the pending request), RDX = key that must equal [this+0x958], R8B = cancel flag; returns void.\nScene path proof: 0x140DBC7BA \"xor r9d,r9d\" then 0x140DBC7BD call -> the ordinary fast travel really is R9D = 0, matching Trinity's travelMode = 0.\nTrinity: this is the game's own equivalent of Trinity's queued dispatch (src/game/teleport.cpp fires g_travelFn on the game thread). Recorded as ABI corroboration; Trinity neither hooks nor calls it.\nConfidence: confirmed (locator + disassembly).","warnings":[]}
+
+########## [29] VIBE_CompareRecordsBySlotStatValue  (bn_comment_get)
+{"comment":"0x140edf480","text":"","warnings":[]}
+
+########## [30] VIBE_UiList_BuildSlotEntries  (bn_comment_get)
+{"comment":"0x140f27200","text":"","warnings":[]}
+
+########## [31] VIBE_UiList_BuildSlotEntriesAndSum  (bn_comment_get)
+{"comment":"0x140f6e050","text":"","warnings":[]}
+
+########## [32] VIBE_Engine_GetTimeValue  (bn_comment_get)
+{"comment":"0x141416b70","text":"VIBE_Engine_GetTimeValue() -> int64\n\nTime source used by the frame timer. Lazily initialises the epoch (data_146EFBC30) behind the\nonce-flag data_146EFBC28 and returns (sub_141416920() - epoch) / 1000000, the division done\nwith the reciprocal magic 0x431BDE82D7B634DB >> 18.","warnings":[]}
+
+########## [33] VIBE_GamePlayVariableInfoTable_GetById  (bn_comment_get)
+{"comment":"0x141480810","text":"","warnings":[]}
+
+########## [34] VIBE_Int16Vector_Append  (bn_comment_get)
+{"comment":"0x1414e07a0","text":"","warnings":[]}
+
+########## [35] VIBE_UiList_BuildSlotEntriesFromFactionNode  (bn_comment_get)
+{"comment":"0x14176dec0","text":"","warnings":[]}
+
+########## [36] VIBE_GetRecordSlotStatValue  (bn_comment_get)
+{"comment":"0x141776000","text":"","warnings":[]}
+
+########## [37] VIBE_UiList_SumRowSkillValues  (bn_comment_get)
+{"comment":"0x1417862f0","text":"","warnings":[]}
+
+########## [38] VIBE_UiList_ContainsRowStatus  (bn_comment_get)
+{"comment":"0x141786540","text":"","warnings":[]}
+
+########## [39] VIBE_CharacterStatus_RebuildSlotValues  (bn_comment_get)
+{"comment":"0x1417aad30","text":"","warnings":[]}
+
+########## [40] VIBE_CharacterStatus_ApplyDeltaPrimary  (bn_comment_get)
+{"comment":"0x1417ac0c0","text":"VIBE_CharacterStatus_ApplyDeltaPrimary(statusCtx, timeNow, delta, sourceInfo, arg5, arg6, 0, arg7, arg8, arg9)\n\nHeavyweight variant of VIBE_CharacterStatus_ApplyDelta, entered from Player::damage-apply\nwhen statusId is the primary status - element 0 of the global status id array at\ng_engine->[0x10]+0xA0. It also reads element 1 (+0xA2) as the secondary status.\n\nBeyond the clamped accumulator update it:\n  * negates the delta when the sign bit is set and the pawn is blocking\n    (pawn+0x3F8->[0x18] / pawn+0x398), and for the arg8 == 0xD case;\n  * applies the pawn state transition: pawn+0x272 is set to 0x100 / 1, pawn+0x273 and\n    pawn+0x274 are updated, the timestamp pawn+0x4D is refreshed and the virtual\n    pawn->vtbl+0x150 / +0x268 handlers run;\n  * dispatches game events through pa::GameEventHandlerParameter with event codes 0x43 and\n    0x44, sub_1418043E0, and the virtual handler statusCtx->[0x0D]->[0x58]->vtbl+0x188;\n  * records the last-damage info on the damage tracker returned by\n    statusCtx->[0x00]->vtbl+0x1A8: the tracker+0x4C gate, tracker[1] = damage source,\n    tracker+0x4D = damage type from the virtual +0x190 handler, tracker+0x4E = arg8,\n    tracker[3] = arg9, and the sticky flags tracker+0x52 / +0x53.\n\nReturns the boolean produced by the inner call.","warnings":[]}
+
+########## [41] VIBE_CharacterStatus_GetAccumulatedValue  (bn_comment_get)
+{"comment":"0x1417ad6f0","text":"VIBE_CharacterStatus_GetAccumulatedValue(statusCtx, out, statusId, timeNow) -> out\n\nReads the current accumulated value of statusId.\n\n  * grouped status (statusinfo+0x11 != 0): requires the group to be active\n    (VIBE_CharacterStatus_IsStatusGroupActive) and then reads\n    VIBE_CharacterStatus_GetGroupSlotEntry(statusCtx, statusId) through sub_1417B40C0.\n    The primary status also needs pawn+0x273 to be set.\n  * ungrouped status: index = statusgroupinfo(characterinfo+0x5B8)+0x48[statusinfo+0x14];\n    the value is the first qword of the slot record, i.e. *( statusCtx+0x18 + index*0x20 ).\n\n*out is set to the shared \"no slot\" marker data_146d016D8 when the status has no active\nslot, when the group index is -1, or when statusgroupinfo+0x30 is clear.\nReturns out.\nTRAINER HOOK (this build): the Cheat Engine \"Set Attack / Set Defense\" table injects at\n0x1417AD7DC - the value load of the UNGROUPED branch - and overrides the returned value when\nBL (the status id, see `movzx ebx, r8w` at 0x1417AD716) is 3 (Attack) or 4 (Defense).\nThe grouped branch at 0x1417AD84C is not covered. See the comment at 0x1417AD7DC.","warnings":[]}
+
+########## [42] VIBE_CharacterStatus_GetGroupSlotEntry  (bn_comment_get)
+{"comment":"0x1417add40","text":"","warnings":[]}
+
+########## [43] VIBE_CharacterStatus_ApplyDelta  (bn_comment_get)
+{"comment":"0x1417ae530","text":"VIBE_CharacterStatus_ApplyDelta(statusCtx, statusId, timeNow, delta, sourceInfo) -> bool\n\nClamped per-status accumulator update; returns 1 when the clamped value changed.\n\n  * grouped status (statusinfo+0x11 != 0): gated by\n    VIBE_CharacterStatus_IsStatusGroupActive, then j_sub_14CAE4220 collects the change and\n    the virtual handlers statusCtx->[0x00]->vtbl+0x338 / +0x320 plus sub_1417987C0 are\n    notified.\n\n  * ungrouped status: index = statusgroupinfo(characterinfo+0x5B8)+0x48[statusinfo+0x14];\n    the slot record is statusCtx+0x18 + index*0x20 = {value, min, max, counter}.\n    delta is added to statusCtx+0x38 + index*8, the value is clamped between the slot min\n    (+0x08) and max (+0x10), the counter (+0x18) is incremented and the virtual handlers\n    vtbl+0x338 / vtbl+0x328 are notified.\n\nReturns 0 when the status is absent (group index == -1) or the value did not change.","warnings":[]}
+
+########## [44] VIBE_Time_ComputeDeltaTicks  (bn_comment_get)
+{"comment":"0x1417af690","text":"","warnings":[]}
+
+########## [45] VIBE_CharacterStatus_IsStatusGroupActive  (bn_comment_get)
+{"comment":"0x1417b0650","text":"","warnings":[]}
+
+########## [46] VIBE_CharacterStatus_AccumulateSlotValue  (bn_comment_get)
+{"comment":"0x1417b2b30","text":"","warnings":[]}
+
+########## [47] VIBE_CharacterStatus_ComputeSlotEntries  (bn_comment_get)
+{"comment":"0x1417b2ec0","text":"","warnings":[]}
+
+########## [48] VIBE_IdMap_GetGamePlayVariableValue  (bn_comment_get)
+{"comment":"0x1417e6cb0","text":"","warnings":[]}
+
+########## [49] VIBE_Actor_GetFieldAttacher  (bn_comment_get)
+{"comment":"0x1417fa740","text":"","warnings":[]}
+
+########## [50] VIBE_FindTargetActorByFriendship  (bn_comment_get)
+{"comment":"0x141abc170","text":"VIBE_FindTargetActorByFriendship(registry, outId, actor, requireRowFlag) -> outId\n\nSelects a target actor for `actor` out of the registry's candidate table and writes the\nchosen id to *outId (-1 when nothing qualifies).\n\nregistry : +0x08 owner object; +0x68 int32 bucketCount, +0x78 buckets, +0x80 nodes (the same\n           open-addressed map that NPC::In-place trust uses); +0x6C capacity;\n           +0x0A0 a second scope object.\nactor    : +0x60 is the key (type / faction id) used both for the map lookup and for the\n           trust record.\nrequireRowFlag : when set, a candidate row must also have row+0x8B non-zero.\n\nFlow:\n 1. data_146CE5318 non-zero -> *outId = -1 immediately.\n 2. Attach a scoped reference on registry->[8]'s owner.\n 3. key = actor->[0x60]; filterBit = VIBE_TargetFilter_GetBitIndex(registry, key) - the bit\n    index a candidate row must have set.\n 4. Reject when filterBit is 0, when the map is empty, or when `key` is not in it.\n 5. Walk the map value's entry array; for each entry resolve\n      owner = sub_1405C15A0(&entry); row = owner->[0x120] + entry[4] * 0x90\n    and accept it when (!requireRowFlag || row[0x8B]) and bit `filterBit` of row[4] is set.\n    For an accepted entry resolve\n      trustRec = NPC::In-place trust(registry->[8]->[0x68]->[0x140], actor)\n      tierCode = trustRec ? VIBE_Friendship_GetTierCode(trustRec->[0x20]) : 0\n    and append the entry to the local candidate list when trustRec is null or the tier code is\n    above 0xFE (the top friendship tier).\n 6. Release the scope, attach a scope on registry->[8]->[0xA0] and walk the candidates: for\n    each one iterate the owner's 0x40-byte sub-entries calling\n    sub_14234C080(subEntry, scratch, actor, ...); the first candidate that yields a match is\n    written to *outId and the walk stops.\n 7. *outId = -1 when nothing matched or when the second scope is unavailable.\n\nThis is the function the Cheat Engine \"Fast friendship\" table hooks - see the comment at\n0x141ABC320 inside it. Called from 12 sites (e.g. sub_142B3A040, which passes\n*(*(actor+0x68)+0xF8) as the registry).","warnings":[]}
+
+########## [51] VIBE_TargetFilter_GetBitIndex  (bn_comment_get)
+{"comment":"0x141abcdf0","text":"VIBE_TargetFilter_GetBitIndex(registry, int32 key) -> uint64\n\nLooks `key` up in `registry`'s map (+0x68 bucketCount, +0x78 buckets, +0x80 nodes; node key at\n+0x04, value at +0x08) and returns the bit index a candidate row must have set: the byte at\nvalue+0x11, or the dword at value+0x10 when that byte is >= 6. Returns 0 when the map is empty\nor the key is absent, which the caller treats as \"no filter\" and rejects the whole search.","warnings":[]}
+
+########## [52] VIBE_Friendship_GetTierCode  (bn_comment_get)
+{"comment":"0x141ec9f70","text":"VIBE_Friendship_GetTierCode(int64 friendshipValue) -> int64\n\nMaps a friendship / affinity value to a small tier code by walking a ladder of thresholds\nheld in the data_146CE77xx / data_146CE78xx globals. Values in the top ranges return 0xFE or\n0xFF.\n\nThe only caller, VIBE_FindTargetActorByFriendship, accepts a candidate when the returned code\nis above 0xFE - i.e. only the top friendship tier qualifies unless the value is forced\nupwards, which is exactly what the \"Fast friendship\" Cheat Engine entry does at\n0x141ABC320.","warnings":[]}
+
+########## [53] VIBE_Trust_FindRecordById_L18  (bn_comment_get)
+{"comment":"0x141eca2d0","text":"VIBE_Trust_FindRecordById_L18(container, int16 characterId) -> record*\n\nId-based sibling of NPC::In-place trust, using the same container layout (map at +0x18,\nbuckets +0x28, nodes +0x30).\n\nLooks characterId up in the characterinfo table, probes the map with the record's first\nint32, and returns the entry-array base stored at node+0x08 - that is, record 0 of the\nembedded per-character table. Returns 0 when the map is empty, the bucket has no match, or\nthe node has no value.\n\nUnlike the actor-based variants it does not apply the characterinfo+0x14B / actor+0x60 keyed\nscan; it always returns record 0.","warnings":[]}
+
+########## [54] VIBE_Trust_FindRecordByActor_L38  (bn_comment_get)
+{"comment":"0x141ecb640","text":"VIBE_Trust_FindRecordByActor_L38(container, actor) -> record*\n\nActor-based twin of NPC::In-place trust for the OTHER container layout: map at container+0x38\n(buckets +0x48, nodes +0x50, capacity +0x3C), the layout used by NPC_Trust_Multiplier\n(0x141ECB7D0).\n\nSame algorithm: character id from *(*(actor+0x68)+0x20)+0x30, map key from characterinfo's\nfirst int32, node key compared at node+0x04, then\n  * characterinfo+0x14B != 0 -> return the entry-array base (record 0), else\n  * scan the 0x68-byte entries for the one whose first dword equals actor+0x60.\nReturns 0 when nothing matches.","warnings":[]}
+
+########## [55] VIBE_Trust_FindRecordById_L38  (bn_comment_get)
+{"comment":"0x141ecb750","text":"VIBE_Trust_FindRecordById_L38(container, int16 characterId) -> record*\n\nId-based twin for the container layout with the map at +0x38 (buckets +0x48, nodes +0x50).\nProbes the map with characterinfo(characterId)'s first int32 and returns record 0 of the\nembedded per-character table (node+0x08). Returns 0 when there is no match.","warnings":[]}
+
+########## [56] VIBE_Vector68_Grow  (bn_comment_get)
+{"comment":"0x141eccd40","text":"VIBE_Vector68_Grow(vec, neededCount)\n\nGrows a vector whose elements are 0x68 bytes: capacity at vec+0x0C, count at vec+0x08,\ndata pointer at vec+0x00. The new capacity is max((capacity * 3 + 1) / 2, neededCount); the\nbuffer is reallocated, the existing elements are copied (32 + 32 + 32 + 8 bytes), and the old\nbuffer is freed through sub_1447F025C / sub_1447F035C depending on the TLS allocator flag.\nRaises 0xA0000002 through j_sub_14B985780 when the allocation fails.","warnings":[]}
+
+########## [57] j_VIBE_CharacterStatus_CollectRowEntries  (bn_comment_get)
+{"comment":"0x141f3cb00","text":"","warnings":[]}
+
+########## [58] VIBE_CharacterStatus_GetRowField18  (bn_comment_get)
+{"comment":"0x141f3cf90","text":"","warnings":[]}
+
+########## [59] VIBE_CharacterStatus_GetRowField10  (bn_comment_get)
+{"comment":"0x141f3d0a0","text":"","warnings":[]}
+
+########## [60] VIBE_CharacterStatus_GetRowField00  (bn_comment_get)
+{"comment":"0x141f3d180","text":"","warnings":[]}
+
+########## [61] VIBE_CharacterStatus_GetRowField08  (bn_comment_get)
+{"comment":"0x141f3d290","text":"","warnings":[]}
+
+########## [62] VIBE_CharacterStatus_GetRowField20  (bn_comment_get)
+{"comment":"0x141f3d3a0","text":"","warnings":[]}
+
+########## [63] VIBE_CharacterStatus_GetRowFieldByRowTable  (bn_comment_get)
+{"comment":"0x141f3d480","text":"","warnings":[]}
+
+########## [64] VIBE_CharacterStatus_InterpolateTierValue  (bn_comment_get)
+{"comment":"0x141f3e250","text":"","warnings":[]}
+
+########## [65] VIBE_HashMap_LookupValue  (bn_comment_get)
+{"comment":"0x142146110","text":"","warnings":[]}
+
+########## [66] VIBE_GetActiveSlotIndexForRecord  (bn_comment_get)
+{"comment":"0x14214bd30","text":"","warnings":[]}
+
+########## [67] VIBE_GetCharacterStatusValueForSlot  (bn_comment_get)
+{"comment":"0x142153350","text":"","warnings":[]}
+
+########## [68] VIBE_Record_ConstructDefault  (bn_comment_get)
+{"comment":"0x142155520","text":"","warnings":[]}
+
+########## [69] VIBE_Record_AssignCopy  (bn_comment_get)
+{"comment":"0x142156370","text":"","warnings":[]}
+
+########## [70] VIBE_Record_EvalSlotStat  (bn_comment_get)
+{"comment":"0x142156b40","text":"","warnings":[]}
+
+########## [71] VIBE_Record_GetSlotStatValue  (bn_comment_get)
+{"comment":"0x142157010","text":"","warnings":[]}
+
+########## [72] VIBE_Actor_TryGetGaugeTime  (bn_comment_get)
+{"comment":"0x1421a1d40","text":"","warnings":[]}
+
+########## [73] VIBE_Record_Entry_SumTierValues  (bn_comment_get)
+{"comment":"0x14240ecc0","text":"","warnings":[]}
+
+########## [74] VIBE_CharacterStatus_GetTierIndexForStatus  (bn_comment_get)
+{"comment":"0x14240f6a0","text":"","warnings":[]}
+
+########## [75] VIBE_Record_Entry_GetStatusTierIndex  (bn_comment_get)
+{"comment":"0x142414870","text":"","warnings":[]}
+
+########## [76] VIBE_Record_Entry_ComputeTierValue  (bn_comment_get)
+{"comment":"0x142414c10","text":"","warnings":[]}
+
+########## [77] VIBE_ApplyRecordToCharacter  (bn_comment_get)
+{"comment":"0x1427990d0","text":"","warnings":[]}
+
+########## [78] VIBE_UiList_QuerySlotEntries  (bn_comment_get)
+{"comment":"0x142845130","text":"","warnings":[]}
+
+########## [79] VIBE_UiList_QuerySlotEntriesFiltered  (bn_comment_get)
+{"comment":"0x14284fab0","text":"","warnings":[]}
+
+########## [80] VIBE_MercenaryInfoTable_GetRecordById  (bn_comment_get)
+{"comment":"0x148946aa0","text":"","warnings":[]}
+
+########## [81] VIBE_CharacterStatus_CollectRowEntries  (bn_comment_get)
+{"comment":"0x14e0aa810","text":"","warnings":[]}
+

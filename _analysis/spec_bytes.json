@@ -1,0 +1,16 @@
+[
+  { "label": "loco stepper", "tool": "bn_memory_read", "args": { "address": "0x14369ff60", "length": 48 } },
+  { "label": "worker gate A sub_14214b1b0", "tool": "bn_memory_read", "args": { "address": "0x14214b1b0", "length": 48 } },
+  { "label": "worker gate B sub_14214b750", "tool": "bn_memory_read", "args": { "address": "0x14214b750", "length": 48 } },
+  { "label": "wanted evaluator", "tool": "bn_memory_read", "args": { "address": "0x1425d7660", "length": 48 } },
+  { "label": "world frame update", "tool": "bn_memory_read", "args": { "address": "0x140ad23f0", "length": 48 } },
+  { "label": "world get time scale", "tool": "bn_memory_read", "args": { "address": "0x140952080", "length": 48 } },
+  { "label": "world eval time curve", "tool": "bn_memory_read", "args": { "address": "0x140951440", "length": 48 } },
+  { "label": "engine get time value", "tool": "bn_memory_read", "args": { "address": "0x141416b70", "length": 48 } },
+  { "label": "time compute delta ticks", "tool": "bn_memory_read", "args": { "address": "0x1417af690", "length": 48 } },
+  { "label": "trust find record by actor", "tool": "bn_memory_read", "args": { "address": "0x141ecb640", "length": 48 } },
+  { "label": "find target actor by friendship", "tool": "bn_memory_read", "args": { "address": "0x141abc170", "length": 48 } },
+  { "label": "item info table get by id", "tool": "bn_memory_read", "args": { "address": "0x14038ab60", "length": 48 } },
+  { "label": "status info table get by id", "tool": "bn_memory_read", "args": { "address": "0x1405835f0", "length": 48 } },
+  { "label": "character info table get record", "tool": "bn_memory_read", "args": { "address": "0x140389570", "length": 48 } }
+]

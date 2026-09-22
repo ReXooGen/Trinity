@@ -1,0 +1,304 @@
+dmp: C:\Users\mul0\AppData\Local\CrashDumps\CrimsonDesert.exe.33292.dmp size: 251531797
+signature: 504D444D streams=15 flags=0x200121 timestamp=1789212577
+stream types: [0, 3, 4, 5, 6, 7, 13, 14, 15, 21, 22, 24]
+  stream 0    ?              [(0, 0), (0, 0), (0, 0), (0, 0)]
+  stream 3    ThreadList     [(4612, 1800)]
+  stream 4    ModuleList     [(19660, 6424)]
+  stream 5    MemoryList     [(149668, 240562)]
+  stream 6    Exception      [(168, 1632)]
+  stream 7    SystemInfo     [(56, 212)]
+  stream 13   ?              [(22772, 26792)]
+  stream 14   ?              [(708, 26084)]
+  stream 15   MiscInfo       [(1364, 268)]
+  stream 21   ?              [(524, 49564)]
+  stream 22   ?              [(152, 50088)]
+  stream 24   ?              [(244, 50240)]
+
+=== MODULES (182) ===
+  00000000074F0000 - 00000000075B8000  ts=6AA011F3  E:\Steam\steamapps\common\Crimson Desert\bin64\CrimsonDesertNoIntro.asi
+  0000000029BC0000 - 0000000029C97000  ts=69D93C3F  E:\Steam\steamapps\common\Crimson Desert\bin64\sl.common.dll
+  0000000140000000 - 0000000156B0E000  ts=6AA22ABB  E:\Steam\steamapps\common\Crimson Desert\bin64\CrimsonDesert.exe
+  00007FFE51970000 - 00007FFE545A3000  ts=6A9B3649  C:\Windows\System32\DriverStore\FileRepository\nvmii.inf_amd64_7251a3c076e80d80\nvrtum64.dll
+  00007FFE545B0000 - 00007FFE556B8000  ts=68756177  E:\Steam\steamapps\common\Crimson Desert\bin64\dxcompiler.dll
+  00007FFE556C0000 - 00007FFE5722F000  ts=6A2AB5B3  E:\Steam\steamapps\common\Crimson Desert\bin64\amd_fidelityfx_upscaler_dx12.dll
+  00007FFE57230000 - 00007FFE5808B000  ts=6A9B3110  C:\Windows\System32\DriverStore\FileRepository\nvmii.inf_amd64_7251a3c076e80d80\nvobjectloader64.dll
+  00007FFE58090000 - 00007FFE5CCAA000  ts=6A7FB382  E:\Steam\steamapps\common\Crimson Desert\bin64\nvngx_dlssd.dll
+  00007FFE5CCB0000 - 00007FFE604E6000  ts=69AB4140  E:\Steam\steamapps\common\Crimson Desert\bin64\nvngx_dlss.dll
+  00007FFE67D80000 - 00007FFE68015000  ts=AD9865FD  C:\Windows\System32\msvproc.dll
+  00007FFE68020000 - 00007FFE68B6A000  ts=6A9B3B20  C:\Windows\System32\DriverStore\FileRepository\nvmii.inf_amd64_7251a3c076e80d80\nvcuda64.dll
+  00007FFE68B70000 - 00007FFE692B1000  ts=69A9E69C  E:\Steam\steamapps\common\Crimson Desert\bin64\nvngx_dlssg.dll
+  00007FFE692C0000 - 00007FFE6DCFB000  ts=68F24FFC  E:\Steam\steamapps\common\Crimson Desert\bin64\libxess.dll
+  00007FFE7EAF0000 - 00007FFE7ECB4000  ts=1608EE24  C:\Windows\System32\mfsvr.dll
+  00007FFE7ECC0000 - 00007FFE802AD000  ts=69A70834  E:\Steam\steamapps\common\Crimson Desert\bin64\libxess_fg.dll
+  00007FFE84B20000 - 00007FFE84F4F000  ts=E696C8D1  C:\Windows\System32\MFMediaEngine.dll
+  00007FFE84F60000 - 00007FFE85407000  ts=68EFD634  E:\Steam\steamapps\common\Crimson Desert\bin64\d3d12\D3D12Core.dll
+  00007FFE85570000 - 00007FFE857C7000  ts=4A348680  C:\Windows\System32\mfmp4srcsnk.dll
+  00007FFE85B30000 - 00007FFE874AD000  ts=6A98CE9A  E:\Steam\steamclient64.dll
+  00007FFE87620000 - 00007FFE8792A000  ts=69A8A8AA  E:\Steam\steamapps\common\Crimson Desert\bin64\nvngx_deepdvc.dll
+  00007FFE8AE20000 - 00007FFE8B087000  ts=EF248F9F  C:\Windows\System32\msmpeg2vdec.dll
+  00007FFE8F9C0000 - 00007FFE8FAF0000  ts=56049869  C:\Windows\System32\mfperfhelper.dll
+  00007FFEBBAD0000 - 00007FFEBBB13000  ts=681CA817  C:\ProgramData\A-Volute\A-Volute.Nahimic\Modules\Scheduled\x64\ASM.Plugin.AudioDevProps2.dll
+  00007FFECEDD0000 - 00007FFECEF03000  ts=69D8686E  C:\ProgramData\A-Volute\A-Volute.Nahimic\Modules\Scheduled\x64\AudioDevProps2.dll
+  00007FFEDF930000 - 00007FFEE0057000  ts=6A9B30B3  C:\Windows\System32\DriverStore\FileRepository\nvmii.inf_amd64_7251a3c076e80d80\nvppex.dll
+  00007FFEE2C90000 - 00007FFEE2DFA000  ts=66072490  E:\Steam\steamapps\common\Crimson Desert\bin64\dxil.dll
+  00007FFEE3300000 - 00007FFEE360E000  ts=6A98CE2E  E:\Steam\tier0_s64.dll
+  00007FFEE4B90000 - 00007FFEE4C64000  ts=6A9B303E  C:\Windows\System32\DriverStore\FileRepository\nvmii.inf_amd64_7251a3c076e80d80\nvdiagclt64.dll
+  00007FFEE4C70000 - 00007FFEE4D1F000  ts=6A9B305A  C:\Windows\System32\DriverStore\FileRepository\nvmii.inf_amd64_7251a3c076e80d80\nvdxgdmal64.dll
+  00007FFEE4D20000 - 00007FFEE4E93000  ts=6A9B303A  C:\Windows\System32\DriverStore\FileRepository\nvmii.inf_amd64_7251a3c076e80d80\_nvngx.dll
+  00007FFEE4FB0000 - 00007FFEE500E000  ts=69D93BE8  E:\Steam\steamapps\common\Crimson Desert\bin64\sl.reflex.dll
+  00007FFEE5010000 - 00007FFEE5068000  ts=69D93BE4  E:\Steam\steamapps\common\Crimson Desert\bin64\sl.pcl.dll
+  00007FFEE5070000 - 00007FFEE50FF000  ts=69D93C61  E:\Steam\steamapps\common\Crimson Desert\bin64\sl.dlss_g.dll
+  00007FFEE51E0000 - 00007FFEE5397000  ts=6A98CE0D  E:\Steam\gameoverlayrenderer64.dll
+  00007FFEE53A0000 - 00007FFEE55BF000  ts=6AA521C1  E:\Steam\steamapps\common\Crimson Desert\bin64\Trinity.asi
+  00007FFEE55C0000 - 00007FFEE56EA000  ts=6A1EE839  E:\Steam\steamapps\common\Crimson Desert\bin64\version.dll
+  00007FFEE56F0000 - 00007FFEE5C24000  ts=6A6F6D40  E:\Steam\steamapps\common\Crimson Desert\bin64\dxgi.dll
+  00007FFEE5EE0000 - 00007FFEE5F4C000  ts=69D93C4F  E:\Steam\steamapps\common\Crimson Desert\bin64\sl.dlss_d.dll
+  00007FFEE6130000 - 00007FFEE61D1000  ts=69D93BEB  E:\Steam\steamapps\common\Crimson Desert\bin64\sl.interposer.dll
+  00007FFEE61E0000 - 00007FFEE6308000  ts=69CF9DDF  E:\Steam\steamapps\common\Crimson Desert\bin64\winmm.dll
+  00007FFEE69B0000 - 00007FFEE6A19000  ts=69D93C51  E:\Steam\steamapps\common\Crimson Desert\bin64\sl.dlss.dll
+  00007FFEE7390000 - 00007FFEE73E7000  ts=69AFDFD0  E:\Steam\steamapps\common\Crimson Desert\bin64\sentry.dll
+  00007FFEE7990000 - 00007FFEE79F9000  ts=69A6C659  E:\Steam\steamapps\common\Crimson Desert\bin64\libxell.dll
+  00007FFEE7A00000 - 00007FFEE7AC3000  ts=6A98CE3D  E:\Steam\vstdlib_s64.dll
+  00007FFEE8460000 - 00007FFEE84B0000  ts=672A8EF7  E:\Steam\steamapps\common\Crimson Desert\bin64\steam_api64.dll
+  00007FFEEBA30000 - 00007FFEEBA7F000  ts=6A013A12  E:\Steam\steamapps\common\Crimson Desert\bin64\libpng18.dll
+  00007FFEEBB30000 - 00007FFEEBBC1000  ts=5B2117F5  C:\Windows\System32\Windows.Media.MediaControl.dll
+  00007FFEEBC70000 - 00007FFEEBDDD000  ts=6A7C2B7E  C:\Windows\System32\nvspcap64.dll
+  00007FFEF1E90000 - 00007FFEF1EF7000  ts=6A59B945  C:\ProgramData\A-Volute\A-Volute.Nahimic\Modules\Scheduled\x64\ProductInfo.dll
+  00007FFF10480000 - 00007FFF1055F000  ts=024ED7C1  C:\Windows\System32\D3DSCache.dll
+  00007FFF226E0000 - 00007FFF22AF9000  ts=880C6E69  C:\Windows\System32\mfcore.dll
+  00007FFF25440000 - 00007FFF2AA5A000  ts=6A9B348A  C:\Windows\System32\DriverStore\FileRepository\nvmii.inf_amd64_7251a3c076e80d80\nvwgf2umx.dll
+  00007FFF2AA60000 - 00007FFF2ABBB000  ts=6A9B3232  C:\Windows\System32\DriverStore\FileRepository\nvmii.inf_amd64_7251a3c076e80d80\NvMemMapStoragex.dll
+  00007FFF2ABC0000 - 00007FFF31568000  ts=6A9B31EC  C:\Windows\System32\DriverStore\FileRepository\nvmii.inf_amd64_7251a3c076e80d80\nvgpucomp64.dll
+  00007FFF31B10000 - 00007FFF31BDE000  ts=6A9B3268  C:\Windows\System32\DriverStore\FileRepository\nvmii.inf_amd64_7251a3c076e80d80\nvldumdx.dll
+  00007FFF32620000 - 00007FFF3264D000  ts=6826F320  E:\Steam\steamapps\common\Crimson Desert\bin64\amd_ags_x64.dll
+  00007FFF326B0000 - 00007FFF3271B000  ts=6A512561  C:\Program Files\NVIDIA Corporation\NvTelemetry\NvTelemetryBridge64.dll
+  00007FFF35AD0000 - 00007FFF35AEB000  ts=CB1211E6  C:\Windows\System32\XINPUT1_4.dll
+  00007FFF37680000 - 00007FFF376A3000  ts=06E9E211  C:\Windows\System32\D3D12.dll
+  00007FFF38CE0000 - 00007FFF38D1B000  ts=30622130  C:\Windows\System32\dbgcore.dll
+  00007FFF396F0000 - 00007FFF397B4000  ts=ED114A9B  C:\Windows\System32\Windows.StateRepositoryPS.dll
+  00007FFF3A2F0000 - 00007FFF3A79B000  ts=6A512563  C:\Program Files\NVIDIA Corporation\NvTelemetry\NvTelemetryAPI64.dll
+  00007FFF3C040000 - 00007FFF3C05E000  ts=F4263513  C:\Windows\System32\ondemandconnroutehelper.dll
+  00007FFF3C7C0000 - 00007FFF3C9A3000  ts=027AE73C  C:\Windows\System32\inputhost.dll
+  00007FFF3D650000 - 00007FFF3DCED000  ts=4D890C8C  C:\Windows\System32\Windows.Media.dll
+  00007FFF41840000 - 00007FFF41918000  ts=73C762C8  C:\Windows\System32\Windows.ApplicationModel.dll
+  00007FFF42690000 - 00007FFF429F4000  ts=696F57F3  C:\Windows\System32\DriverStore\FileRepository\nvmii.inf_amd64_7251a3c076e80d80\Display.NvContainer\NvMessageBus.dll
+  00007FFF42C30000 - 00007FFF42E0B000  ts=5971C7EB  C:\Windows\WinSxS\amd64_microsoft.windows.gdiplus_6595b64144ccf1df_1.1.26100.9444_none_6ef568883dc4f9e8\GdiPlus.dll
+  00007FFF42F20000 - 00007FFF42FF6000  ts=A88D055C  C:\Windows\System32\webio.dll
+  00007FFF49C80000 - 00007FFF49CC4000  ts=4B0340A6  C:\Windows\System32\windows.staterepositoryclient.dll
+  00007FFF4A080000 - 00007FFF4A09E000  ts=3F27CEBD  C:\Windows\System32\windows.staterepositorycore.dll
+  00007FFF4BE30000 - 00007FFF4C0F4000  ts=A4EE55BF  C:\Windows\System32\iertutil.dll
+  00007FFF4C650000 - 00007FFF4C82C000  ts=7466FC86  C:\Windows\System32\urlmon.dll
+  00007FFF4E080000 - 00007FFF4E11D000  ts=38EB906F  C:\Windows\System32\msvcp140.dll
+  00007FFF4E360000 - 00007FFF4E36C000  ts=DC08A728  C:\Windows\System32\VCRUNTIME140_1.dll
+  00007FFF4E730000 - 00007FFF4E788000  ts=02E2755A  C:\Windows\System32\pdh.dll
+  00007FFF4F920000 - 00007FFF4F949000  ts=0E4CEB6F  C:\Windows\System32\srvcli.dll
+  00007FFF4FE90000 - 00007FFF4FEBC000  ts=C35DDC74  C:\Windows\System32\VCRUNTIME140.dll
+  00007FFF51710000 - 00007FFF51758000  ts=4B1942B9  C:\Windows\System32\ncryptsslp.dll
+  00007FFF52440000 - 00007FFF526D3000  ts=183E25C7  C:\Windows\System32\wininet.dll
+  00007FFF53C60000 - 00007FFF53EF0000  ts=FD9F2A0B  C:\Windows\WinSxS\amd64_microsoft.windows.common-controls_6595b64144ccf1df_6.0.26100.9278_none_3e0d1ba8e3303201\comctl32.dll
+  00007FFF56780000 - 00007FFF56D12000  ts=6A9B306F  C:\Windows\System32\DriverStore\FileRepository\nvmii.inf_amd64_7251a3c076e80d80\nvapi64_impl.dll
+  00007FFF58090000 - 00007FFF58119000  ts=6A9B3052  C:\Windows\System32\nvapi64.dll
+  00007FFF58860000 - 00007FFF5892D000  ts=F42DAEC7  C:\Windows\System32\Windows.Perception.Stub.dll
+  00007FFF5A3E0000 - 00007FFF5A53B000  ts=5D4D110B  C:\Windows\System32\Windows.UI.dll
+  00007FFF5B790000 - 00007FFF5B947000  ts=9DC47BA2  C:\Windows\System32\AudioSes.dll
+  00007FFF5BBD0000 - 00007FFF5BCC3000  ts=DFD46CA5  C:\Windows\System32\Windows.Media.Devices.dll
+  00007FFF5CAA0000 - 00007FFF5CAD2000  ts=443008E6  C:\Windows\System32\CompPkgSup.DLL
+  00007FFF5DF90000 - 00007FFF5E10A000  ts=2D155BBB  C:\Windows\System32\drvstore.dll
+  00007FFF5E110000 - 00007FFF5E14B000  ts=34E64AE3  C:\Windows\System32\cryptnet.dll
+  00007FFF5E9A0000 - 00007FFF5EAE2000  ts=15812473  C:\Windows\System32\textinputframework.dll
+  00007FFF5F7F0000 - 00007FFF5FA40000  ts=B6152881  C:\Windows\System32\twinapi.appcore.dll
+  00007FFF66FE0000 - 00007FFF672C4000  ts=0D423F95  C:\Windows\System32\CoreUIComponents.dll
+  00007FFF675A0000 - 00007FFF675A9000  ts=F3AB3552  C:\Windows\System32\XINPUT9_1_0.dll
+  00007FFF67F10000 - 00007FFF67F18000  ts=6A2AB44A  E:\Steam\steamapps\common\Crimson Desert\bin64\amd_fidelityfx_loader_dx12.dll
+  00007FFF68730000 - 00007FFF6873B000  ts=879CD5A0  C:\Windows\System32\version.dll
+  00007FFF69A00000 - 00007FFF69A0B000  ts=89BBBB57  C:\Windows\System32\avrt.dll
+  00007FFF69A10000 - 00007FFF69A53000  ts=E840FC0C  C:\Windows\System32\xmllite.dll
+  00007FFF69A60000 - 00007FFF69A9B000  ts=E6050FEF  C:\Windows\System32\RTWorkQ.dll
+  00007FFF69AA0000 - 00007FFF69AAB000  ts=096FB5EB  C:\Windows\System32\rasadhlp.dll
+  00007FFF69AD0000 - 00007FFF69CF5000  ts=D552A51E  C:\Windows\System32\mfplat.dll
+  00007FFF69D00000 - 00007FFF69DA5000  ts=0EBD3421  C:\Windows\System32\MMDevAPI.dll
+  00007FFF69E40000 - 00007FFF69E9E000  ts=877F86BA  C:\Windows\System32\directxdatabasehelper.dll
+  00007FFF6A200000 - 00007FFF6A372000  ts=DD30F045  C:\Windows\System32\AppXDeploymentClient.dll
+  00007FFF6B4A0000 - 00007FFF6B5CA000  ts=CE0AA1BA  C:\Windows\System32\winhttp.dll
+  00007FFF6B600000 - 00007FFF6B625000  ts=43094AF4  C:\Windows\System32\dhcpcsvc.dll
+  00007FFF6B6B0000 - 00007FFF6B6CD000  ts=FB75DCAE  C:\Windows\System32\dhcpcsvc6.DLL
+  00007FFF6B9C0000 - 00007FFF6B9DA000  ts=64B0563B  C:\Windows\System32\Microsoft.Internal.WarpPal.dll
+  00007FFF6BC20000 - 00007FFF6C09F000  ts=C9516B3E  C:\Windows\System32\D3DCOMPILER_47.dll
+  00007FFF6C960000 - 00007FFF6CBC0000  ts=94DE539A  C:\Windows\System32\d3d11.dll
+  00007FFF6CBD0000 - 00007FFF6CDF5000  ts=17C7D829  C:\Windows\System32\dcomp.dll
+  00007FFF6D250000 - 00007FFF6D37B000  ts=3A1A9FF4  C:\Windows\System32\CoreMessaging.dll
+  00007FFF6D380000 - 00007FFF6D406000  ts=0EA8964D  C:\Windows\System32\FWPUCLNT.DLL
+  00007FFF6D7A0000 - 00007FFF6D83F000  ts=39231907  C:\Windows\System32\apphelp.dll
+  00007FFF6D850000 - 00007FFF6D9BA000  ts=DA8ACFFA  C:\Windows\System32\WinTypes.dll
+  00007FFF6E110000 - 00007FFF6E11D000  ts=B7644D3B  C:\Windows\System32\secur32.dll
+  00007FFF6E2F0000 - 00007FFF6E3E5000  ts=3B4A86C2  C:\Windows\System32\propsys.dll
+  00007FFF6E930000 - 00007FFF6E9D8000  ts=2BCDFF75  C:\Windows\System32\uxtheme.dll
+  00007FFF6EBB0000 - 00007FFF6EBE6000  ts=863610B1  C:\Windows\System32\winmm.dll
+  00007FFF6EFF0000 - 00007FFF6EFFE000  ts=C40693C7  C:\Windows\System32\winnsi.dll
+  00007FFF6F040000 - 00007FFF6F084000  ts=6999AEDC  C:\Windows\System32\DXCore.dll
+  00007FFF6F090000 - 00007FFF6F1CB000  ts=A2FD5912  C:\Windows\System32\dxgi.dll
+  00007FFF6F210000 - 00007FFF6F23F000  ts=5B7254DD  C:\Windows\System32\dwmapi.dll
+  00007FFF6F530000 - 00007FFF6F77C000  ts=8E20FF90  C:\Windows\System32\dbghelp.dll
+  00007FFF6F7D0000 - 00007FFF6F7E4000  ts=1243E494  C:\Windows\System32\resourcepolicyclient.dll
+  00007FFF6FE10000 - 00007FFF706BE000  ts=3511E482  C:\Windows\System32\windows.storage.dll
+  00007FFF706D0000 - 00007FFF706DF000  ts=42C434D0  C:\Windows\System32\hid.dll
+  00007FFF70960000 - 00007FFF7096D000  ts=339BBF08  C:\Windows\System32\netutils.dll
+  00007FFF70AE0000 - 00007FFF70B13000  ts=8849C2DB  C:\Windows\System32\IPHLPAPI.DLL
+  00007FFF70BC0000 - 00007FFF70D18000  ts=831A3320  C:\Windows\System32\dnsapi.dll
+  00007FFF70EB0000 - 00007FFF70F76000  ts=212D2C4E  C:\Windows\System32\schannel.dll
+  00007FFF70FE0000 - 00007FFF71019000  ts=67F6D4E8  C:\Windows\System32\rsaenh.dll
+  00007FFF71080000 - 00007FFF7109B000  ts=0EB18366  C:\Windows\System32\kernel.appcore.dll
+  00007FFF711B0000 - 00007FFF711E6000  ts=D67CDA44  C:\Windows\System32\ntmarta.dll
+  00007FFF71340000 - 00007FFF71389000  ts=4B4D17EC  C:\Windows\System32\sspicli.dll
+  00007FFF71440000 - 00007FFF7144D000  ts=E14AC9FC  C:\Windows\System32\dsparse.dll
+  00007FFF71620000 - 00007FFF7168C000  ts=AA1B45EF  C:\Windows\System32\mswsock.dll
+  00007FFF716A0000 - 00007FFF716C5000  ts=0D212F79  C:\Windows\System32\gpapi.dll
+  00007FFF716D0000 - 00007FFF71704000  ts=4A4AE79F  C:\Windows\System32\userenv.dll
+  00007FFF71880000 - 00007FFF7188C000  ts=DE25DB8F  C:\Windows\System32\CRYPTBASE.DLL
+  00007FFF71940000 - 00007FFF719AA000  ts=69F91DC2  C:\Windows\System32\wldp.dll
+  00007FFF71A40000 - 00007FFF71A5B000  ts=191E0383  C:\Windows\System32\cryptsp.dll
+  00007FFF71AB0000 - 00007FFF71AC3000  ts=0AC5DEA2  C:\Windows\System32\msasn1.dll
+  00007FFF71BF0000 - 00007FFF71C05000  ts=E557DE88  C:\Windows\System32\umpdc.dll
+  00007FFF71C10000 - 00007FFF71C6E000  ts=AA6357B3  C:\Windows\System32\powrprof.dll
+  00007FFF71C80000 - 00007FFF71CBF000  ts=9F05A157  C:\Windows\System32\ntasn1.dll
+  00007FFF71CD0000 - 00007FFF71D00000  ts=2202F6F7  C:\Windows\System32\ncrypt.dll
+  00007FFF72050000 - 00007FFF7207F000  ts=4E73A407  C:\Windows\System32\devobj.dll
+  00007FFF72090000 - 00007FFF720E2000  ts=2A7EB457  C:\Windows\System32\cfgmgr32.dll
+  00007FFF720F0000 - 00007FFF720FA000  ts=EAA3CE6F  C:\Windows\System32\dpapi.dll
+  00007FFF722E0000 - 00007FFF7230A000  ts=4519343C  C:\Windows\System32\bcrypt.dll
+  00007FFF72310000 - 00007FFF72339000  ts=E351CF3A  C:\Windows\System32\profapi.dll
+  00007FFF723F0000 - 00007FFF72417000  ts=AE325489  C:\Windows\System32\win32u.dll
+  00007FFF72420000 - 00007FFF724CC000  ts=DAEC9BFD  C:\Windows\System32\bcryptPrimitives.dll
+  00007FFF724E0000 - 00007FFF7262C000  ts=2BBEFD73  C:\Windows\System32\ucrtbase.dll
+  00007FFF72640000 - 00007FFF726E3000  ts=2FC5593E  C:\Windows\System32\msvcp_win.dll
+  00007FFF726F0000 - 00007FFF72AF2000  ts=28606B21  C:\Windows\System32\KERNELBASE.dll
+  00007FFF72BC0000 - 00007FFF72CE9000  ts=3516563F  C:\Windows\System32\gdi32full.dll
+  00007FFF72CF0000 - 00007FFF72D72000  ts=5C9E5157  C:\Windows\System32\wintrust.dll
+  00007FFF72D80000 - 00007FFF72EFE000  ts=3359E7CB  C:\Windows\System32\crypt32.dll
+  00007FFF72F10000 - 00007FFF72FB9000  ts=847F3439  C:\Windows\System32\msvcrt.dll
+  00007FFF72FC0000 - 00007FFF7311B000  ts=328C1816  C:\Windows\System32\msctf.dll
+  00007FFF73120000 - 00007FFF731CE000  ts=98DA76CE  C:\Windows\System32\clbcatq.dll
+  00007FFF731E0000 - 00007FFF7329C000  ts=2BE8C154  C:\Windows\System32\advapi32.dll
+  00007FFF73360000 - 00007FFF73391000  ts=8DA71BC7  C:\Windows\System32\imm32.dll
+  00007FFF733A0000 - 00007FFF7353A000  ts=78EB722C  C:\Windows\System32\ole32.dll
+  00007FFF73540000 - 00007FFF73658000  ts=BB91989C  C:\Windows\System32\rpcrt4.dll
+  00007FFF73660000 - 00007FFF7382F000  ts=4C25ADA6  C:\Windows\System32\user32.dll
+  00007FFF73840000 - 00007FFF738E9000  ts=AE597B88  C:\Windows\System32\sechost.dll
+  00007FFF738F0000 - 00007FFF739BB000  ts=3ECCCF12  C:\Windows\System32\kernel32.dll
+  00007FFF739C0000 - 00007FFF73A40000  ts=20000B4A  C:\Windows\System32\ws2_32.dll
+  00007FFF73A50000 - 00007FFF73B4B000  ts=BA88998E  C:\Windows\System32\SHCore.dll
+  00007FFF73B50000 - 00007FFF73B58000  ts=227EB1E9  C:\Windows\System32\psapi.dll
+  00007FFF73B60000 - 00007FFF73B8B000  ts=5CD2417B  C:\Windows\System32\gdi32.dll
+  00007FFF73CA0000 - 00007FFF73D79000  ts=03B3B7EF  C:\Windows\System32\oleaut32.dll
+  00007FFF73D80000 - 00007FFF73DE6000  ts=BDCD215A  C:\Windows\System32\shlwapi.dll
+  00007FFF73DF0000 - 00007FFF74175000  ts=8C05274D  C:\Windows\System32\combase.dll
+  00007FFF74430000 - 00007FFF748B7000  ts=DB1FAC99  C:\Windows\System32\setupapi.dll
+  00007FFF748C0000 - 00007FFF748E0000  ts=808AA18A  C:\Windows\System32\imagehlp.dll
+  00007FFF748F0000 - 00007FFF748FA000  ts=0C55E24E  C:\Windows\System32\nsi.dll
+  00007FFF74920000 - 00007FFF750B8000  ts=083B171B  C:\Windows\System32\shell32.dll
+  00007FFF75220000 - 00007FFF75487000  ts=6BDF03CA  C:\Windows\System32\ntdll.dll
+
+memory64 ranges: 9354
+
+=== EXCEPTION ===
+  ThreadId        : 15480 (0x3C78)
+  ExceptionCode   : 0xC0000005
+  ExceptionFlags  : 0x00000000
+  ExceptionAddress: 0x00000001434E530D  (E:\Steam\steamapps\common\Crimson Desert\bin64\CrimsonDesert.exe+0x34E530D)
+  NumberParameters: 2
+     param[0] = 0x0000000000000000
+     param[1] = 0x00000000000F45DF
+
+=== FAULTING THREAD CONTEXT ===
+  Rax : 0x000003B7E36E2168  Rcx : 0x00000000000F45DF  Rdx : 0x0000000000000001  Rbx : 0x00000000000F45DF
+  Rsp : 0x00000000013FED40  Rbp : 0x000003B749F90000  Rsi : 0x000003B7E3FA6FA0  Rdi : 0x00000000000F45DF
+  R8  : 0x00000000002CA000  R9  : 0x000003B7E36E9040  R10 : 0x000003B7E2000000  R11 : 0x000003B69A006418
+  R12 : 0x0000000000000000  R13 : 0x0000000000000001  R14 : 0x00000000000001FD  R15 : 0x000000000000F8F4
+  Rip : 0x00000001434E530D
+  EFLAGS: 0x00010200
+
+=== STACK SCAN from RSP=0x00000000013FED40 (0x10000 bytes) ===
+  captured stack bytes: 4800
+  pointer hits into modules: 73
+   [sp+0x00008] 000000014122F460  CrimsonDesert.exe+0x122F460
+   [sp+0x00028] 00000001434E4F62  CrimsonDesert.exe+0x34E4F62
+   [sp+0x00058] 00000001434E504C  CrimsonDesert.exe+0x34E504C
+   [sp+0x00088] 00000001434DCE71  CrimsonDesert.exe+0x34DCE71
+   [sp+0x000B8] 0000000143DE46BE  CrimsonDesert.exe+0x3DE46BE
+   [sp+0x000E0] 00000001455F9AF8  CrimsonDesert.exe+0x55F9AF8
+   [sp+0x000E8] 0000000146C2BE90  CrimsonDesert.exe+0x6C2BE90
+   [sp+0x00108] 0000000143C31E3D  CrimsonDesert.exe+0x3C31E3D
+   [sp+0x00148] 0000000143DE4284  CrimsonDesert.exe+0x3DE4284
+   [sp+0x00178] 0000000140385069  CrimsonDesert.exe+0x385069
+   [sp+0x001A8] 0000000143DE629F  CrimsonDesert.exe+0x3DE629F
+   [sp+0x001B8] 0000000143DEF71F  CrimsonDesert.exe+0x3DEF71F
+   [sp+0x001E8] 0000000143DE4415  CrimsonDesert.exe+0x3DE4415
+   [sp+0x001F8] 00000001455F9AF8  CrimsonDesert.exe+0x55F9AF8
+   [sp+0x00210] 00000001455F9AF8  CrimsonDesert.exe+0x55F9AF8
+   [sp+0x00218] 0000000146C2BE90  CrimsonDesert.exe+0x6C2BE90
+   [sp+0x00278] 0000000143DE4284  CrimsonDesert.exe+0x3DE4284
+   [sp+0x002A8] 0000000140385069  CrimsonDesert.exe+0x385069
+   [sp+0x002D8] 0000000143DE629F  CrimsonDesert.exe+0x3DE629F
+   [sp+0x002E8] 00000001405D9F04  CrimsonDesert.exe+0x5D9F04
+   [sp+0x00318] 000000014A5AA3B9  CrimsonDesert.exe+0xA5AA3B9
+   [sp+0x00348] 0000000140C63A31  CrimsonDesert.exe+0xC63A31
+   [sp+0x004B8] 0000000140E9AA58  CrimsonDesert.exe+0xE9AA58
+   [sp+0x00508] 000000014A70357E  CrimsonDesert.exe+0xA70357E
+   [sp+0x005A0] 0000000145614598  CrimsonDesert.exe+0x5614598
+   [sp+0x005C8] 00000001427D8EFB  CrimsonDesert.exe+0x27D8EFB
+   [sp+0x005F8] 000000014083D9CA  CrimsonDesert.exe+0x83D9CA
+   [sp+0x00678] 0000000140E9D325  CrimsonDesert.exe+0xE9D325
+   [sp+0x006A8] 00000001413A8059  CrimsonDesert.exe+0x13A8059
+   [sp+0x006D8] 00007FFF6F19BCE8  dxgi.dll+0x10BCE8
+   [sp+0x006E0] 0000000145466BA8  CrimsonDesert.exe+0x5466BA8
+   [sp+0x00708] 00000001446FE9E7  CrimsonDesert.exe+0x46FE9E7
+   [sp+0x00718] 0000000143D8F430  CrimsonDesert.exe+0x3D8F430
+   [sp+0x00738] 000000014083D9CA  CrimsonDesert.exe+0x83D9CA
+   [sp+0x00748] 00000001434E5526  CrimsonDesert.exe+0x34E5526
+   [sp+0x007B8] 0000000143C49B54  CrimsonDesert.exe+0x3C49B54
+   [sp+0x00868] 000000014AA1A6BC  CrimsonDesert.exe+0xAA1A6BC
+   [sp+0x008A8] 0000000143C48B47  CrimsonDesert.exe+0x3C48B47
+   [sp+0x008E8] 0000000143C48805  CrimsonDesert.exe+0x3C48805
+   [sp+0x00938] 00000001434FA8E5  CrimsonDesert.exe+0x34FA8E5
+   [sp+0x009B8] 0000000143C2EF0F  CrimsonDesert.exe+0x3C2EF0F
+   [sp+0x00A38] 0000000143CDCA98  CrimsonDesert.exe+0x3CDCA98
+   [sp+0x00B68] 00000001413A8059  CrimsonDesert.exe+0x13A8059
+   [sp+0x00BF8] 0000000140A5687D  CrimsonDesert.exe+0xA5687D
+   [sp+0x00C38] 000000014098FDA8  CrimsonDesert.exe+0x98FDA8
+   [sp+0x00CA8] 0000000145614598  CrimsonDesert.exe+0x5614598
+   [sp+0x00CD8] 0000000145614598  CrimsonDesert.exe+0x5614598
+   [sp+0x00DA8] 0000000140992AF7  CrimsonDesert.exe+0x992AF7
+   [sp+0x00DD8] 00007FFEE61FEFFD  winmm.dll+0x1EFFD
+   [sp+0x00E00] 00007FFEE626A3D8  winmm.dll+0x8A3D8
+   [sp+0x00E18] 00000001412E3BC0  CrimsonDesert.exe+0x12E3BC0
+   [sp+0x00E48] 000000014137BBA7  CrimsonDesert.exe+0x137BBA7
+   [sp+0x00E98] 00000001412E3B01  CrimsonDesert.exe+0x12E3B01
+   [sp+0x00EC8] 00000001408CFA42  CrimsonDesert.exe+0x8CFA42
+   [sp+0x00EE8] 0000000145614598  CrimsonDesert.exe+0x5614598
+   [sp+0x00F58] 0000000140A5624E  CrimsonDesert.exe+0xA5624E
+   [sp+0x00F80] 0000000145614598  CrimsonDesert.exe+0x5614598
+   [sp+0x00FA0] 0000000140000000  CrimsonDesert.exe+0x0
+   [sp+0x00FB0] 00000001456088D8  CrimsonDesert.exe+0x56088D8
+   [sp+0x00FD8] 00000001405A5CE2  CrimsonDesert.exe+0x5A5CE2
+   [sp+0x01008] 00000001456088D8  CrimsonDesert.exe+0x56088D8
+   [sp+0x01060] 0000000140000000  CrimsonDesert.exe+0x0
+   [sp+0x01088] 0000000143E50516  CrimsonDesert.exe+0x3E50516
+   [sp+0x010B8] 0000000140000000  CrimsonDesert.exe+0x0
+   [sp+0x010F8] 00000001545A3FEA  CrimsonDesert.exe+0x145A3FEA
+   [sp+0x01118] 00007FFEE5377700  gameoverlayrenderer64.dll+0x197700
+   [sp+0x01138] 0000000143E53D58  CrimsonDesert.exe+0x3E53D58
+   [sp+0x01198] 00000001485DDEAC  CrimsonDesert.exe+0x85DDEAC
+   [sp+0x011B0] 0000000140000000  CrimsonDesert.exe+0x0
+   [sp+0x011D8] 00000001447A4F9E  CrimsonDesert.exe+0x47A4F9E
+   [sp+0x01218] 00007FFF7391CD87  kernel32.dll+0x2CD87
+   [sp+0x01248] 00007FFF752CCAEC  ntdll.dll+0xACAEC
+   [sp+0x01278] 00007FFF727FED90  KERNELBASE.dll+0x10ED90
+
+=== ASCII strings on stack (len>=5) ===
+   0x00000000013FF270  Show(Money_Camp_Money Money_Camp_Food Money_Camp_Wood Money_Camp_Stone Money_Camp_Weapon MercenaryCount)
+   0x00000000013FF89A  aANb0>
+   0x00000000013FFA42  P?QU6>B
+
+=== TRINITY.ASI module: (140732744204288, 2224128) ===
+
+=== PER-THREAD STACK SCAN (Trinity.asi frames) ===

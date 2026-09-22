@@ -1,0 +1,778 @@
+########## [1] GATE_B disasm  (bn_function_disassembly)
+---
+tool: "bn_function_disassembly"
+function: "0x14214b750"
+arch: "x86_64"
+name: "sub_14214b750"
+platform: "windows-x86_64"
+offset: 0
+limit: 1000
+count: 467
+total: 467
+nextOffset: null
+truncated: false
+---
+
+````asm
+  void* sub_14214b750(void* arg1, int16_t arg2, int16_t arg3, int32_t arg4)
+
+0x14214b750  mov     qword [rsp+0x8], rbx
+0x14214b755  mov     dword [rsp+0x20], r9d
+0x14214b75a  mov     word [rsp+0x10], dx
+0x14214b75f  push    rbp
+0x14214b760  push    rsi
+0x14214b761  push    rdi
+0x14214b762  push    r12
+0x14214b764  push    r13
+0x14214b766  push    r14
+0x14214b768  push    r15
+0x14214b76a  lea     rbp, [rsp-0x27]
+0x14214b76f  sub     rsp, 0x90
+0x14214b776  movzx   ebx, r8w
+0x14214b77a  movzx   eax, dx
+0x14214b77d  mov     dword [rbp-0x1], eax
+0x14214b780  mov     edx, 0xffff
+0x14214b785  cmp     eax, edx
+0x14214b787  jne     0x14214b795
+
+0x14214b789  lea     rax, [rel data_146cf2f70]
+0x14214b790  jmp     0x14214bcf1
+
+0x14214b795  xor     eax, eax
+0x14214b797  mov     edi, eax
+0x14214b799  mov     qword [rbp-0x11], rax
+0x14214b79d  mov     r15d, eax
+0x14214b7a0  mov     qword [rbp-0x9], rax
+0x14214b7a4  mov     qword [rbp-0x21], rax
+0x14214b7a8  mov     r12d, eax
+0x14214b7ab  mov     qword [rbp-0x19], rax
+0x14214b7af  mov     qword [rbp-0x31], rax
+0x14214b7b3  mov     r13d, eax
+0x14214b7b6  mov     qword [rbp-0x29], rax
+0x14214b7ba  mov     qword [rbp-0x49], rax
+0x14214b7be  mov     esi, eax
+0x14214b7c0  mov     qword [rbp-0x41], rax
+0x14214b7c4  mov     r14, qword [rcx+0x18]
+0x14214b7c8  mov     eax, dword [rcx+0x20]
+0x14214b7cb  lea     rax, [r14+rax*8]
+0x14214b7cf  mov     qword [rbp+0x17], rax
+0x14214b7d3  cmp     r14, rax
+0x14214b7d6  je      0x14214ba8d
+
+0x14214b7dc  mov     edi, 0x1ec
+
+0x14214b7e1  mov     rcx, qword [r14]
+0x14214b7e4  add     rcx, 0x20
+0x14214b7e8  call    VIBE_CharacterInfoTable_GetRecordById
+0x14214b7ed  movzx   ecx, word [rax+0xbe]
+0x14214b7f4  mov     word [rbp-0x39], cx
+0x14214b7f8  lea     rcx, [rbp-0x39]
+0x14214b7fc  call    j_VIBE_MercenaryInfoTable_GetRecordById
+0x14214b801  movzx   ecx, word [rax+0x70]
+0x14214b805  cmp     ecx, dword [rbp-0x1]
+0x14214b808  jne     0x14214ba7b
+
+0x14214b80e  mov     rcx, qword [r14]
+0x14214b811  cmp     dword [rcx+0x50], 0x0
+0x14214b815  je      0x14214ba7b
+
+0x14214b81b  mov     eax, 0xffff
+0x14214b820  cmp     word [rcx+0x148], ax
+0x14214b827  je      0x14214b839
+
+0x14214b829  movzx   edx, bx
+0x14214b82c  call    sub_142156f40
+0x14214b831  test    al, al
+0x14214b833  je      0x14214ba7b
+
+0x14214b839  lea     rcx, [rbp+0x6f]
+0x14214b83d  call    sub_14066f880
+0x14214b842  cmp     byte [rax+0x4f], 0x0
+0x14214b846  je      0x14214ba36
+
+0x14214b84c  mov     rax, qword [gs:0x58]
+0x14214b855  mov     rcx, qword [rax]
+0x14214b858  mov     qword [rbp+0xf], rcx
+0x14214b85c  mov     eax, edi
+0x14214b85e  add     rcx, rax
+0x14214b861  mov     qword [rbp+0x7], rcx
+0x14214b865  mov     rax, qword [rel data_146d69548]
+0x14214b86c  cmp     byte [rcx], 0x0
+0x14214b86f  cmovne  rax, qword [rel data_146d69550]
+0x14214b877  mov     rax, qword [rax]
+0x14214b87a  mov     rcx, qword [rax+0x8]
+0x14214b87e  mov     rdi, qword [rcx+0x188]
+0x14214b885  mov     rcx, qword [r14]
+0x14214b888  add     rcx, 0x20
+0x14214b88c  call    VIBE_CharacterInfoTable_GetRecordById
+0x14214b891  movzx   edx, word [rax+0x6e]
+0x14214b895  mov     rcx, rdi
+0x14214b898  call    sub_1425d5570
+0x14214b89d  test    al, al
+0x14214b89f  je      0x14214b8ed
+
+0x14214b8a1  mov     rdi, qword [r14]
+0x14214b8a4  mov     eax, dword [rbp-0x25]
+0x14214b8a7  cmp     eax, r13d
+0x14214b8aa  ja      0x14214b8d6
+
+0x14214b8ac  lea     edx, [rax*2+0x1]
+0x14214b8b3  add     edx, eax
+0x14214b8b5  shr     edx, 0x1
+0x14214b8b7  cmp     edx, 0x1
+0x14214b8ba  mov     eax, 0x1
+0x14214b8bf  cmovb   edx, eax
+0x14214b8c2  cmp     r13d, edx
+0x14214b8c5  cmova   edx, r13d
+0x14214b8c9  lea     rcx, [rbp-0x31]
+0x14214b8cd  call    sub_14035e3f0
+0x14214b8d2  mov     r13d, dword [rbp-0x29]
+
+0x14214b8d6  mov     eax, r13d
+0x14214b8d9  mov     rcx, qword [rbp-0x31]
+0x14214b8dd  mov     qword [rcx+rax*8], rdi
+0x14214b8e1  inc     r13d
+0x14214b8e4  mov     dword [rbp-0x29], r13d
+0x14214b8e8  jmp     0x14214ba76
+
+0x14214b8ed  mov     rax, qword [rel data_146d69548]
+0x14214b8f4  mov     rcx, qword [rbp+0x7]
+0x14214b8f8  cmp     byte [rcx], 0x0
+0x14214b8fb  cmovne  rax, qword [rel data_146d69550]
+0x14214b903  mov     rax, qword [rax]
+0x14214b906  mov     rcx, qword [rax+0x8]
+0x14214b90a  mov     rax, qword [rcx+0x188]
+0x14214b911  mov     qword [rbp+0x7], rax
+0x14214b915  mov     rcx, qword [r14]
+0x14214b918  add     rcx, 0x20
+0x14214b91c  call    VIBE_CharacterInfoTable_GetRecordById
+0x14214b921  movzx   ecx, word [rax+0x6e]
+0x14214b925  mov     word [rbp-0x39], cx
+0x14214b929  mov     eax, 0xffff
+0x14214b92e  cmp     cx, ax
+0x14214b931  je      0x14214b9a3
+
+0x14214b933  lea     rcx, [rbp-0x39]
+0x14214b937  call    sub_1403896a0
+0x14214b93c  mov     rdi, rax
+0x14214b93f  mov     rcx, qword [rbp+0x7]
+0x14214b943  add     rcx, 0xa8
+0x14214b94a  call    sub_1403896a0
+0x14214b94f  movzx   ecx, word [rax]
+0x14214b952  cmp     word [rdi], cx
+0x14214b955  jne     0x14214b9a3
+
+0x14214b957  mov     rdi, qword [r14]
+0x14214b95a  mov     eax, dword [rbp-0x15]
+0x14214b95d  cmp     eax, r12d
+0x14214b960  ja      0x14214b98c
+
+0x14214b962  lea     edx, [rax*2+0x1]
+0x14214b969  add     edx, eax
+0x14214b96b  shr     edx, 0x1
+0x14214b96d  cmp     edx, 0x1
+0x14214b970  mov     eax, 0x1
+0x14214b975  cmovb   edx, eax
+0x14214b978  cmp     r12d, edx
+0x14214b97b  cmova   edx, r12d
+0x14214b97f  lea     rcx, [rbp-0x21]
+0x14214b983  call    sub_14035e3f0
+0x14214b988  mov     r12d, dword [rbp-0x19]
+
+0x14214b98c  mov     eax, r12d
+0x14214b98f  mov     rcx, qword [rbp-0x21]
+0x14214b993  mov     qword [rcx+rax*8], rdi
+0x14214b997  inc     r12d
+0x14214b99a  mov     dword [rbp-0x19], r12d
+0x14214b99e  jmp     0x14214ba76
+
+0x14214b9a3  mov     eax, 0x1ec
+0x14214b9a8  mov     rcx, qword [rel data_146d69548]
+0x14214b9af  mov     rdx, qword [rbp+0xf]
+0x14214b9b3  cmp     byte [rax+rdx], 0x0
+0x14214b9b7  cmovne  rcx, qword [rel data_146d69550]
+0x14214b9bf  mov     rax, qword [rcx]
+0x14214b9c2  mov     rcx, qword [rax+0x8]
+0x14214b9c6  mov     rdi, qword [rcx+0x188]
+0x14214b9cd  mov     rcx, qword [r14]
+0x14214b9d0  add     rcx, 0x20
+0x14214b9d4  call    VIBE_CharacterInfoTable_GetRecordById
+0x14214b9d9  movzx   edx, word [rax+0x6e]
+0x14214b9dd  mov     rcx, rdi
+0x14214b9e0  call    sub_1425d5620
+0x14214b9e5  test    al, al
+0x14214b9e7  jne     0x14214ba76
+
+0x14214b9ed  mov     rdi, qword [r14]
+0x14214b9f0  mov     eax, dword [rbp-0x5]
+0x14214b9f3  cmp     eax, r15d
+0x14214b9f6  ja      0x14214ba22
+
+0x14214b9f8  lea     edx, [rax*2+0x1]
+0x14214b9ff  add     edx, eax
+0x14214ba01  shr     edx, 0x1
+0x14214ba03  cmp     edx, 0x1
+0x14214ba06  mov     eax, 0x1
+0x14214ba0b  cmovb   edx, eax
+0x14214ba0e  cmp     r15d, edx
+0x14214ba11  cmova   edx, r15d
+0x14214ba15  lea     rcx, [rbp-0x11]
+0x14214ba19  call    sub_14035e3f0
+0x14214ba1e  mov     r15d, dword [rbp-0x9]
+
+0x14214ba22  mov     eax, r15d
+0x14214ba25  mov     rcx, qword [rbp-0x11]
+0x14214ba29  mov     qword [rcx+rax*8], rdi
+0x14214ba2d  inc     r15d
+0x14214ba30  mov     dword [rbp-0x9], r15d
+0x14214ba34  jmp     0x14214ba76
+
+0x14214ba36  mov     rdi, qword [r14]
+0x14214ba39  mov     eax, dword [rbp-0x3d]
+0x14214ba3c  cmp     eax, esi
+0x14214ba3e  ja      0x14214ba67
+
+0x14214ba40  lea     edx, [rax*2+0x1]
+0x14214ba47  add     edx, eax
+0x14214ba49  shr     edx, 0x1
+0x14214ba4b  cmp     edx, 0x1
+0x14214ba4e  mov     eax, 0x1
+0x14214ba53  cmovb   edx, eax
+0x14214ba56  cmp     esi, edx
+0x14214ba58  cmova   edx, esi
+0x14214ba5b  lea     rcx, [rbp-0x49]
+0x14214ba5f  call    sub_14035e3f0
+0x14214ba64  mov     esi, dword [rbp-0x41]
+
+0x14214ba67  mov     ecx, esi
+0x14214ba69  mov     rax, qword [rbp-0x49]
+0x14214ba6d  mov     qword [rax+rcx*8], rdi
+0x14214ba71  inc     esi
+0x14214ba73  mov     dword [rbp-0x41], esi
+
+0x14214ba76  mov     edi, 0x1ec
+
+0x14214ba7b  add     r14, 0x8
+0x14214ba7f  cmp     r14, qword [rbp+0x17]
+0x14214ba83  jne     0x14214b7e1
+
+0x14214ba89  mov     rdi, qword [rbp-0x11]
+
+0x14214ba8d  lea     rcx, [rbp+0x6f]
+0x14214ba91  call    sub_14066f880
+0x14214ba96  cmp     byte [rax+0x4f], 0x0
+0x14214ba9a  je      0x14214bc09
+
+0x14214baa0  test    r15d, r15d
+0x14214baa3  je      0x14214bb1d
+
+0x14214baa5  lea     edx, [rsi+r15]
+0x14214baa9  lea     rcx, [rbp-0x49]
+0x14214baad  call    sub_14035e3f0
+0x14214bab2  mov     esi, dword [rbp-0x41]
+0x14214bab5  test    r15d, r15d
+0x14214bab8  je      0x14214bb1d
+
+0x14214baba  mov     rbx, rdi
+0x14214babd  mov     edi, r15d
+0x14214bac0  mov     r8d, dword [rbp-0x3d]
+0x14214bac4  mov     r13d, 0x1
+0x14214baca  nop     word [rax+rax]
+
+0x14214bad0  cmp     r8d, esi
+0x14214bad3  ja      0x14214bafe
+
+0x14214bad5  lea     edx, [r8*2+0x1]
+0x14214badd  add     edx, r8d
+0x14214bae0  shr     edx, 0x1
+0x14214bae2  cmp     edx, r13d
+0x14214bae5  cmovb   edx, r13d
+0x14214bae9  cmp     esi, edx
+0x14214baeb  cmova   edx, esi
+0x14214baee  lea     rcx, [rbp-0x49]
+0x14214baf2  call    sub_14035e3f0
+0x14214baf7  mov     r8d, dword [rbp-0x3d]
+0x14214bafb  mov     esi, dword [rbp-0x41]
+
+0x14214bafe  mov     edx, esi
+0x14214bb00  mov     rcx, qword [rbx]
+0x14214bb03  mov     rax, qword [rbp-0x49]
+0x14214bb07  mov     qword [rax+rdx*8], rcx
+0x14214bb0b  inc     esi
+0x14214bb0d  mov     dword [rbp-0x41], esi
+0x14214bb10  add     rbx, 0x8
+0x14214bb14  sub     rdi, r13
+0x14214bb17  jne     0x14214bad0
+
+0x14214bb19  mov     r13d, dword [rbp-0x29]
+
+0x14214bb1d  test    r12d, r12d
+0x14214bb20  je      0x14214bb95
+
+0x14214bb22  lea     edx, [rsi+r12]
+0x14214bb26  lea     rcx, [rbp-0x49]
+0x14214bb2a  call    sub_14035e3f0
+0x14214bb2f  mov     esi, dword [rbp-0x41]
+0x14214bb32  test    r12d, r12d
+0x14214bb35  je      0x14214bb95
+
+0x14214bb37  mov     rbx, qword [rbp-0x21]
+0x14214bb3b  mov     edi, r12d
+0x14214bb3e  mov     r8d, dword [rbp-0x3d]
+0x14214bb42  mov     r13d, 0x1
+
+0x14214bb48  cmp     r8d, esi
+0x14214bb4b  ja      0x14214bb76
+
+0x14214bb4d  lea     edx, [r8*2+0x1]
+0x14214bb55  add     edx, r8d
+0x14214bb58  shr     edx, 0x1
+0x14214bb5a  cmp     edx, r13d
+0x14214bb5d  cmovb   edx, r13d
+0x14214bb61  cmp     esi, edx
+0x14214bb63  cmova   edx, esi
+0x14214bb66  lea     rcx, [rbp-0x49]
+0x14214bb6a  call    sub_14035e3f0
+0x14214bb6f  mov     r8d, dword [rbp-0x3d]
+0x14214bb73  mov     esi, dword [rbp-0x41]
+
+0x14214bb76  mov     edx, esi
+0x14214bb78  mov     rcx, qword [rbx]
+0x14214bb7b  mov     rax, qword [rbp-0x49]
+0x14214bb7f  mov     qword [rax+rdx*8], rcx
+0x14214bb83  inc     esi
+0x14214bb85  mov     dword [rbp-0x41], esi
+0x14214bb88  add     rbx, 0x8
+0x14214bb8c  sub     rdi, r13
+0x14214bb8f  jne     0x14214bb48
+
+0x14214bb91  mov     r13d, dword [rbp-0x29]
+
+0x14214bb95  test    r13d, r13d
+0x14214bb98  je      0x14214bc09
+
+0x14214bb9a  lea     edx, [rsi+r13]
+0x14214bb9e  lea     rcx, [rbp-0x49]
+0x14214bba2  call    sub_14035e3f0
+0x14214bba7  mov     esi, dword [rbp-0x41]
+0x14214bbaa  test    r13d, r13d
+0x14214bbad  je      0x14214bc09
+
+0x14214bbaf  mov     rbx, qword [rbp-0x31]
+0x14214bbb3  mov     edi, r13d
+0x14214bbb6  mov     r8d, dword [rbp-0x3d]
+0x14214bbba  mov     r14d, 0x1
+
+0x14214bbc0  cmp     r8d, esi
+0x14214bbc3  ja      0x14214bbee
+
+0x14214bbc5  lea     edx, [r8*2+0x1]
+0x14214bbcd  add     edx, r8d
+0x14214bbd0  shr     edx, 0x1
+0x14214bbd2  cmp     edx, r14d
+0x14214bbd5  cmovb   edx, r14d
+0x14214bbd9  cmp     esi, edx
+0x14214bbdb  cmova   edx, esi
+0x14214bbde  lea     rcx, [rbp-0x49]
+0x14214bbe2  call    sub_14035e3f0
+0x14214bbe7  mov     r8d, dword [rbp-0x3d]
+0x14214bbeb  mov     esi, dword [rbp-0x41]
+
+0x14214bbee  mov     edx, esi
+0x14214bbf0  mov     rcx, qword [rbx]
+0x14214bbf3  mov     rax, qword [rbp-0x49]
+0x14214bbf7  mov     qword [rax+rdx*8], rcx
+0x14214bbfb  inc     esi
+0x14214bbfd  mov     dword [rbp-0x41], esi
+0x14214bc00  add     rbx, 0x8
+0x14214bc04  sub     rdi, r14
+0x14214bc07  jne     0x14214bbc0
+
+0x14214bc09  mov     r14, qword [rbp-0x31]
+0x14214bc0d  mov     eax, dword [rbp+0x7f]
+0x14214bc10  cmp     eax, esi
+0x14214bc12  jb      0x14214bc1d
+
+0x14214bc14  lea     rbx, [rel data_146cf2f70]
+0x14214bc1b  jmp     0x14214bc28
+
+0x14214bc1d  mov     rcx, rax
+0x14214bc20  mov     rax, qword [rbp-0x49]
+0x14214bc24  mov     rbx, qword [rax+rcx*8]
+
+0x14214bc28  mov     esi, 0x1fd
+0x14214bc2d  mov     rcx, qword [rbp-0x49]
+0x14214bc31  test    rcx, rcx
+0x14214bc34  je      0x14214bc58
+
+0x14214bc36  mov     rax, qword [gs:0x58]
+0x14214bc3f  mov     rdx, qword [rax]
+0x14214bc42  cmp     byte [rsi+rdx], 0x0
+0x14214bc46  je      0x14214bc4f
+
+0x14214bc48  call    sub_1447f035c
+0x14214bc4d  jmp     0x14214bc58
+
+0x14214bc4f  mov     rcx, qword [rbp-0x49]
+0x14214bc53  call    sub_1447f025c
+
+0x14214bc58  xor     edi, edi
+0x14214bc5a  mov     qword [rbp-0x49], rdi
+0x14214bc5e  mov     qword [rbp-0x41], rdi
+0x14214bc62  test    r14, r14
+0x14214bc65  je      0x14214bc88
+
+0x14214bc67  mov     rax, qword [gs:0x58]
+0x14214bc70  mov     rdx, qword [rax]
+0x14214bc73  mov     rcx, r14
+0x14214bc76  cmp     byte [rsi+rdx], dil
+0x14214bc7a  je      0x14214bc83
+
+0x14214bc7c  call    sub_1447f035c
+0x14214bc81  jmp     0x14214bc88
+
+0x14214bc83  call    sub_1447f025c
+
+0x14214bc88  mov     qword [rbp-0x31], rdi
+0x14214bc8c  mov     qword [rbp-0x29], rdi
+0x14214bc90  mov     rcx, qword [rbp-0x21]
+0x14214bc94  test    rcx, rcx
+0x14214bc97  je      0x14214bcb7
+
+0x14214bc99  mov     rax, qword [gs:0x58]
+0x14214bca2  mov     rdx, qword [rax]
+0x14214bca5  cmp     byte [rsi+rdx], 0x0
+0x14214bca9  je      0x14214bcb2
+
+0x14214bcab  call    sub_1447f035c
+0x14214bcb0  jmp     0x14214bcb7
+
+0x14214bcb2  call    sub_1447f025c
+
+0x14214bcb7  mov     qword [rbp-0x21], rdi
+0x14214bcbb  mov     qword [rbp-0x19], rdi
+0x14214bcbf  mov     rcx, qword [rbp-0x11]
+0x14214bcc3  test    rcx, rcx
+0x14214bcc6  je      0x14214bce6
+
+0x14214bcc8  mov     rax, qword [gs:0x58]
+0x14214bcd1  mov     rdx, qword [rax]
+0x14214bcd4  cmp     byte [rsi+rdx], 0x0
+0x14214bcd8  je      0x14214bce1
+
+0x14214bcda  call    sub_1447f035c
+0x14214bcdf  jmp     0x14214bce6
+
+0x14214bce1  call    sub_1447f025c
+
+0x14214bce6  mov     qword [rbp-0x11], rdi
+0x14214bcea  mov     qword [rbp-0x9], rdi
+0x14214bcee  mov     rax, rbx
+
+0x14214bcf1  mov     rbx, qword [rsp+0xd0]
+0x14214bcf9  add     rsp, 0x90
+0x14214bd00  pop     r15
+0x14214bd02  pop     r14
+0x14214bd04  pop     r13
+0x14214bd06  pop     r12
+0x14214bd08  pop     rdi
+0x14214bd09  pop     rsi
+0x14214bd0a  pop     rbp
+0x14214bd0b  retn
+````
+
+
+########## [2] GATE_B callers  (bn_function_callers)
+---
+tool: "bn_function_callers"
+function: "0x14214b750"
+arch: "x86_64"
+name: "sub_14214b750"
+platform: "windows-x86_64"
+offset: 0
+limit: 100
+count: 2
+total: 2
+nextOffset: null
+truncated: false
+---
+
+| Callsite | Architecture | Caller Function |
+| --- | --- | --- |
+| 0x14065f0e4 | x86_64 | sub_14065f000 (0x14065f000 (x86_64)) |
+| 0x140661fb2 | x86_64 | sub_140661ed0 (0x140661ed0 (x86_64)) |
+
+
+########## [3] GATE_B callees  (bn_function_callees)
+---
+tool: "bn_function_callees"
+function: "0x14214b750"
+arch: "x86_64"
+name: "sub_14214b750"
+platform: "windows-x86_64"
+offset: 0
+limit: 200
+count: 31
+total: 31
+nextOffset: null
+truncated: false
+---
+
+| Callsite | Architecture | Callee Address | Callee Functions |
+| --- | --- | --- | --- |
+| 0x14214b7af | x86_64 | 0x157fcdff8 |  |
+| 0x14214b7e8 | x86_64 | 0x140389570 | VIBE_CharacterInfoTable_GetRecordById (0x140389570 (x86_64)) |
+| 0x14214b7fc | x86_64 | 0x1403891b0 | j_VIBE_MercenaryInfoTable_GetRecordById (0x1403891b0 (x86_64)) |
+| 0x14214b82c | x86_64 | 0x142156f40 | sub_142156f40 (0x142156f40 (x86_64)) |
+| 0x14214b83d | x86_64 | 0x14066f880 | sub_14066f880 (0x14066f880 (x86_64)) |
+| 0x14214b88c | x86_64 | 0x140389570 | VIBE_CharacterInfoTable_GetRecordById (0x140389570 (x86_64)) |
+| 0x14214b898 | x86_64 | 0x1425d5570 | sub_1425d5570 (0x1425d5570 (x86_64)) |
+| 0x14214b8cd | x86_64 | 0x14035e3f0 | sub_14035e3f0 (0x14035e3f0 (x86_64)) |
+| 0x14214b91c | x86_64 | 0x140389570 | VIBE_CharacterInfoTable_GetRecordById (0x140389570 (x86_64)) |
+| 0x14214b937 | x86_64 | 0x1403896a0 | sub_1403896a0 (0x1403896a0 (x86_64)) |
+| 0x14214b94a | x86_64 | 0x1403896a0 | sub_1403896a0 (0x1403896a0 (x86_64)) |
+| 0x14214b983 | x86_64 | 0x14035e3f0 | sub_14035e3f0 (0x14035e3f0 (x86_64)) |
+| 0x14214b9d4 | x86_64 | 0x140389570 | VIBE_CharacterInfoTable_GetRecordById (0x140389570 (x86_64)) |
+| 0x14214b9e0 | x86_64 | 0x1425d5620 | sub_1425d5620 (0x1425d5620 (x86_64)) |
+| 0x14214ba19 | x86_64 | 0x14035e3f0 | sub_14035e3f0 (0x14035e3f0 (x86_64)) |
+| 0x14214ba5f | x86_64 | 0x14035e3f0 | sub_14035e3f0 (0x14035e3f0 (x86_64)) |
+| 0x14214ba91 | x86_64 | 0x14066f880 | sub_14066f880 (0x14066f880 (x86_64)) |
+| 0x14214baad | x86_64 | 0x14035e3f0 | sub_14035e3f0 (0x14035e3f0 (x86_64)) |
+| 0x14214baf2 | x86_64 | 0x14035e3f0 | sub_14035e3f0 (0x14035e3f0 (x86_64)) |
+| 0x14214bb2a | x86_64 | 0x14035e3f0 | sub_14035e3f0 (0x14035e3f0 (x86_64)) |
+| 0x14214bb6a | x86_64 | 0x14035e3f0 | sub_14035e3f0 (0x14035e3f0 (x86_64)) |
+| 0x14214bba2 | x86_64 | 0x14035e3f0 | sub_14035e3f0 (0x14035e3f0 (x86_64)) |
+| 0x14214bbe2 | x86_64 | 0x14035e3f0 | sub_14035e3f0 (0x14035e3f0 (x86_64)) |
+| 0x14214bc48 | x86_64 | 0x1447f035c | sub_1447f035c (0x1447f035c (x86_64)) |
+| 0x14214bc53 | x86_64 | 0x1447f025c | sub_1447f025c (0x1447f025c (x86_64)) |
+| 0x14214bc7c | x86_64 | 0x1447f035c | sub_1447f035c (0x1447f035c (x86_64)) |
+| 0x14214bc83 | x86_64 | 0x1447f025c | sub_1447f025c (0x1447f025c (x86_64)) |
+| 0x14214bcab | x86_64 | 0x1447f035c | sub_1447f035c (0x1447f035c (x86_64)) |
+| 0x14214bcb2 | x86_64 | 0x1447f025c | sub_1447f025c (0x1447f025c (x86_64)) |
+| 0x14214bcda | x86_64 | 0x1447f035c | sub_1447f035c (0x1447f035c (x86_64)) |
+| 0x14214bce1 | x86_64 | 0x1447f025c | sub_1447f025c (0x1447f025c (x86_64)) |
+
+
+########## [4] GATE_A callers  (bn_function_callers)
+---
+tool: "bn_function_callers"
+function: "0x14214b1b0"
+arch: "x86_64"
+name: "sub_14214b1b0"
+platform: "windows-x86_64"
+offset: 0
+limit: 100
+count: 4
+total: 4
+nextOffset: null
+truncated: false
+---
+
+| Callsite | Architecture | Caller Function |
+| --- | --- | --- |
+| 0x14065f471 | x86_64 | sub_14065f370 (0x14065f370 (x86_64)) |
+| 0x140661bdb | x86_64 | sub_140661ae0 (0x140661ae0 (x86_64)) |
+| 0x140d2b068 | x86_64 | sub_140d2a820 (0x140d2a820 (x86_64)) |
+| 0x140d2cc58 | x86_64 | sub_140d2ca90 (0x140d2ca90 (x86_64)) |
+
+
+########## [5] WANTED disasm  (bn_function_disassembly)
+---
+tool: "bn_function_disassembly"
+function: "0x1425d7660"
+arch: "x86_64"
+name: "sub_1425d7660"
+platform: "windows-x86_64"
+offset: 0
+limit: 200
+count: 75
+total: 75
+nextOffset: null
+truncated: false
+---
+
+````asm
+  uint64_t sub_1425d7660(void* arg1, int64_t arg2)
+
+0x1425d7660  mov     qword [rsp+0x8], rbx
+0x1425d7665  mov     rax, qword [rcx+0x40]
+0x1425d7669  xor     r10d, r10d
+0x1425d766c  mov     ecx, dword [rcx+0x48]
+0x1425d766f  mov     rbx, rdx
+0x1425d7672  imul    r11, rcx, 0x38
+0x1425d7676  mov     r8b, 0x7
+0x1425d7679  add     r11, rax
+0x1425d767c  cmp     rax, r11
+0x1425d767f  je      0x1425d76d7
+
+0x1425d7681  cmp     qword [rax+0x18], 0x0
+0x1425d7686  jne     0x1425d76ce
+
+0x1425d7688  cmp     dword [rax+0x30], 0x0
+0x1425d768c  je      0x1425d7696
+
+0x1425d768e  cmp     byte [rax+0x34], 0x0
+0x1425d7692  je      0x1425d76ce
+
+0x1425d7694  jmp     0x1425d769c
+
+0x1425d7696  cmp     qword [rax+0x10], rbx
+0x1425d769a  jb      0x1425d76ce
+
+0x1425d769c  movzx   r9d, byte [rax+0x2c]
+0x1425d76a1  cmp     r9b, 0x1
+0x1425d76a5  jne     0x1425d76ad
+
+0x1425d76a7  add     r10, qword [rax+0x20]
+0x1425d76ab  jmp     0x1425d76ce
+
+0x1425d76ad  cmp     r9b, 0x7
+0x1425d76b1  je      0x1425d76ce
+
+0x1425d76b3  cmp     r8b, 0x7
+0x1425d76b7  jne     0x1425d76bf
+
+0x1425d76b9  movzx   r8d, r9b
+0x1425d76bd  jmp     0x1425d76ce
+
+0x1425d76bf  cmp     r9b, r8b
+0x1425d76c2  movzx   edx, r8b
+0x1425d76c6  cmova   edx, r9d
+0x1425d76ca  movzx   r8d, dl
+
+0x1425d76ce  add     rax, 0x38
+0x1425d76d2  cmp     rax, r11
+0x1425d76d5  jne     0x1425d7681
+
+0x1425d76d7  movsxd  rax, dword [rel data_146ce3b88]
+0x1425d76de  cmp     r10, rax
+0x1425d76e1  jle     0x1425d7706
+
+0x1425d76e3  cmp     r8b, 0x7
+0x1425d76e7  jne     0x1425d76f1
+
+0x1425d76e9  mov     al, 0x1
+0x1425d76eb  mov     rbx, qword [rsp+0x8]
+0x1425d76f0  retn
+
+0x1425d76f1  mov     ecx, 0x1
+0x1425d76f6  movzx   eax, r8b
+0x1425d76fa  cmp     r8b, cl
+0x1425d76fd  cmovb   eax, ecx
+0x1425d7700  mov     rbx, qword [rsp+0x8]
+0x1425d7705  retn
+
+0x1425d7706  mov     rbx, qword [rsp+0x8]
+0x1425d770b  movzx   eax, r8b
+0x1425d770f  retn
+````
+
+
+########## [6] WANTED callers  (bn_function_callers)
+---
+tool: "bn_function_callers"
+function: "0x1425d7660"
+arch: "x86_64"
+name: "sub_1425d7660"
+platform: "windows-x86_64"
+offset: 0
+limit: 100
+count: 10
+total: 10
+nextOffset: null
+truncated: false
+---
+
+| Callsite | Architecture | Caller Function |
+| --- | --- | --- |
+| 0x14066b387 | x86_64 | sub_14066b300 (0x14066b300 (x86_64)) |
+| 0x14172ebc9 | x86_64 | sub_14172ea70 (0x14172ea70 (x86_64)) |
+| 0x14172ee18 | x86_64 | sub_14172ecb0 (0x14172ecb0 (x86_64)) |
+| 0x14179b2cf | x86_64 | sub_14179b1a0 (0x14179b1a0 (x86_64)) |
+| 0x1417ed7b5 | x86_64 | sub_1417ed600 (0x1417ed600 (x86_64)) |
+| 0x1422e579f | x86_64 | sub_14198ed56 (0x14198ed56 (x86_64)) |
+| 0x1420b7103 | x86_64 | sub_1420b6d00 (0x1420b6d00 (x86_64)) |
+| 0x1422e579f | x86_64 | sub_1422e5690 (0x1422e5690 (x86_64)) |
+| 0x1429598fd | x86_64 | sub_142959860 (0x142959860 (x86_64)) |
+| 0x14cc42abd | x86_64 | sub_14cc42990 (0x14cc42990 (x86_64)) |
+
+
+########## [7] WANTED decompile  (bn_function_decompile)
+---
+tool: "bn_function_decompile"
+function: "0x1425d7660"
+arch: "x86_64"
+name: "sub_1425d7660"
+platform: "windows-x86_64"
+language: "Pseudo C"
+offset: 0
+limit: 200
+count: 59
+total: 59
+nextOffset: null
+truncated: false
+needsUpdate: false
+---
+
+````bn-pseudoc
+  uint64_t sub_1425d7660(void* arg1, int64_t arg2)
+
+{
+    void* i = *(arg1 + 0x40);
+    int64_t r10 = 0;
+    char r8 = 7;
+
+    for (void* r11_1 = *(arg1 + 0x48) * 0x38 + i; i != r11_1; i += 0x38)
+    {
+        if (!*(i + 0x18))
+        {
+            if (!*(i + 0x30))
+            {
+                if (*(i + 0x10) >= arg2)
+                {
+                label_1425d769c:
+                    char r9_1 = *(i + 0x2c);
+
+                    if (r9_1 == 1)
+                        r10 += *(i + 0x20);
+                    else if (r9_1 != 7)
+                    {
+                        if (r8 != 7)
+                        {
+                            char rdx = r8;
+
+                            if (r9_1 > r8)
+                                rdx = r9_1;
+
+                            r8 = rdx;
+                        }
+                        else
+                            r8 = r9_1;
+                    }
+                }
+            }
+            else if (*(i + 0x34))
+                goto label_1425d769c;
+        }
+    }
+
+    int64_t result = data_146ce3b88;
+
+    if (r10 <= result)
+        return r8;
+
+    if (r8 == 7)
+    {
+        result = 1;
+        return result;
+    }
+
+    if (r8 < 1)
+        return 1;
+
+    return r8;
+}
+````
+
+
+

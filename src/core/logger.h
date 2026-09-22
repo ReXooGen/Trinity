@@ -1,5 +1,6 @@
 #pragma once
 #include <Windows.h>
+#include <cctype>
 #include <cstdarg>
 #include <cstdio>
 #include <deque>
@@ -53,6 +54,8 @@ namespace trinity
             {
                 AllocConsole();
                 freopen_s(&s_conFp, "CONOUT$", "w", stdout);
+                SetConsoleOutputCP(CP_UTF8);
+                SetConsoleCP(CP_UTF8);
                 SetConsoleTitleA("Trinity - Crimson Desert");
                 s_console = true;
             }
@@ -161,6 +164,57 @@ namespace trinity
             LogInternalLocked(lvl, msg);
         }
 
+        static std::string FormatUserMessage(const char* msg, Level lvl)
+        {
+            std::string s(msg);
+            if (s.empty()) return s;
+
+            // Find subsystem prefix like "inventory: " or "player: "
+            size_t colonPos = s.find(':');
+            if (colonPos == std::string::npos || colonPos == 0)
+                return s;
+
+            bool validSubsystem = true;
+            for (size_t i = 0; i < colonPos; ++i)
+            {
+                char c = s[i];
+                if (!std::isalnum(static_cast<unsigned char>(c)) && c != '-' && c != '_')
+                {
+                    validSubsystem = false;
+                    break;
+                }
+            }
+
+            if (!validSubsystem)
+                return s;
+
+            std::string sub = s.substr(0, colonPos);
+            for (char& c : sub)
+                c = static_cast<char>(std::toupper(static_cast<unsigned char>(c)));
+
+            std::string rest = s.substr(colonPos + 1);
+            while (!rest.empty() && rest[0] == ' ')
+                rest.erase(0, 1);
+
+            // Strip redundant " [OK]" when level already indicates success
+            if (lvl == Good)
+            {
+                if (rest.size() >= 5 && rest.compare(rest.size() - 5, 5, " [OK]") == 0)
+                    rest.erase(rest.size() - 5);
+                else if (rest.size() >= 6 && rest.compare(rest.size() - 6, 5, " [OK]") == 0)
+                {
+                    // " [OK]." -> "."
+                    rest.erase(rest.size() - 6, 5);
+                }
+            }
+
+            // Capitalize first letter of the message body
+            if (!rest.empty() && std::islower(static_cast<unsigned char>(rest[0])))
+                rest[0] = static_cast<char>(std::toupper(static_cast<unsigned char>(rest[0])));
+
+            return "[" + sub + "] " + rest;
+        }
+
         static void LogInternalLocked(Level lvl, const char* msg)
         {
             const ULONGLONG now = GetTickCount64();
@@ -188,7 +242,7 @@ namespace trinity
             char stamp[32];
             snprintf(stamp, sizeof(stamp), "%02u:%02u:%02u.%03u", st.wHour, st.wMinute, st.wSecond, st.wMilliseconds);
             line.stamp = stamp;
-            line.text  = msg;
+            line.text  = FormatUserMessage(msg, lvl);
 
             if (s_console)
             {
@@ -240,6 +294,12 @@ namespace trinity
 
         static void Emit(const Line& l)
         {
+            if (l.lvl == Debug && !s_debugConsole)
+            {
+                EmitToFile(l);
+                return;
+            }
+
             HANDLE h = GetStdHandle(STD_OUTPUT_HANDLE);
             WORD body = FOREGROUND_RED | FOREGROUND_GREEN | FOREGROUND_BLUE;
             switch (l.lvl)
@@ -272,6 +332,7 @@ namespace trinity
         static inline FILE*                                         s_conFp = nullptr;
         static inline FILE*                                         s_logFp = nullptr;
         static inline bool                                          s_console = false;
+        static inline bool                                          s_debugConsole = false;
         static inline std::deque<Line>                              s_buffer;
         static inline std::string                                   s_lastMessage;
         static inline Level                                         s_lastLevel = Info;

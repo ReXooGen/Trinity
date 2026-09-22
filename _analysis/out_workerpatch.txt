@@ -1,0 +1,297 @@
+########## [1] WORKER PATCH func disasm  (bn_function_disassembly)
+---
+tool: "bn_function_disassembly"
+function: "0x14214bd30"
+arch: "x86_64"
+name: "VIBE_GetActiveSlotIndexForRecord"
+platform: "windows-x86_64"
+offset: 0
+limit: 400
+count: 237
+total: 237
+nextOffset: null
+truncated: false
+---
+
+````asm
+// VIBE_GetActiveSlotIndexForRecord(ctx, recordKey) -> int32  [slot index 0..5]
+//
+// Resolves the "active slot" index of the record identified by `recordKey`
+// inside the
+// current player context.  The result is consumed as the slot argument of the
+// per-slot stat
+// evaluators: VIBE_Record_GetSlotStatValue / VIBE_Record_EvalSlotStat.
+//
+// Flow:
+// 1. ctx+0x18 is a hash map (VIBE_HashMap_LookupValue) keyed by a 64-bit id
+// whose value is
+//    the record.  On a miss the shared, zero-initialised default record
+// (data_146cf2f70,
+//    built by VIBE_Record_ConstructDefault) is substituted.
+// 2. Return 0 when the record is unset: record->id16 (+0x20) == 0xFFFF or
+//    record->limit (+0x28) == -1.  Both hold for the default record.
+// 3. record->id16 names an owner: VIBE_CharacterInfoTable_GetRecordById(id) +
+// 0xBE is the id
+//    of that owner's mercenary, and MercenaryInfo+0x25
+// (VIBE_MercenaryInfoTable_GetRecordById)
+//    is the gate:
+//    - flag == 0  -> return record->state (+0x120)->slot, the record's own
+// default slot.
+//    - flag != 0  -> probe five per-character slot ids and return the highest
+// hit:
+//         * if slot object B's slot 0 (+0xA0) == 0xFFFF, slot object A's five
+// ids
+//           (+0xA0,+0xA2,+0xA4,+0xA6,+0xA8) are used as indices into
+//           ownerCtx->slotTable (+0x150) -> +0x18, an array of 0x18-byte
+// entries whose first
+//           dword is a count; count >= 1 is a hit.
+//         * otherwise slot object B's five ids are resolved as
+// gameplay-variable ids through
+//           the id map ownerCtx->slotMap (+0x168) via
+//           VIBE_IdMap_GetGamePlayVariableValue; a non-zero value is a hit.
+//      The probe walks slot 5 down to slot 1, so the highest occupied slot
+// wins; if nothing
+//      matches, record->state->slot is returned.
+//
+// Slot objects: g_engine->[0x1A8] (A) and g_engine->[0xF8] (B), each a class
+// holding five
+// uint16 slot ids at +0xA0.  g_engine is the thread-selected singleton pair
+// (data_146d69548 / data_146d69550, chosen by the TLS byte at TLS+0x1EC).
+//
+// Returns 0 (unset), 1..5 (highest matching slot), or record->state->slot.
+//
+// Confirmed by its callers: the returned value is a 1-BASED ROW INDEX into the
+// character record's
+// status table - characterinfo+0x5C0 is an array of 0x88-byte rows with the
+// count at +0x5C8, and
+// index 0 means "no row".  The five GetRowField* accessors
+// (VIBE_CharacterStatus_GetRowField00/08/10/18/20) all take exactly this value
+// as their `row`
+// argument, and VIBE_CharacterStatus_GetRowField* return 0 whenever row <= 0 or
+// row > characterinfo->rowCount.
+
+  int32_t VIBE_GetActiveSlotIndexForRecord(void* ctx, int64_t recordKey)
+
+0x14214bd30  mov     qword [rsp+0x10], rbx
+0x14214bd35  push    rbp
+0x14214bd36  push    rsi
+0x14214bd37  push    rdi
+0x14214bd38  push    r12
+0x14214bd3a  push    r13
+0x14214bd3c  push    r14
+0x14214bd3e  push    r15
+0x14214bd40  sub     rsp, 0x30
+0x14214bd44  // Thread-local selector: when TLS byte [+0x1EC] is set the engine uses the
+0x14214bd44  // second singleton slot (data_146d69550) instead of data_146d69548.
+0x14214bd44  mov     rax, qword [gs:0x58]
+0x14214bd4d  mov     r11, rcx
+0x14214bd50  mov     r10, qword [rel data_146d69548]
+0x14214bd57  mov     r9d, 0x1ec
+0x14214bd5d  mov     r8, qword [rax]
+0x14214bd60  mov     rax, r10
+0x14214bd63  movzx   r9d, byte [r9+r8]
+0x14214bd68  test    r9b, r9b
+0x14214bd6b  cmovne  rax, qword [rel data_146d69550]
+0x14214bd73  cmovne  r10, qword [rel data_146d69550]
+0x14214bd7b  mov     rax, qword [rax]
+0x14214bd7e  mov     rcx, qword [rax+0x8]
+0x14214bd82  mov     rax, qword [r10]
+0x14214bd85  // slotObjectA = g_engine->[0x1A8]; its uint16 array at +0xA0 holds 5 slot ids.
+0x14214bd85  mov     r15, qword [rcx+0x1a8]
+0x14214bd8c  mov     rcx, qword [rax+0x8]
+0x14214bd90  movzx   edi, word [r15+0xa0]
+0x14214bd98  // slotObjectB = g_engine->[0xF8]; same layout, 5 slot ids at +0xA0..+0xA8.
+0x14214bd98  mov     r12, qword [rcx+0xf8]
+0x14214bd9f  lea     rcx, [r11+0x18]
+0x14214bda3  movzx   ebp, word [r15+0xa2]
+0x14214bdab  movzx   r14d, word [r15+0xa4]
+0x14214bdb3  movzx   esi, word [r15+0xa6]
+0x14214bdbb  movzx   eax, word [r12+0xa2]
+0x14214bdc4  movzx   ebx, word [r12+0xa0]
+0x14214bdcd  movzx   r13d, word [r12+0xa6]
+0x14214bdd6  movzx   r15d, word [r15+0xa8]
+0x14214bdde  mov     word [rsp+0x88], ax
+0x14214bde6  movzx   eax, word [r12+0xa4]
+0x14214bdef  movzx   r12d, word [r12+0xa8]
+0x14214bdf8  mov     word [rsp+0x80], ax
+0x14214be00  mov     rax, qword [r11+0x8]
+0x14214be04  mov     qword [rsp+0x20], rax  // ctxOwner = ctx->[0x8]
+0x14214be09  // record = ctx->map(+0x18).Get(recordKey)  (sub_142146110 hash map lookup)
+0x14214be09  call    VIBE_HashMap_LookupValue
+0x14214be0e  test    rax, rax
+0x14214be11  lea     rcx, [rel data_146cf2f70]
+0x14214be18  cmovne  rcx, rax
+0x14214be1c  // Fall back to the shared default record when the key is not present.
+0x14214be1c  mov     qword [rsp+0x28], rcx
+0x14214be21  // record->limit (+0x28) == -1 marks a record that is not initialised -> return
+0x14214be21  // 0.
+0x14214be21  cmp     qword [rcx+0x28], 0xffffffffffffffff
+0x14214be26  je      0x14214bf79
+
+0x14214be2c  movzx   eax, word [rcx+0x20]
+0x14214be30  mov     ecx, 0xffff
+0x14214be35  // record->id16 (+0x20) == 0xFFFF marks an unset record -> return 0.
+0x14214be35  cmp     ax, cx
+0x14214be38  je      0x14214bf79
+
+0x14214be3e  lea     rcx, [rsp+0x70]
+0x14214be43  mov     word [rsp+0x70], ax
+0x14214be48  // g_CharacterInfoTable[record->id16]  (sub_140389570 = get table entry by
+0x14214be48  // uint16 id)
+0x14214be48  call    VIBE_CharacterInfoTable_GetRecordById
+0x14214be4d  lea     rcx, [rax+0xbe]
+0x14214be54  // characterinfo->[0xBE] is the owner's mercenary id; look up its MercenaryInfo.
+0x14214be54  call    j_VIBE_MercenaryInfoTable_GetRecordById
+0x14214be59  // MercenaryInfo->[0x25]: 0 = use the record's own default slot, != 0 = probe
+0x14214be59  // the character slots.
+0x14214be59  cmp     byte [rax+0x25], 0x0
+0x14214be5d  je      0x14214bf02
+
+0x14214be63  mov     rax, qword [rsp+0x20]
+0x14214be68  mov     ecx, 0xffff
+0x14214be6d  mov     rax, qword [rax+0x68]  // ownerCtx = ctxOwner->[0x68]
+0x14214be71  cmp     bx, cx
+0x14214be74  je      0x14214bf12
+
+0x14214be7a  // slotMap lookup (sub_1417e6cb0): non-zero result means slotObjectB's slot id
+0x14214be7a  // is present.
+0x14214be7a  mov     rcx, qword [rax+0x168]
+0x14214be81  movzx   edx, r12w
+0x14214be85  call    VIBE_IdMap_GetGamePlayVariableValue
+0x14214be8a  test    al, al
+0x14214be8c  jne     0x14214bf27
+
+0x14214be92  mov     rdi, qword [rsp+0x20]
+0x14214be97  movzx   edx, r13w
+0x14214be9b  mov     rcx, qword [rdi+0x68]
+0x14214be9f  mov     rcx, qword [rcx+0x168]
+0x14214bea6  call    VIBE_IdMap_GetGamePlayVariableValue
+0x14214beab  test    al, al
+0x14214bead  jne     0x14214bf38
+
+0x14214beb3  mov     rcx, qword [rdi+0x68]
+0x14214beb7  movzx   edx, word [rsp+0x80]
+0x14214bebf  mov     rcx, qword [rcx+0x168]
+0x14214bec6  call    VIBE_IdMap_GetGamePlayVariableValue
+0x14214becb  test    al, al
+0x14214becd  jne     0x14214bf49
+
+0x14214becf  mov     rcx, qword [rdi+0x68]
+0x14214bed3  movzx   edx, word [rsp+0x88]
+0x14214bedb  mov     rcx, qword [rcx+0x168]
+0x14214bee2  call    VIBE_IdMap_GetGamePlayVariableValue
+0x14214bee7  test    al, al
+0x14214bee9  jne     0x14214bf61
+
+0x14214beeb  mov     rcx, qword [rdi+0x68]
+0x14214beef  movzx   edx, bx
+0x14214bef2  mov     rcx, qword [rcx+0x168]
+0x14214bef9  call    VIBE_IdMap_GetGamePlayVariableValue
+0x14214befe  test    al, al
+0x14214bf00  jne     0x14214bf72
+
+0x14214bf02  // No slot matched (or the mercenary flag is clear): return the record's default
+0x14214bf02  // slot, record->state(+0x120)->slot.
+0x14214bf02  mov     rax, qword [rsp+0x28]
+0x14214bf07  mov     rax, qword [rax+0x120]
+0x14214bf0e  mov     eax, dword [rax]
+0x14214bf10  jmp     0x14214bf7b
+
+0x14214bf12  // ownerCtx->slotTable (+0x150); +0x18 is an array of 0x18-byte entries indexed
+0x14214bf12  // by the slot id.
+0x14214bf12  mov     rax, qword [rax+0x150]
+0x14214bf19  lea     rcx, [r15+r15*2]
+0x14214bf1d  mov     rdx, qword [rax+0x18]
+0x14214bf21  cmp     dword [rdx+rcx*8], 0x1  // entry->count >= 1 means the slot is occupied.
+0x14214bf25  jl      0x14214bf2e
+
+0x14214bf27  mov     eax, 0x5  // Highest slot wins: probes run 5 -> 1.
+0x14214bf2c  jmp     0x14214bf7b
+
+0x14214bf2e  lea     rcx, [rsi+rsi*2]
+0x14214bf32  cmp     dword [rdx+rcx*8], 0x1
+0x14214bf36  jl      0x14214bf3f
+
+0x14214bf38  mov     eax, 0x4
+0x14214bf3d  jmp     0x14214bf7b
+
+0x14214bf3f  lea     rcx, [r14+r14*2]
+0x14214bf43  cmp     dword [rdx+rcx*8], 0x1
+0x14214bf47  jl      0x14214bf50
+
+0x14214bf49  mov     eax, 0x3
+0x14214bf4e  jmp     0x14214bf7b
+
+0x14214bf50  lea     rcx, [rbp*2]
+0x14214bf58  add     rcx, rbp
+0x14214bf5b  cmp     dword [rdx+rcx*8], 0x1
+0x14214bf5f  jl      0x14214bf68
+
+0x14214bf61  mov     eax, 0x2
+0x14214bf66  jmp     0x14214bf7b
+
+0x14214bf68  lea     rcx, [rdi+rdi*2]
+0x14214bf6c  cmp     dword [rdx+rcx*8], 0x1
+0x14214bf70  jl      0x14214bf02
+
+0x14214bf72  mov     eax, 0x1
+0x14214bf77  jmp     0x14214bf7b
+
+0x14214bf79  xor     eax, eax
+
+0x14214bf7b  mov     rbx, qword [rsp+0x78]
+0x14214bf80  add     rsp, 0x30
+0x14214bf84  pop     r15
+0x14214bf86  pop     r14
+0x14214bf88  pop     r13
+0x14214bf8a  pop     r12
+0x14214bf8c  pop     rdi
+0x14214bf8d  pop     rsi
+0x14214bf8e  pop     rbp
+0x14214bf8f  retn
+````
+
+
+########## [2] WORKER PATCH func comment  (bn_comment_get)
+{"comment":"0x14214bd30","text":"","warnings":[]}
+
+########## [3] WORKER PATCH func callers  (bn_function_callers)
+---
+tool: "bn_function_callers"
+function: "0x14214bd30"
+arch: "x86_64"
+name: "VIBE_GetActiveSlotIndexForRecord"
+platform: "windows-x86_64"
+offset: 0
+limit: 100
+count: 14
+total: 14
+nextOffset: null
+truncated: false
+---
+
+| Callsite | Architecture | Caller Function |
+| --- | --- | --- |
+| 0x14042d087 | x86_64 | VIBE_UiList_BuildSlotEntriesByLoadout (0x14042cc40 (x86_64)) |
+| 0x14065ff50 | x86_64 | VIBE_ScopedActor_GetActiveSlotIndex (0x14065fee0 (x86_64)) |
+| 0x140d2449c | x86_64 | VIBE_SumRecordSlotStatValues (0x140d243c0 (x86_64)) |
+| 0x140edf6cd | x86_64 | VIBE_CompareRecordsBySlotStatValue (0x140edf480 (x86_64)) |
+| 0x140edf700 | x86_64 | VIBE_CompareRecordsBySlotStatValue (0x140edf480 (x86_64)) |
+| 0x140f272e0 | x86_64 | VIBE_UiList_BuildSlotEntries (0x140f27200 (x86_64)) |
+| 0x140f27335 | x86_64 | VIBE_UiList_BuildSlotEntries (0x140f27200 (x86_64)) |
+| 0x140f6e577 | x86_64 | VIBE_UiList_BuildSlotEntriesAndSum (0x140f6e050 (x86_64)) |
+| 0x140f6e5a2 | x86_64 | VIBE_UiList_BuildSlotEntriesAndSum (0x140f6e050 (x86_64)) |
+| 0x1417760bc | x86_64 | VIBE_GetRecordSlotStatValue (0x141776000 (x86_64)) |
+| 0x1421533b7 | x86_64 | VIBE_GetCharacterStatusValueForSlot (0x142153350 (x86_64)) |
+| 0x142799409 | x86_64 | VIBE_ApplyRecordToCharacter (0x1427990d0 (x86_64)) |
+| 0x142845a42 | x86_64 | VIBE_UiList_QuerySlotEntries (0x142845130 (x86_64)) |
+| 0x14284fe7b | x86_64 | VIBE_UiList_QuerySlotEntriesFiltered (0x14284fab0 (x86_64)) |
+
+
+########## [4] WORKER PATCH func comment at site  (bn_comment_get)
+{"comment":"0x14214be8c","text":"","warnings":[]}
+
+########## [5] bytes around patch site  (bn_memory_read)
+{"address":"0x14214be70","requestedLength":"0x40","bytesRead":64,"hex":"68663bd90f8498000000488b8868010000410fb7d4e826ae69ff84c00f8595000000488b7c2420410fb7d5488b4f68488b8968010000e805ae69ff84c00f8585","base64":"aGY72Q+EmAAAAEiLiGgBAABBD7fU6Cauaf+EwA+FlQAAAEiLfCQgQQ+31UiLT2hIi4loAQAA6AWu\naf+EwA+FhQ==\n","warnings":[]}
+
+

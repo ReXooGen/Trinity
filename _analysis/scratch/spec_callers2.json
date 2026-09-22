@@ -1,0 +1,82 @@
+[
+  {
+    "label": "callers_ApplyRecordToCharacter",
+    "tool": "bn_function_callers",
+    "args": {
+      "limit": 60,
+      "function": "0x1427990D0"
+    }
+  },
+  {
+    "label": "callers_GetActiveSlotIndexForRecord",
+    "tool": "bn_function_callers",
+    "args": {
+      "limit": 60,
+      "function": "0x14214BD30"
+    }
+  },
+  {
+    "label": "callers_UiList_BuildSlotEntriesByLoadout",
+    "tool": "bn_function_callers",
+    "args": {
+      "limit": 60,
+      "function": "0x14042CC40"
+    }
+  },
+  {
+    "label": "callers_CharacterStatus_GetAccumulatedValue",
+    "tool": "bn_function_callers",
+    "args": {
+      "limit": 60,
+      "function": "0x1417AD6F0"
+    }
+  },
+  {
+    "label": "callers_FindTargetActorByFriendship",
+    "tool": "bn_function_callers",
+    "args": {
+      "limit": 60,
+      "function": "0x141ABC170"
+    }
+  },
+  {
+    "label": "callers_ComputeStatusValueForKey",
+    "tool": "bn_function_callers",
+    "args": {
+      "limit": 60,
+      "function": "0x14066B500"
+    }
+  },
+  {
+    "label": "callers_IdMap_GetGamePlayVariableValue",
+    "tool": "bn_function_callers",
+    "args": {
+      "limit": 60,
+      "function": "0x1417E6CB0"
+    }
+  },
+  {
+    "label": "callers_FastTravel_SelectDestination",
+    "tool": "bn_function_callers",
+    "args": {
+      "limit": 60,
+      "function": "0x140654ED0"
+    }
+  },
+  {
+    "label": "callers_Record_EvalSlotStat",
+    "tool": "bn_function_callers",
+    "args": {
+      "limit": 60,
+      "function": "0x142156B40"
+    }
+  },
+  {
+    "label": "callers_GetRecordCopyForActor",
+    "tool": "bn_function_callers",
+    "args": {
+      "limit": 60,
+      "function": "0x14065FBD0"
+    }
+  }
+]

@@ -491,7 +491,8 @@ namespace trinity::game
                                   reinterpret_cast<void**>(&oFrameTimerUpdate)) == MH_OK &&
                     MH_EnableHook(g_frameTimerUpdateTarget) == MH_OK)
                 {
-                    LOG_OK("world: FrameTimerUpdate hook installed @ 0x%p (true game time scale engine control).", g_frameTimerUpdateTarget);
+                    LOG_OK("world: frame timer update hook installed (true game time scale engine control) [OK]");
+                    LOG_DEBUG("world: frame timer update hook installed @ 0x%p (true game time scale engine control)", g_frameTimerUpdateTarget);
                 }
                 else
                 {
@@ -594,7 +595,8 @@ namespace trinity::game
                 g_pEnvManager = mem::ResolveRipAt(envSig, kLen_EnvManager_Mov);
                 if (g_pEnvManager >= kMinPointer)
                 {
-                    LOG("world: safe EnvManager pointer resolved: 0x%llX", g_pEnvManager);
+                    LOG_OK("world: safe EnvManager pointer resolved [OK]");
+                    LOG_DEBUG("world: safe EnvManager pointer resolved: 0x%llX", g_pEnvManager);
                 }
                 else
                 {

@@ -1568,13 +1568,19 @@ namespace trinity::game
         if (!g_refresh)
             g_refresh = reinterpret_cast<EquipRefresh_t>(mem::FindPattern(kSig_EquipEffectRefresh_Legacy));
         if (g_refresh)
-            LOG("equipment: EquipEffectRefresh resolved @ %p.", reinterpret_cast<void*>(g_refresh));
+        {
+            LOG_OK("equipment: EquipEffectRefresh resolved [OK]");
+            LOG_DEBUG("equipment: EquipEffectRefresh resolved @ %p", reinterpret_cast<void*>(g_refresh));
+        }
         else
             LOG_WARN("equipment: EquipEffectRefresh signature not found.");
 
         g_resizeSocket = reinterpret_cast<ResizeSocketVector_t>(mem::FindPattern("48 89 74 24 10 57 48 83 EC 20 48 83 79 60 00"));
         if (g_resizeSocket)
-            LOG("equipment: native ResizeSocketVector resolved @ %p.", reinterpret_cast<void*>(g_resizeSocket));
+        {
+            LOG_OK("equipment: native ResizeSocketVector resolved [OK]");
+            LOG_DEBUG("equipment: native ResizeSocketVector resolved @ %p", reinterpret_cast<void*>(g_resizeSocket));
+        }
 
         // 1. Load Persistent Equipment Profiles from Disk (Trinity_EquipmentProfile.ini)
         LoadEquipProfilesFromDisk();

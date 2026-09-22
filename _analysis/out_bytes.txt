@@ -1,0 +1,43 @@
+########## [1] loco stepper  (bn_memory_read)
+{"address":"0x14369ff60","requestedLength":"0x30","bytesRead":48,"hex":"488bc44889581044884820488948085556574154415541564157488da878f8ffff4881ec50080000c5f82970b8c5f829","base64":"SIvESIlYEESISCBIiUgIVVZXQVRBVUFWQVdIjah4+P//SIHsUAgAAMX4KXC4xfgp\n","warnings":[]}
+
+########## [2] worker gate A sub_14214b1b0  (bn_memory_read)
+{"address":"0x14214b1b0","requestedLength":"0x30","bytesRead":48,"hex":"48895c240844894c24205556574154415541564157488d6c24d94881ec90000000410fb7f80fb7da4c8bc141bbffff00","base64":"SIlcJAhEiUwkIFVWV0FUQVVBVkFXSI1sJNlIgeyQAAAAQQ+3+A+32kyLwUG7//8A\n","warnings":[]}
+
+########## [3] worker gate B sub_14214b750  (bn_memory_read)
+{"address":"0x14214b750","requestedLength":"0x30","bytesRead":48,"hex":"48895c240844894c242066895424105556574154415541564157488d6c24d94881ec90000000410fb7d80fb7c28945ff","base64":"SIlcJAhEiUwkIGaJVCQQVVZXQVRBVUFWQVdIjWwk2UiB7JAAAABBD7fYD7fCiUX/\n","warnings":[]}
+
+########## [4] wanted evaluator  (bn_memory_read)
+{"address":"0x1425d7660","requestedLength":"0x30","bytesRead":48,"hex":"48895c2408488b41404533d28b4948488bda4c6bd93841b0074c03d8493bc37456488378180075468378300074088078","base64":"SIlcJAhIi0FARTPSi0lISIvaTGvZOEGwB0wD2Ek7w3RWSIN4GAB1RoN4MAB0CIB4\n","warnings":[]}
+
+########## [5] world frame update  (bn_memory_read)
+{"address":"0x140ad23f0","requestedLength":"0x30","bytesRead":48,"hex":"48894c2408555356574154415541564157488d6c24e14881ecd80000004c8be9488b41284c8bb8f81000004c897d7f49","base64":"SIlMJAhVU1ZXQVRBVUFWQVdIjWwk4UiB7NgAAABMi+lIi0EoTIu4+BAAAEyJfX9J\n","warnings":[]}
+
+########## [6] world get time scale  (bn_memory_read)
+{"address":"0x140952080","requestedLength":"0x30","bytesRead":48,"hex":"40534883ec2080b97e10000001488bd97517e85900000084c0740ec5fa100535f440064883c4205bc3488b8b58120000","base64":"QFNIg+wggLl+EAAAAUiL2XUX6FkAAACEwHQOxfoQBTX0QAZIg8QgW8NIi4tYEgAA\n","warnings":[]}
+
+########## [7] world eval time curve  (bn_memory_read)
+{"address":"0x140951440","requestedLength":"0x30","bytesRead":48,"hex":"488bc44881eca8000000c5782940c8c5782948b8c57a100d401a4205c5782950a8c57a101503224205c578295898c578","base64":"SIvESIHsqAAAAMV4KUDIxXgpSLjFehANQBpCBcV4KVCoxXoQFQMiQgXFeClYmMV4\n","warnings":[]}
+
+########## [8] engine get time value  (bn_memory_read)
+{"address":"0x141416b70","requestedLength":"0x30","bytesRead":48,"hex":"40534883ec20ba9c00000065488b042558000000488b088b040a39059850ae057e2e488d0d8f50ae05e87ee84703833d","base64":"QFNIg+wgupwAAABlSIsEJVgAAABIiwiLBAo5BZhQrgV+LkiNDY9QrgXofuhHA4M9\n","warnings":[]}
+
+########## [9] time compute delta ticks  (bn_memory_read)
+{"address":"0x1417af690","requestedLength":"0x30","bytesRead":48,"hex":"48895c2418488974242055574156488bec4883ec604d8bd9498bf8488bf2488bd94c8b124c8955e04533f6448975e849","base64":"SIlcJBhIiXQkIFVXQVZIi+xIg+xgTYvZSYv4SIvySIvZTIsSTIlV4EUz9kSJdehJ\n","warnings":[]}
+
+########## [10] trust find record by actor  (bn_memory_read)
+{"address":"0x141ecb640","requestedLength":"0x30","bytesRead":48,"hex":"48895c24104889742418574883ec20488b4268488bf9488d4c2430488bf24c8b4020410fb740306689442430e8ffde4b","base64":"SIlcJBBIiXQkGFdIg+wgSItCaEiL+UiNTCQwSIvyTItAIEEPt0AwZolEJDDo/95L\n","warnings":[]}
+
+########## [11] find target actor by friendship  (bn_memory_read)
+{"address":"0x141abc170","requestedLength":"0x30","bytesRead":48,"hex":"48895c240844884c242048895424105556574154415541564157488bec4883ec704d8bf84c8be2488bf94533f6443835","base64":"SIlcJAhEiEwkIEiJVCQQVVZXQVRBVUFWQVdIi+xIg+xwTYv4TIviSIv5RTP2RDg1\n","warnings":[]}
+
+########## [12] item info table get by id  (bn_memory_read)
+{"address":"0x14038ab60","requestedLength":"0x30","bytesRead":48,"hex":"48895c241048896c2418565741564883ec500fb739488b1d4cef9d063b7b080f83e3000000488d34fd00000000488b43","base64":"SIlcJBBIiWwkGFZXQVZIg+xQD7c5SIsdTO+dBjt7CA+D4wAAAEiNNP0AAAAASItD\n","warnings":[]}
+
+########## [13] status info table get by id  (bn_memory_read)
+{"address":"0x1405835f0","requestedLength":"0x30","bytesRead":48,"hex":"48895c241048896c2418565741564883ec500fb739488b1dfc647e063b7b080f83e3000000488d34fd00000000488b43","base64":"SIlcJBBIiWwkGFZXQVZIg+xQD7c5SIsd/GR+Bjt7CA+D4wAAAEiNNP0AAAAASItD\n","warnings":[]}
+
+########## [14] character info table get record  (bn_memory_read)
+{"address":"0x140389570","requestedLength":"0x30","bytesRead":48,"hex":"48895c241048896c2418565741564883ec500fb739488b1ddc049e063b7b080f83e3000000488d34fd00000000488b43","base64":"SIlcJBBIiWwkGFZXQVZIg+xQD7c5SIsd3ASeBjt7CA+D4wAAAEiNNP0AAAAASItD\n","warnings":[]}
+
+

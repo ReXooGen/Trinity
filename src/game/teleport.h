@@ -25,6 +25,24 @@ namespace trinity::game
         // HUD can light "FLY".
         static bool GetFlightEngaged();
 
+        // True on frames where No Clip actually wrote and verified a position
+        // step. Stays false while the player holds no direction, so the HUD
+        // indicator reports movement rather than merely "the toggle is on".
+        static bool GetNoClipEngaged();
+
+        // True when both movement hooks No Clip depends on are installed
+        // (hkMoveUpdate performs the step, hkLocoStep supplies this tick's dt).
+        // The menu uses this to offer No Clip as unavailable instead of letting
+        // it look enabled while doing nothing.
+        static bool MoveHooksReady();
+
+        // No Clip's escape target: the last position the player reached with
+        // collision on. Latched when No Clip is switched on and afterwards
+        // followed only once the player travels a real distance by normal
+        // movement, so it can never become the spot they are stuck in.
+        // Returns false until the first sample exists.
+        static bool GetNoClipSafePosition(float* x, float* y, float* z);
+
         // Copies the last-seen position to the system clipboard as plain
         // text ("X Y Z"), ready to paste somewhere as a future preset.
         // Returns false if there's no position yet or the clipboard write

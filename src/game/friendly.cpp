@@ -252,7 +252,8 @@ namespace trinity::game
             if (CreateAndEnable(g_npcTarget, reinterpret_cast<void*>(&hkSetNpc),
                                 reinterpret_cast<void**>(&oSetNpc)))
             {
-                LOG_OK("friendly: NPC Trust Multiplier observer installed @ %p", g_npcTarget);
+                LOG_OK("friendly: NPC Trust Multiplier observer installed [OK]");
+                LOG_DEBUG("friendly: NPC Trust Multiplier observer installed @ %p", g_npcTarget);
                 g_hooksInstalled = true;
             }
             else g_npcTarget = nullptr;
@@ -264,7 +265,8 @@ namespace trinity::game
             if (CreateAndEnable(g_petTarget, reinterpret_cast<void*>(&hkSetPet),
                                 reinterpret_cast<void**>(&oSetPet)))
             {
-                LOG_OK("friendly: pet/mount Trust Multiplier observer installed @ %p", g_petTarget);
+                LOG_OK("friendly: pet/mount Trust Multiplier observer installed [OK]");
+                LOG_DEBUG("friendly: pet/mount Trust Multiplier observer installed @ %p", g_petTarget);
                 g_hooksInstalled = true;
             }
             else g_petTarget = nullptr;
@@ -278,7 +280,8 @@ namespace trinity::game
             if (CreateAndEnable(g_npcGetTarget, reinterpret_cast<void*>(&hkGetNpc),
                                 reinterpret_cast<void**>(&oGetNpc)))
             {
-                LOG_OK("friendly: NPC in-place trust observer installed @ %p", g_npcGetTarget);
+                LOG_OK("friendly: NPC in-place trust observer installed [OK]");
+                LOG_DEBUG("friendly: NPC in-place trust observer installed @ %p", g_npcGetTarget);
                 g_hooksInstalled = true;
             }
             else g_npcGetTarget = nullptr;
@@ -289,7 +292,8 @@ namespace trinity::game
             if (CreateAndEnable(g_petGetTarget, reinterpret_cast<void*>(&hkGetPet),
                                 reinterpret_cast<void**>(&oGetPet)))
             {
-                LOG_OK("friendly: pet/mount in-place trust observer installed @ %p", g_petGetTarget);
+                LOG_OK("friendly: pet/mount in-place trust observer installed [OK]");
+                LOG_DEBUG("friendly: pet/mount in-place trust observer installed @ %p", g_petGetTarget);
                 g_hooksInstalled = true;
             }
             else g_petGetTarget = nullptr;

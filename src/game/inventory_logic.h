@@ -1,9 +1,22 @@
 #pragma once
 
+#include <cstddef>
 #include <cstdint>
 
 namespace trinity::game
 {
+    enum class PickupCapacityPatchState
+    {
+        Original,
+        Patched
+    };
+
+    bool CanTransitionPickupCapacityPatch(PickupCapacityPatchState from,
+                                          PickupCapacityPatchState to,
+                                          const uint8_t* current,
+                                          const uint8_t* expected,
+                                          size_t size);
+
     // A generated item is usable only when the operation can be committed to
     // a distinct authority holder before its client mirror is touched.
     bool CanCommitAuthoritativeAdd(bool primitivesReady, bool haveDefinition,
@@ -29,4 +42,14 @@ namespace trinity::game
     bool ShouldAttemptCatalogResolve(bool haveItemTableGlobal,
                                      uint64_t nowMs, uint64_t lastAttemptMs,
                                      uint64_t retryIntervalMs);
+
+    // Fast lock-free pre-filter for the passive GetHolder hook:
+    // If the server authority holder is already resolved, or if the candidate
+    // is clearly the client or has a mismatched bucket count, skip taking any lock.
+    bool ShouldInspectPassiveHolderCandidate(uintptr_t cachedServerHolder,
+                                             uintptr_t candidateContainer,
+                                             uintptr_t candidateHolder,
+                                             uintptr_t clientHolder,
+                                             uint32_t clientBucketCount,
+                                             uint32_t candidateBucketCount);
 }

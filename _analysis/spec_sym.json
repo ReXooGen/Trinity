@@ -1,0 +1,5 @@
+[
+  { "label": "symbols at moveupdate", "tool": "bn_symbol_list", "args": { "address": "0x144282080", "limit": 20 } },
+  { "label": "call site disasm 0x1436a01e0", "tool": "bn_memory_read", "args": { "address": "0x1436a01e0", "length": 48 } },
+  { "label": "symbols at locostepper", "tool": "bn_symbol_list", "args": { "address": "0x14369ff60", "limit": 20 } }
+]

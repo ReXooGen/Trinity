@@ -1,0 +1,7 @@
+[
+  { "label": "WORKER PATCH func disasm", "tool": "bn_function_disassembly", "args": { "function": "0x14214bd30", "limit": 400 } },
+  { "label": "WORKER PATCH func comment", "tool": "bn_comment_get", "args": { "comment": "0x14214bd30" } },
+  { "label": "WORKER PATCH func callers", "tool": "bn_function_callers", "args": { "function": "0x14214bd30", "limit": 100 } },
+  { "label": "WORKER PATCH func comment at site", "tool": "bn_comment_get", "args": { "comment": "0x14214be8c" } },
+  { "label": "bytes around patch site", "tool": "bn_memory_read", "args": { "address": "0x14214be70", "length": 64 } }
+]

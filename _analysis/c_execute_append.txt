@@ -1,0 +1,5 @@
+--- PE 2944 travel record ---
+Locator: 48-byte prologue AOB "44 89 4C 24 20 44 89 44 24 18 89 54 24 10 55 53 56 57 41 56 48 8D AC 24 10 FF FF FF 48 81 EC F0 01 00 00 48 8B F1 48 8D 54 24 48 48 8B 0D FE E8" -> exactly 1 match in the whole image at 0x140A9A8D0 (RVA 0xA9A8D0, .code, 584 bytes, 21 basic blocks).
+Role in the Trinity travel chain: sole travel-performing callee of VIBE_FastTravel_TryAcceptRequest (called at 0x140655566 with the 0xD8-byte node entry copied by sub_1415DF310).
+Trinity: not called or hooked directly; reachable only through the dispatcher. Recorded as the end of the flow so a future PE can be re-anchored from either end.
+Confidence: confirmed (locator + existing decompilation).

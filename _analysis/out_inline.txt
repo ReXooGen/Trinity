@@ -1,0 +1,15 @@
+EXE          : E:\Steam\steamapps\common\Crimson Desert\bin64\CrimsonDesert.exe
+ImageBase    : 0x140000000
+Sections     : 12 total, 12 scanned
+
+=== equipment.cpp:1574  [15 tokens]
+    pattern : 48 89 74 24 10 57 48 83 EC 20 48 83 79 60 00
+    matches : 1
+      VA 0x14488C46D   RVA 0x488C46D   section .code
+
+=== teleport.cpp:529  [20 tokens]
+    pattern : 48 8B 05 ?? ?? ?? ?? 48 8B 98 A8 00 00 00 C4 C1 78 10 04 24
+    matches : 1
+      VA 0x140DEFCFE   RVA 0xDEFCFE   section .code
+
+

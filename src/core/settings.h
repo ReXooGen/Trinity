@@ -3,9 +3,8 @@
 namespace trinity
 {
     // Feature persistence: a plain-text Trinity.ini next to Trinity.asi.
-    // The Auto Save flag itself is always read and written; the feature
-    // values (God Mode, damage multipliers, Game Speed...) are only applied
-    // on load when Auto Save was on last session.
+    // The Auto Save flag itself is always read and written; feature values
+    // are only applied on load when Auto Save was on last session.
     class Settings
     {
     public:

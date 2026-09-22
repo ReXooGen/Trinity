@@ -1,0 +1,162 @@
+[
+  {
+    "label": "landscape_Wanted",
+    "tool": "bn_function_search",
+    "args": {
+      "query": "Wanted",
+      "limit": 12
+    }
+  },
+  {
+    "label": "landscape_Crime",
+    "tool": "bn_function_search",
+    "args": {
+      "query": "Crime",
+      "limit": 12
+    }
+  },
+  {
+    "label": "landscape_Bounty",
+    "tool": "bn_function_search",
+    "args": {
+      "query": "Bounty",
+      "limit": 12
+    }
+  },
+  {
+    "label": "landscape_Inventory",
+    "tool": "bn_function_search",
+    "args": {
+      "query": "Inventory",
+      "limit": 12
+    }
+  },
+  {
+    "label": "landscape_Money",
+    "tool": "bn_function_search",
+    "args": {
+      "query": "Money",
+      "limit": 12
+    }
+  },
+  {
+    "label": "landscape_Refine",
+    "tool": "bn_function_search",
+    "args": {
+      "query": "Refine",
+      "limit": 12
+    }
+  },
+  {
+    "label": "landscape_Socket",
+    "tool": "bn_function_search",
+    "args": {
+      "query": "Socket",
+      "limit": 12
+    }
+  },
+  {
+    "label": "landscape_Weather",
+    "tool": "bn_function_search",
+    "args": {
+      "query": "Weather",
+      "limit": 12
+    }
+  },
+  {
+    "label": "landscape_Fly",
+    "tool": "bn_function_search",
+    "args": {
+      "query": "Fly",
+      "limit": 12
+    }
+  },
+  {
+    "label": "landscape_SuperJump",
+    "tool": "bn_function_search",
+    "args": {
+      "query": "SuperJump",
+      "limit": 12
+    }
+  },
+  {
+    "label": "landscape_Sprint",
+    "tool": "bn_function_search",
+    "args": {
+      "query": "Sprint",
+      "limit": 12
+    }
+  },
+  {
+    "label": "landscape_Equip",
+    "tool": "bn_function_search",
+    "args": {
+      "query": "Equip",
+      "limit": 12
+    }
+  },
+  {
+    "label": "landscape_Pet_",
+    "tool": "bn_function_search",
+    "args": {
+      "query": "Pet_",
+      "limit": 12
+    }
+  },
+  {
+    "label": "landscape_Mount",
+    "tool": "bn_function_search",
+    "args": {
+      "query": "Mount",
+      "limit": 12
+    }
+  },
+  {
+    "label": "landscape_Friendship",
+    "tool": "bn_function_search",
+    "args": {
+      "query": "Friendship",
+      "limit": 12
+    }
+  },
+  {
+    "label": "landscape_Worker",
+    "tool": "bn_function_search",
+    "args": {
+      "query": "Worker",
+      "limit": 12
+    }
+  },
+  {
+    "label": "landscape_Skill",
+    "tool": "bn_function_search",
+    "args": {
+      "query": "Skill",
+      "limit": 12
+    }
+  },
+  {
+    "label": "landscape_Level",
+    "tool": "bn_function_search",
+    "args": {
+      "query": "Level",
+      "limit": 12
+    }
+  },
+  {
+    "label": "landscape_TimeScale",
+    "tool": "bn_function_search",
+    "args": {
+      "query": "TimeScale",
+      "limit": 12
+    }
+  },
+  {
+    "label": "landscape_GameSpeed",
+    "tool": "bn_function_search",
+    "args": {
+      "query": "GameSpeed",
+      "limit": 12
+    }
+  }
+]

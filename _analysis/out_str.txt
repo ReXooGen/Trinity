@@ -1,0 +1,52 @@
+########## [1] strings Movement-update  (bn_string_list)
+---
+tool: "bn_string_list"
+query: "Movement-update"
+previewBytes: 64
+offset: 0
+limit: 40
+count: 0
+total: 0
+nextOffset: null
+truncated: false
+---
+
+| string | type | length | previewEscaped | previewHex | previewTruncated |
+| --- | --- | --- | --- | --- | --- |
+
+
+########## [2] strings MovementUpdate  (bn_string_list)
+---
+tool: "bn_string_list"
+query: "MovementUpdate"
+previewBytes: 64
+offset: 0
+limit: 40
+count: 0
+total: 0
+nextOffset: null
+truncated: false
+---
+
+| string | type | length | previewEscaped | previewHex | previewTruncated |
+| --- | --- | --- | --- | --- | --- |
+
+
+########## [3] strings MoveUpdate  (bn_string_list)
+---
+tool: "bn_string_list"
+query: "MoveUpdate"
+previewBytes: 64
+offset: 0
+limit: 40
+count: 0
+total: 0
+nextOffset: null
+truncated: false
+---
+
+| string | type | length | previewEscaped | previewHex | previewTruncated |
+| --- | --- | --- | --- | --- | --- |
+
+
+

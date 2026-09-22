@@ -1,0 +1,31 @@
+[ENABLE]
+// No Clip (collision filter) - PE 2944 test
+// Hooks the movement integrator; on every call writes group 22 (0x16) into the
+// proxy collision filter info at [rcx+0x40], so the character passes through
+// floor AND walls. The engine re-derives the field, so it is held per-call.
+alloc(noclipCave, 64)
+label(noclipReturn)
+
+CrimsonDesert.exe+4282080:
+  jmp noclipCave
+  nop
+  nop
+  nop
+  nop
+  nop
+  nop
+  nop
+noclipReturn:
+
+noclipCave:
+  mov dword ptr [rcx+0x40], 0x16   // collisionFilterInfo = group 22 = no collision
+  mov rax, rsp                     // original prologue
+  mov [rax+0x20], r9
+  mov [rax+0x10], rdx
+  jmp noclipReturn
+
+[DISABLE]
+CrimsonDesert.exe+4282080:
+  db 48 8B C4 4C 89 48 20 48 89 50 10
+
+dealloc(noclipCave)

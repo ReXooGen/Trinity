@@ -1178,7 +1178,8 @@ namespace trinity::hooks
         char path[MAX_PATH] = "?";
         if (m) GetModuleFileNameA(m, path, MAX_PATH);
         const char* base = strrchr(path, '\\');
-        LOG("%s @ %p in %s", what, addr, base ? base + 1 : path);
+        LOG("%s in %s", what, base ? base + 1 : path);
+        LOG_DEBUG("%s @ %p in %s", what, addr, base ? base + 1 : path);
     }
 
     // --- COM wrapper: draw the overlay before Streamline interpolates --------

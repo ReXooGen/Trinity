@@ -1,0 +1,147 @@
+########## [1] info_1406550b0  (bn_function_info)
+---
+tool: "bn_function_info"
+function: "0x1406550b0"
+arch: "x86_64"
+name: "VIBE_FastTravel_TryAcceptRequest"
+platform: "windows-x86_64"
+---
+
+## Function
+
+| Field | Value |
+| --- | --- |
+| Function | 0x1406550b0 (x86_64) |
+| Name | VIBE_FastTravel_TryAcceptRequest |
+| Start | 0x1406550b0 |
+| Lowest Address | 0x1406550b0 |
+| Highest Address | 0x14065558a |
+| Architecture | x86_64 |
+| Platform | windows-x86_64 |
+| Definition | bool(void* unusedActor, int32_t sceneId, int32_t nodeIndex, int32_t mercenaryHandle) |
+| Exported | false |
+| Auto Discovered | false |
+| Has User Annotations | true |
+| Needs Update | false |
+| Analysis Skipped | false |
+| Analysis Skip Reason | NoSkipReason |
+| Basic Blocks | 43 |
+| Ranges | 0x1406550b0-0x14065558b (1243 bytes) |
+
+## Basic Blocks
+
+| Index | Range | Incoming | Outgoing |
+| --- | --- | --- | --- |
+| 0 | 0x1406550b0-0x1406550e5 (53 bytes) | 0 | 2 |
+| 1 | 0x1406553ac-0x1406553b5 (9 bytes) | 1 | 2 |
+| 2 | 0x1406550e5-0x140655101 (28 bytes) | 1 | 2 |
+| 3 | 0x140655572-0x140655574 (2 bytes) | 2 | 1 |
+| 4 | 0x1406553b5-0x1406553cb (22 bytes) | 1 | 2 |
+| 5 | 0x140655395-0x1406553ac (23 bytes) | 2 | 1 |
+| 6 | 0x140655101-0x140655118 (23 bytes) | 1 | 2 |
+| 7 | 0x1406553cb-0x1406553e4 (25 bytes) | 1 | 2 |
+| 8 | 0x140655574-0x14065558b (23 bytes) | 3 | 0 |
+| 9 | 0x14065511f-0x140655168 (73 bytes) | 1 | 2 |
+| 10 | 0x140655118-0x14065511f (7 bytes) | 1 | 1 |
+| 11 | 0x1406553eb-0x140655406 (27 bytes) | 1 | 2 |
+| 12 | 0x1406553e4-0x1406553eb (7 bytes) | 1 | 1 |
+| 13 | 0x140655348-0x14065534a (2 bytes) | 2 | 1 |
+| 14 | 0x140655168-0x14065517e (22 bytes) | 1 | 2 |
+| 15 | 0x140655358-0x14065536b (19 bytes) | 2 | 2 |
+| 16 | 0x140655495-0x140655497 (2 bytes) | 7 | 1 |
+| 17 | 0x140655406-0x14065541b (21 bytes) | 1 | 2 |
+| 18 | 0x1406554d4-0x1406554eb (23 bytes) | 2 | 1 |
+| 19 | 0x140655379-0x140655395 (28 bytes) | 2 | 1 |
+| 20 | 0x14065536b-0x140655379 (14 bytes) | 1 | 1 |
+| 21 | 0x14065517e-0x140655204 (134 bytes) | 1 | 2 |
+| 22 | 0x1406554b8-0x1406554d4 (28 bytes) | 2 | 1 |
+| 23 | 0x1406554aa-0x1406554b8 (14 bytes) | 1 | 1 |
+| 24 | 0x140655435-0x140655438 (3 bytes) | 2 | 1 |
+| 25 | 0x14065541b-0x140655420 (5 bytes) | 1 | 2 |
+| 26 | 0x140655226-0x14065523a (20 bytes) | 1 | 2 |
+| 27 | 0x140655204-0x140655226 (34 bytes) | 1 | 1 |
+| 28 | 0x140655446-0x14065544e (8 bytes) | 1 | 2 |
+| 29 | 0x140655420-0x140655435 (21 bytes) | 1 | 1 |
+| 30 | 0x140655264-0x140655348 (228 bytes) | 2 | 1 |
+| 31 | 0x14065523a-0x140655264 (42 bytes) | 1 | 1 |
+| 32 | 0x14065534a-0x140655358 (14 bytes) | 3 | 1 |
+| 33 | 0x14065544e-0x140655469 (27 bytes) | 1 | 2 |
+| 34 | 0x140655438-0x140655446 (14 bytes) | 2 | 2 |
+| 35 | 0x140655469-0x140655470 (7 bytes) | 1 | 1 |
+| 36 | 0x14065548f-0x140655495 (6 bytes) | 2 | 2 |
+| 37 | 0x140655479-0x14065548f (22 bytes) | 1 | 2 |
+| 38 | 0x140655470-0x140655479 (9 bytes) | 2 | 2 |
+| 39 | 0x1406554eb-0x1406554f1 (6 bytes) | 1 | 2 |
+| 40 | 0x1406554f1-0x1406554fa (9 bytes) | 1 | 2 |
+| 41 | 0x1406554fa-0x140655572 (120 bytes) | 1 | 1 |
+| 42 | 0x140655497-0x1406554aa (19 bytes) | 2 | 2 |
+
+
+########## [2] proto_1406550b0  (bn_function_prototype_get)
+{"prototype":{"function":{"function":"0x1406550b0","arch":"x86_64","start":"0x1406550b0","architecture":"x86_64","platform":"windows-x86_64","name":"VIBE_FastTravel_TryAcceptRequest"},"definition":"bool(void* unusedActor, int32_t sceneId, int32_t nodeIndex, int32_t mercenaryHandle)","hasUserType":true,"callingConvention":{"name":"win64","architecture":"x86_64","platform":"windows-x86_64","isDefault":true,"isCdecl":true,"isStdcall":true,"isFastcall":true,"isSyscall":false}},"warnings":[]}
+
+########## [3] comment_1406550b0  (bn_comment_get)
+{"comment":"0x1406550b0","text":"VIBE_FastTravel_TryAcceptRequest(unusedActor, sceneId, nodeIndex, mercenaryHandle) -> bool\n\nValidates a pending fast-travel request and performs it when it is acceptable. Returns AL =\nwhether the request was accepted.\n\nConfirmed calling contract (matches every call site):\n  rcx / unusedActor      IGNORED. The function always works on the global ClientActor via\n                         VIBE_ScopeAttacher_ClientActor_InitGlobal, so callers pass a stale or\n                         null register value here.\n  edx / sceneId          LevelGimmickSceneObjectInfo id, or -1 for \"no scene\".\n  r8d / nodeIndex        index into that record's node array.\n  r9d / mercenaryHandle  0 selects the ordinary fast-travel path; any other value selects the\n                         mercenary/character path and is the actor handle to resolve.\nReturn: AL.\n\nPath A - mercenaryHandle != 0 (mercenary / character branch):\n  1. Attach the global ClientActor scope and its field attacher.\n  2. sub_1408AE8E0 resolves the actor for mercenaryHandle; its characterinfo\n     (*(*(actor+0x68)+0x20)+0x30) supplies the mercenary id at +0xBE.\n  3. Reject (return false) when the id is 0xFFFF, or when the MercenaryInfo record has +0x5B\n     clear.\n  4. Otherwise resolve the character's field info (VIBE_FieldInfoTable_GetById with the id at\n     *(*(*(clientActor+0x68)+0x1A0)+0x28)) and the travel scope (sub_1408B4510), build a\n     request object (sub_1407782C0 / sub_140778A50) and hand it to\n     sub_140C04D80(*(actorManager+0x18), requestObj, &out, fieldInfo, ..., &handleCopy,\n     &nodeEntry, &idScratch). Accepted is set to true on BOTH branches of the travel-scope\n     check, i.e. merely getting past the mercenary gate counts as accepted.\n\nPath B - mercenaryHandle == 0 (ordinary fast travel):\n  1. Reject immediately when sceneId == -1.\n  2. record = VIBE_LevelGimmickSceneObjectInfoTable_GetById(&sceneId); reject when\n     record->count (+0x28) <= nodeIndex.\n  3. Attach the global ClientActor scope and its field attacher.\n  4. Resolve the travel target id: the value parsed from the global object at data_146CE5B28\n     (sub_14E877080 -> idScratch) is looked up in the id map at data_146D6AA40 (bucketCount\n     +0x68, buckets +0x78, nodes +0x80). Any failure, or a node value of 0xFFFFFFFF at\n     node+0x08, rejects the request.\n  5. sub_1415DF310 copies the 0xD8-byte node entry\n     (record->nodes(+0x20) + nodeIndex*0xD8) into nodeEntry, then\n     VIBE_FastTravel_Execute(actorManager, targetId, *fieldInfo, 0, &nodeEntry) performs it.\n  6. Accepted is true.\n\nNote: the \"field attacher\" and ClientActor scopes are released on every exit path through the\npa::ScopeAttacherBase vtable.\n\n--- PE 2944 Trinity travel record (Phase 0 dossier; supersedes nothing above) ---\nTrinity feature: Travel / Native Fast Travel - the final post-confirmation dispatcher.\nPE evidence: PE 2944 = CrimsonDesert.exe 1.0.0.2944, SHA-256 6D348BE9D52F81BD35CF7C55E73A5DBFC96CC8268438387C91F7F62C82381FA7. VA 0x1406550B0 / RVA 0x6550B0, .code, 1243 bytes, 43 basic blocks.\nLocator: kSig_TravelDispatcher_PE2944 (44 bytes) -> exactly 1 match in the whole image at this VA (all 12 PE sections scanned under Trinity's section filter).\nABI proved from this function's own prologue:\n  0x1406550B5  mov dword [rsp+0x10 {sceneId_1}], edx   -> EDX = int32 sceneId\n  0x1406550B9  mov qword [rsp+0x8 {unusedActor_1}], rcx -> RCX is only spilled, never dereferenced here\n  0x1406550D4  mov edi, r9d                            -> R9D = 4th argument (0 = ordinary fast travel)\n  0x1406550D7  mov r15d, r8d                           -> R8D = int32 nodeIndex\n  0x1406550DA/0x1406550?? test r9d,r9d                 -> R9D selects scene path (0) vs mercenary path (!=0)\n  return AL, built from BL (0x140655344 mov bl,1 / 0x140655348 xor bl,bl)\nRCX safety for Trinity (which passes nullptr): the only consumer is VIBE_ScopeAttacher_ClientActor_InitGlobal (0x14064F490), whose whole body is VIBE_ScopeAttacher_ClientActor_Init(*(data_146D691B0+0x30), out) - it never touches its first parameter. Two independent sources: that body, and two callers passing different RCX values with identical behaviour. Passing nullptr is therefore safe on PE 2944.\nCallers (all three): VIBE_FastTravel_FlushPendingRequest (0x140DBC6C0) scene path 0x140DBC7BD with R9D explicitly zeroed by \"xor r9d,r9d\" at 0x140DBC7BA, and mercenary path 0x140DBC7E8 (sceneId=-1, nodeIndex=-1, R9D=handle); plus sub_140D9E6C0 at 0x140D9E858.\nKey callee: VIBE_FastTravel_Execute (0x140A9A8D0) called at 0x140655566 - it performs the actual travel.\nTrinity: src/game/teleport.cpp Teleport::Install() PE 2944 branch binds g_travelFn to this address via kSig_TravelDispatcher_PE2944 and only uses it when the selection locator also matches; src/game/travel_logic.h PrepareNativeTravelCall() builds the call as context=nullptr, sceneId, nodeIndex, travelMode=0; the call is fired on the game thread and its AL result is logged as accepted/refused.\nProof: static = prologue disassembly + decompilation + all three callers + unique 44-byte AOB. live = this session performed none; the accepted/refused logging path is the intended runtime check.\nConfidence: confirmed.","warnings":[]}
+
+########## [4] blocks_1406550b0  (bn_function_basic_blocks)
+---
+tool: "bn_function_basic_blocks"
+function: "0x1406550b0"
+arch: "x86_64"
+name: "VIBE_FastTravel_TryAcceptRequest"
+platform: "windows-x86_64"
+offset: 0
+limit: 1000
+count: 43
+total: 43
+nextOffset: null
+truncated: false
+---
+
+| Index | Range | Flags | Incoming Edges | Outgoing Edges |
+| --- | --- | --- | --- | --- |
+| 0 | 0x1406550b0-0x1406550e5 (53 bytes) | can-exit |  | TrueBranch #1 0x1406553ac-0x1406553b5 (9 bytes)<br>FalseBranch #2 0x1406550e5-0x140655101 (28 bytes) fallthrough |
+| 1 | 0x1406553ac-0x1406553b5 (9 bytes) | can-exit | TrueBranch #0 0x1406550b0-0x1406550e5 (53 bytes) | TrueBranch #3 0x140655572-0x140655574 (2 bytes)<br>FalseBranch #4 0x1406553b5-0x1406553cb (22 bytes) fallthrough |
+| 2 | 0x1406550e5-0x140655101 (28 bytes) | can-exit | FalseBranch #0 0x1406550b0-0x1406550e5 (53 bytes) fallthrough | TrueBranch #5 0x140655395-0x1406553ac (23 bytes)<br>FalseBranch #6 0x140655101-0x140655118 (23 bytes) fallthrough |
+| 3 | 0x140655572-0x140655574 (2 bytes) | can-exit | TrueBranch #1 0x1406553ac-0x1406553b5 (9 bytes)<br>TrueBranch #4 0x1406553b5-0x1406553cb (22 bytes) | UnconditionalBranch #8 0x140655574-0x14065558b (23 bytes) fallthrough |
+| 4 | 0x1406553b5-0x1406553cb (22 bytes) | can-exit | FalseBranch #1 0x1406553ac-0x1406553b5 (9 bytes) fallthrough | TrueBranch #3 0x140655572-0x140655574 (2 bytes)<br>FalseBranch #7 0x1406553cb-0x1406553e4 (25 bytes) fallthrough |
+| 5 | 0x140655395-0x1406553ac (23 bytes) | can-exit | TrueBranch #2 0x1406550e5-0x140655101 (28 bytes)<br>UnconditionalBranch #19 0x140655379-0x140655395 (28 bytes) fallthrough | UnconditionalBranch #8 0x140655574-0x14065558b (23 bytes) |
+| 6 | 0x140655101-0x140655118 (23 bytes) | can-exit | FalseBranch #2 0x1406550e5-0x140655101 (28 bytes) fallthrough | TrueBranch #9 0x14065511f-0x140655168 (73 bytes)<br>FalseBranch #10 0x140655118-0x14065511f (7 bytes) fallthrough |
+| 7 | 0x1406553cb-0x1406553e4 (25 bytes) | can-exit | FalseBranch #4 0x1406553b5-0x1406553cb (22 bytes) fallthrough | TrueBranch #11 0x1406553eb-0x140655406 (27 bytes)<br>FalseBranch #12 0x1406553e4-0x1406553eb (7 bytes) fallthrough |
+| 8 | 0x140655574-0x14065558b (23 bytes) | can-exit | UnconditionalBranch #3 0x140655572-0x140655574 (2 bytes) fallthrough<br>UnconditionalBranch #5 0x140655395-0x1406553ac (23 bytes)<br>UnconditionalBranch #18 0x1406554d4-0x1406554eb (23 bytes) |  |
+| 9 | 0x14065511f-0x140655168 (73 bytes) | can-exit | TrueBranch #6 0x140655101-0x140655118 (23 bytes) | TrueBranch #13 0x140655348-0x14065534a (2 bytes)<br>FalseBranch #14 0x140655168-0x14065517e (22 bytes) fallthrough |
+| 10 | 0x140655118-0x14065511f (7 bytes) | can-exit | FalseBranch #6 0x140655101-0x140655118 (23 bytes) fallthrough | UnconditionalBranch #15 0x140655358-0x14065536b (19 bytes) |
+| 11 | 0x1406553eb-0x140655406 (27 bytes) | can-exit | TrueBranch #7 0x1406553cb-0x1406553e4 (25 bytes) | TrueBranch #16 0x140655495-0x140655497 (2 bytes)<br>FalseBranch #17 0x140655406-0x14065541b (21 bytes) fallthrough |
+| 12 | 0x1406553e4-0x1406553eb (7 bytes) | can-exit | FalseBranch #7 0x1406553cb-0x1406553e4 (25 bytes) fallthrough | UnconditionalBranch #18 0x1406554d4-0x1406554eb (23 bytes) |
+| 13 | 0x140655348-0x14065534a (2 bytes) | can-exit | TrueBranch #9 0x14065511f-0x140655168 (73 bytes)<br>TrueBranch #14 0x140655168-0x14065517e (22 bytes) | UnconditionalBranch #32 0x14065534a-0x140655358 (14 bytes) fallthrough |
+| 14 | 0x140655168-0x14065517e (22 bytes) | can-exit | FalseBranch #9 0x14065511f-0x140655168 (73 bytes) fallthrough | TrueBranch #13 0x140655348-0x14065534a (2 bytes)<br>FalseBranch #21 0x14065517e-0x140655204 (134 bytes) fallthrough |
+| 15 | 0x140655358-0x14065536b (19 bytes) | can-exit | UnconditionalBranch #10 0x140655118-0x14065511f (7 bytes)<br>UnconditionalBranch #32 0x14065534a-0x140655358 (14 bytes) fallthrough | TrueBranch #19 0x140655379-0x140655395 (28 bytes)<br>FalseBranch #20 0x14065536b-0x140655379 (14 bytes) fallthrough |
+| 16 | 0x140655495-0x140655497 (2 bytes) | can-exit | TrueBranch #11 0x1406553eb-0x140655406 (27 bytes)<br>TrueBranch #28 0x140655446-0x14065544e (8 bytes)<br>TrueBranch #33 0x14065544e-0x140655469 (27 bytes)<br>TrueBranch #34 0x140655438-0x140655446 (14 bytes)<br>FalseBranch #36 0x14065548f-0x140655495 (6 bytes) fallthrough<br>TrueBranch #39 0x1406554eb-0x1406554f1 (6 bytes)<br>TrueBranch #40 0x1406554f1-0x1406554fa (9 bytes) | UnconditionalBranch #42 0x140655497-0x1406554aa (19 bytes) fallthrough |
+| 17 | 0x140655406-0x14065541b (21 bytes) | can-exit | FalseBranch #11 0x1406553eb-0x140655406 (27 bytes) fallthrough | TrueBranch #24 0x140655435-0x140655438 (3 bytes)<br>FalseBranch #25 0x14065541b-0x140655420 (5 bytes) fallthrough |
+| 18 | 0x1406554d4-0x1406554eb (23 bytes) | can-exit | UnconditionalBranch #12 0x1406553e4-0x1406553eb (7 bytes)<br>UnconditionalBranch #22 0x1406554b8-0x1406554d4 (28 bytes) fallthrough | UnconditionalBranch #8 0x140655574-0x14065558b (23 bytes) |
+| 19 | 0x140655379-0x140655395 (28 bytes) | can-exit | TrueBranch #15 0x140655358-0x14065536b (19 bytes)<br>UnconditionalBranch #20 0x14065536b-0x140655379 (14 bytes) fallthrough | UnconditionalBranch #5 0x140655395-0x1406553ac (23 bytes) fallthrough |
+| 20 | 0x14065536b-0x140655379 (14 bytes) | can-exit | FalseBranch #15 0x140655358-0x14065536b (19 bytes) fallthrough | UnconditionalBranch #19 0x140655379-0x140655395 (28 bytes) fallthrough |
+| 21 | 0x14065517e-0x140655204 (134 bytes) | can-exit | FalseBranch #14 0x140655168-0x14065517e (22 bytes) fallthrough | TrueBranch #26 0x140655226-0x14065523a (20 bytes)<br>FalseBranch #27 0x140655204-0x140655226 (34 bytes) fallthrough |
+| 22 | 0x1406554b8-0x1406554d4 (28 bytes) | can-exit | UnconditionalBranch #23 0x1406554aa-0x1406554b8 (14 bytes) fallthrough<br>TrueBranch #42 0x140655497-0x1406554aa (19 bytes) | UnconditionalBranch #18 0x1406554d4-0x1406554eb (23 bytes) fallthrough |
+| 23 | 0x1406554aa-0x1406554b8 (14 bytes) | can-exit | FalseBranch #42 0x140655497-0x1406554aa (19 bytes) fallthrough | UnconditionalBranch #22 0x1406554b8-0x1406554d4 (28 bytes) fallthrough |
+| 24 | 0x140655435-0x140655438 (3 bytes) | can-exit | TrueBranch #17 0x140655406-0x14065541b (21 bytes)<br>TrueBranch #25 0x14065541b-0x140655420 (5 bytes) | UnconditionalBranch #34 0x140655438-0x140655446 (14 bytes) fallthrough |
+| 25 | 0x14065541b-0x140655420 (5 bytes) | can-exit | FalseBranch #17 0x140655406-0x14065541b (21 bytes) fallthrough | TrueBranch #24 0x140655435-0x140655438 (3 bytes)<br>FalseBranch #29 0x140655420-0x140655435 (21 bytes) fallthrough |
+| 26 | 0x140655226-0x14065523a (20 bytes) | can-exit | TrueBranch #21 0x14065517e-0x140655204 (134 bytes) | TrueBranch #30 0x140655264-0x140655348 (228 bytes)<br>FalseBranch #31 0x14065523a-0x140655264 (42 bytes) fallthrough |
+| 27 | 0x140655204-0x140655226 (34 bytes) | can-exit | FalseBranch #21 0x14065517e-0x140655204 (134 bytes) fallthrough | UnconditionalBranch #32 0x14065534a-0x140655358 (14 bytes) |
+| 28 | 0x140655446-0x14065544e (8 bytes) | can-exit | FalseBranch #34 0x140655438-0x140655446 (14 bytes) fallthrough | TrueBranch #16 0x140655495-0x140655497 (2 bytes)<br>FalseBranch #33 0x14065544e-0x140655469 (27 bytes) fallthrough |
+| 29 | 0x140655420-0x140655435 (21 bytes) | can-exit | FalseBranch #25 0x14065541b-0x140655420 (5 bytes) fallthrough | UnconditionalBranch #34 0x140655438-0x140655446 (14 bytes) |
+| 30 | 0x140655264-0x140655348 (228 bytes) | can-exit | TrueBranch #26 0x140655226-0x14065523a (20 bytes)<br>UnconditionalBranch #31 0x14065523a-0x140655264 (42 bytes) fallthrough | UnconditionalBranch #32 0x14065534a-0x140655358 (14 bytes) |
+| 31 | 0x14065523a-0x140655264 (42 bytes) | can-exit | FalseBranch #26 0x140655226-0x14065523a (20 bytes) fallthrough | UnconditionalBranch #30 0x140655264-0x140655348 (228 bytes) fallthrough |
+| 32 | 0x14065534a-0x140655358 (14 bytes) | can-exit | UnconditionalBranch #13 0x140655348-0x14065534a (2 bytes) fallthrough<br>UnconditionalBranch #27 0x140655204-0x140655226 (34 bytes)<br>UnconditionalBranch #30 0x140655264-0x140655348 (228 bytes) | UnconditionalBranch #15 0x140655358-0x14065536b (19 bytes) fallthrough |
+| 33 | 0x14065544e-0x140655469 (27 bytes) | can-exit | FalseBranch #28 0x140655446-0x14065544e (8 bytes) fallthrough | TrueBranch #16 0x140655495-0x140655497 (2 bytes)<br>FalseBranch #35 0x140655469-0x140655470 (7 bytes) fallthrough |
+| 34 | 0x140655438-0x140655446 (14 bytes) | can-exit | UnconditionalBranch #24 0x140655435-0x140655438 (3 bytes) fallthrough<br>UnconditionalBranch #29 0x140655420-0x140655435 (21 bytes) | TrueBranch #16 0x140655495-0x140655497 (2 bytes)<br>FalseBranch #28 0x140655446-0x14065544e (8 bytes) fallthrough |
+| 35 | 0x140655469-0x140655470 (7 bytes) | can-exit | FalseBranch #33 0x14065544e-0x140655469 (27 bytes) fallthrough | UnconditionalBranch #38 0x140655470-0x140655479 (9 bytes) fallthrough |
+| 36 | 0x14065548f-0x140655495 (6 bytes) | can-exit | FalseBranch #37 0x140655479-0x14065548f (22 bytes) fallthrough<br>TrueBranch #38 0x140655470-0x140655479 (9 bytes) | TrueBranch #38 0x140655470-0x140655479 (9 bytes) back-edge<br>FalseBranch #16 0x140655495-0x140655497 (2 bytes) fallthrough |
+| 37 | 0x140655479-0x14065548f (22 bytes) | can-exit | FalseBranch #38 0x140655470-0x140655479 (9 bytes) fallthrough | TrueBranch #39 0x1406554eb-0x1406554f1 (6 bytes)<br>FalseBranch #36 0x14065548f-0x140655495 (6 bytes) fallthrough |
+| 38 | 0x140655470-0x140655479 (9 bytes) | can-exit | UnconditionalBranch #35 0x140655469-0x140655470 (7 bytes) fallthrough<br>TrueBranch #36 0x14065548f-0x140655495 (6 bytes) back-edge | TrueBranch #36 0x14065548f-0x140655495 (6 bytes)<br>FalseBranch #37 0x140655479-0x14065548f (22 bytes) fallthrough |
+| 39 | 0x1406554eb-0x1406554f1 (6 bytes) | can-exit | TrueBranch #37 0x140655479-0x14065548f (22 bytes) | TrueBranch #16 0x140655495-0x140655497 (2 bytes)<br>FalseBranch #40 0x1406554f1-0x1406554fa (9 bytes) fallthrough |
+| 40 | 0x1406554f1-0x1406554fa (9 bytes) | can-exit | FalseBranch #39 0x1406554eb-0x1406554f1 (6 bytes) fallthrough | TrueBranch #16 0x140655495-0x140655497 (2 bytes)<br>FalseBranch #41 0x1406554fa-0x140655572 (120 bytes) fallthrough |
+| 41 | 0x1406554fa-0x140655572 (120 bytes) | can-exit | FalseBranch #40 0x1406554f1-0x1406554fa (9 bytes) fallthrough | UnconditionalBranch #42 0x140655497-0x1406554aa (19 bytes) |
+| 42 | 0x140655497-0x1406554aa (19 bytes) | can-exit | UnconditionalBranch #16 0x140655495-0x140655497 (2 bytes) fallthrough<br>UnconditionalBranch #41 0x1406554fa-0x140655572 (120 bytes) | TrueBranch #22 0x1406554b8-0x1406554d4 (28 bytes)<br>FalseBranch #23 0x1406554aa-0x1406554b8 (14 bytes) fallthrough |
+
+

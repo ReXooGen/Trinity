@@ -247,7 +247,7 @@ namespace trinity::mem
             addr = reinterpret_cast<uintptr_t>(mbi.BaseAddress) + mbi.RegionSize;
             if (mbi.RegionSize == 0) break;
         }
-        LOG("scanner: module base=0x%p size=0x%zX readable-regions=%zu readable=0x%zX exec=0x%zX",
-            reinterpret_cast<void*>(mod.base), mod.size, spanCount, readBytes, execBytes);
+        LOG_DEBUG("scanner: module base=0x%p size=0x%zX readable-regions=%zu readable=0x%zX exec=0x%zX",
+                  reinterpret_cast<void*>(mod.base), mod.size, spanCount, readBytes, execBytes);
     }
 }

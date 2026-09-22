@@ -1,0 +1,4 @@
+[
+  { "name": "kSig_MoveUpdate", "pattern": "48 8B C4 4C 89 48 ? 48 89 50 ? 55 41 56" },
+  { "name": "kSig_MoveUpdate_prefix8", "pattern": "48 8B C4 4C 89 48" }
+]

@@ -1,0 +1,243 @@
+########## [1] VIBE_SkillTable_GetById  (bn_function_prototype_get)
+{"prototype":{"function":{"function":"0x1403880a0","arch":"x86_64","start":"0x1403880a0","architecture":"x86_64","platform":"windows-x86_64","name":"VIBE_SkillTable_GetById"},"definition":"int64_t(int16_t* arg1)","hasUserType":true,"callingConvention":{"name":"win64","architecture":"x86_64","platform":"windows-x86_64","isDefault":true,"isCdecl":true,"isStdcall":true,"isFastcall":true,"isSyscall":false}},"warnings":[]}
+
+########## [2] j_VIBE_ItemInfoTable_GetById  (bn_function_prototype_get)
+{"prototype":{"function":{"function":"0x140388ac0","arch":"x86_64","start":"0x140388ac0","architecture":"x86_64","platform":"windows-x86_64","name":"j_VIBE_ItemInfoTable_GetById"},"definition":"int64_t(int16_t* arg1)","hasUserType":true,"callingConvention":{"name":"win64","architecture":"x86_64","platform":"windows-x86_64","isDefault":true,"isCdecl":true,"isStdcall":true,"isFastcall":true,"isSyscall":false}},"warnings":[]}
+
+########## [3] j_VIBE_MercenaryInfoTable_GetRecordById  (bn_function_prototype_get)
+{"prototype":{"function":{"function":"0x1403891b0","arch":"x86_64","start":"0x1403891b0","architecture":"x86_64","platform":"windows-x86_64","name":"j_VIBE_MercenaryInfoTable_GetRecordById"},"definition":"int64_t(int16_t* arg1)","hasUserType":true,"callingConvention":{"name":"win64","architecture":"x86_64","platform":"windows-x86_64","isDefault":true,"isCdecl":true,"isStdcall":true,"isFastcall":true,"isSyscall":false}},"warnings":[]}
+
+########## [4] VIBE_CharacterInfoTable_GetRecordById  (bn_function_prototype_get)
+{"prototype":{"function":{"function":"0x140389570","arch":"x86_64","start":"0x140389570","architecture":"x86_64","platform":"windows-x86_64","name":"VIBE_CharacterInfoTable_GetRecordById"},"definition":"int64_t(int16_t* arg1)","hasUserType":true,"callingConvention":{"name":"win64","architecture":"x86_64","platform":"windows-x86_64","isDefault":true,"isCdecl":true,"isStdcall":true,"isFastcall":true,"isSyscall":false}},"warnings":[]}
+
+########## [5] VIBE_ItemInfoTable_GetById  (bn_function_prototype_get)
+{"prototype":{"function":{"function":"0x14038ab60","arch":"x86_64","start":"0x14038ab60","architecture":"x86_64","platform":"windows-x86_64","name":"VIBE_ItemInfoTable_GetById"},"definition":"int64_t(int16_t* arg1)","hasUserType":true,"callingConvention":{"name":"win64","architecture":"x86_64","platform":"windows-x86_64","isDefault":true,"isCdecl":true,"isStdcall":true,"isFastcall":true,"isSyscall":false}},"warnings":[]}
+
+########## [6] VIBE_ScopedRef_Acquire  (bn_function_prototype_get)
+{"prototype":{"function":{"function":"0x140393df0","arch":"x86_64","start":"0x140393df0","architecture":"x86_64","platform":"windows-x86_64","name":"VIBE_ScopedRef_Acquire"},"definition":"int64_t*(int64_t* arg1, uint64_t arg2)","hasUserType":true,"callingConvention":{"name":"win64","architecture":"x86_64","platform":"windows-x86_64","isDefault":true,"isCdecl":true,"isStdcall":true,"isFastcall":true,"isSyscall":false}},"warnings":[]}
+
+########## [7] VIBE_UiList_BuildSlotEntriesByLoadout  (bn_function_prototype_get)
+{"prototype":{"function":{"function":"0x14042cc40","arch":"x86_64","start":"0x14042cc40","architecture":"x86_64","platform":"windows-x86_64","name":"VIBE_UiList_BuildSlotEntriesByLoadout"},"definition":"int32_t*(void* arg1, int32_t* arg2, int16_t arg3, int32_t arg4, int32_t arg5, int32_t arg6)","hasUserType":true,"callingConvention":{"name":"win64","architecture":"x86_64","platform":"windows-x86_64","isDefault":true,"isCdecl":true,"isStdcall":true,"isFastcall":true,"isSyscall":false}},"warnings":[]}
+
+########## [8] VIBE_FactionNodeTable_GetById  (bn_function_prototype_get)
+{"prototype":{"function":{"function":"0x140430020","arch":"x86_64","start":"0x140430020","architecture":"x86_64","platform":"windows-x86_64","name":"VIBE_FactionNodeTable_GetById"},"definition":"int64_t(int16_t* arg1)","hasUserType":true,"callingConvention":{"name":"win64","architecture":"x86_64","platform":"windows-x86_64","isDefault":true,"isCdecl":true,"isStdcall":true,"isFastcall":true,"isSyscall":false}},"warnings":[]}
+
+########## [9] VIBE_Map_FindOrCreateValueSlot  (bn_function_prototype_get)
+{"prototype":{"function":{"function":"0x140436380","arch":"x86_64","start":"0x140436380","architecture":"x86_64","platform":"windows-x86_64","name":"VIBE_Map_FindOrCreateValueSlot"},"definition":"void**(int32_t* arg1, int64_t* arg2, int32_t arg3, int64_t* arg4, char* arg5 @ 0x30, void** arg6, void** arg7)","hasUserType":true,"callingConvention":{"name":"win64","architecture":"x86_64","platform":"windows-x86_64","isDefault":true,"isCdecl":true,"isStdcall":true,"isFastcall":true,"isSyscall":false}},"warnings":[]}
+
+########## [10] VIBE_FieldInfoTable_GetById  (bn_function_prototype_get)
+{"prototype":{"function":{"function":"0x1404a2010","arch":"x86_64","start":"0x1404a2010","architecture":"x86_64","platform":"windows-x86_64","name":"VIBE_FieldInfoTable_GetById"},"definition":"int64_t(int16_t* arg1)","hasUserType":true,"callingConvention":{"name":"win64","architecture":"x86_64","platform":"windows-x86_64","isDefault":true,"isCdecl":true,"isStdcall":true,"isFastcall":true,"isSyscall":false}},"warnings":[]}
+
+########## [11] VIBE_LevelGimmickSceneObjectInfoTable_GetById  (bn_function_prototype_get)
+{"prototype":{"function":{"function":"0x1404a2630","arch":"x86_64","start":"0x1404a2630","architecture":"x86_64","platform":"windows-x86_64","name":"VIBE_LevelGimmickSceneObjectInfoTable_GetById"},"definition":"int64_t(int32_t* arg1)","hasUserType":true,"callingConvention":{"name":"win64","architecture":"x86_64","platform":"windows-x86_64","isDefault":true,"isCdecl":true,"isStdcall":true,"isFastcall":true,"isSyscall":false}},"warnings":[]}
+
+########## [12] VIBE_StatusInfoTable_GetById  (bn_function_prototype_get)
+{"prototype":{"function":{"function":"0x1405835f0","arch":"x86_64","start":"0x1405835f0","architecture":"x86_64","platform":"windows-x86_64","name":"VIBE_StatusInfoTable_GetById"},"definition":"int64_t(int16_t* arg1)","hasUserType":true,"callingConvention":{"name":"win64","architecture":"x86_64","platform":"windows-x86_64","isDefault":true,"isCdecl":true,"isStdcall":true,"isFastcall":true,"isSyscall":false}},"warnings":[]}
+
+########## [13] VIBE_QuestGaugeInfoTable_GetById  (bn_function_prototype_get)
+{"prototype":{"function":{"function":"0x1405d1e40","arch":"x86_64","start":"0x1405d1e40","architecture":"x86_64","platform":"windows-x86_64","name":"VIBE_QuestGaugeInfoTable_GetById"},"definition":"int64_t(int16_t* arg1)","hasUserType":true,"callingConvention":{"name":"win64","architecture":"x86_64","platform":"windows-x86_64","isDefault":true,"isCdecl":true,"isStdcall":true,"isFastcall":true,"isSyscall":false}},"warnings":[]}
+
+########## [14] VIBE_StatusGroupInfoTable_GetById  (bn_function_prototype_get)
+{"prototype":{"function":{"function":"0x140636580","arch":"x86_64","start":"0x140636580","architecture":"x86_64","platform":"windows-x86_64","name":"VIBE_StatusGroupInfoTable_GetById"},"definition":"int64_t(int16_t* arg1)","hasUserType":true,"callingConvention":{"name":"win64","architecture":"x86_64","platform":"windows-x86_64","isDefault":true,"isCdecl":true,"isStdcall":true,"isFastcall":true,"isSyscall":false}},"warnings":[]}
+
+########## [15] VIBE_ScopeAttacher_ClientActor_InitGlobal  (bn_function_prototype_get)
+{"prototype":{"function":{"function":"0x14064f490","arch":"x86_64","start":"0x14064f490","architecture":"x86_64","platform":"windows-x86_64","name":"VIBE_ScopeAttacher_ClientActor_InitGlobal"},"definition":"struct pa::UserOrCharacterValidLoginedScopeAttacher::pa::ScopeAttacher<class pa::ClientActor>::VTable**(int64_t arg1, struct pa::UserOrCharacterValidLoginedScopeAttacher::pa::ScopeAttacher<class pa::ClientActor>::VTable** arg2)","hasUserType":true,"callingConvention":{"name":"win64","architecture":"x86_64","platform":"windows-x86_64","isDefault":true,"isCdecl":true,"isStdcall":true,"isFastcall":true,"isSyscall":false}},"warnings":[]}
+
+########## [16] VIBE_FastTravel_SelectDestination  (bn_function_prototype_get)
+{"prototype":{"function":{"function":"0x140654ed0","arch":"x86_64","start":"0x140654ed0","architecture":"x86_64","platform":"windows-x86_64","name":"VIBE_FastTravel_SelectDestination"},"definition":"uint64_t(int64_t arg1, int32_t arg2, int32_t arg3)","hasUserType":true,"callingConvention":{"name":"win64","architecture":"x86_64","platform":"windows-x86_64","isDefault":true,"isCdecl":true,"isStdcall":true,"isFastcall":true,"isSyscall":false}},"warnings":[]}
+
+########## [17] VIBE_FastTravel_TryAcceptRequest  (bn_function_prototype_get)
+{"prototype":{"function":{"function":"0x1406550b0","arch":"x86_64","start":"0x1406550b0","architecture":"x86_64","platform":"windows-x86_64","name":"VIBE_FastTravel_TryAcceptRequest"},"definition":"bool(void* unusedActor, int32_t sceneId, int32_t nodeIndex, int32_t mercenaryHandle)","hasUserType":true,"callingConvention":{"name":"win64","architecture":"x86_64","platform":"windows-x86_64","isDefault":true,"isCdecl":true,"isStdcall":true,"isFastcall":true,"isSyscall":false}},"warnings":[]}
+
+########## [18] VIBE_GetRecordCopyForActor  (bn_function_prototype_get)
+{"prototype":{"function":{"function":"0x14065fbd0","arch":"x86_64","start":"0x14065fbd0","architecture":"x86_64","platform":"windows-x86_64","name":"VIBE_GetRecordCopyForActor"},"definition":"int64_t*(int64_t* arg1, int64_t* arg2, int64_t arg3)","hasUserType":true,"callingConvention":{"name":"win64","architecture":"x86_64","platform":"windows-x86_64","isDefault":true,"isCdecl":true,"isStdcall":true,"isFastcall":true,"isSyscall":false}},"warnings":[]}
+
+########## [19] VIBE_ScopedActor_GetActiveSlotIndex  (bn_function_prototype_get)
+{"prototype":{"function":{"function":"0x14065fee0","arch":"x86_64","start":"0x14065fee0","architecture":"x86_64","platform":"windows-x86_64","name":"VIBE_ScopedActor_GetActiveSlotIndex"},"definition":"uint64_t(int64_t* arg1, int64_t arg2)","hasUserType":true,"callingConvention":{"name":"win64","architecture":"x86_64","platform":"windows-x86_64","isDefault":true,"isCdecl":true,"isStdcall":true,"isFastcall":true,"isSyscall":false}},"warnings":[]}
+
+########## [20] VIBE_ComputeStatusValueForKey  (bn_function_prototype_get)
+{"prototype":{"function":{"function":"0x14066b500","arch":"x86_64","start":"0x14066b500","architecture":"x86_64","platform":"windows-x86_64","name":"VIBE_ComputeStatusValueForKey"},"definition":"int64_t(int64_t arg1, int32_t arg2, char arg3, char arg4, int16_t arg5)","hasUserType":true,"callingConvention":{"name":"win64","architecture":"x86_64","platform":"windows-x86_64","isDefault":true,"isCdecl":true,"isStdcall":true,"isFastcall":true,"isSyscall":false}},"warnings":[]}
+
+########## [21] VIBE_BuffInfoTable_GetById  (bn_function_prototype_get)
+{"prototype":{"function":{"function":"0x14066f620","arch":"x86_64","start":"0x14066f620","architecture":"x86_64","platform":"windows-x86_64","name":"VIBE_BuffInfoTable_GetById"},"definition":"int64_t(int16_t* arg1)","hasUserType":true,"callingConvention":{"name":"win64","architecture":"x86_64","platform":"windows-x86_64","isDefault":true,"isCdecl":true,"isStdcall":true,"isFastcall":true,"isSyscall":false}},"warnings":[]}
+
+########## [22] VIBE_ScopeAttacher_ClientActor_Init  (bn_function_prototype_get)
+{"prototype":{"function":{"function":"0x1408b4480","arch":"x86_64","start":"0x1408b4480","architecture":"x86_64","platform":"windows-x86_64","name":"VIBE_ScopeAttacher_ClientActor_Init"},"definition":"struct pa::UserOrCharacterValidLoginedScopeAttacher::pa::ScopeAttacher<class pa::ClientActor>::VTable**(void* arg1, struct pa::UserOrCharacterValidLoginedScopeAttacher::pa::ScopeAttacher<class pa::ClientActor>::VTable** arg2)","hasUserType":true,"callingConvention":{"name":"win64","architecture":"x86_64","platform":"windows-x86_64","isDefault":true,"isCdecl":true,"isStdcall":true,"isFastcall":true,"isSyscall":false}},"warnings":[]}
+
+########## [23] VIBE_World_EvalTimeCurve  (bn_function_prototype_get)
+{"prototype":{"function":{"function":"0x140951440","arch":"x86_64","start":"0x140951440","architecture":"x86_64","platform":"windows-x86_64","name":"VIBE_World_EvalTimeCurve"},"definition":"void* const*(int64_t arg1, char arg2, float arg3, int32_t arg4[0x4] @ zmm5)","hasUserType":true,"callingConvention":{"name":"win64","architecture":"x86_64","platform":"windows-x86_64","isDefault":true,"isCdecl":true,"isStdcall":true,"isFastcall":true,"isSyscall":false}},"warnings":[]}
+
+########## [24] VIBE_World_GetTimeScale  (bn_function_prototype_get)
+{"prototype":{"function":{"function":"0x140952080","arch":"x86_64","start":"0x140952080","architecture":"x86_64","platform":"windows-x86_64","name":"VIBE_World_GetTimeScale"},"definition":"int64_t(void* arg1) __location(\"zmm0\")","hasUserType":true,"callingConvention":{"name":"win64","architecture":"x86_64","platform":"windows-x86_64","isDefault":true,"isCdecl":true,"isStdcall":true,"isFastcall":true,"isSyscall":false}},"warnings":[]}
+
+########## [25] VIBE_FastTravel_Execute  (bn_function_prototype_get)
+{"prototype":{"function":{"function":"0x140a9a8d0","arch":"x86_64","start":"0x140a9a8d0","architecture":"x86_64","platform":"windows-x86_64","name":"VIBE_FastTravel_Execute"},"definition":"int64_t(void* arg1, int32_t arg2, int32_t arg3, int32_t arg4, int64_t arg5)","hasUserType":true,"callingConvention":{"name":"win64","architecture":"x86_64","platform":"windows-x86_64","isDefault":true,"isCdecl":true,"isStdcall":true,"isFastcall":true,"isSyscall":false}},"warnings":[]}
+
+########## [26] VIBE_World_FrameUpdate  (bn_function_prototype_get)
+{"prototype":{"function":{"function":"0x140ad23f0","arch":"x86_64","start":"0x140ad23f0","architecture":"x86_64","platform":"windows-x86_64","name":"VIBE_World_FrameUpdate"},"definition":"int64_t(int64_t* arg1)","hasUserType":true,"callingConvention":{"name":"win64","architecture":"x86_64","platform":"windows-x86_64","isDefault":true,"isCdecl":true,"isStdcall":true,"isFastcall":true,"isSyscall":false}},"warnings":[]}
+
+########## [27] VIBE_SumRecordSlotStatValues  (bn_function_prototype_get)
+{"prototype":{"function":{"function":"0x140d243c0","arch":"x86_64","start":"0x140d243c0","architecture":"x86_64","platform":"windows-x86_64","name":"VIBE_SumRecordSlotStatValues"},"definition":"uint64_t(int64_t* arg1, int16_t arg2)","hasUserType":true,"callingConvention":{"name":"win64","architecture":"x86_64","platform":"windows-x86_64","isDefault":true,"isCdecl":true,"isStdcall":true,"isFastcall":true,"isSyscall":false}},"warnings":[]}
+
+########## [28] VIBE_FastTravel_FlushPendingRequest  (bn_function_prototype_get)
+{"prototype":{"function":{"function":"0x140dbc6c0","arch":"x86_64","start":"0x140dbc6c0","architecture":"x86_64","platform":"windows-x86_64","name":"VIBE_FastTravel_FlushPendingRequest"},"definition":"void(int64_t* arg1, int64_t arg2, char arg3)","hasUserType":true,"callingConvention":{"name":"win64","architecture":"x86_64","platform":"windows-x86_64","isDefault":true,"isCdecl":true,"isStdcall":true,"isFastcall":true,"isSyscall":false}},"warnings":[]}
+
+########## [29] VIBE_CompareRecordsBySlotStatValue  (bn_function_prototype_get)
+{"prototype":{"function":{"function":"0x140edf480","arch":"x86_64","start":"0x140edf480","architecture":"x86_64","platform":"windows-x86_64","name":"VIBE_CompareRecordsBySlotStatValue"},"definition":"uint64_t(int64_t* arg1, int64_t* arg2, int64_t* arg3, int128_t arg4 @ zmm6, int128_t arg5 @ zmm7)","hasUserType":true,"callingConvention":{"name":"win64","architecture":"x86_64","platform":"windows-x86_64","isDefault":true,"isCdecl":true,"isStdcall":true,"isFastcall":true,"isSyscall":false}},"warnings":[]}
+
+########## [30] VIBE_UiList_BuildSlotEntries  (bn_function_prototype_get)
+{"prototype":{"function":{"function":"0x140f27200","arch":"x86_64","start":"0x140f27200","architecture":"x86_64","platform":"windows-x86_64","name":"VIBE_UiList_BuildSlotEntries"},"definition":"int64_t(void* arg1, int32_t arg2[0x4] @ zmm6)","hasUserType":true,"callingConvention":{"name":"win64","architecture":"x86_64","platform":"windows-x86_64","isDefault":true,"isCdecl":true,"isStdcall":true,"isFastcall":true,"isSyscall":false}},"warnings":[]}
+
+########## [31] VIBE_UiList_BuildSlotEntriesAndSum  (bn_function_prototype_get)
+{"prototype":{"function":{"function":"0x140f6e050","arch":"x86_64","start":"0x140f6e050","architecture":"x86_64","platform":"windows-x86_64","name":"VIBE_UiList_BuildSlotEntriesAndSum"},"definition":"uint64_t(int64_t* arg1, int32_t arg2[0x4] @ zmm6)","hasUserType":true,"callingConvention":{"name":"win64","architecture":"x86_64","platform":"windows-x86_64","isDefault":true,"isCdecl":true,"isStdcall":true,"isFastcall":true,"isSyscall":false}},"warnings":[]}
+
+########## [32] VIBE_Engine_GetTimeValue  (bn_function_prototype_get)
+{"prototype":{"function":{"function":"0x141416b70","arch":"x86_64","start":"0x141416b70","architecture":"x86_64","platform":"windows-x86_64","name":"VIBE_Engine_GetTimeValue"},"definition":"int64_t()","hasUserType":true,"callingConvention":{"name":"win64","architecture":"x86_64","platform":"windows-x86_64","isDefault":true,"isCdecl":true,"isStdcall":true,"isFastcall":true,"isSyscall":false}},"warnings":[]}
+
+########## [33] VIBE_GamePlayVariableInfoTable_GetById  (bn_function_prototype_get)
+{"prototype":{"function":{"function":"0x141480810","arch":"x86_64","start":"0x141480810","architecture":"x86_64","platform":"windows-x86_64","name":"VIBE_GamePlayVariableInfoTable_GetById"},"definition":"int64_t(int16_t* arg1)","hasUserType":true,"callingConvention":{"name":"win64","architecture":"x86_64","platform":"windows-x86_64","isDefault":true,"isCdecl":true,"isStdcall":true,"isFastcall":true,"isSyscall":false}},"warnings":[]}
+
+########## [34] VIBE_Int16Vector_Append  (bn_function_prototype_get)
+{"prototype":{"function":{"function":"0x1414e07a0","arch":"x86_64","start":"0x1414e07a0","architecture":"x86_64","platform":"windows-x86_64","name":"VIBE_Int16Vector_Append"},"definition":"void(int64_t* arg1, int16_t* arg2, int32_t arg3)","hasUserType":true,"callingConvention":{"name":"win64","architecture":"x86_64","platform":"windows-x86_64","isDefault":true,"isCdecl":true,"isStdcall":true,"isFastcall":true,"isSyscall":false}},"warnings":[]}
+
+########## [35] VIBE_UiList_BuildSlotEntriesFromFactionNode  (bn_function_prototype_get)
+{"prototype":{"function":{"function":"0x14176dec0","arch":"x86_64","start":"0x14176dec0","architecture":"x86_64","platform":"windows-x86_64","name":"VIBE_UiList_BuildSlotEntriesFromFactionNode"},"definition":"int32_t*(void* arg1, int32_t* arg2, int16_t arg3, int32_t* arg4)","hasUserType":true,"callingConvention":{"name":"win64","architecture":"x86_64","platform":"windows-x86_64","isDefault":true,"isCdecl":true,"isStdcall":true,"isFastcall":true,"isSyscall":false}},"warnings":[]}
+
+########## [36] VIBE_GetRecordSlotStatValue  (bn_function_prototype_get)
+{"prototype":{"function":{"function":"0x141776000","arch":"x86_64","start":"0x141776000","architecture":"x86_64","platform":"windows-x86_64","name":"VIBE_GetRecordSlotStatValue"},"definition":"int32_t(void* arg1, int16_t arg2, int32_t arg3[0x4] @ zmm0, int32_t arg4[0x4] @ zmm6) __location(\"zmm0\")[0x4]","hasUserType":true,"callingConvention":{"name":"win64","architecture":"x86_64","platform":"windows-x86_64","isDefault":true,"isCdecl":true,"isStdcall":true,"isFastcall":true,"isSyscall":false}},"warnings":[]}
+
+########## [37] VIBE_UiList_SumRowSkillValues  (bn_function_prototype_get)
+{"prototype":{"function":{"function":"0x1417862f0","arch":"x86_64","start":"0x1417862f0","architecture":"x86_64","platform":"windows-x86_64","name":"VIBE_UiList_SumRowSkillValues"},"definition":"void*(void* arg1, int64_t* arg2, int64_t* arg3)","hasUserType":true,"callingConvention":{"name":"win64","architecture":"x86_64","platform":"windows-x86_64","isDefault":true,"isCdecl":true,"isStdcall":true,"isFastcall":true,"isSyscall":false}},"warnings":[]}
+
+########## [38] VIBE_UiList_ContainsRowStatus  (bn_function_prototype_get)
+{"prototype":{"function":{"function":"0x141786540","arch":"x86_64","start":"0x141786540","architecture":"x86_64","platform":"windows-x86_64","name":"VIBE_UiList_ContainsRowStatus"},"definition":"uint64_t(void* arg1, int64_t* arg2)","hasUserType":true,"callingConvention":{"name":"win64","architecture":"x86_64","platform":"windows-x86_64","isDefault":true,"isCdecl":true,"isStdcall":true,"isFastcall":true,"isSyscall":false}},"warnings":[]}
+
+########## [39] VIBE_CharacterStatus_RebuildSlotValues  (bn_function_prototype_get)
+{"prototype":{"function":{"function":"0x1417aad30","arch":"x86_64","start":"0x1417aad30","architecture":"x86_64","platform":"windows-x86_64","name":"VIBE_CharacterStatus_RebuildSlotValues"},"definition":"int32_t*(int64_t* arg1, int32_t* arg2, int128_t arg3 @ zmm6, int128_t arg4 @ zmm7, int128_t arg5 @ zmm8, int128_t arg6 @ zmm9, int128_t arg7 @ zmm10, int128_t arg8 @ zmm11, int128_t arg9 @ zmm12)","hasUserType":true,"callingConvention":{"name":"win64","architecture":"x86_64","platform":"windows-x86_64","isDefault":true,"isCdecl":true,"isStdcall":true,"isFastcall":true,"isSyscall":false}},"warnings":[]}
+
+########## [40] VIBE_CharacterStatus_ApplyDeltaPrimary  (bn_function_prototype_get)
+{"prototype":{"function":{"function":"0x1417ac0c0","arch":"x86_64","start":"0x1417ac0c0","architecture":"x86_64","platform":"windows-x86_64","name":"VIBE_CharacterStatus_ApplyDeltaPrimary"},"definition":"uint64_t(int64_t* arg1, void* arg2, int64_t arg3, int64_t* arg4, char arg5, char arg6, char arg7, char arg8, char arg9, char arg10)","hasUserType":true,"callingConvention":{"name":"win64","architecture":"x86_64","platform":"windows-x86_64","isDefault":true,"isCdecl":true,"isStdcall":true,"isFastcall":true,"isSyscall":false}},"warnings":[]}
+
+########## [41] VIBE_CharacterStatus_GetAccumulatedValue  (bn_function_prototype_get)
+{"prototype":{"function":{"function":"0x1417ad6f0","arch":"x86_64","start":"0x1417ad6f0","architecture":"x86_64","platform":"windows-x86_64","name":"VIBE_CharacterStatus_GetAccumulatedValue"},"definition":"int64_t*(int64_t* arg1, int64_t* arg2, int16_t arg3, int64_t arg4)","hasUserType":true,"callingConvention":{"name":"win64","architecture":"x86_64","platform":"windows-x86_64","isDefault":true,"isCdecl":true,"isStdcall":true,"isFastcall":true,"isSyscall":false}},"warnings":[]}
+
+########## [42] VIBE_CharacterStatus_GetGroupSlotEntry  (bn_function_prototype_get)
+{"prototype":{"function":{"function":"0x1417add40","arch":"x86_64","start":"0x1417add40","architecture":"x86_64","platform":"windows-x86_64","name":"VIBE_CharacterStatus_GetGroupSlotEntry"},"definition":"int64_t(int64_t* arg1, int16_t arg2)","hasUserType":true,"callingConvention":{"name":"win64","architecture":"x86_64","platform":"windows-x86_64","isDefault":true,"isCdecl":true,"isStdcall":true,"isFastcall":true,"isSyscall":false}},"warnings":[]}
+
+########## [43] VIBE_CharacterStatus_ApplyDelta  (bn_function_prototype_get)
+{"prototype":{"function":{"function":"0x1417ae530","arch":"x86_64","start":"0x1417ae530","architecture":"x86_64","platform":"windows-x86_64","name":"VIBE_CharacterStatus_ApplyDelta"},"definition":"uint64_t(int64_t* arg1, int16_t arg2, int64_t arg3, int64_t arg4, void* arg5)","hasUserType":true,"callingConvention":{"name":"win64","architecture":"x86_64","platform":"windows-x86_64","isDefault":true,"isCdecl":true,"isStdcall":true,"isFastcall":true,"isSyscall":false}},"warnings":[]}
+
+########## [44] VIBE_Time_ComputeDeltaTicks  (bn_function_prototype_get)
+{"prototype":{"function":{"function":"0x1417af690","arch":"x86_64","start":"0x1417af690","architecture":"x86_64","platform":"windows-x86_64","name":"VIBE_Time_ComputeDeltaTicks"},"definition":"int64_t*(int64_t arg1, int64_t* arg2, int64_t* arg3, int64_t* arg4)","hasUserType":true,"callingConvention":{"name":"win64","architecture":"x86_64","platform":"windows-x86_64","isDefault":true,"isCdecl":true,"isStdcall":true,"isFastcall":true,"isSyscall":false}},"warnings":[]}
+
+########## [45] VIBE_CharacterStatus_IsStatusGroupActive  (bn_function_prototype_get)
+{"prototype":{"function":{"function":"0x1417b0650","arch":"x86_64","start":"0x1417b0650","architecture":"x86_64","platform":"windows-x86_64","name":"VIBE_CharacterStatus_IsStatusGroupActive"},"definition":"void*(int64_t* arg1, int16_t arg2)","hasUserType":true,"callingConvention":{"name":"win64","architecture":"x86_64","platform":"windows-x86_64","isDefault":true,"isCdecl":true,"isStdcall":true,"isFastcall":true,"isSyscall":false}},"warnings":[]}
+
+########## [46] VIBE_CharacterStatus_AccumulateSlotValue  (bn_function_prototype_get)
+{"prototype":{"function":{"function":"0x1417b2b30","arch":"x86_64","start":"0x1417b2b30","architecture":"x86_64","platform":"windows-x86_64","name":"VIBE_CharacterStatus_AccumulateSlotValue"},"definition":"int64_t(int64_t* arg1, int16_t arg2, int64_t arg3, int64_t arg4)","hasUserType":true,"callingConvention":{"name":"win64","architecture":"x86_64","platform":"windows-x86_64","isDefault":true,"isCdecl":true,"isStdcall":true,"isFastcall":true,"isSyscall":false}},"warnings":[]}
+
+########## [47] VIBE_CharacterStatus_ComputeSlotEntries  (bn_function_prototype_get)
+{"prototype":{"function":{"function":"0x1417b2ec0","arch":"x86_64","start":"0x1417b2ec0","architecture":"x86_64","platform":"windows-x86_64","name":"VIBE_CharacterStatus_ComputeSlotEntries"},"definition":"void*(int64_t arg1, int64_t* arg2, int128_t arg3 @ zmm6)","hasUserType":true,"callingConvention":{"name":"win64","architecture":"x86_64","platform":"windows-x86_64","isDefault":true,"isCdecl":true,"isStdcall":true,"isFastcall":true,"isSyscall":false}},"warnings":[]}
+
+########## [48] VIBE_IdMap_GetGamePlayVariableValue  (bn_function_prototype_get)
+{"prototype":{"function":{"function":"0x1417e6cb0","arch":"x86_64","start":"0x1417e6cb0","architecture":"x86_64","platform":"windows-x86_64","name":"VIBE_IdMap_GetGamePlayVariableValue"},"definition":"uint64_t(void* arg1, int16_t arg2)","hasUserType":true,"callingConvention":{"name":"win64","architecture":"x86_64","platform":"windows-x86_64","isDefault":true,"isCdecl":true,"isStdcall":true,"isFastcall":true,"isSyscall":false}},"warnings":[]}
+
+########## [49] VIBE_Actor_GetFieldAttacher  (bn_function_prototype_get)
+{"prototype":{"function":{"function":"0x1417fa740","arch":"x86_64","start":"0x1417fa740","architecture":"x86_64","platform":"windows-x86_64","name":"VIBE_Actor_GetFieldAttacher"},"definition":"int64_t(void* arg1, int64_t arg2)","hasUserType":true,"callingConvention":{"name":"win64","architecture":"x86_64","platform":"windows-x86_64","isDefault":true,"isCdecl":true,"isStdcall":true,"isFastcall":true,"isSyscall":false}},"warnings":[]}
+
+########## [50] VIBE_FindTargetActorByFriendship  (bn_function_prototype_get)
+{"prototype":{"function":{"function":"0x141abc170","arch":"x86_64","start":"0x141abc170","architecture":"x86_64","platform":"windows-x86_64","name":"VIBE_FindTargetActorByFriendship"},"definition":"int64_t*(void* registry, int64_t* outId, void* actor, char requireRowFlag)","hasUserType":true,"callingConvention":{"name":"win64","architecture":"x86_64","platform":"windows-x86_64","isDefault":true,"isCdecl":true,"isStdcall":true,"isFastcall":true,"isSyscall":false}},"warnings":[]}
+
+########## [51] VIBE_TargetFilter_GetBitIndex  (bn_function_prototype_get)
+{"prototype":{"function":{"function":"0x141abcdf0","arch":"x86_64","start":"0x141abcdf0","architecture":"x86_64","platform":"windows-x86_64","name":"VIBE_TargetFilter_GetBitIndex"},"definition":"uint64_t(void* arg1, int32_t arg2)","hasUserType":true,"callingConvention":{"name":"win64","architecture":"x86_64","platform":"windows-x86_64","isDefault":true,"isCdecl":true,"isStdcall":true,"isFastcall":true,"isSyscall":false}},"warnings":[]}
+
+########## [52] VIBE_Friendship_GetTierCode  (bn_function_prototype_get)
+{"prototype":{"function":{"function":"0x141ec9f70","arch":"x86_64","start":"0x141ec9f70","architecture":"x86_64","platform":"windows-x86_64","name":"VIBE_Friendship_GetTierCode"},"definition":"int64_t(int64_t arg1)","hasUserType":true,"callingConvention":{"name":"win64","architecture":"x86_64","platform":"windows-x86_64","isDefault":true,"isCdecl":true,"isStdcall":true,"isFastcall":true,"isSyscall":false}},"warnings":[]}
+
+########## [53] VIBE_Trust_FindRecordById_L18  (bn_function_prototype_get)
+{"prototype":{"function":{"function":"0x141eca2d0","arch":"x86_64","start":"0x141eca2d0","architecture":"x86_64","platform":"windows-x86_64","name":"VIBE_Trust_FindRecordById_L18"},"definition":"int64_t(void* arg1, int16_t arg2)","hasUserType":true,"callingConvention":{"name":"win64","architecture":"x86_64","platform":"windows-x86_64","isDefault":true,"isCdecl":true,"isStdcall":true,"isFastcall":true,"isSyscall":false}},"warnings":[]}
+
+########## [54] VIBE_Trust_FindRecordByActor_L38  (bn_function_prototype_get)
+{"prototype":{"function":{"function":"0x141ecb640","arch":"x86_64","start":"0x141ecb640","architecture":"x86_64","platform":"windows-x86_64","name":"VIBE_Trust_FindRecordByActor_L38"},"definition":"int32_t*(void* arg1, void* arg2)","hasUserType":true,"callingConvention":{"name":"win64","architecture":"x86_64","platform":"windows-x86_64","isDefault":true,"isCdecl":true,"isStdcall":true,"isFastcall":true,"isSyscall":false}},"warnings":[]}
+
+########## [55] VIBE_Trust_FindRecordById_L38  (bn_function_prototype_get)
+{"prototype":{"function":{"function":"0x141ecb750","arch":"x86_64","start":"0x141ecb750","architecture":"x86_64","platform":"windows-x86_64","name":"VIBE_Trust_FindRecordById_L38"},"definition":"int64_t(void* arg1, int16_t arg2)","hasUserType":true,"callingConvention":{"name":"win64","architecture":"x86_64","platform":"windows-x86_64","isDefault":true,"isCdecl":true,"isStdcall":true,"isFastcall":true,"isSyscall":false}},"warnings":[]}
+
+########## [56] VIBE_Vector68_Grow  (bn_function_prototype_get)
+{"prototype":{"function":{"function":"0x141eccd40","arch":"x86_64","start":"0x141eccd40","architecture":"x86_64","platform":"windows-x86_64","name":"VIBE_Vector68_Grow"},"definition":"uint64_t(uint64_t* arg1, uint32_t arg2)","hasUserType":true,"callingConvention":{"name":"win64","architecture":"x86_64","platform":"windows-x86_64","isDefault":true,"isCdecl":true,"isStdcall":true,"isFastcall":true,"isSyscall":false}},"warnings":[]}
+
+########## [57] j_VIBE_CharacterStatus_CollectRowEntries  (bn_function_prototype_get)
+{"prototype":{"function":{"function":"0x141f3cb00","arch":"x86_64","start":"0x141f3cb00","architecture":"x86_64","platform":"windows-x86_64","name":"j_VIBE_CharacterStatus_CollectRowEntries"},"definition":"void(void* arg1, int32_t arg2, int32_t arg3, char arg4, int64_t* arg5)","hasUserType":true,"callingConvention":{"name":"win64","architecture":"x86_64","platform":"windows-x86_64","isDefault":true,"isCdecl":true,"isStdcall":true,"isFastcall":true,"isSyscall":false}},"warnings":[]}
+
+########## [58] VIBE_CharacterStatus_GetRowField18  (bn_function_prototype_get)
+{"prototype":{"function":{"function":"0x141f3cf90","arch":"x86_64","start":"0x141f3cf90","architecture":"x86_64","platform":"windows-x86_64","name":"VIBE_CharacterStatus_GetRowField18"},"definition":"int64_t*(void* arg1, int64_t* arg2, int16_t arg3, int32_t arg4)","hasUserType":true,"callingConvention":{"name":"win64","architecture":"x86_64","platform":"windows-x86_64","isDefault":true,"isCdecl":true,"isStdcall":true,"isFastcall":true,"isSyscall":false}},"warnings":[]}
+
+########## [59] VIBE_CharacterStatus_GetRowField10  (bn_function_prototype_get)
+{"prototype":{"function":{"function":"0x141f3d0a0","arch":"x86_64","start":"0x141f3d0a0","architecture":"x86_64","platform":"windows-x86_64","name":"VIBE_CharacterStatus_GetRowField10"},"definition":"int64_t*(void* arg1, int64_t* arg2, int16_t arg3, int32_t arg4)","hasUserType":true,"callingConvention":{"name":"win64","architecture":"x86_64","platform":"windows-x86_64","isDefault":true,"isCdecl":true,"isStdcall":true,"isFastcall":true,"isSyscall":false}},"warnings":[]}
+
+########## [60] VIBE_CharacterStatus_GetRowField00  (bn_function_prototype_get)
+{"prototype":{"function":{"function":"0x141f3d180","arch":"x86_64","start":"0x141f3d180","architecture":"x86_64","platform":"windows-x86_64","name":"VIBE_CharacterStatus_GetRowField00"},"definition":"int64_t*(void* arg1, int64_t* arg2, int16_t arg3, int32_t arg4)","hasUserType":true,"callingConvention":{"name":"win64","architecture":"x86_64","platform":"windows-x86_64","isDefault":true,"isCdecl":true,"isStdcall":true,"isFastcall":true,"isSyscall":false}},"warnings":[]}
+
+########## [61] VIBE_CharacterStatus_GetRowField08  (bn_function_prototype_get)
+{"prototype":{"function":{"function":"0x141f3d290","arch":"x86_64","start":"0x141f3d290","architecture":"x86_64","platform":"windows-x86_64","name":"VIBE_CharacterStatus_GetRowField08"},"definition":"int64_t*(void* arg1, int64_t* arg2, int16_t arg3, int32_t arg4)","hasUserType":true,"callingConvention":{"name":"win64","architecture":"x86_64","platform":"windows-x86_64","isDefault":true,"isCdecl":true,"isStdcall":true,"isFastcall":true,"isSyscall":false}},"warnings":[]}
+
+########## [62] VIBE_CharacterStatus_GetRowField20  (bn_function_prototype_get)
+{"prototype":{"function":{"function":"0x141f3d3a0","arch":"x86_64","start":"0x141f3d3a0","architecture":"x86_64","platform":"windows-x86_64","name":"VIBE_CharacterStatus_GetRowField20"},"definition":"int64_t*(void* arg1, int64_t* arg2, int16_t arg3, int32_t arg4)","hasUserType":true,"callingConvention":{"name":"win64","architecture":"x86_64","platform":"windows-x86_64","isDefault":true,"isCdecl":true,"isStdcall":true,"isFastcall":true,"isSyscall":false}},"warnings":[]}
+
+########## [63] VIBE_CharacterStatus_GetRowFieldByRowTable  (bn_function_prototype_get)
+{"prototype":{"function":{"function":"0x141f3d480","arch":"x86_64","start":"0x141f3d480","architecture":"x86_64","platform":"windows-x86_64","name":"VIBE_CharacterStatus_GetRowFieldByRowTable"},"definition":"uint64_t(void* arg1, int16_t arg2, int32_t arg3)","hasUserType":true,"callingConvention":{"name":"win64","architecture":"x86_64","platform":"windows-x86_64","isDefault":true,"isCdecl":true,"isStdcall":true,"isFastcall":true,"isSyscall":false}},"warnings":[]}
+
+########## [64] VIBE_CharacterStatus_InterpolateTierValue  (bn_function_prototype_get)
+{"prototype":{"function":{"function":"0x141f3e250","arch":"x86_64","start":"0x141f3e250","architecture":"x86_64","platform":"windows-x86_64","name":"VIBE_CharacterStatus_InterpolateTierValue"},"definition":"int64_t(void* arg1, int16_t arg2, int64_t arg3, char arg4, int32_t arg5)","hasUserType":true,"callingConvention":{"name":"win64","architecture":"x86_64","platform":"windows-x86_64","isDefault":true,"isCdecl":true,"isStdcall":true,"isFastcall":true,"isSyscall":false}},"warnings":[]}
+
+########## [65] VIBE_HashMap_LookupValue  (bn_function_prototype_get)
+{"prototype":{"function":{"function":"0x142146110","arch":"x86_64","start":"0x142146110","architecture":"x86_64","platform":"windows-x86_64","name":"VIBE_HashMap_LookupValue"},"definition":"int64_t(void* arg1, int64_t arg2)","hasUserType":true,"callingConvention":{"name":"win64","architecture":"x86_64","platform":"windows-x86_64","isDefault":true,"isCdecl":true,"isStdcall":true,"isFastcall":true,"isSyscall":false}},"warnings":[]}
+
+########## [66] VIBE_GetActiveSlotIndexForRecord  (bn_function_prototype_get)
+{"prototype":{"function":{"function":"0x14214bd30","arch":"x86_64","start":"0x14214bd30","architecture":"x86_64","platform":"windows-x86_64","name":"VIBE_GetActiveSlotIndexForRecord"},"definition":"int32_t(void* ctx, int64_t recordKey)","hasUserType":true,"callingConvention":{"name":"win64","architecture":"x86_64","platform":"windows-x86_64","isDefault":true,"isCdecl":true,"isStdcall":true,"isFastcall":true,"isSyscall":false}},"warnings":[]}
+
+########## [67] VIBE_GetCharacterStatusValueForSlot  (bn_function_prototype_get)
+{"prototype":{"function":{"function":"0x142153350","arch":"x86_64","start":"0x142153350","architecture":"x86_64","platform":"windows-x86_64","name":"VIBE_GetCharacterStatusValueForSlot"},"definition":"int64_t*(void* arg1, int64_t* arg2, int64_t arg3, int16_t arg4)","hasUserType":true,"callingConvention":{"name":"win64","architecture":"x86_64","platform":"windows-x86_64","isDefault":true,"isCdecl":true,"isStdcall":true,"isFastcall":true,"isSyscall":false}},"warnings":[]}
+
+########## [68] VIBE_Record_ConstructDefault  (bn_function_prototype_get)
+{"prototype":{"function":{"function":"0x142155520","arch":"x86_64","start":"0x142155520","architecture":"x86_64","platform":"windows-x86_64","name":"VIBE_Record_ConstructDefault"},"definition":"int32_t*(int64_t* arg1)","hasUserType":true,"callingConvention":{"name":"win64","architecture":"x86_64","platform":"windows-x86_64","isDefault":true,"isCdecl":true,"isStdcall":true,"isFastcall":true,"isSyscall":false}},"warnings":[]}
+
+########## [69] VIBE_Record_AssignCopy  (bn_function_prototype_get)
+{"prototype":{"function":{"function":"0x142156370","arch":"x86_64","start":"0x142156370","architecture":"x86_64","platform":"windows-x86_64","name":"VIBE_Record_AssignCopy"},"definition":"int32_t*(int32_t* arg1, int32_t* arg2)","hasUserType":true,"callingConvention":{"name":"win64","architecture":"x86_64","platform":"windows-x86_64","isDefault":true,"isCdecl":true,"isStdcall":true,"isFastcall":true,"isSyscall":false}},"warnings":[]}
+
+########## [70] VIBE_Record_EvalSlotStat  (bn_function_prototype_get)
+{"prototype":{"function":{"function":"0x142156b40","arch":"x86_64","start":"0x142156b40","architecture":"x86_64","platform":"windows-x86_64","name":"VIBE_Record_EvalSlotStat"},"definition":"void(void* arg1, char arg2, char arg3, int16_t arg4, int32_t arg5, int64_t arg6, int64_t* arg7)","hasUserType":true,"callingConvention":{"name":"win64","architecture":"x86_64","platform":"windows-x86_64","isDefault":true,"isCdecl":true,"isStdcall":true,"isFastcall":true,"isSyscall":false}},"warnings":[]}
+
+########## [71] VIBE_Record_GetSlotStatValue  (bn_function_prototype_get)
+{"prototype":{"function":{"function":"0x142157010","arch":"x86_64","start":"0x142157010","architecture":"x86_64","platform":"windows-x86_64","name":"VIBE_Record_GetSlotStatValue"},"definition":"int32_t(void* arg1, int32_t arg2) __location(\"zmm0\")[0x4]","hasUserType":true,"callingConvention":{"name":"win64","architecture":"x86_64","platform":"windows-x86_64","isDefault":true,"isCdecl":true,"isStdcall":true,"isFastcall":true,"isSyscall":false}},"warnings":[]}
+
+########## [72] VIBE_Actor_TryGetGaugeTime  (bn_function_prototype_get)
+{"prototype":{"function":{"function":"0x1421a1d40","arch":"x86_64","start":"0x1421a1d40","architecture":"x86_64","platform":"windows-x86_64","name":"VIBE_Actor_TryGetGaugeTime"},"definition":"uint64_t(int64_t* arg1, int256_t* arg2)","hasUserType":true,"callingConvention":{"name":"win64","architecture":"x86_64","platform":"windows-x86_64","isDefault":true,"isCdecl":true,"isStdcall":true,"isFastcall":true,"isSyscall":false}},"warnings":[]}
+
+########## [73] VIBE_Record_Entry_SumTierValues  (bn_function_prototype_get)
+{"prototype":{"function":{"function":"0x14240ecc0","arch":"x86_64","start":"0x14240ecc0","architecture":"x86_64","platform":"windows-x86_64","name":"VIBE_Record_Entry_SumTierValues"},"definition":"int64_t(void* arg1, int16_t arg2, char arg3, char arg4)","hasUserType":true,"callingConvention":{"name":"win64","architecture":"x86_64","platform":"windows-x86_64","isDefault":true,"isCdecl":true,"isStdcall":true,"isFastcall":true,"isSyscall":false}},"warnings":[]}
+
+########## [74] VIBE_CharacterStatus_GetTierIndexForStatus  (bn_function_prototype_get)
+{"prototype":{"function":{"function":"0x14240f6a0","arch":"x86_64","start":"0x14240f6a0","architecture":"x86_64","platform":"windows-x86_64","name":"VIBE_CharacterStatus_GetTierIndexForStatus"},"definition":"uint64_t(void* arg1, int16_t arg2)","hasUserType":true,"callingConvention":{"name":"win64","architecture":"x86_64","platform":"windows-x86_64","isDefault":true,"isCdecl":true,"isStdcall":true,"isFastcall":true,"isSyscall":false}},"warnings":[]}
+
+########## [75] VIBE_Record_Entry_GetStatusTierIndex  (bn_function_prototype_get)
+{"prototype":{"function":{"function":"0x142414870","arch":"x86_64","start":"0x142414870","architecture":"x86_64","platform":"windows-x86_64","name":"VIBE_Record_Entry_GetStatusTierIndex"},"definition":"uint64_t(void* arg1, int16_t arg2, int16_t arg3)","hasUserType":true,"callingConvention":{"name":"win64","architecture":"x86_64","platform":"windows-x86_64","isDefault":true,"isCdecl":true,"isStdcall":true,"isFastcall":true,"isSyscall":false}},"warnings":[]}
+
+########## [76] VIBE_Record_Entry_ComputeTierValue  (bn_function_prototype_get)
+{"prototype":{"function":{"function":"0x142414c10","arch":"x86_64","start":"0x142414c10","architecture":"x86_64","platform":"windows-x86_64","name":"VIBE_Record_Entry_ComputeTierValue"},"definition":"int64_t(void* arg1, int16_t arg2, int64_t* arg3)","hasUserType":true,"callingConvention":{"name":"win64","architecture":"x86_64","platform":"windows-x86_64","isDefault":true,"isCdecl":true,"isStdcall":true,"isFastcall":true,"isSyscall":false}},"warnings":[]}
+
+########## [77] VIBE_ApplyRecordToCharacter  (bn_function_prototype_get)
+{"prototype":{"function":{"function":"0x1427990d0","arch":"x86_64","start":"0x1427990d0","architecture":"x86_64","platform":"windows-x86_64","name":"VIBE_ApplyRecordToCharacter"},"definition":"int32_t*(int64_t* arg1, int32_t* arg2, int64_t arg3, void* arg4)","hasUserType":true,"callingConvention":{"name":"win64","architecture":"x86_64","platform":"windows-x86_64","isDefault":true,"isCdecl":true,"isStdcall":true,"isFastcall":true,"isSyscall":false}},"warnings":[]}
+
+########## [78] VIBE_UiList_QuerySlotEntries  (bn_function_prototype_get)
+{"prototype":{"function":{"function":"0x142845130","arch":"x86_64","start":"0x142845130","architecture":"x86_64","platform":"windows-x86_64","name":"VIBE_UiList_QuerySlotEntries"},"definition":"int32_t*(uint64_t arg1, int32_t* arg2, int16_t arg3, int32_t arg4)","hasUserType":true,"callingConvention":{"name":"win64","architecture":"x86_64","platform":"windows-x86_64","isDefault":true,"isCdecl":true,"isStdcall":true,"isFastcall":true,"isSyscall":false}},"warnings":[]}
+
+########## [79] VIBE_UiList_QuerySlotEntriesFiltered  (bn_function_prototype_get)
+{"prototype":{"function":{"function":"0x14284fab0","arch":"x86_64","start":"0x14284fab0","architecture":"x86_64","platform":"windows-x86_64","name":"VIBE_UiList_QuerySlotEntriesFiltered"},"definition":"int32_t*(uint64_t arg1, int32_t* arg2, int16_t arg3, int32_t* arg4, int32_t arg5[0x4] @ zmm6, char arg6, int32_t* arg7, int64_t* arg8)","hasUserType":true,"callingConvention":{"name":"win64","architecture":"x86_64","platform":"windows-x86_64","isDefault":true,"isCdecl":true,"isStdcall":true,"isFastcall":true,"isSyscall":false}},"warnings":[]}
+
+########## [80] VIBE_MercenaryInfoTable_GetRecordById  (bn_function_prototype_get)
+{"prototype":{"function":{"function":"0x148946aa0","arch":"x86_64","start":"0x148946aa0","architecture":"x86_64","platform":"windows-x86_64","name":"VIBE_MercenaryInfoTable_GetRecordById"},"definition":"int64_t(int16_t* arg1)","hasUserType":true,"callingConvention":{"name":"win64","architecture":"x86_64","platform":"windows-x86_64","isDefault":true,"isCdecl":true,"isStdcall":true,"isFastcall":true,"isSyscall":false}},"warnings":[]}
+
+########## [81] VIBE_CharacterStatus_CollectRowEntries  (bn_function_prototype_get)
+{"prototype":{"function":{"function":"0x14e0aa810","arch":"x86_64","start":"0x14e0aa810","architecture":"x86_64","platform":"windows-x86_64","name":"VIBE_CharacterStatus_CollectRowEntries"},"definition":"void(void* arg1, int32_t arg2, int32_t arg3, char arg4, int64_t* arg5)","hasUserType":true,"callingConvention":{"name":"win64","architecture":"x86_64","platform":"windows-x86_64","isDefault":true,"isCdecl":true,"isStdcall":true,"isFastcall":true,"isSyscall":false}},"warnings":[]}
+

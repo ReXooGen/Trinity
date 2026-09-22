@@ -1,0 +1,321 @@
+########## [1] damage apply 0x1417AE100  (bn_function_list)
+---
+tool: "bn_function_list"
+start: "0x1417ae100"
+offset: 0
+limit: 3
+count: 1
+total: 1
+nextOffset: null
+truncated: false
+---
+
+| function | arch | name | platform | lowestAddress | highestAddress | definition | basicBlockCount | exported | autoDiscovered |
+| --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |
+| 0x1417ae100 | x86_64 | Player::damage-apply | windows-x86_64 | 0x1417ae100 | 0x1417ae25a | uint64_t(int64_t* statusCtx, int16_t statusId, int64_t timeNow, int64_t delta, int64_t* sourceInfo, char flagA, char flagB, char flagC, char flagD, char flagE, int64_t* outValue) | 5 | false | false |
+
+
+########## [2] combat timing 0x140873850  (bn_function_list)
+---
+tool: "bn_function_list"
+start: "0x140873850"
+offset: 0
+limit: 3
+count: 1
+total: 1
+nextOffset: null
+truncated: false
+---
+
+| function | arch | name | platform | lowestAddress | highestAddress | definition | basicBlockCount | exported | autoDiscovered |
+| --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |
+| 0x140873850 | x86_64 | Player:: Combat-timing | windows-x86_64 | 0x140873850 | 0x140873b8f | uint64_t(void* arg1, int128_t* arg2, int128_t arg3 @ zmm2, char arg4, bool* arg5) | 46 | false | false |
+
+
+########## [3] inv commit 0x14212E160  (bn_function_list)
+---
+tool: "bn_function_list"
+start: "0x14212e160"
+offset: 0
+limit: 3
+count: 1
+total: 1
+nextOffset: null
+truncated: false
+---
+
+| function | arch | name | platform | lowestAddress | highestAddress | definition | basicBlockCount | exported | autoDiscovered |
+| --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |
+| 0x14212e160 | x86_64 | sub_14212e160 | windows-x86_64 | 0x14212e160 | 0x14212e640 | int32_t*(void* arg1, int32_t* arg2, int64_t* arg3, int16_t arg4, int64_t* arg5, char arg6, char arg7, char arg8) | 46 | false | false |
+
+
+########## [4] inv holder insert 0x142407770  (bn_function_list)
+---
+tool: "bn_function_list"
+start: "0x142407770"
+offset: 0
+limit: 3
+count: 1
+total: 1
+nextOffset: null
+truncated: false
+---
+
+| function | arch | name | platform | lowestAddress | highestAddress | definition | basicBlockCount | exported | autoDiscovered |
+| --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |
+| 0x142407770 | x86_64 | sub_142407770 | windows-x86_64 | 0x142407770 | 0x1424080d5 | int32_t*(int64_t* arg1, int32_t* arg2, int64_t* arg3, int64_t* arg4, int16_t arg5, int64_t* arg6, char arg7, char arg8, char arg9) | 123 | false | false |
+
+
+########## [5] inv get holder 0x14212A0F0  (bn_function_list)
+---
+tool: "bn_function_list"
+start: "0x14212a0f0"
+offset: 0
+limit: 3
+count: 1
+total: 1
+nextOffset: null
+truncated: false
+---
+
+| function | arch | name | platform | lowestAddress | highestAddress | definition | basicBlockCount | exported | autoDiscovered |
+| --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |
+| 0x14212a0f0 | x86_64 | sub_14212a0f0 | windows-x86_64 | 0x14212a0f0 | 0x14212a16e | int64_t(void* arg1) | 9 | false | false |
+
+
+########## [6] inv get item qty 0x1417F8E70  (bn_function_list)
+---
+tool: "bn_function_list"
+start: "0x1417f8e70"
+offset: 0
+limit: 3
+count: 1
+total: 1
+nextOffset: null
+truncated: false
+---
+
+| function | arch | name | platform | lowestAddress | highestAddress | definition | basicBlockCount | exported | autoDiscovered |
+| --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |
+| 0x1417f8e70 | x86_64 | sub_1417f8e70 | windows-x86_64 | 0x1417f8e70 | 0x1417f8f3a | void*(void* arg1, int16_t arg2) | 12 | false | false |
+
+
+########## [7] tr item value ctor 0x142409910  (bn_function_list)
+---
+tool: "bn_function_list"
+start: "0x142409910"
+offset: 0
+limit: 3
+count: 1
+total: 1
+nextOffset: null
+truncated: false
+---
+
+| function | arch | name | platform | lowestAddress | highestAddress | definition | basicBlockCount | exported | autoDiscovered |
+| --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |
+| 0x142409910 | x86_64 | sub_142409910 | windows-x86_64 | 0x142409910 | 0x142409cbb | int64_t*(int64_t* arg1, int16_t* arg2, int64_t arg3) | 36 | false | false |
+
+
+########## [8] inv commit placement 0x14212DDF0  (bn_function_list)
+---
+tool: "bn_function_list"
+start: "0x14212ddf0"
+offset: 0
+limit: 3
+count: 1
+total: 1
+nextOffset: null
+truncated: false
+---
+
+| function | arch | name | platform | lowestAddress | highestAddress | definition | basicBlockCount | exported | autoDiscovered |
+| --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |
+| 0x14212ddf0 | x86_64 | sub_14212ddf0 | windows-x86_64 | 0x14212ddf0 | 0x14212dec4 | int32_t*(void* arg1, int32_t* arg2, int64_t* arg3, int16_t arg4) | 11 | false | false |
+
+
+########## [9] inv free placements 0x1404880C0  (bn_function_list)
+---
+tool: "bn_function_list"
+start: "0x1404880c0"
+offset: 0
+limit: 3
+count: 1
+total: 1
+nextOffset: null
+truncated: false
+---
+
+| function | arch | name | platform | lowestAddress | highestAddress | definition | basicBlockCount | exported | autoDiscovered |
+| --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |
+| 0x1404880c0 | x86_64 | sub_1404880c0 | windows-x86_64 | 0x1404880c0 | 0x140488126 | void*(int64_t* arg1) | 6 | false | false |
+
+
+########## [10] field time tick 0x140A38440  (bn_function_list)
+---
+tool: "bn_function_list"
+start: "0x140a38440"
+offset: 0
+limit: 3
+count: 1
+total: 1
+nextOffset: null
+truncated: false
+---
+
+| function | arch | name | platform | lowestAddress | highestAddress | definition | basicBlockCount | exported | autoDiscovered |
+| --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |
+| 0x140a38440 | x86_64 | sub_140a38440 | windows-x86_64 | 0x140a38440 | 0x140a38784 | int64_t(struct pa::IEvent::VTable* arg1, int128_t arg2 @ zmm1) __location("zmm0") | 23 | false | false |
+
+
+########## [11] weather rain 0x143DC39B0  (bn_function_list)
+---
+tool: "bn_function_list"
+start: "0x143dc39b0"
+offset: 0
+limit: 3
+count: 1
+total: 1
+nextOffset: null
+truncated: false
+---
+
+| function | arch | name | platform | lowestAddress | highestAddress | definition | basicBlockCount | exported | autoDiscovered |
+| --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |
+| 0x143dc39b0 | x86_64 | sub_143dc39b0 | windows-x86_64 | 0x143dc39b0 | 0x143dc3a55 | int32_t(void* arg1) __location("zmm0")[0x4] | 3 | false | true |
+
+
+########## [12] wind pack 0x143DBCCC0  (bn_function_list)
+---
+tool: "bn_function_list"
+start: "0x143dbccc0"
+offset: 0
+limit: 3
+count: 1
+total: 1
+nextOffset: null
+truncated: false
+---
+
+| function | arch | name | platform | lowestAddress | highestAddress | definition | basicBlockCount | exported | autoDiscovered |
+| --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |
+| 0x143dbccc0 | x86_64 | sub_143dbccc0 | windows-x86_64 | 0x143dbccc0 | 0x143dbd353 | int32_t(int64_t* arg1, int32_t* arg2, int32_t arg3[0x4] @ zmm1) __location("zmm0")[0x4] | 1 | false | false |
+
+
+########## [13] world get time scale proto  (bn_function_list)
+---
+tool: "bn_function_list"
+start: "0x140952080"
+offset: 0
+limit: 3
+count: 1
+total: 1
+nextOffset: null
+truncated: false
+---
+
+| function | arch | name | platform | lowestAddress | highestAddress | definition | basicBlockCount | exported | autoDiscovered |
+| --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |
+| 0x140952080 | x86_64 | VIBE_World_GetTimeScale | windows-x86_64 | 0x140952080 | 0x1409520ec | int64_t(void* arg1) __location("zmm0") | 4 | false | false |
+
+
+########## [14] world frame update callers  (bn_function_callers)
+---
+tool: "bn_function_callers"
+function: "0x140ad23f0"
+arch: "x86_64"
+name: "VIBE_World_FrameUpdate"
+platform: "windows-x86_64"
+offset: 0
+limit: 60
+count: 1
+total: 1
+nextOffset: null
+truncated: false
+---
+
+| Callsite | Architecture | Caller Function |
+| --- | --- | --- |
+| 0x14061738d | x86_64 | sub_140617230 (0x140617230 (x86_64)) |
+
+
+########## [15] world get time scale callers  (bn_function_callers)
+---
+tool: "bn_function_callers"
+function: "0x140952080"
+arch: "x86_64"
+name: "VIBE_World_GetTimeScale"
+platform: "windows-x86_64"
+offset: 0
+limit: 60
+count: 3
+total: 3
+nextOffset: null
+truncated: false
+---
+
+| Callsite | Architecture | Caller Function |
+| --- | --- | --- |
+| 0x140ad17e9 | x86_64 | World:: FrameTimerUpdate (0x140ad1370 (x86_64)) |
+| 0x140ad184a | x86_64 | World:: FrameTimerUpdate (0x140ad1370 (x86_64)) |
+| 0x140ad1992 | x86_64 | World:: FrameTimerUpdate (0x140ad1370 (x86_64)) |
+
+
+########## [16] frame timer body container  (bn_function_list)
+---
+tool: "bn_function_list"
+start: "0x140ad1300"
+length: "0xc0"
+offset: 0
+limit: 20
+count: 2
+total: 2
+nextOffset: null
+truncated: false
+---
+
+| function | arch | name | platform | lowestAddress | highestAddress | definition | basicBlockCount | exported | autoDiscovered |
+| --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |
+| 0x140ad1020 | x86_64 | sub_140ad1020 | windows-x86_64 | 0x140ad1020 | 0x140ad1361 | int64_t*(void* arg1) | 14 | false | false |
+| 0x140ad1370 | x86_64 | World:: FrameTimerUpdate | windows-x86_64 | 0x140ad1370 | 0x140ad1a9f | int64_t(void* world) | 85 | false | false |
+
+
+########## [17] field time realm container  (bn_function_list)
+---
+tool: "bn_function_list"
+start: "0x1420e5500"
+length: "0xb0"
+offset: 0
+limit: 20
+count: 3
+total: 3
+nextOffset: null
+truncated: false
+---
+
+| function | arch | name | platform | lowestAddress | highestAddress | definition | basicBlockCount | exported | autoDiscovered |
+| --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |
+| 0x1420e51a0 | x86_64 | sub_1420e51a0 | windows-x86_64 | 0x1420e51a0 | 0x1420e550a | void*(void* arg1, int64_t* arg2) | 45 | false | false |
+| 0x1420e5510 | x86_64 | sub_1420e5510 | windows-x86_64 | 0x1420e5510 | 0x1420e5534 | int64_t(int64_t* arg1) | 1 | false | false |
+| 0x1420e5540 | x86_64 | sub_1420e5540 | windows-x86_64 | 0x1420e5540 | 0x1420e565d | int256_t*(int64_t* arg1, int256_t* arg2) | 11 | false | false |
+
+
+########## [18] tod engine global container  (bn_function_list)
+---
+tool: "bn_function_list"
+start: "0x142ce5300"
+length: "0x60"
+offset: 0
+limit: 20
+count: 1
+total: 1
+nextOffset: null
+truncated: false
+---
+
+| function | arch | name | platform | lowestAddress | highestAddress | definition | basicBlockCount | exported | autoDiscovered |
+| --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |
+| 0x142ce5300 | x86_64 | sub_142ce5300 | windows-x86_64 | 0x142ce5300 | 0x142ce5624 | int64_t(void* arg1) | 35 | false | false |
+
+
+

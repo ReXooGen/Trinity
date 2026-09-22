@@ -1,0 +1,42 @@
+
+================================================================================
+CRIMSON DESERT - TRINITY CRASH REPORT
+================================================================================
+Timestamp   : 2026-09-21 19:58:13
+Mod Version : Trinity v1.3.5.4 (vUpdate by mul0)
+Process ID  : 33396
+Thread ID   : 42356
+
+--- EXCEPTION DETAILS ---
+Exception Code : 0xC0000005 (EXCEPTION_ACCESS_VIOLATION)
+Fault Address  : CrimsonDesert.exe+0x47AF8C (0x000000014047AF8C)
+Target Address : 0x0000066E6C314008
+Access Type    : Write Access Violation (Writing to invalid address)
+
+--- DIAGNOSTIC SUMMARY ---
+Cause    : Game Engine Exception in CrimsonDesert.exe+0x47AF8C while accessing memory 0x0000066E6C314008.
+Analysis : Game engine thread attempted to access unconstructed, freed, or out-of-bounds entity data.
+
+--- CPU REGISTERS (x64) ---
+  RAX: 0x0000000145573DE8  RBX: 0x0000066E6C314008  RCX: 0x0000066E6C314008
+  RDX: 0x0000000000011B00  RSI: 0x0000066E6C314008  RDI: 0x0000000146D04CC0
+  R8 : 0x7FFFFFFFFFFFFFFC  R9 : 0x00000406B05B51D8  R10: 0x00000406B3F863A0
+  R11: 0x00000000000003A0  R12: 0x0000000000000000  R13: 0x0000040686B0B460
+  R14: 0x0000000000000000  R15: 0x0000040572CB0000
+  RSP: 0x00000003B39DBE48  RBP: 0x00000003B39DBFE0  RIP: 0x000000014047AF8C
+  EFLAGS: 0x00010206
+
+--- CALL STACK BACKTRACE ---
+  [00] CrimsonDesert.exe+0x47AF8C
+  [01] CrimsonDesert.exe+0x47AD5E
+  [02] 0x0000066E6C314008
+  [03] CrimsonDesert.exe+0x3D0CD5
+  [04] 0x0000000000000006
+  [05] 0x00000003B39DBF08
+
+--- ACTIVE MOD FEATURES ---
+  GodMode: OFF | InfStamina: ON | InfMountStamina: ON | InfSpirit: ON
+  OneHitKill: OFF | NoBounty: OFF | NoFallDamage: ON
+  Damage Mult Out: 1.0x | Damage Mult In: 1.0x
+================================================================================
+

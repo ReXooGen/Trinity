@@ -1,0 +1,6 @@
+[
+  { "label": "socket resize container", "tool": "bn_function_list", "args": { "start": "0x14488C300", "end": "0x14488C480", "limit": 20 } },
+  { "label": "marker dest global container", "tool": "bn_function_list", "args": { "start": "0x140DEFC00", "end": "0x140DEFD10", "limit": 20 } },
+  { "label": "equip effect refresh legacy 0x140659510", "tool": "bn_function_list", "args": { "address": "0x140659510", "limit": 3 } },
+  { "label": "equip effect refresh legacy other hits", "tool": "bn_aob_check", "args": {} }
+]

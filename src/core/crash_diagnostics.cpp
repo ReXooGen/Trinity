@@ -4,6 +4,8 @@
 #include "build_timestamp.h"
 #include "version.h"
 
+#include <MinHook.h>
+
 #include <bcrypt.h>
 #include <algorithm>
 #include <atomic>
@@ -513,22 +515,38 @@ void WriteCrashBundle(EXCEPTION_POINTERS* exceptionPointers) noexcept
     }
 }
 
+using FnSetUnhandledExceptionFilter = LPTOP_LEVEL_EXCEPTION_FILTER(WINAPI*)(LPTOP_LEVEL_EXCEPTION_FILTER);
+FnSetUnhandledExceptionFilter g_realSetUnhandledExceptionFilter = nullptr;
+std::atomic<LPTOP_LEVEL_EXCEPTION_FILTER> g_downstreamCrashHandler{nullptr};
+
+LONG WINAPI CrashHandler(EXCEPTION_POINTERS* exceptionPointers) noexcept;
+
+LPTOP_LEVEL_EXCEPTION_FILTER WINAPI DetourSetUnhandledExceptionFilter(
+    LPTOP_LEVEL_EXCEPTION_FILTER lpTopLevelExceptionFilter)
+{
+    if (lpTopLevelExceptionFilter != CrashHandler) {
+        g_downstreamCrashHandler.store(lpTopLevelExceptionFilter, std::memory_order_release);
+    }
+    return g_downstreamCrashHandler.load(std::memory_order_acquire);
+}
+
 LONG WINAPI CrashHandler(EXCEPTION_POINTERS* exceptionPointers) noexcept
 {
-    if (InterlockedCompareExchange(&g_crashHandling, 1, 0) != 0) {
-        if (g_previousCrashHandler && g_previousCrashHandler != CrashHandler)
-            return g_previousCrashHandler(exceptionPointers);
-        return EXCEPTION_CONTINUE_SEARCH;
+    if (InterlockedCompareExchange(&g_crashHandling, 1, 0) == 0) {
+        __try {
+            WriteCrashBundle(exceptionPointers);
+        } __except (EXCEPTION_EXECUTE_HANDLER) {
+            OutputDebugStringA("Trinity crash diagnostics failed safely.\n");
+        }
     }
 
-    __try {
-        WriteCrashBundle(exceptionPointers);
-    } __except (EXCEPTION_EXECUTE_HANDLER) {
-        OutputDebugStringA("Trinity crash diagnostics failed safely.\n");
-    }
+    LPTOP_LEVEL_EXCEPTION_FILTER downstream = g_downstreamCrashHandler.load(std::memory_order_acquire);
+    if (downstream && downstream != CrashHandler)
+        return downstream(exceptionPointers);
 
     if (g_previousCrashHandler && g_previousCrashHandler != CrashHandler)
         return g_previousCrashHandler(exceptionPointers);
+
     return EXCEPTION_CONTINUE_SEARCH;
 }
 
@@ -537,7 +555,27 @@ LONG WINAPI CrashHandler(EXCEPTION_POINTERS* exceptionPointers) noexcept
 void InstallUnhandledFilter(HMODULE module) noexcept
 {
     g_module = module;
+    if (g_session.outputDirectory[0] == L'\0') {
+        InitializeSession(module);
+    }
+
     g_previousCrashHandler = SetUnhandledExceptionFilter(CrashHandler);
+
+    MH_Initialize();
+
+    HMODULE kernelBase = GetModuleHandleW(L"kernelbase.dll");
+    void* target = kernelBase ? reinterpret_cast<void*>(GetProcAddress(kernelBase, "SetUnhandledExceptionFilter")) : nullptr;
+    if (!target) {
+        HMODULE kernel32 = GetModuleHandleW(L"kernel32.dll");
+        target = kernel32 ? reinterpret_cast<void*>(GetProcAddress(kernel32, "SetUnhandledExceptionFilter")) : nullptr;
+    }
+
+    if (target && !g_realSetUnhandledExceptionFilter) {
+        if (MH_CreateHook(target, reinterpret_cast<void*>(&DetourSetUnhandledExceptionFilter),
+                          reinterpret_cast<void**>(&g_realSetUnhandledExceptionFilter)) == MH_OK) {
+            MH_EnableHook(target);
+        }
+    }
 }
 
 bool InitializeSession(HMODULE module, const wchar_t* outputDirectoryOverride) noexcept

@@ -42,9 +42,44 @@ target_include_directories(imgui PUBLIC
 FetchContent_Declare(
     minhook
     GIT_REPOSITORY https://github.com/TsudaKageyu/minhook.git
-    GIT_TAG        master
+    # Pin the source because the local patch below targets this reviewed tree.
+    GIT_TAG        8af6b4acae5a9388fd742b56fa79ece89d96f823
 )
 FetchContent_MakeAvailable(minhook)
+
+# Crimson Desert PE 2944 reserves every allocation-granularity slot around
+# gameplay code, so upstream MinHook cannot create its near rel32 relay even
+# when a unique target AOB is present.  Apply the audited absolute-jump
+# fallback reproducibly after FetchContent.  The reverse check makes repeated
+# CMake configuration idempotent and fails closed if upstream source changes.
+find_package(Git REQUIRED)
+set(TRINITY_MINHOOK_PATCH
+    "${CMAKE_CURRENT_SOURCE_DIR}/cmake/patches/minhook-absolute-detour-fallback.patch")
+execute_process(
+    COMMAND "${GIT_EXECUTABLE}" apply --check "${TRINITY_MINHOOK_PATCH}"
+    WORKING_DIRECTORY "${minhook_SOURCE_DIR}"
+    OUTPUT_QUIET
+    ERROR_QUIET
+    RESULT_VARIABLE trinity_minhook_patch_forward)
+if(trinity_minhook_patch_forward EQUAL 0)
+    execute_process(
+        COMMAND "${GIT_EXECUTABLE}" apply "${TRINITY_MINHOOK_PATCH}"
+        WORKING_DIRECTORY "${minhook_SOURCE_DIR}"
+        RESULT_VARIABLE trinity_minhook_patch_apply)
+    if(NOT trinity_minhook_patch_apply EQUAL 0)
+        message(FATAL_ERROR "Unable to apply Trinity's MinHook absolute-detour patch.")
+    endif()
+else()
+    execute_process(
+        COMMAND "${GIT_EXECUTABLE}" apply --reverse --check "${TRINITY_MINHOOK_PATCH}"
+        WORKING_DIRECTORY "${minhook_SOURCE_DIR}"
+        OUTPUT_QUIET
+        ERROR_QUIET
+        RESULT_VARIABLE trinity_minhook_patch_reverse)
+    if(NOT trinity_minhook_patch_reverse EQUAL 0)
+        message(FATAL_ERROR "Fetched MinHook no longer matches Trinity's reviewed absolute-detour patch.")
+    endif()
+endif()
 
 option(ENABLE_EXTENDED_HOOKS "Enable extended engine hooks" OFF)
 
@@ -78,6 +113,7 @@ add_library(Trinity SHARED
     src/game/dye.cpp
     src/game/friendly.cpp
     src/game/friendly_logic.cpp
+    src/game/worker.cpp
     ${EXTENDED_SOURCES}
     src/game/item_names.cpp
     src/game/pak.cpp
@@ -125,6 +161,14 @@ if(BUILD_TESTING)
     target_include_directories(TrinityMapMarkerTests PRIVATE src)
     add_test(NAME TrinityMapMarkerTests COMMAND TrinityMapMarkerTests)
 
+    add_executable(TrinityTravelLogicTests tests/travel_logic_tests.cpp)
+    target_include_directories(TrinityTravelLogicTests PRIVATE src)
+    add_test(NAME TrinityTravelLogicTests COMMAND TrinityTravelLogicTests)
+
+    add_executable(TrinityNoClipLogicTests tests/noclip_logic_tests.cpp)
+    target_include_directories(TrinityNoClipLogicTests PRIVATE src)
+    add_test(NAME TrinityNoClipLogicTests COMMAND TrinityNoClipLogicTests)
+
     add_executable(TrinityReadinessTests
         tests/readiness_tests.cpp
         src/core/readiness.cpp
@@ -142,6 +186,7 @@ if(BUILD_TESTING)
         NAME TrinityCrashReportingContractTests
         COMMAND powershell -NoProfile -ExecutionPolicy Bypass
                 -File "${CMAKE_CURRENT_SOURCE_DIR}/tests/verify_crash_reporting_contract.ps1")
+
     add_executable(TrinityCrashDiagnosticsTests
         tests/crash_diagnostics_tests.cpp
         src/core/crash_diagnostics_logic.cpp
@@ -156,11 +201,18 @@ if(BUILD_TESTING)
     )
     target_include_directories(TrinityCrashDiagnosticsHarness PRIVATE src)
     target_compile_definitions(TrinityCrashDiagnosticsHarness PRIVATE NOMINMAX)
-    target_link_libraries(TrinityCrashDiagnosticsHarness PRIVATE dbghelp bcrypt version)
+    target_link_libraries(TrinityCrashDiagnosticsHarness PRIVATE minhook dbghelp bcrypt version)
 
     add_test(
         NAME TrinityCrashDiagnosticsHarnessTests
         COMMAND powershell -NoProfile -ExecutionPolicy Bypass
                 -File "${CMAKE_CURRENT_SOURCE_DIR}/tests/verify_crash_diagnostics_harness.ps1"
                 -HarnessPath "$<TARGET_FILE:TrinityCrashDiagnosticsHarness>")
+
+    # Regression for PE 2944's fragmented virtual address space: proves that
+    # the reviewed MinHook patch can install and remove a far trampoline when
+    # upstream's complete +/-512 MiB relay window is already reserved.
+    add_executable(TrinityMinHookFallbackTests tests/minhook_fallback_tests.cpp)
+    target_link_libraries(TrinityMinHookFallbackTests PRIVATE minhook)
+    add_test(NAME TrinityMinHookFallbackTests COMMAND TrinityMinHookFallbackTests)
 endif()

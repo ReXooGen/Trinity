@@ -1,0 +1,17 @@
+--- PE 2944 Trinity travel record (Phase 0 dossier; supersedes nothing above) ---
+Trinity feature: Travel / Native Fast Travel - the final post-confirmation dispatcher.
+PE evidence: PE 2944 = CrimsonDesert.exe 1.0.0.2944, SHA-256 6D348BE9D52F81BD35CF7C55E73A5DBFC96CC8268438387C91F7F62C82381FA7. VA 0x1406550B0 / RVA 0x6550B0, .code, 1243 bytes, 43 basic blocks.
+Locator: kSig_TravelDispatcher_PE2944 (44 bytes) -> exactly 1 match in the whole image at this VA (all 12 PE sections scanned under Trinity's section filter).
+ABI proved from this function's own prologue:
+  0x1406550B5  mov dword [rsp+0x10 {sceneId_1}], edx   -> EDX = int32 sceneId
+  0x1406550B9  mov qword [rsp+0x8 {unusedActor_1}], rcx -> RCX is only spilled, never dereferenced here
+  0x1406550D4  mov edi, r9d                            -> R9D = 4th argument (0 = ordinary fast travel)
+  0x1406550D7  mov r15d, r8d                           -> R8D = int32 nodeIndex
+  0x1406550DA/0x1406550?? test r9d,r9d                 -> R9D selects scene path (0) vs mercenary path (!=0)
+  return AL, built from BL (0x140655344 mov bl,1 / 0x140655348 xor bl,bl)
+RCX safety for Trinity (which passes nullptr): the only consumer is VIBE_ScopeAttacher_ClientActor_InitGlobal (0x14064F490), whose whole body is VIBE_ScopeAttacher_ClientActor_Init(*(data_146D691B0+0x30), out) - it never touches its first parameter. Two independent sources: that body, and two callers passing different RCX values with identical behaviour. Passing nullptr is therefore safe on PE 2944.
+Callers (all three): VIBE_FastTravel_FlushPendingRequest (0x140DBC6C0) scene path 0x140DBC7BD with R9D explicitly zeroed by "xor r9d,r9d" at 0x140DBC7BA, and mercenary path 0x140DBC7E8 (sceneId=-1, nodeIndex=-1, R9D=handle); plus sub_140D9E6C0 at 0x140D9E858.
+Key callee: VIBE_FastTravel_Execute (0x140A9A8D0) called at 0x140655566 - it performs the actual travel.
+Trinity: src/game/teleport.cpp Teleport::Install() PE 2944 branch binds g_travelFn to this address via kSig_TravelDispatcher_PE2944 and only uses it when the selection locator also matches; src/game/travel_logic.h PrepareNativeTravelCall() builds the call as context=nullptr, sceneId, nodeIndex, travelMode=0; the call is fired on the game thread and its AL result is logged as accepted/refused.
+Proof: static = prologue disassembly + decompilation + all three callers + unique 44-byte AOB. live = this session performed none; the accepted/refused logging path is the intended runtime check.
+Confidence: confirmed.

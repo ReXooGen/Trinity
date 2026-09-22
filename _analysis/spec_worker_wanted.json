@@ -1,0 +1,9 @@
+[
+  { "label": "GATE_B disasm", "tool": "bn_function_disassembly", "args": { "function": "0x14214b750", "limit": 1000 } },
+  { "label": "GATE_B callers", "tool": "bn_function_callers", "args": { "function": "0x14214b750", "limit": 100 } },
+  { "label": "GATE_B callees", "tool": "bn_function_callees", "args": { "function": "0x14214b750", "limit": 200 } },
+  { "label": "GATE_A callers", "tool": "bn_function_callers", "args": { "function": "0x14214b1b0", "limit": 100 } },
+  { "label": "WANTED disasm", "tool": "bn_function_disassembly", "args": { "function": "0x1425d7660", "limit": 200 } },
+  { "label": "WANTED callers", "tool": "bn_function_callers", "args": { "function": "0x1425d7660", "limit": 100 } },
+  { "label": "WANTED decompile", "tool": "bn_function_decompile", "args": { "function": "0x1425d7660", "limit": 200 } }
+]

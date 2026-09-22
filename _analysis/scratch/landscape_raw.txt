@@ -1,0 +1,348 @@
+########## [1] landscape_Wanted  (bn_function_search)
+---
+tool: "bn_function_search"
+query: "Wanted"
+offset: 0
+limit: 12
+count: 0
+total: 0
+nextOffset: null
+truncated: false
+---
+
+| function | arch | name | platform | lowestAddress | highestAddress | definition | basicBlockCount | exported | autoDiscovered |
+| --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |
+
+
+########## [2] landscape_Crime  (bn_function_search)
+---
+tool: "bn_function_search"
+query: "Crime"
+offset: 0
+limit: 12
+count: 0
+total: 0
+nextOffset: null
+truncated: false
+---
+
+| function | arch | name | platform | lowestAddress | highestAddress | definition | basicBlockCount | exported | autoDiscovered |
+| --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |
+
+
+########## [3] landscape_Bounty  (bn_function_search)
+---
+tool: "bn_function_search"
+query: "Bounty"
+offset: 0
+limit: 12
+count: 0
+total: 0
+nextOffset: null
+truncated: false
+---
+
+| function | arch | name | platform | lowestAddress | highestAddress | definition | basicBlockCount | exported | autoDiscovered |
+| --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |
+
+
+########## [4] landscape_Inventory  (bn_function_search)
+---
+tool: "bn_function_search"
+query: "Inventory"
+offset: 0
+limit: 12
+count: 0
+total: 0
+nextOffset: null
+truncated: false
+---
+
+| function | arch | name | platform | lowestAddress | highestAddress | definition | basicBlockCount | exported | autoDiscovered |
+| --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |
+
+
+########## [5] landscape_Money  (bn_function_search)
+---
+tool: "bn_function_search"
+query: "Money"
+offset: 0
+limit: 12
+count: 12
+total: 333
+nextOffset: 12
+truncated: true
+---
+
+| function | arch | name | platform | lowestAddress | highestAddress | definition | basicBlockCount | exported | autoDiscovered |
+| --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |
+| 0x1408094c0 | x86_64 | std::_Mpunct<char>::pos_format(std::_Mpunct<char>* this) const | windows-x86_64 | 0x1408094c0 | 0x1408094d7 | int64_t(int64_t* arg1, int64_t arg2) | 1 | false | false |
+| 0x140c28f00 | x86_64 | std::money_put<wchar_t,class std::ostreambuf_iterator<wchar_t,struct std::char_traits<wchar_t> > >::_Putmfld(std::money_put<wchar_t,class std::ostreambuf_iterator<wchar_t,struct std::char_traits<wchar_t> > >* this, class std::ostreambuf_iterator<wchar_t,struct std::char_traits<wchar_t> >, bool, class std::ios_base& __ptr64, wchar_t, bool, class std::basic_string<wchar_t,struct std::char_traits<wchar_t>,class std::allocator<wchar_t> >, wchar_t) const | windows-x86_64 | 0x140c28f00 | 0x140c2be83 | int64_t(int64_t arg1, void* arg2) | 245 | false | false |
+| 0x1447be640 | x86_64 | std::money_put<char,class std::ostreambuf_iterator<char,struct std::char_traits<char> > >::`scalar deleting destructor'(std::money_put<char,class std::ostreambuf_iterator<char,struct std::char_traits<char> > >* this, uint32_t) | windows-x86_64 | 0x1447be640 | 0x1447be66a | void***(void*** arg1, char arg2) | 3 | false | false |
+| 0x144824f0c | x86_64 | std::money_get<char,class std::istreambuf_iterator<char,struct std::char_traits<char> > >::_Getmfld(std::money_get<char,class std::istreambuf_iterator<char,struct std::char_traits<char> > >* this, class std::istreambuf_iterator<char,struct std::char_traits<char> >& __ptr64, class std::istreambuf_iterator<char,struct std::char_traits<char> >& __ptr64, bool, class std::ios_base& __ptr64, char (& __ptr64)[0xc]) const | windows-x86_64 | 0x144824f0c | 0x14482522a | char*(int64_t arg1, int64_t* arg2, int64_t* arg3, int32_t* arg4) | 36 | false | false |
+| 0x1448ea1a0 | x86_64 | std::moneypunct<uint16_t,1>::dtor$1::dtor$1::dtor$1(std::moneypunct<uint16_t,1>::dtor$1::dtor$1* this, class moneypunct<uint16_t,1>::_Locinfo const& __ptr64, uint64_t, bool) | windows-x86_64 | 0x1448ea1a0 | 0x1448ea1ab | int64_t(int64_t arg1, void* arg2) | 1 | false | false |
+| 0x1448ea2c6 | x86_64 | std::money_put<char,class std::ostreambuf_iterator<char,struct std::char_traits<char> > >::_Putmfld::dtor$0::dtor$0 | windows-x86_64 | 0x1448ea2c6 | 0x1448ea2d1 | int64_t(int512_t arg1 @ zmm0, void* arg2) | 1 | false | false |
+| 0x1448ea2f4 | x86_64 | std::money_put<char,class std::ostreambuf_iterator<char,struct std::char_traits<char> > >::_Putmfld::dtor$0::dtor$0 | windows-x86_64 | 0x1448ea2f4 | 0x1448ea2ff | int64_t(int512_t arg1 @ zmm0, void* arg2) | 1 | false | false |
+| 0x1448ea322 | x86_64 | std::money_put<char,class std::ostreambuf_iterator<char,struct std::char_traits<char> > >::_Putmfld::dtor$0::dtor$0 | windows-x86_64 | 0x1448ea322 | 0x1448ea32d | int64_t(int512_t arg1 @ zmm0, void* arg2) | 1 | false | false |
+| 0x1448ea59f | x86_64 | std::money_get<uint16_t,class std::istreambuf_iterator<uint16_t,struct std::char_traits<uint16_t> > >::_Getmfld::dtor$0::dtor$0(std::money_get<uint16_t,class std::istreambuf_iterator<uint16_t,struct std::char_traits<uint16_t> > >::_Getmfld::dtor$0* this, class money_get<uint16_t,class std::istreambuf_iterator<uint16_t,struct std::char_traits<uint16_t> > >::istreambuf_iterator<uint16_t,struct std::char_traits<uint16_t> >& __ptr64, class money_get<uint16_t,class std::istreambuf_iterator<uint16_t,struct std::char_traits<uint16_t> > >::istreambuf_iterator<uint16_t,struct std::char_traits<uint16_t> >& __ptr64, bool, class money_get<uint16_t,class std::istreambuf_iterator<uint16_t,struct std::char_traits<uint16_t> > >::ios_base& __ptr64, uint16_t* __ptr64) const | windows-x86_64 | 0x1448ea59f | 0x1448ea5aa | int64_t(int64_t arg1, void* arg2) | 1 | false | false |
+| 0x1448ea62c | x86_64 | std::money_get<uint16_t,class std::istreambuf_iterator<uint16_t,struct std::char_traits<uint16_t> > >::_Getmfld::dtor$4::dtor$4(std::money_get<uint16_t,class std::istreambuf_iterator<uint16_t,struct std::char_traits<uint16_t> > >::_Getmfld::dtor$4* this, class money_get<uint16_t,class std::istreambuf_iterator<uint16_t,struct std::char_traits<uint16_t> > >::istreambuf_iterator<uint16_t,struct std::char_traits<uint16_t> >& __ptr64, class money_get<uint16_t,class std::istreambuf_iterator<uint16_t,struct std::char_traits<uint16_t> > >::istreambuf_iterator<uint16_t,struct std::char_traits<uint16_t> >& __ptr64, bool, class money_get<uint16_t,class std::istreambuf_iterator<uint16_t,struct std::char_traits<uint16_t> > >::ios_base& __ptr64, uint16_t* __ptr64) const | windows-x86_64 | 0x1448ea62c | 0x1448ea637 | int64_t(int64_t arg1, void* arg2) | 1 | false | false |
+| 0x1448ea6e0 | x86_64 | std::money_put<uint16_t,class std::ostreambuf_iterator<uint16_t,struct std::char_traits<uint16_t> > >::_Putmfld::dtor$1::dtor$1(std::money_put<uint16_t,class std::ostreambuf_iterator<uint16_t,struct std::char_traits<uint16_t> > >::_Putmfld::dtor$1* this, class money_put<uint16_t,class std::ostreambuf_iterator<uint16_t,struct std::char_traits<uint16_t> > >::std, bool, class money_put<uint16_t,class std::ostreambuf_iterator<uint16_t,struct std::char_traits<uint16_t> > >::ios_base& __ptr64, uint16_t, bool, class money_put<uint16_t,class std::ostreambuf_iterator<uint16_t,struct std::char_traits<uint16_t> > >::basic_string<uint16_t,struct std::char_traits<uint16_t>,class std::allocator<uint16_t> >, uint16_t) const | windows-x86_64 | 0x1448ea6e0 | 0x1448ea6eb | int64_t(int64_t arg1, void* arg2) | 1 | false | false |
+| 0x1448ea834 | x86_64 | std::money_get<uint16_t,class std::istreambuf_iterator<uint16_t,struct std::char_traits<uint16_t> > >::_Getmfld::dtor$1::dtor$1(std::money_get<uint16_t,class std::istreambuf_iterator<uint16_t,struct std::char_traits<uint16_t> > >::_Getmfld::dtor$1* this, class money_get<uint16_t,class std::istreambuf_iterator<uint16_t,struct std::char_traits<uint16_t> > >::istreambuf_iterator<uint16_t,struct std::char_traits<uint16_t> >& __ptr64, class money_get<uint16_t,class std::istreambuf_iterator<uint16_t,struct std::char_traits<uint16_t> > >::istreambuf_iterator<uint16_t,struct std::char_traits<uint16_t> >& __ptr64, bool, class money_get<uint16_t,class std::istreambuf_iterator<uint16_t,struct std::char_traits<uint16_t> > >::ios_base& __ptr64, uint16_t (& __ptr64)[0xc]) const | windows-x86_64 | 0x1448ea834 | 0x1448ea83f | int64_t(int64_t arg1, void* arg2) | 1 | false | false |
+
+
+########## [6] landscape_Refine  (bn_function_search)
+---
+tool: "bn_function_search"
+query: "Refine"
+offset: 0
+limit: 12
+count: 0
+total: 0
+nextOffset: null
+truncated: false
+---
+
+| function | arch | name | platform | lowestAddress | highestAddress | definition | basicBlockCount | exported | autoDiscovered |
+| --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |
+
+
+########## [7] landscape_Socket  (bn_function_search)
+---
+tool: "bn_function_search"
+query: "Socket"
+offset: 0
+limit: 12
+count: 0
+total: 0
+nextOffset: null
+truncated: false
+---
+
+| function | arch | name | platform | lowestAddress | highestAddress | definition | basicBlockCount | exported | autoDiscovered |
+| --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |
+
+
+########## [8] landscape_Weather  (bn_function_search)
+---
+tool: "bn_function_search"
+query: "Weather"
+offset: 0
+limit: 12
+count: 0
+total: 0
+nextOffset: null
+truncated: false
+---
+
+| function | arch | name | platform | lowestAddress | highestAddress | definition | basicBlockCount | exported | autoDiscovered |
+| --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |
+
+
+########## [9] landscape_Fly  (bn_function_search)
+---
+tool: "bn_function_search"
+query: "Fly"
+offset: 0
+limit: 12
+count: 0
+total: 0
+nextOffset: null
+truncated: false
+---
+
+| function | arch | name | platform | lowestAddress | highestAddress | definition | basicBlockCount | exported | autoDiscovered |
+| --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |
+
+
+########## [10] landscape_SuperJump  (bn_function_search)
+---
+tool: "bn_function_search"
+query: "SuperJump"
+offset: 0
+limit: 12
+count: 0
+total: 0
+nextOffset: null
+truncated: false
+---
+
+| function | arch | name | platform | lowestAddress | highestAddress | definition | basicBlockCount | exported | autoDiscovered |
+| --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |
+
+
+########## [11] landscape_Sprint  (bn_function_search)
+---
+tool: "bn_function_search"
+query: "Sprint"
+offset: 0
+limit: 12
+count: 1
+total: 1
+nextOffset: null
+truncated: false
+---
+
+| function | arch | name | platform | lowestAddress | highestAddress | definition | basicBlockCount | exported | autoDiscovered |
+| --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |
+| 0x144898e3c | x86_64 | __stdio_common_vsprintf | windows-x86_64 | 0x144898e3c | 0x144898e41 | int32_t(uint64_t _Options, char* _Buffer, uint64_t _BufferCount, char const* _Format, _locale_t _Locale, va_list _ArgList) | 1 | false | true |
+
+
+########## [12] landscape_Equip  (bn_function_search)
+---
+tool: "bn_function_search"
+query: "Equip"
+offset: 0
+limit: 12
+count: 0
+total: 0
+nextOffset: null
+truncated: false
+---
+
+| function | arch | name | platform | lowestAddress | highestAddress | definition | basicBlockCount | exported | autoDiscovered |
+| --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |
+
+
+########## [13] landscape_Pet_  (bn_function_search)
+---
+tool: "bn_function_search"
+query: "Pet_"
+offset: 0
+limit: 12
+count: 2
+total: 2
+nextOffset: null
+truncated: false
+---
+
+| function | arch | name | platform | lowestAddress | highestAddress | definition | basicBlockCount | exported | autoDiscovered |
+| --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |
+| 0x141ecb2a0 | x86_64 | j_Pet_and_mount::TrustMultiplier | windows-x86_64 | 0x141ecb2a0 | 0x141ecb2a4 | uint64_t(void* container, int32_t* record) | 1 | false | true |
+| 0x14df6da50 | x86_64 | Pet_and_mount::TrustMultiplier | windows-x86_64 | 0x14df6da50 | 0x14df6dca7 | uint64_t(void* container, int32_t* record) | 25 | false | false |
+
+
+########## [14] landscape_Mount  (bn_function_search)
+---
+tool: "bn_function_search"
+query: "Mount"
+offset: 0
+limit: 12
+count: 2
+total: 2
+nextOffset: null
+truncated: false
+---
+
+| function | arch | name | platform | lowestAddress | highestAddress | definition | basicBlockCount | exported | autoDiscovered |
+| --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |
+| 0x141ecb2a0 | x86_64 | j_Pet_and_mount::TrustMultiplier | windows-x86_64 | 0x141ecb2a0 | 0x141ecb2a4 | uint64_t(void* container, int32_t* record) | 1 | false | true |
+| 0x14df6da50 | x86_64 | Pet_and_mount::TrustMultiplier | windows-x86_64 | 0x14df6da50 | 0x14df6dca7 | uint64_t(void* container, int32_t* record) | 25 | false | false |
+
+
+########## [15] landscape_Friendship  (bn_function_search)
+---
+tool: "bn_function_search"
+query: "Friendship"
+offset: 0
+limit: 12
+count: 2
+total: 2
+nextOffset: null
+truncated: false
+---
+
+| function | arch | name | platform | lowestAddress | highestAddress | definition | basicBlockCount | exported | autoDiscovered |
+| --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |
+| 0x141abc170 | x86_64 | VIBE_FindTargetActorByFriendship | windows-x86_64 | 0x141abc170 | 0x141abc508 | int64_t*(void* registry, int64_t* outId, void* actor, char requireRowFlag) | 53 | false | false |
+| 0x141ec9f70 | x86_64 | VIBE_Friendship_GetTierCode | windows-x86_64 | 0x141ec9f70 | 0x141ec9ffd | int64_t(int64_t arg1) | 14 | false | true |
+
+
+########## [16] landscape_Worker  (bn_function_search)
+---
+tool: "bn_function_search"
+query: "Worker"
+offset: 0
+limit: 12
+count: 1
+total: 1
+nextOffset: null
+truncated: false
+---
+
+| function | arch | name | platform | lowestAddress | highestAddress | definition | basicBlockCount | exported | autoDiscovered |
+| --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |
+| 0x1445a94c0 | x86_64 | AK::SoundEngine::SetJobMgrMaxActiveWorkers(uint32_t, uint32_t) | windows-x86_64 | 0x1445a94c0 | 0x1445a9502 | enum AKRESULT(uint32_t arg1, uint32_t arg2) | 7 | true | false |
+
+
+########## [17] landscape_Skill  (bn_function_search)
+---
+tool: "bn_function_search"
+query: "Skill"
+offset: 0
+limit: 12
+count: 2
+total: 2
+nextOffset: null
+truncated: false
+---
+
+| function | arch | name | platform | lowestAddress | highestAddress | definition | basicBlockCount | exported | autoDiscovered |
+| --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |
+| 0x1403880a0 | x86_64 | VIBE_SkillTable_GetById | windows-x86_64 | 0x1403880a0 | 0x1403881c7 | int64_t(int16_t* arg1) | 13 | false | false |
+| 0x1417862f0 | x86_64 | VIBE_UiList_SumRowSkillValues | windows-x86_64 | 0x1417862f0 | 0x141786534 | void*(void* arg1, int64_t* arg2, int64_t* arg3) | 29 | false | false |
+
+
+########## [18] landscape_Level  (bn_function_search)
+---
+tool: "bn_function_search"
+query: "Level"
+offset: 0
+limit: 12
+count: 5
+total: 5
+nextOffset: null
+truncated: false
+---
+
+| function | arch | name | platform | lowestAddress | highestAddress | definition | basicBlockCount | exported | autoDiscovered |
+| --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |
+| 0x1404a2630 | x86_64 | VIBE_LevelGimmickSceneObjectInfoTable_GetById | windows-x86_64 | 0x1404a2630 | 0x1404a2755 | int64_t(int32_t* arg1) | 13 | false | false |
+| 0x1445a37b0 | x86_64 | AK::Monitor::PostCodeVarArg(enum AK::Monitor::ErrorCode, enum AK::Monitor::ErrorLevel, struct AK::Monitor::MsgContext) | windows-x86_64 | 0x1445a37b0 | 0x1445a37ba | enum AKRESULT(enum AK::Monitor::ErrorCode arg1, enum AK::Monitor::ErrorLevel arg2, struct AK::Monitor::MsgContext arg3) __pure | 1 | true | false |
+| 0x1445acf10 | x86_64 | AK::SoundEngine::Query::GetGameObjectDryLevelValue(uint64_t, uint64_t, float& __ptr64) | windows-x86_64 | 0x1445acf10 | 0x1445acfbb | enum AKRESULT(uint64_t arg1, uint64_t arg2, float& arg3) | 8 | true | false |
+| 0x14469bb50 | x86_64 | j_AK::StreamMgr::CreateDevice(struct AkDeviceSettings const& __ptr64, class AK::StreamMgr::IAkLowLevelIOHook* __ptr64, uint32_t& __ptr64) | windows-x86_64 | 0x14469bb50 | 0x14469bb54 | enum AKRESULT(struct AkDeviceSettings const& arg1, class AK::StreamMgr::IAkLowLevelIOHook* arg2, uint32_t& arg3) | 1 | false | true |
+| 0x156d9f030 | x86_64 | AK::StreamMgr::CreateDevice(struct AkDeviceSettings const& __ptr64, class AK::StreamMgr::IAkLowLevelIOHook* __ptr64, uint32_t& __ptr64) | windows-x86_64 | 0x156d9f030 | 0x156d9f1a0 | enum AKRESULT(struct AkDeviceSettings const& arg1, class AK::StreamMgr::IAkLowLevelIOHook* arg2, uint32_t& arg3) | 22 | true | false |
+
+
+########## [19] landscape_TimeScale  (bn_function_search)
+---
+tool: "bn_function_search"
+query: "TimeScale"
+offset: 0
+limit: 12
+count: 1
+total: 1
+nextOffset: null
+truncated: false
+---
+
+| function | arch | name | platform | lowestAddress | highestAddress | definition | basicBlockCount | exported | autoDiscovered |
+| --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |
+| 0x140952080 | x86_64 | VIBE_World_GetTimeScale | windows-x86_64 | 0x140952080 | 0x1409520ec | int64_t(void* arg1) __location("zmm0") | 4 | false | false |
+
+
+########## [20] landscape_GameSpeed  (bn_function_search)
+---
+tool: "bn_function_search"
+query: "GameSpeed"
+offset: 0
+limit: 12
+count: 0
+total: 0
+nextOffset: null
+truncated: false
+---
+
+| function | arch | name | platform | lowestAddress | highestAddress | definition | basicBlockCount | exported | autoDiscovered |
+| --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |
+
+

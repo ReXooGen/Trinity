@@ -8,8 +8,10 @@
 #include "build_timestamp.h"
 #include "localization.h"
 #include "version_detect.h"
+#include "version_mapping.h"
 #include "readiness.h"
 #include "crash_diagnostics.h"
+#include "startup_notice.h"
 #include "../hooks/dx12_hook.h"
 #include "../mem/scanner.h"
 #include "../game/offsets.h"
@@ -19,6 +21,7 @@
 #include "../game/world.h"
 #include "../game/equipment.h"
 #include "../game/friendly.h"
+#include "../game/worker.h"
 #if defined(TRINITY_EXTENDED)
 #include "../game/dlc.h"
 #endif
@@ -100,7 +103,8 @@ namespace trinity
         // feature hooks install, so restored toggles apply from frame one.
         Settings::Load();
 
-        const bool mhOk = (MH_Initialize() == MH_OK);
+        const MH_STATUS mhStatus = MH_Initialize();
+        const bool mhOk = (mhStatus == MH_OK || mhStatus == MH_ERROR_ALREADY_INITIALIZED);
         core::CrashDiagnostics::Record(
             core::diag::BreadcrumbKind::Operation,
             "minhook.initialize",
@@ -177,6 +181,11 @@ namespace trinity
         core::CrashDiagnostics::Record(
             core::diag::BreadcrumbKind::Operation,
             "friendly.initialize", 0, 0, 0, friendlyOk);
+
+        const bool workerOk = game::Worker::Install();
+        core::CrashDiagnostics::Record(
+            core::diag::BreadcrumbKind::Operation,
+            "worker.initialize", 0, 0, 0, workerOk);
 #if defined(TRINITY_EXTENDED)
         const bool dlcOk = game::DLC::Install();
         core::CrashDiagnostics::Record(
@@ -192,8 +201,54 @@ namespace trinity
             0,
             0,
             true);
-        LOG_OK("Ready - INSERT (or LB + DOWN on controller) toggles the menu in-game.");
-        LOG_OK("If something isn't working or you'd like to leave a comment, visit my blog: https://mul0.com/trainer/crimson-desert-trinity-mod-menu/");
+        const auto& gv = core::GetGameVersion();
+        const char* modernTU = core::ModernTitleUpdateForRevision(gv.revision);
+        char verBuf[128];
+        if (modernTU)
+            snprintf(verBuf, sizeof(verBuf), "Crimson Desert %s (PE %u)", modernTU, gv.revision);
+        else
+            snprintf(verBuf, sizeof(verBuf), "Crimson Desert (PE %u)", gv.revision);
+
+        char buildDate[16]{};
+        strncpy_s(buildDate, TRINITY_BUILD_TIME, 11);
+
+        const int screenW = GetSystemMetrics(SM_CXSCREEN);
+        const int screenH = GetSystemMetrics(SM_CYSCREEN);
+
+        LOG_OK("========================================================================");
+        LOG_OK("  TRINITY MOD MENU v%u.%u.%u.%u | %s",
+               TRINITY_VERSION_MAJOR, TRINITY_VERSION_MINOR, TRINITY_VERSION_PATCH, TRINITY_VERSION_BUILD,
+               verBuf);
+        LOG_OK("  Developed by mul0 | Build: %s", buildDate);
+        LOG_OK("========================================================================");
+        if (dx12Ok)
+        {
+            if (screenW > 0 && screenH > 0)
+                LOG_OK(" [*] DX12 Hook .......... [OK] Frame Generation / %dx%d", screenW, screenH);
+            else
+                LOG_OK(" [*] DX12 Hook .......... [OK] Frame Generation / Active");
+        }
+        else
+        {
+            LOG_ERR(" [*] DX12 Hook .......... [FAIL] Hook Failed");
+        }
+
+        LOG_OK(" [*] Subsystems Status:");
+        LOG_OK("     \xe2\x94\x9c\xe2\x94\x80\xe2\x94\x80 Player & Combat ..... %s",
+               playerOk ? "[OK] Active (Damage, Timing, GodMode)" : "[FAIL] Signature Mismatch");
+        LOG_OK("     \xe2\x94\x9c\xe2\x94\x80\xe2\x94\x80 Teleport & Markers .. %s",
+               teleportOk ? "[OK] Active (Fast Travel, Free Flight)" : "[FAIL] Signature Mismatch");
+        LOG_OK("     \xe2\x94\x9c\xe2\x94\x80\xe2\x94\x80 Inventory Engine .... %s",
+               inventoryOk ? "[OK] Active (Add Item, Slot Expansion)" : "[FAIL] Signature Mismatch");
+        LOG_OK("     \xe2\x94\x9c\xe2\x94\x80\xe2\x94\x80 Equipment Engine .... %s",
+               equipOk ? "[OK] Active (Profiles loaded)" : "[FAIL] Signature Mismatch");
+        LOG_OK("     \xe2\x94\x94\xe2\x94\x80\xe2\x94\x80 Friendly & Mounts ... %s",
+               friendlyOk ? "[OK] Active (Trust Multipliers)" : "[FAIL] Signature Mismatch");
+        LOG_OK(" [*] Ready: Press INSERT or LB + DOWN in-game to toggle menu.");
+        for (const char* line : core::StartupNoticeLines())
+        {
+            LOG_OK("%s", line);
+        }
     }
 
     void Mod::Shutdown()
@@ -215,6 +270,9 @@ namespace trinity
         game::DLC::Remove();
         core::CrashDiagnostics::Record(core::diag::BreadcrumbKind::Operation, "dlc.shutdown", 0, 0, 0, true);
 #endif
+        game::Worker::Remove();
+        core::CrashDiagnostics::Record(core::diag::BreadcrumbKind::Operation, "worker.shutdown", 0, 0, 0, true);
+
         game::Friendly::Remove();
         core::CrashDiagnostics::Record(core::diag::BreadcrumbKind::Operation, "friendly.shutdown", 0, 0, 0, true);
 
@@ -246,4 +304,3 @@ namespace trinity
             "mod.shutdown.complete", 0, 0, 0, true);
     }
 }
-

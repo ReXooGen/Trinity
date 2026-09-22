@@ -1,0 +1,7 @@
+[
+  { "label": "LOCO disasm 0-1000", "tool": "bn_function_disassembly", "args": { "function": "0x14369ff60", "offset": 0, "limit": 1000 } },
+  { "label": "LOCO disasm 1000-2000", "tool": "bn_function_disassembly", "args": { "function": "0x14369ff60", "offset": 1000, "limit": 1000 } },
+  { "label": "LOCO callers", "tool": "bn_function_callers", "args": { "function": "0x14369ff60", "limit": 200 } },
+  { "label": "LOCO callees", "tool": "bn_function_callees", "args": { "function": "0x14369ff60", "limit": 400 } },
+  { "label": "LOCO prototype", "tool": "bn_function_prototype_get", "args": { "function": "0x14369ff60" } }
+]

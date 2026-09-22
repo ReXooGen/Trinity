@@ -108,6 +108,7 @@ namespace trinity
             else if (!strcmp(key, "invSlotSizeVal"))      vals.invSlotSizeVal      = atoi(val);
             else if (!strcmp(key, "invStackSize"))        vals.invStackSize        = atoi(val) != 0;
             else if (!strcmp(key, "invStackSizeVal"))     vals.invStackSizeVal     = atoi(val);
+            else if (!strcmp(key, "workerMaxLevelAndSkills")) vals.workerMaxLevelAndSkills = atoi(val) != 0;
             else if (!strcmp(key, "forceClearSky"))       vals.forceClearSky       = atoi(val) != 0;
             else if (!strcmp(key, "rainIntensity"))       vals.rainIntensity       = strtof(val, nullptr);
             else if (!strcmp(key, "snowIntensity"))       vals.snowIntensity       = strtof(val, nullptr);
@@ -258,6 +259,7 @@ namespace trinity
         st.invSlotSizeVal  = ClampI(vals.invSlotSizeVal, 1, 700); // 240 vanilla / 700 modded cap
         st.invStackSize    = vals.invStackSize;
         st.invStackSizeVal = ClampI(vals.invStackSizeVal, 1, 999999999);
+        st.workerMaxLevelAndSkills = vals.workerMaxLevelAndSkills;
         st.showFps       = vals.showFps;
         st.showConsole   = vals.showConsole;
         st.menuScale     = ClampF(vals.menuScale, 0.5f, 2.5f);
@@ -338,6 +340,7 @@ namespace trinity
                 "invSlotSizeVal=%d\n"
                 "invStackSize=%d\n"
                 "invStackSizeVal=%d\n"
+                "workerMaxLevelAndSkills=%d\n"
                 "forceClearSky=%d\n"
                 "rainIntensity=%.3f\n"
                 "snowIntensity=%.3f\n"
@@ -401,6 +404,7 @@ namespace trinity
                 st.invSlotSizeVal,
                 st.invStackSize ? 1 : 0,
                 st.invStackSizeVal,
+                st.workerMaxLevelAndSkills ? 1 : 0,
                 st.forceClearSky ? 1 : 0,
                 st.rainIntensity,
                 st.snowIntensity,
@@ -485,6 +489,7 @@ namespace trinity
         st.invSlotSizeVal       = def.invSlotSizeVal;
         st.invStackSize         = def.invStackSize;
         st.invStackSizeVal      = def.invStackSizeVal;
+        st.workerMaxLevelAndSkills = def.workerMaxLevelAndSkills;
         st.showFps              = def.showFps;
     }
 

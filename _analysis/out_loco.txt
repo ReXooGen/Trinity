@@ -1,0 +1,1108 @@
+########## [1] LOCO disasm 0-1000  (bn_function_disassembly)
+---
+tool: "bn_function_disassembly"
+function: "0x14369ff60"
+arch: "x86_64"
+name: "sub_14369ff60"
+platform: "windows-x86_64"
+offset: 0
+limit: 1000
+count: 994
+total: 994
+nextOffset: null
+truncated: false
+---
+
+````asm
+  int64_t* sub_14369ff60(void* arg1, int32_t arg2[0x4] @ zmm1, int32_t (* arg3)[0x4], char arg4, int32_t arg5[0x4] @ zmm0, int32_t arg6[0x4] @ zmm7, int32_t arg7[0x4] @ zmm11, int128_t arg8 @ zmm12, int128_t arg9 @ zmm13, int128_t arg10 @ zmm14, int128_t arg11 @ zmm15, int32_t* arg12, char arg13, char arg14)
+
+0x14369ff60  mov     rax, rsp
+0x14369ff63  mov     qword [rax+0x10], rbx
+0x14369ff67  mov     byte [rax+0x20], r9b
+0x14369ff6b  mov     qword [rax+0x8], rcx
+0x14369ff6f  push    rbp
+0x14369ff70  push    rsi
+0x14369ff71  push    rdi
+0x14369ff72  push    r12
+0x14369ff74  push    r13
+0x14369ff76  push    r14
+0x14369ff78  push    r15
+0x14369ff7a  lea     rbp, [rax-0x788]
+0x14369ff81  sub     rsp, 0x850
+0x14369ff88  vmovaps xmmword [rax-0x48], xmm6
+0x14369ff8d  vmovaps xmmword [rax-0x58], xmm7
+0x14369ff92  vmovaps xmmword [rax-0x68], xmm8
+0x14369ff97  vmovaps xmmword [rax-0x78], xmm9
+0x14369ff9c  vmovaps xmmword [rax-0x88], xmm10
+0x14369ffa4  vmovaps xmmword [rax-0x98], xmm11
+0x14369ffac  vmovaps xmmword [rax-0xa8], xmm12
+0x14369ffb4  vmovaps xmmword [rax-0xb8], xmm13
+0x14369ffbc  vmovaps xmmword [rax-0xc8], xmm14
+0x14369ffc4  vmovaps xmmword [rax-0xd8], xmm15
+0x14369ffcc  mov     rdi, r8
+0x14369ffcf  vmovaps xmm6, xmm1
+0x14369ffd3  mov     r13, rcx
+0x14369ffd6  lea     rbx, [rcx+0x2c0]
+0x14369ffdd  mov     rax, qword [rbx]
+0x14369ffe0  vxorps  xmm0, xmm0, xmm0
+0x14369ffe4  vinsertps xmm0, xmm0, dword [rel data_146d4e238], 0x10
+0x14369ffee  vmulps  xmm2, xmm0, xmmword [rax+0x180]
+0x14369fff6  vmovups xmm0, xmmword [rax+0x90]
+0x14369fffe  vsubps  xmm3, xmm0, xmm2
+0x1436a0002  vpermilps xmm9, xmm3, 0xaa
+0x1436a0008  vpermilps xmm10, xmm3, 0x55
+0x1436a000e  vpermilps xmm8, xmm3, 0x0
+0x1436a0014  mov     rax, qword [rax+0x28]
+0x1436a0018  movzx   eax, byte [rax+0x18]
+0x1436a001c  mov     byte [rbp+0x7a0], al
+0x1436a0022  vmovss  xmm0, dword [r8]
+0x1436a0027  call    _fdclass
+0x1436a002c  test    ax, ax
+0x1436a002f  jg      0x1436a0f84
+
+0x1436a0035  vmovss  xmm0, dword [rdi+0x4]
+0x1436a003a  call    _fdclass
+0x1436a003f  test    ax, ax
+0x1436a0042  jg      0x1436a0f84
+
+0x1436a0048  vmovss  xmm0, dword [rdi+0x8]
+0x1436a004d  call    _fdclass
+0x1436a0052  test    ax, ax
+0x1436a0055  jg      0x1436a0f84
+
+0x1436a005b  vmovaps xmm2, xmm6
+0x1436a005f  vxorps  xmm7, xmm7, xmm7
+0x1436a0063  vxorps  xmm1, xmm1, xmm1
+0x1436a0067  lea     rcx, [rsp+0x70]
+0x1436a006c  call    sub_1442847d0
+0x1436a0071  vmovss  xmm0, dword [rsp+0x70]
+0x1436a0077  vmulss  xmm3, xmm0, dword [rdi+0x8]
+0x1436a007c  vmulss  xmm2, xmm0, dword [rdi+0x4]
+0x1436a0081  vmulss  xmm1, xmm0, dword [rdi]
+0x1436a0085  mov     r12, qword [rbp+0x7b0]
+0x1436a008c  vmovss  dword [r12], xmm1
+0x1436a0092  vmovss  dword [r12+0x4], xmm2
+0x1436a0099  vmovss  dword [r12+0x8], xmm3
+0x1436a00a0  vxorps  xmm11, xmm11, xmm11
+0x1436a00a5  vinsertps xmm11, xmm11, xmm1, 0x0
+0x1436a00ab  vinsertps xmm11, xmm11, xmm2, 0x10
+0x1436a00b1  vinsertps xmm11, xmm11, xmm3, 0x20
+0x1436a00b7  vmovsd  xmm0, qword [rdi]
+0x1436a00bb  vinsertps xmm0, xmm0, dword [rdi+0x8], 0x20
+0x1436a00c2  mov     rax, qword [rbx]
+0x1436a00c5  vmovups xmmword [rax+0xc0], xmm0
+0x1436a00cd  mov     rcx, qword [r13+0x4c8]
+0x1436a00d4  mov     rax, qword [rcx]
+0x1436a00d7  call    qword [rax+0x10]
+0x1436a00da  mov     rcx, qword [r13+0x4d0]
+0x1436a00e1  mov     rax, qword [rcx]
+0x1436a00e4  call    qword [rax+0x10]
+0x1436a00e7  xor     r14d, r14d
+0x1436a00ea  mov     dword [rbp+0x7a8], r14d
+0x1436a00f1  mov     dword [rbp+0x7a8], r14d
+0x1436a00f8  mov     byte [rbp+0x7a8], r14b
+0x1436a00ff  mov     byte [rbp+0x7a8], r14b
+0x1436a0106  mov     byte [rbp+0x7a8], r14b
+0x1436a010d  mov     byte [rbp+0x7a8], 0x20
+0x1436a0114  mov     byte [rbp+0x7a8], 0x20
+0x1436a011b  mov     rax, qword [gs:0x58]
+0x1436a0124  mov     rdx, qword [rax]
+0x1436a0127  mov     eax, 0xfa380
+0x1436a012c  mov     ecx, dword [rax+rdx]
+0x1436a012f  mov     esi, 0xfa390
+0x1436a0134  add     rsi, rdx
+0x1436a0137  test    cl, 0x1
+0x1436a013a  jne     0x1436a015e
+
+0x1436a013c  or      ecx, 0x1
+0x1436a013f  mov     dword [rax+rdx], ecx
+0x1436a0142  mov     rcx, rsi
+0x1436a0145  call    j_sub_152948740
+0x1436a014a  lea     rcx, [rel sub_14515bc60]
+0x1436a0151  call    sub_1448958e8
+0x1436a0156  nop
+0x1436a0157  lea     rbx, [r13+0x2c0]
+
+0x1436a015e  lea     rdx, [rbp+0x7a8]
+0x1436a0165  mov     rcx, rsi
+0x1436a0168  call    sub_14322d2e0
+0x1436a016d  movzx   ecx, byte [rbp+0x7a8]
+0x1436a0174  and     cl, 0xfe
+0x1436a0177  or      cl, al
+0x1436a0179  mov     byte [rbp+0x7a8], cl
+0x1436a017f  cmp     dword [r13+0x1b8], 0x20
+0x1436a0187  jne     0x1436a0196
+
+0x1436a0189  mov     edx, 0x21
+0x1436a018e  mov     rcx, r13
+0x1436a0191  call    j_sub_153bc8f30
+
+0x1436a0196  mov     qword [rsp+0x40], r14
+0x1436a019b  mov     dword [rsp+0x48], r14d
+0x1436a01a0  mov     dword [rsp+0x4c], 0x80000000
+0x1436a01a8  lea     r8, [r13+0x404]
+0x1436a01af  lea     rdx, [rbp-0x10]
+0x1436a01b3  mov     rcx, qword [rbx]
+0x1436a01b6  call    sub_143991bb0
+0x1436a01bb  vxorps  xmm0, xmm0, xmm0
+0x1436a01bf  vmovups xmmword [rsp+0x60], xmm0
+0x1436a01c5  lea     rax, [rsp+0x40]
+0x1436a01ca  mov     qword [rsp+0x30], rax
+0x1436a01cf  mov     rax, qword [r13+0x4c8]
+0x1436a01d6  mov     qword [rsp+0x28], rax
+0x1436a01db  mov     rax, qword [r13+0x4d0]
+0x1436a01e2  mov     qword [rsp+0x20], rax
+0x1436a01e7  lea     r9, [rsp+0x60]
+0x1436a01ec  lea     r8, [rbp-0x10]
+0x1436a01f0  lea     rdx, [rsp+0x70]
+0x1436a01f5  mov     rcx, qword [rbx]
+0x1436a01f8  call    Teleport:: Movement-update
+0x1436a01fd  mov     rax, rbx
+0x1436a0200  mov     r15d, 0x20
+0x1436a0206  cmp     dword [r13+0x1b8], r15d
+0x1436a020d  jne     0x1436a0221
+
+0x1436a020f  mov     edx, r15d
+0x1436a0212  mov     rcx, r13
+0x1436a0215  call    j_sub_153bc8f30
+0x1436a021a  lea     rax, [r13+0x2c0]
+
+0x1436a0221  cmp     byte [rel data_146d30128], 0x0
+0x1436a0228  jne     0x1436a0232
+
+0x1436a022a  mov     dword [rsp+0x48], r14d
+0x1436a022f  mov     rbx, rax
+
+0x1436a0232  cmp     byte [rel data_146d30c18], 0x0
+0x1436a0239  je      0x1436a0249
+
+0x1436a023b  lea     rdx, [rsp+0x40]
+0x1436a0240  mov     rcx, qword [rbx]
+0x1436a0243  call    sub_144281470
+0x1436a0248  nop
+
+0x1436a0249  mov     dword [rsp+0x48], r14d
+0x1436a024e  mov     eax, dword [rsp+0x4c]
+0x1436a0252  test    eax, eax
+0x1436a0254  js      0x1436a0284
+
+0x1436a0256  mov     rdx, qword [rsp+0x40]
+0x1436a025b  test    rdx, rdx
+0x1436a025e  je      0x1436a0284
+
+0x1436a0260  btr     eax, 0x1f
+0x1436a0264  lea     r8, [rax+rax*2]
+0x1436a0268  shl     r8, 0x4
+0x1436a026c  mov     rax, qword [rel data_14689f360]
+0x1436a0273  lea     rcx, [rel data_14689f360]
+0x1436a027a  call    qword [rax+0x18]
+0x1436a027d  lea     rbx, [r13+0x2c0]
+
+0x1436a0284  mov     qword [rsp+0x40], r14
+0x1436a0289  mov     dword [rsp+0x4c], 0x80000000
+0x1436a0291  mov     rsi, rbx
+0x1436a0294  test    byte [rbp+0x7a8], 0x1
+0x1436a029b  je      0x1436a02fe
+
+0x1436a029d  mov     rax, qword [gs:0x58]
+0x1436a02a6  mov     rsi, qword [rax]
+0x1436a02a9  mov     r8d, 0xfa380
+0x1436a02af  mov     edx, dword [r8+rsi]
+0x1436a02b3  test    dl, 0x1
+0x1436a02b6  jne     0x1436a02df
+
+0x1436a02b8  or      edx, 0x1
+0x1436a02bb  mov     dword [r8+rsi], edx
+0x1436a02bf  mov     r14d, 0xfa390
+0x1436a02c5  mov     ecx, r14d
+0x1436a02c8  add     rcx, rsi
+0x1436a02cb  call    j_sub_152948740
+0x1436a02d0  lea     rcx, [rel sub_14515bc60]
+0x1436a02d7  call    sub_1448958e8
+0x1436a02dc  nop
+0x1436a02dd  jmp     0x1436a02e5
+
+0x1436a02df  mov     r14d, 0xfa390
+
+0x1436a02e5  mov     ecx, r14d
+0x1436a02e8  add     rcx, rsi
+0x1436a02eb  lea     rdx, [rbp+0x7a8]
+0x1436a02f2  call    sub_14322d690
+0x1436a02f7  lea     rsi, [r13+0x2c0]
+
+0x1436a02fe  lea     r14, [r13+0x2d1]
+0x1436a0305  mov     rcx, qword [r14]
+0x1436a0308  movzx   eax, byte [rcx+0x1d]
+0x1436a030c  mov     byte [r13+0x2e6], al
+0x1436a0313  mov     byte [rcx+0x1d], 0x0
+0x1436a0317  vmovss  xmm3, dword [rdi+0x8]
+0x1436a031c  vmovss  xmm2, dword [rdi]
+0x1436a0320  vmovss  xmm0, dword [rdi+0x4]
+0x1436a0325  vmulss  xmm1, xmm0, xmm0
+0x1436a0329  vmulss  xmm0, xmm2, xmm2
+0x1436a032d  vaddss  xmm2, xmm1, xmm0
+0x1436a0331  vmulss  xmm1, xmm3, xmm3
+0x1436a0335  vaddss  xmm4, xmm2, xmm1
+0x1436a0339  vxorps  xmm0, xmm0, xmm0
+0x1436a033d  vucomiss xmm0, xmm4
+0x1436a0341  ja      0x1436a0349
+
+0x1436a0343  vsqrtss xmm0, xmm4, xmm4
+0x1436a0347  jmp     0x1436a0352
+
+0x1436a0349  vmovaps xmm0, xmm4
+0x1436a034d  call    sqrtf
+
+0x1436a0352  vmovss  xmm1, dword [rel data_145d729d4]
+0x1436a035a  vcomiss xmm1, xmm0
+0x1436a035e  jb      0x1436a0388
+
+0x1436a0360  vmovsd  xmm0, qword [rel data_145545e88]
+0x1436a0368  vmovsd  qword [r12+0xc], xmm0
+0x1436a036f  mov     eax, dword [rel data_145545e90]
+0x1436a0375  mov     dword [r12+0x14], eax
+0x1436a037a  mov     dword [r12+0x1c], 0x3f800000
+0x1436a0383  jmp     0x1436a0f84
+
+0x1436a0388  mov     rax, qword [rbx]
+0x1436a038b  vxorps  xmm0, xmm0, xmm0
+0x1436a038f  vinsertps xmm0, xmm0, dword [rel data_146d4e238], 0x10
+0x1436a0399  vmulps  xmm1, xmm0, xmmword [rax+0x180]
+0x1436a03a1  vmovups xmm0, xmmword [rax+0x90]
+0x1436a03a9  vsubps  xmm2, xmm0, xmm1
+0x1436a03ad  vpermilps xmm14, xmm2, 0xaa
+0x1436a03b3  vmovups xmmword [rbp-0x40], xmm14
+0x1436a03b8  vpermilps xmm15, xmm2, 0x55
+0x1436a03be  vmovups xmmword [rbp-0x30], xmm15
+0x1436a03c3  vpermilps xmm0, xmm2, 0x0
+0x1436a03c9  vmovups xmmword [rbp-0x20], xmm0
+0x1436a03ce  vmovss  dword [r12+0xc], xmm0
+0x1436a03d5  vmovss  dword [r12+0x10], xmm15
+0x1436a03dc  vmovss  dword [r12+0x14], xmm14
+0x1436a03e3  vmovss  xmm0, dword [r12+0xc]
+0x1436a03ea  vsubss  xmm8, xmm0, xmm8
+0x1436a03ef  vmovss  dword [r12+0xc], xmm8
+0x1436a03f6  vmovss  xmm1, dword [r12+0x10]
+0x1436a03fd  vsubss  xmm2, xmm1, xmm10
+0x1436a0402  vmovss  dword [r12+0x10], xmm2
+0x1436a0409  vsubss  xmm3, xmm14, xmm9
+0x1436a040e  vmovss  dword [r12+0x14], xmm3
+0x1436a0415  vmulss  xmm1, xmm2, xmm2
+0x1436a0419  vmulss  xmm0, xmm8, xmm8
+0x1436a041e  vaddss  xmm2, xmm1, xmm0
+0x1436a0422  vmulss  xmm1, xmm3, xmm3
+0x1436a0426  vaddss  xmm4, xmm2, xmm1
+0x1436a042a  vxorps  xmm0, xmm0, xmm0
+0x1436a042e  vucomiss xmm0, xmm4
+0x1436a0432  ja      0x1436a043a
+
+0x1436a0434  vsqrtss xmm0, xmm4, xmm4
+0x1436a0438  jmp     0x1436a0443
+
+0x1436a043a  vmovaps xmm0, xmm4
+0x1436a043e  call    sqrtf
+
+0x1436a0443  vmovss  dword [r12+0x18], xmm0
+0x1436a044a  lea     rdx, [rsp+0x40]
+0x1436a044f  mov     rcx, r12
+0x1436a0452  call    sub_140392cb0
+0x1436a0457  vmovss  xmm6, dword [r12+0x8]
+0x1436a045e  vmovss  xmm5, dword [r12]
+0x1436a0464  vmovss  xmm4, dword [r12+0x4]
+0x1436a046b  vmovss  xmm0, dword [rax+0x4]
+0x1436a0470  vmulss  xmm2, xmm0, dword [r12+0x10]
+0x1436a0477  vmulss  xmm1, xmm8, dword [rax]
+0x1436a047b  vaddss  xmm3, xmm2, xmm1
+0x1436a047f  vmovss  xmm0, dword [rax+0x8]
+0x1436a0484  vmulss  xmm2, xmm0, dword [r12+0x14]
+0x1436a048b  vaddss  xmm8, xmm3, xmm2
+0x1436a048f  vmulss  xmm1, xmm4, xmm4
+0x1436a0493  vmulss  xmm0, xmm5, xmm5
+0x1436a0497  vaddss  xmm2, xmm1, xmm0
+0x1436a049b  vmulss  xmm1, xmm6, xmm6
+0x1436a049f  vaddss  xmm3, xmm2, xmm1
+0x1436a04a3  vxorps  xmm0, xmm0, xmm0
+0x1436a04a7  vucomiss xmm0, xmm3
+0x1436a04ab  ja      0x1436a04b3
+
+0x1436a04ad  vsqrtss xmm0, xmm3, xmm3
+0x1436a04b1  jmp     0x1436a04bc
+
+0x1436a04b3  vmovaps xmm0, xmm3
+0x1436a04b7  call    sqrtf
+
+0x1436a04bc  vdivss  xmm0, xmm8, xmm0
+0x1436a04c0  vmovss  xmm3, dword [rel data_145d72e9c]
+0x1436a04c8  vminss  xmm1, xmm0, xmm3
+0x1436a04cc  vmaxss  xmm2, xmm7, xmm1
+0x1436a04d0  vmovss  dword [r12+0x1c], xmm2
+0x1436a04d7  vmovss  xmm0, dword [rel data_145d72e80]
+0x1436a04df  vcomiss xmm0, xmm2
+0x1436a04e3  jbe     0x1436a0f84
+
+0x1436a04e9  mov     r12, qword [rbx]
+0x1436a04ec  xor     dil, dil
+0x1436a04ef  mov     byte [rbp+0x7a8], dil
+0x1436a04f6  mov     ebx, 0x4
+0x1436a04fb  vmovaps xmm6, xmm3
+0x1436a04ff  vxorps  xmm8, xmm8, xmm8
+0x1436a0504  vxorps  xmm9, xmm9, xmm9
+0x1436a0509  vxorps  xmm10, xmm10, xmm10
+0x1436a050e  vmovss  dword [rsp+0x40], xmm7
+0x1436a0514  vmovss  dword [rsp+0x44], xmm7
+0x1436a051a  vmovss  dword [rsp+0x48], xmm7
+0x1436a0520  vxorps  xmm13, xmm13, xmm13
+0x1436a0525  mov     eax, dword [r12+0x20]
+0x1436a052a  mov     dword [rsp+0x50], eax
+0x1436a052e  mov     qword [rsp+0x60], rsi
+0x1436a0533  cmp     byte [rbp+0x7a0], 0x9
+0x1436a053a  jne     0x1436a075f
+
+0x1436a0540  mov     qword [rsp+0x60], rsi
+0x1436a0545  cmp     byte [rbp+0x7c0], dil
+0x1436a054c  je      0x1436a075f
+
+0x1436a0552  mov     dword [rbp-0x78], 0xffff
+0x1436a0559  xor     r14d, r14d
+0x1436a055c  mov     qword [rbp-0x70], r14
+0x1436a0560  mov     dword [rbp-0x68], 0xfb0001
+0x1436a0567  mov     qword [rbp-0x50], r14
+0x1436a056b  mov     rax, qword [rel data_146a50ff0]
+0x1436a0572  lea     rcx, [rel data_146a50ff0]
+0x1436a0579  call    qword [rax+0x20]
+0x1436a057c  mov     qword [rsp+0x78], rax
+0x1436a0581  mov     rax, qword [rsi]
+0x1436a0584  mov     rcx, qword [rax+0x28]
+0x1436a0588  mov     qword [rbp-0x60], rcx
+0x1436a058c  mov     rax, qword [rel data_146a50ff0]
+0x1436a0593  lea     rcx, [rel data_146a50ff0]
+0x1436a059a  call    qword [rax+0x18]
+0x1436a059d  mov     qword [rbp-0x80], rax
+0x1436a05a1  mov     rcx, qword [rsi]
+0x1436a05a4  mov     eax, dword [rcx+0x40]
+0x1436a05a7  mov     dword [rbp-0x74], eax
+0x1436a05aa  vmovss  xmm0, dword [rcx+0x140]
+0x1436a05b2  vmovss  dword [rbp-0x58], xmm0
+0x1436a05b7  mov     rsi, qword [rcx+0x28]
+0x1436a05bb  vmovups xmm0, xmmword [rcx+0x60]
+0x1436a05c0  vmovups xmmword [rbp-0x10], xmm0
+0x1436a05c5  vmovups xmm1, xmmword [rcx+0x70]
+0x1436a05ca  vmovups xmmword [rbp], xmm1
+0x1436a05cf  vmovups xmm0, xmmword [rcx+0x80]
+0x1436a05d7  vmovups xmmword [rbp+0x10], xmm0
+0x1436a05dc  vxorps  xmm1, xmm1, xmm1
+0x1436a05e0  vinsertps xmm1, xmm1, dword [rel data_146d4e238], 0x10
+0x1436a05ea  vmulps  xmm1, xmm1, xmmword [rcx+0x180]
+0x1436a05f2  vmovups xmm0, xmmword [rcx+0x90]
+0x1436a05fa  vsubps  xmm1, xmm0, xmm1
+0x1436a05fe  vmovups xmmword [rbp+0x20], xmm1
+0x1436a0603  lea     rax, [rel hkBaseObject::`vftable']
+0x1436a060a  mov     qword [rbp+0x30], rax
+0x1436a060e  lea     rax, [rel hknpCollisionQueryCollector::`vftable'{for `hkBaseObject'}]
+0x1436a0615  mov     qword [rbp+0x30], rax
+0x1436a0619  mov     byte [rbp+0x38], dil
+0x1436a061d  mov     dword [rbp+0x3c], r14d
+0x1436a0621  vmovsd  xmm12, qword [rel data_145d73478]
+0x1436a0629  vmovsd  qword [rbp+0x40], xmm12
+0x1436a062e  mov     byte [rbp+0x48], dil
+0x1436a0632  lea     rax, [rel hknpAllHitsCollector::`vftable'{for `hknpCollisionQueryCollector'}]
+0x1436a0639  mov     qword [rbp+0x30], rax
+0x1436a063d  lea     rax, [rbp+0x50]
+0x1436a0641  mov     qword [rbp+0x7a0], rax
+0x1436a0648  lea     rax, [rbp+0x70]
+0x1436a064c  mov     qword [rbp+0x50], rax
+0x1436a0650  mov     dword [rbp+0x58], r14d
+0x1436a0654  mov     dword [rbp+0x5c], 0x8000000a
+0x1436a065b  mov     dword [rbp+0x3c], r14d
+0x1436a065f  vmovsd  qword [rbp+0x40], xmm12
+0x1436a0664  mov     byte [rbp+0x48], r14b
+0x1436a0668  mov     dword [rbp+0x58], r14d
+0x1436a066c  or      byte [rbp+0x38], 0x40
+0x1436a0670  mov     rax, qword [rel data_146a50ff0]
+0x1436a0677  lea     r9, [rbp+0x30]
+0x1436a067b  lea     r8, [rbp-0x10]
+0x1436a067f  lea     rdx, [rsp+0x78]
+0x1436a0684  lea     rcx, [rel data_146a50ff0]
+0x1436a068b  call    qword [rax+0x200]
+0x1436a0691  movsxd  rax, dword [rbp+0x3c]
+0x1436a0695  test    eax, eax
+0x1436a0697  je      0x1436a06d1
+
+0x1436a0699  mov     rdx, rax
+0x1436a069c  jle     0x1436a06d1
+
+0x1436a069e  movzx   eax, byte [rsi+0x1c]
+0x1436a06a2  sub     r15, rax
+0x1436a06a5  mov     rcx, qword [rbp+0x50]
+0x1436a06a9  add     rcx, 0x48
+0x1436a06ad  xor     r8b, r8b
+
+0x1436a06b0  shrx    eax, dword [rcx], r15d
+0x1436a06b5  test    eax, eax
+0x1436a06b7  setne   al
+0x1436a06ba  or      r8b, al
+0x1436a06bd  lea     rcx, [rcx+0xa0]
+0x1436a06c4  sub     rdx, 0x1
+0x1436a06c8  jne     0x1436a06b0
+
+0x1436a06ca  mov     byte [rbp+0x7a8], r8b
+
+0x1436a06d1  lea     rax, [rel hknpAllHitsCollector::`vftable'{for `hknpCollisionQueryCollector'}]
+0x1436a06d8  mov     qword [rbp+0x30], rax
+0x1436a06dc  xor     r15d, r15d
+0x1436a06df  mov     dword [rbp+0x3c], r15d
+0x1436a06e3  vmovsd  qword [rbp+0x40], xmm12
+0x1436a06e8  mov     byte [rbp+0x48], r15b
+0x1436a06ec  mov     dword [rbp+0x58], r15d
+0x1436a06f0  lea     rax, [rbp+0x50]
+0x1436a06f4  mov     qword [rbp+0x7a0], rax
+0x1436a06fb  mov     dword [rbp+0x58], r15d
+0x1436a06ff  mov     eax, dword [rbp+0x5c]
+0x1436a0702  test    eax, eax
+0x1436a0704  js      0x1436a072c
+
+0x1436a0706  mov     rdx, qword [rbp+0x50]
+0x1436a070a  test    rdx, rdx
+0x1436a070d  je      0x1436a072c
+
+0x1436a070f  btr     eax, 0x1f
+0x1436a0713  lea     r8, [rax+rax*4]
+0x1436a0717  shl     r8, 0x5
+0x1436a071b  mov     rax, qword [rel data_14689f360]
+0x1436a0722  lea     rcx, [rel data_14689f360]
+0x1436a0729  call    qword [rax+0x18]
+
+0x1436a072c  mov     qword [rbp+0x50], r15
+0x1436a0730  mov     dword [rbp+0x5c], 0x80000000
+0x1436a0737  lea     rax, [rel hknpCollisionQueryCollector::`vftable'{for `hkBaseObject'}]
+0x1436a073e  mov     qword [rbp+0x30], rax
+0x1436a0742  lea     rax, [r13+0x2c0]
+0x1436a0749  mov     qword [rsp+0x60], rax
+0x1436a074e  lea     r14, [r13+0x2d1]
+0x1436a0755  vmovss  xmm3, dword [rel data_145d72e9c]
+0x1436a075d  jmp     0x1436a0762
+
+0x1436a075f  xor     r15d, r15d
+
+0x1436a0762  mov     esi, r15d
+0x1436a0765  cmp     dword [rsp+0x50], 0x0
+0x1436a076a  jbe     0x1436a08f9
+
+0x1436a0770  vmovss  xmm14, dword [rel data_145d73178]
+0x1436a0778  vmovss  xmm15, dword [rel data_145d73334]
+0x1436a0780  mov     r13, qword [rsp+0x60]
+0x1436a0785  nop     word [rax+rax]
+
+0x1436a0790  mov     r14, qword [r12+0x18]
+0x1436a0795  movsxd  rax, esi
+0x1436a0798  shl     rax, 0x6
+0x1436a079c  vmovups xmm0, xmmword [rax+r14+0x10]
+0x1436a07a3  vdpps   xmm12, xmm0, xmm11, 0x7f
+0x1436a07a9  vcomiss xmm12, xmm7
+0x1436a07ad  ja      0x1436a08cd
+
+0x1436a07b3  cmp     byte [rbp+0x7b8], 0x0
+0x1436a07ba  je      0x1436a0826
+
+0x1436a07bc  mov     rax, qword [r13]
+0x1436a07c0  vdpps   xmm0, xmm0, xmmword [rax+0x180], 0x7f
+0x1436a07ca  vmovss  xmm1, dword [rel data_145d73770]
+0x1436a07d2  vcomiss xmm1, xmm0
+0x1436a07d6  jb      0x1436a07df
+
+0x1436a07d8  vmovaps xmm0, xmm14
+0x1436a07dd  jmp     0x1436a07f0
+
+0x1436a07df  vcomiss xmm0, xmm3
+0x1436a07e3  jb      0x1436a07eb
+
+0x1436a07e5  vmovaps xmm0, xmm7
+0x1436a07e9  jmp     0x1436a07f0
+
+0x1436a07eb  call    acosf
+
+0x1436a07f0  vmulss  xmm2, xmm0, xmm15
+0x1436a07f5  vmovss  xmm1, dword [rel data_146d03368]
+0x1436a07fd  vcomiss xmm1, xmm13
+0x1436a0802  jb      0x1436a080c
+
+0x1436a0804  vcomiss xmm1, xmm2
+0x1436a0808  jb      0x1436a0820
+
+0x1436a080a  jmp     0x1436a0816
+
+0x1436a080c  vcomiss xmm1, xmm2
+0x1436a0810  jae     0x1436a08cd
+
+0x1436a0816  vcomiss xmm12, xmm6
+0x1436a081a  jae     0x1436a08cd
+
+0x1436a0820  vmovaps xmm13, xmm2
+0x1436a0824  jmp     0x1436a0830
+
+0x1436a0826  vcomiss xmm12, xmm6
+0x1436a082a  jae     0x1436a08cd
+
+0x1436a0830  movsxd  rdx, esi
+0x1436a0833  shl     rdx, 0x6
+0x1436a0837  mov     rax, qword [rel data_146a50ff0]
+0x1436a083e  mov     r9d, 0x8
+0x1436a0844  mov     r8w, 0xf001
+0x1436a0849  mov     rdx, qword [rdx+r14+0x28]
+0x1436a084e  lea     rcx, [rel data_146a50ff0]
+0x1436a0855  call    qword [rax+0xf0]
+0x1436a085b  test    rax, rax
+0x1436a085e  cmovne  ebx, r15d
+0x1436a0862  movsxd  rax, esi
+0x1436a0865  shl     rax, 0x6
+0x1436a0869  mov     rdx, qword [r12+0x18]
+0x1436a086e  mov     rdx, qword [rax+rdx+0x28]
+0x1436a0873  call    sub_143257230
+0x1436a0878  vmovaps xmm6, xmm12
+0x1436a087d  movsxd  rcx, esi
+0x1436a0880  shl     rcx, 0x6
+0x1436a0884  mov     rax, qword [r12+0x18]
+0x1436a0889  vmovups xmm0, xmmword [rcx+rax+0x10]
+0x1436a088f  vpermilps xmm8, xmm0, 0x0
+0x1436a0895  vpermilps xmm9, xmm0, 0x55
+0x1436a089b  vpermilps xmm10, xmm0, 0xaa
+0x1436a08a1  vmovups xmm2, xmmword [rcx+rax]
+0x1436a08a6  vpermilps xmm0, xmm2, 0x0
+0x1436a08ac  vmovss  dword [rsp+0x40], xmm0
+0x1436a08b2  vpermilps xmm1, xmm2, 0x55
+0x1436a08b8  vmovss  dword [rsp+0x44], xmm1
+0x1436a08be  vpermilps xmm0, xmm2, 0xaa
+0x1436a08c4  vmovss  dword [rsp+0x48], xmm0
+0x1436a08ca  mov     dil, 0x1
+
+0x1436a08cd  inc     esi
+0x1436a08cf  cmp     esi, dword [rsp+0x50]
+0x1436a08d3  vmovss  xmm3, dword [rel data_145d72e9c]
+0x1436a08db  jb      0x1436a0790
+
+0x1436a08e1  mov     r13, qword [rbp+0x790]
+0x1436a08e8  lea     r14, [r13+0x2d1]
+0x1436a08ef  vmovups xmm14, xmmword [rbp-0x40]
+0x1436a08f4  vmovups xmm15, xmmword [rbp-0x30]
+
+0x1436a08f9  mov     r9, qword [r14]
+0x1436a08fc  mov     r10d, dword [r9+0xc8]
+0x1436a0903  cmp     r10d, 0x4
+0x1436a0907  jb      0x1436a0b1c
+
+0x1436a090d  mov     rdx, qword [r9+0xc0]
+0x1436a0914  mov     rcx, r15
+0x1436a0917  lea     eax, [r10-0x4]
+0x1436a091b  shr     eax, 0x2
+0x1436a091e  inc     eax
+0x1436a0920  mov     r8d, eax
+0x1436a0923  lea     rsi, [rax*4]
+0x1436a092b  lea     r11d, [rax*4]
+0x1436a0933  nop     dword [rax]
+0x1436a0937  nop     word [rax+rax]
+
+0x1436a0940  vmovups xmm2, xmmword [rdx+rcx+0x10]
+0x1436a0946  vdpps   xmm0, xmm2, xmm11, 0x7f
+0x1436a094c  vcomiss xmm0, xmm7
+0x1436a0950  ja      0x1436a09ae
+
+0x1436a0952  vcomiss xmm0, xmm6
+0x1436a0956  jae     0x1436a09ae
+
+0x1436a0958  mov     ebx, 0x1
+0x1436a095d  vmovaps xmm6, xmm0
+0x1436a0961  vpermilps xmm8, xmm2, 0x0
+0x1436a0967  vmovaps xmm8, xmm8
+0x1436a096c  vpermilps xmm9, xmm2, 0x55
+0x1436a0972  vmovaps xmm9, xmm9
+0x1436a0977  vpermilps xmm10, xmm2, 0xaa
+0x1436a097d  vmovaps xmm10, xmm10
+0x1436a0982  vmovups xmm2, xmmword [rdx+rcx]
+0x1436a0987  vpermilps xmm1, xmm2, 0x0
+0x1436a098d  vmovss  dword [rsp+0x40], xmm1
+0x1436a0993  vpermilps xmm0, xmm2, 0x55
+0x1436a0999  vmovss  dword [rsp+0x44], xmm0
+0x1436a099f  vpermilps xmm1, xmm2, 0xaa
+0x1436a09a5  vmovss  dword [rsp+0x48], xmm1
+0x1436a09ab  movzx   edi, bl
+
+0x1436a09ae  vmovups xmm2, xmmword [rdx+rcx+0x40]
+0x1436a09b4  vdpps   xmm0, xmm2, xmm11, 0x7f
+0x1436a09ba  vcomiss xmm0, xmm7
+0x1436a09be  ja      0x1436a0a1d
+
+0x1436a09c0  vcomiss xmm0, xmm6
+0x1436a09c4  jae     0x1436a0a1d
+
+0x1436a09c6  mov     ebx, 0x1
+0x1436a09cb  vmovaps xmm6, xmm0
+0x1436a09cf  vpermilps xmm8, xmm2, 0x0
+0x1436a09d5  vmovaps xmm8, xmm8
+0x1436a09da  vpermilps xmm9, xmm2, 0x55
+0x1436a09e0  vmovaps xmm9, xmm9
+0x1436a09e5  vpermilps xmm10, xmm2, 0xaa
+0x1436a09eb  vmovaps xmm10, xmm10
+0x1436a09f0  vmovups xmm2, xmmword [rdx+rcx+0x30]
+0x1436a09f6  vpermilps xmm1, xmm2, 0x0
+0x1436a09fc  vmovss  dword [rsp+0x40], xmm1
+0x1436a0a02  vpermilps xmm0, xmm2, 0x55
+0x1436a0a08  vmovss  dword [rsp+0x44], xmm0
+0x1436a0a0e  vpermilps xmm1, xmm2, 0xaa
+0x1436a0a14  vmovss  dword [rsp+0x48], xmm1
+0x1436a0a1a  movzx   edi, bl
+
+0x1436a0a1d  vmovups xmm2, xmmword [rdx+rcx+0x70]
+0x1436a0a23  vdpps   xmm0, xmm2, xmm11, 0x7f
+0x1436a0a29  vcomiss xmm0, xmm7
+0x1436a0a2d  ja      0x1436a0a8c
+
+0x1436a0a2f  vcomiss xmm0, xmm6
+0x1436a0a33  jae     0x1436a0a8c
+
+0x1436a0a35  mov     ebx, 0x1
+0x1436a0a3a  vmovaps xmm6, xmm0
+0x1436a0a3e  vpermilps xmm8, xmm2, 0x0
+0x1436a0a44  vmovaps xmm8, xmm8
+0x1436a0a49  vpermilps xmm9, xmm2, 0x55
+0x1436a0a4f  vmovaps xmm9, xmm9
+0x1436a0a54  vpermilps xmm10, xmm2, 0xaa
+0x1436a0a5a  vmovaps xmm10, xmm10
+0x1436a0a5f  vmovups xmm2, xmmword [rdx+rcx+0x60]
+0x1436a0a65  vpermilps xmm1, xmm2, 0x0
+0x1436a0a6b  vmovss  dword [rsp+0x40], xmm1
+0x1436a0a71  vpermilps xmm0, xmm2, 0x55
+0x1436a0a77  vmovss  dword [rsp+0x44], xmm0
+0x1436a0a7d  vpermilps xmm1, xmm2, 0xaa
+0x1436a0a83  vmovss  dword [rsp+0x48], xmm1
+0x1436a0a89  movzx   edi, bl
+
+0x1436a0a8c  vmovups xmm2, xmmword [rdx+rcx+0xa0]
+0x1436a0a95  vdpps   xmm0, xmm2, xmm11, 0x7f
+0x1436a0a9b  vcomiss xmm0, xmm7
+0x1436a0a9f  ja      0x1436a0b01
+
+0x1436a0aa1  vcomiss xmm0, xmm6
+0x1436a0aa5  jae     0x1436a0b01
+
+0x1436a0aa7  mov     ebx, 0x1
+0x1436a0aac  vmovaps xmm6, xmm0
+0x1436a0ab0  vpermilps xmm8, xmm2, 0x0
+0x1436a0ab6  vmovaps xmm8, xmm8
+0x1436a0abb  vpermilps xmm9, xmm2, 0x55
+0x1436a0ac1  vmovaps xmm9, xmm9
+0x1436a0ac6  vpermilps xmm10, xmm2, 0xaa
+0x1436a0acc  vmovaps xmm10, xmm10
+0x1436a0ad1  vmovups xmm2, xmmword [rdx+rcx+0x90]
+0x1436a0ada  vpermilps xmm1, xmm2, 0x0
+0x1436a0ae0  vmovss  dword [rsp+0x40], xmm1
+0x1436a0ae6  vpermilps xmm0, xmm2, 0x55
+0x1436a0aec  vmovss  dword [rsp+0x44], xmm0
+0x1436a0af2  vpermilps xmm1, xmm2, 0xaa
+0x1436a0af8  vmovss  dword [rsp+0x48], xmm1
+0x1436a0afe  movzx   edi, bl
+
+0x1436a0b01  add     rcx, 0xc0
+0x1436a0b08  sub     r8, 0x1
+0x1436a0b0c  jne     0x1436a0940
+
+0x1436a0b12  cmp     r11d, r10d
+0x1436a0b15  jb      0x1436a0b32
+
+0x1436a0b17  jmp     0x1436a0bd3
+
+0x1436a0b1c  cmp     r15d, r10d
+0x1436a0b1f  jae     0x1436a0bda
+
+0x1436a0b25  mov     rdx, qword [r9+0xc0]
+0x1436a0b2c  mov     rsi, r15
+0x1436a0b2f  mov     r11d, r15d
+
+0x1436a0b32  lea     rax, [rsi+rsi*2]
+0x1436a0b36  shl     rax, 0x4
+0x1436a0b3a  mov     r9, qword [r9+0xc0]
+0x1436a0b41  lea     rcx, [r9+0x10]
+0x1436a0b45  add     rcx, rax
+0x1436a0b48  sub     r10d, r11d
+0x1436a0b4b  mov     r8d, r10d
+
+0x1436a0b4e  vmovups xmm0, xmmword [rdx+rax+0x10]
+0x1436a0b54  vdpps   xmm1, xmm0, xmm11, 0x7f
+0x1436a0b5a  vcomiss xmm1, xmm7
+0x1436a0b5e  ja      0x1436a0bc1
+
+0x1436a0b60  vcomiss xmm1, xmm6
+0x1436a0b64  jae     0x1436a0bc1
+
+0x1436a0b66  mov     ebx, 0x1
+0x1436a0b6b  vmovaps xmm6, xmm1
+0x1436a0b6f  vmovups xmm2, xmmword [rcx]
+0x1436a0b73  vpermilps xmm8, xmm2, 0x0
+0x1436a0b79  vmovaps xmm8, xmm8
+0x1436a0b7e  vpermilps xmm9, xmm2, 0x55
+0x1436a0b84  vmovaps xmm9, xmm9
+0x1436a0b89  vpermilps xmm10, xmm2, 0xaa
+0x1436a0b8f  vmovaps xmm10, xmm10
+0x1436a0b94  vmovups xmm3, xmmword [rax+r9]
+0x1436a0b9a  vpermilps xmm1, xmm3, 0x0
+0x1436a0ba0  vmovss  dword [rsp+0x40], xmm1
+0x1436a0ba6  vpermilps xmm0, xmm3, 0x55
+0x1436a0bac  vmovss  dword [rsp+0x44], xmm0
+0x1436a0bb2  vpermilps xmm1, xmm3, 0xaa
+0x1436a0bb8  vmovss  dword [rsp+0x48], xmm1
+0x1436a0bbe  movzx   edi, bl
+
+0x1436a0bc1  add     rax, 0x30
+0x1436a0bc5  add     rcx, 0x30
+0x1436a0bc9  sub     r8, 0x1
+0x1436a0bcd  jne     0x1436a0b4e
+
+0x1436a0bd3  lea     r14, [r13+0x2d1]
+
+0x1436a0bda  mov     r9, qword [r14]
+0x1436a0bdd  mov     r10d, dword [r9+0xd8]
+0x1436a0be4  cmp     r10d, 0x4
+0x1436a0be8  jb      0x1436a0dfc
+
+0x1436a0bee  mov     rdx, qword [r9+0xd0]
+0x1436a0bf5  mov     rcx, r15
+0x1436a0bf8  lea     eax, [r10-0x4]
+0x1436a0bfc  shr     eax, 0x2
+0x1436a0bff  inc     eax
+0x1436a0c01  mov     r8d, eax
+0x1436a0c04  lea     r11, [rax*4]
+0x1436a0c0c  lea     r15d, [rax*4]
+0x1436a0c14  nop     dword [rax]
+0x1436a0c18  nop     dword [rax+rax]
+
+0x1436a0c20  vmovups xmm2, xmmword [rcx+rdx+0x10]
+0x1436a0c26  vdpps   xmm0, xmm2, xmm11, 0x7f
+0x1436a0c2c  vcomiss xmm0, xmm7
+0x1436a0c30  ja      0x1436a0c8e
+
+0x1436a0c32  vcomiss xmm0, xmm6
+0x1436a0c36  jae     0x1436a0c8e
+
+0x1436a0c38  mov     ebx, 0x2
+0x1436a0c3d  vmovaps xmm6, xmm0
+0x1436a0c41  vpermilps xmm8, xmm2, 0x0
+0x1436a0c47  vmovaps xmm8, xmm8
+0x1436a0c4c  vpermilps xmm9, xmm2, 0x55
+0x1436a0c52  vmovaps xmm9, xmm9
+0x1436a0c57  vpermilps xmm10, xmm2, 0xaa
+0x1436a0c5d  vmovaps xmm10, xmm10
+0x1436a0c62  vmovups xmm2, xmmword [rdx+rcx]
+0x1436a0c67  vpermilps xmm1, xmm2, 0x0
+0x1436a0c6d  vmovss  dword [rsp+0x40], xmm1
+0x1436a0c73  vpermilps xmm0, xmm2, 0x55
+0x1436a0c79  vmovss  dword [rsp+0x44], xmm0
+0x1436a0c7f  vpermilps xmm1, xmm2, 0xaa
+0x1436a0c85  vmovss  dword [rsp+0x48], xmm1
+0x1436a0c8b  mov     dil, 0x1
+
+0x1436a0c8e  vmovups xmm2, xmmword [rcx+rdx+0x40]
+0x1436a0c94  vdpps   xmm0, xmm2, xmm11, 0x7f
+0x1436a0c9a  vcomiss xmm0, xmm7
+0x1436a0c9e  ja      0x1436a0cfd
+
+0x1436a0ca0  vcomiss xmm0, xmm6
+0x1436a0ca4  jae     0x1436a0cfd
+
+0x1436a0ca6  mov     ebx, 0x2
+0x1436a0cab  vmovaps xmm6, xmm0
+0x1436a0caf  vpermilps xmm8, xmm2, 0x0
+0x1436a0cb5  vmovaps xmm8, xmm8
+0x1436a0cba  vpermilps xmm9, xmm2, 0x55
+0x1436a0cc0  vmovaps xmm9, xmm9
+0x1436a0cc5  vpermilps xmm10, xmm2, 0xaa
+0x1436a0ccb  vmovaps xmm10, xmm10
+0x1436a0cd0  vmovups xmm2, xmmword [rdx+rcx+0x30]
+0x1436a0cd6  vpermilps xmm1, xmm2, 0x0
+0x1436a0cdc  vmovss  dword [rsp+0x40], xmm1
+0x1436a0ce2  vpermilps xmm0, xmm2, 0x55
+0x1436a0ce8  vmovss  dword [rsp+0x44], xmm0
+0x1436a0cee  vpermilps xmm1, xmm2, 0xaa
+0x1436a0cf4  vmovss  dword [rsp+0x48], xmm1
+0x1436a0cfa  mov     dil, 0x1
+
+0x1436a0cfd  vmovups xmm2, xmmword [rcx+rdx+0x70]
+0x1436a0d03  vdpps   xmm0, xmm2, xmm11, 0x7f
+0x1436a0d09  vcomiss xmm0, xmm7
+0x1436a0d0d  ja      0x1436a0d6c
+
+0x1436a0d0f  vcomiss xmm0, xmm6
+0x1436a0d13  jae     0x1436a0d6c
+
+0x1436a0d15  mov     ebx, 0x2
+0x1436a0d1a  vmovaps xmm6, xmm0
+0x1436a0d1e  vpermilps xmm8, xmm2, 0x0
+0x1436a0d24  vmovaps xmm8, xmm8
+0x1436a0d29  vpermilps xmm9, xmm2, 0x55
+0x1436a0d2f  vmovaps xmm9, xmm9
+0x1436a0d34  vpermilps xmm10, xmm2, 0xaa
+0x1436a0d3a  vmovaps xmm10, xmm10
+0x1436a0d3f  vmovups xmm2, xmmword [rdx+rcx+0x60]
+0x1436a0d45  vpermilps xmm1, xmm2, 0x0
+0x1436a0d4b  vmovss  dword [rsp+0x40], xmm1
+0x1436a0d51  vpermilps xmm0, xmm2, 0x55
+0x1436a0d57  vmovss  dword [rsp+0x44], xmm0
+0x1436a0d5d  vpermilps xmm1, xmm2, 0xaa
+0x1436a0d63  vmovss  dword [rsp+0x48], xmm1
+0x1436a0d69  mov     dil, 0x1
+
+0x1436a0d6c  vmovups xmm2, xmmword [rcx+rdx+0xa0]
+0x1436a0d75  vdpps   xmm0, xmm2, xmm11, 0x7f
+0x1436a0d7b  vcomiss xmm0, xmm7
+0x1436a0d7f  ja      0x1436a0de1
+
+0x1436a0d81  vcomiss xmm0, xmm6
+0x1436a0d85  jae     0x1436a0de1
+
+0x1436a0d87  mov     ebx, 0x2
+0x1436a0d8c  vmovaps xmm6, xmm0
+0x1436a0d90  vpermilps xmm8, xmm2, 0x0
+0x1436a0d96  vmovaps xmm8, xmm8
+0x1436a0d9b  vpermilps xmm9, xmm2, 0x55
+0x1436a0da1  vmovaps xmm9, xmm9
+0x1436a0da6  vpermilps xmm10, xmm2, 0xaa
+0x1436a0dac  vmovaps xmm10, xmm10
+0x1436a0db1  vmovups xmm2, xmmword [rdx+rcx+0x90]
+0x1436a0dba  vpermilps xmm1, xmm2, 0x0
+0x1436a0dc0  vmovss  dword [rsp+0x40], xmm1
+0x1436a0dc6  vpermilps xmm0, xmm2, 0x55
+0x1436a0dcc  vmovss  dword [rsp+0x44], xmm0
+0x1436a0dd2  vpermilps xmm1, xmm2, 0xaa
+0x1436a0dd8  vmovss  dword [rsp+0x48], xmm1
+0x1436a0dde  mov     dil, 0x1
+
+0x1436a0de1  add     rcx, 0xc0
+0x1436a0de8  sub     r8, 0x1
+0x1436a0dec  jne     0x1436a0c20
+
+0x1436a0df2  cmp     r15d, r10d
+0x1436a0df5  jb      0x1436a0e0f
+
+0x1436a0df7  jmp     0x1436a0eb0
+
+0x1436a0dfc  test    r10d, r10d
+0x1436a0dff  je      0x1436a0eb0
+
+0x1436a0e05  mov     rdx, qword [r9+0xd0]
+0x1436a0e0c  mov     r11, r15
+
+0x1436a0e0f  lea     rax, [r11+r11*2]
+0x1436a0e13  shl     rax, 0x4
+0x1436a0e17  mov     r9, qword [r9+0xd0]
+0x1436a0e1e  lea     rcx, [r9+0x10]
+0x1436a0e22  add     rcx, rax
+0x1436a0e25  sub     r10d, r15d
+0x1436a0e28  mov     r8d, r10d
+
+0x1436a0e2b  vmovups xmm0, xmmword [rax+rdx+0x10]
+0x1436a0e31  vdpps   xmm1, xmm0, xmm11, 0x7f
+0x1436a0e37  vcomiss xmm1, xmm7
+0x1436a0e3b  ja      0x1436a0e9e
+
+0x1436a0e3d  vcomiss xmm1, xmm6
+0x1436a0e41  jae     0x1436a0e9e
+
+0x1436a0e43  mov     ebx, 0x2
+0x1436a0e48  vmovaps xmm6, xmm1
+0x1436a0e4c  vmovups xmm2, xmmword [rcx]
+0x1436a0e50  vpermilps xmm8, xmm2, 0x0
+0x1436a0e56  vmovaps xmm8, xmm8
+0x1436a0e5b  vpermilps xmm9, xmm2, 0x55
+0x1436a0e61  vmovaps xmm9, xmm9
+0x1436a0e66  vpermilps xmm10, xmm2, 0xaa
+0x1436a0e6c  vmovaps xmm10, xmm10
+0x1436a0e71  vmovups xmm3, xmmword [rax+r9]
+0x1436a0e77  vpermilps xmm1, xmm3, 0x0
+0x1436a0e7d  vmovss  dword [rsp+0x40], xmm1
+0x1436a0e83  vpermilps xmm0, xmm3, 0x55
+0x1436a0e89  vmovss  dword [rsp+0x44], xmm0
+0x1436a0e8f  vpermilps xmm1, xmm3, 0xaa
+0x1436a0e95  vmovss  dword [rsp+0x48], xmm1
+0x1436a0e9b  mov     dil, 0x1
+
+0x1436a0e9e  add     rax, 0x30
+0x1436a0ea2  add     rcx, 0x30
+0x1436a0ea6  sub     r8, 0x1
+0x1436a0eaa  jne     0x1436a0e2b
+
+0x1436a0eb0  test    dil, dil
+0x1436a0eb3  mov     rdi, qword [rbp+0x7b0]
+0x1436a0eba  jne     0x1436a0f4d
+
+0x1436a0ec0  vmovss  xmm0, dword [rdi]
+0x1436a0ec4  vmovss  xmm2, dword [rel data_145d75b30]
+0x1436a0ecc  vxorps  xmm6, xmm0, xmm2
+0x1436a0ed0  vmovss  xmm0, dword [rdi+0x4]
+0x1436a0ed5  vxorps  xmm11, xmm0, xmm2
+0x1436a0ed9  vmovss  xmm1, dword [rdi+0x8]
+0x1436a0ede  vxorps  xmm12, xmm1, xmm2
+0x1436a0ee2  vmovaps xmm8, xmm6
+0x1436a0ee6  vmovaps xmm9, xmm11
+0x1436a0eeb  vmovaps xmm10, xmm12
+0x1436a0ef0  vmulss  xmm1, xmm11, xmm11
+0x1436a0ef5  vmulss  xmm0, xmm6, xmm6
+0x1436a0ef9  vaddss  xmm2, xmm1, xmm0
+0x1436a0efd  vmulss  xmm1, xmm12, xmm12
+0x1436a0f02  vaddss  xmm3, xmm2, xmm1
+0x1436a0f06  vcomiss xmm3, xmm7
+0x1436a0f0a  jbe     0x1436a0f3d
+
+0x1436a0f0c  vxorps  xmm0, xmm0, xmm0
+0x1436a0f10  vucomiss xmm0, xmm3
+0x1436a0f14  ja      0x1436a0f1c
+
+0x1436a0f16  vsqrtss xmm0, xmm3, xmm3
+0x1436a0f1a  jmp     0x1436a0f25
+
+0x1436a0f1c  vmovaps xmm0, xmm3
+0x1436a0f20  call    sqrtf
+
+0x1436a0f25  vmovss  xmm1, dword [rel data_145d72e9c]
+0x1436a0f2d  vdivss  xmm0, xmm1, xmm0
+0x1436a0f31  vmulss  xmm8, xmm6, xmm0
+0x1436a0f35  vmulss  xmm9, xmm11, xmm0
+0x1436a0f39  vmulss  xmm10, xmm12, xmm0
+
+0x1436a0f3d  vmovups xmm0, xmmword [rbp-0x20]
+0x1436a0f42  vunpcklps xmm3, xmm0, xmm15
+0x1436a0f47  vmovd   ecx, xmm14
+0x1436a0f4b  jmp     0x1436a0f57
+
+0x1436a0f4d  mov     ecx, dword [rsp+0x48]
+0x1436a0f51  vmovsd  xmm3, qword [rsp+0x40]
+
+0x1436a0f57  mov     byte [rdi+0x24], 0x1
+0x1436a0f5b  vunpcklps xmm0, xmm8, xmm9
+0x1436a0f60  vmovsd  qword [rdi+0x28], xmm0
+0x1436a0f65  vmovss  dword [rdi+0x30], xmm10
+0x1436a0f6a  vmovsd  qword [rdi+0x34], xmm3
+0x1436a0f6f  mov     dword [rdi+0x3c], ecx
+0x1436a0f72  mov     eax, 0x3
+0x1436a0f77  cmp     byte [rbp+0x7a8], 0x0
+0x1436a0f7e  cmovne  ebx, eax
+0x1436a0f81  mov     dword [rdi+0x20], ebx
+
+0x1436a0f84  lea     r11, [rsp+0x850]
+0x1436a0f8c  mov     rbx, qword [r11+0x48]
+0x1436a0f90  vmovaps xmm6, xmmword [r11-0x10]
+0x1436a0f96  vmovaps xmm7, xmmword [r11-0x20]
+0x1436a0f9c  vmovaps xmm8, xmmword [r11-0x30]
+0x1436a0fa2  vmovaps xmm9, xmmword [r11-0x40]
+0x1436a0fa8  vmovaps xmm10, xmmword [r11-0x50]
+0x1436a0fae  vmovaps xmm11, xmmword [r11-0x60]
+0x1436a0fb4  vmovaps xmm12, xmmword [r11-0x70]
+0x1436a0fba  vmovaps xmm13, xmmword [r11-0x80]
+0x1436a0fc0  vmovaps xmm14, xmmword [r11-0x90]
+0x1436a0fc9  vmovaps xmm15, xmmword [r11-0xa0]
+0x1436a0fd2  mov     rsp, r11
+0x1436a0fd5  pop     r15
+0x1436a0fd7  pop     r14
+0x1436a0fd9  pop     r13
+0x1436a0fdb  pop     r12
+0x1436a0fdd  pop     rdi
+0x1436a0fde  pop     rsi
+0x1436a0fdf  pop     rbp
+0x1436a0fe0  retn
+````
+
+
+########## [2] LOCO disasm 1000-2000  (bn_function_disassembly)
+---
+tool: "bn_function_disassembly"
+function: "0x14369ff60"
+arch: "x86_64"
+name: "sub_14369ff60"
+platform: "windows-x86_64"
+offset: 1000
+limit: 1000
+count: 0
+total: 994
+nextOffset: null
+truncated: false
+---
+
+````asm
+````
+
+
+########## [3] LOCO callers  (bn_function_callers)
+---
+tool: "bn_function_callers"
+function: "0x14369ff60"
+arch: "x86_64"
+name: "sub_14369ff60"
+platform: "windows-x86_64"
+offset: 0
+limit: 200
+count: 14
+total: 14
+nextOffset: null
+truncated: false
+---
+
+| Callsite | Architecture | Caller Function |
+| --- | --- | --- |
+| 0x1436a46d9 | x86_64 | sub_14219e4ac (0x14219e4ac (x86_64)) |
+| 0x1436a4b01 | x86_64 | sub_14219e4ac (0x14219e4ac (x86_64)) |
+| 0x14369f173 | x86_64 | sub_14369f000 (0x14369f000 (x86_64)) |
+| 0x1436a3ca7 | x86_64 | sub_1436a37f0 (0x1436a37f0 (x86_64)) |
+| 0x1436a41bd | x86_64 | sub_1436a37f0 (0x1436a37f0 (x86_64)) |
+| 0x1436a46d9 | x86_64 | sub_1436a37f0 (0x1436a37f0 (x86_64)) |
+| 0x1436a4b01 | x86_64 | sub_1436a37f0 (0x1436a37f0 (x86_64)) |
+| 0x1436a4e86 | x86_64 | sub_1436a4ba0 (0x1436a4ba0 (x86_64)) |
+| 0x1436a5049 | x86_64 | sub_1436a4ba0 (0x1436a4ba0 (x86_64)) |
+| 0x1436a51ca | x86_64 | sub_1436a4ba0 (0x1436a4ba0 (x86_64)) |
+| 0x1436a571a | x86_64 | sub_1436a5570 (0x1436a5570 (x86_64)) |
+| 0x1436a58cc | x86_64 | sub_1436a5570 (0x1436a5570 (x86_64)) |
+| 0x1436a59f2 | x86_64 | sub_1436a5570 (0x1436a5570 (x86_64)) |
+| 0x1436a7861 | x86_64 | sub_1436a75d0 (0x1436a75d0 (x86_64)) |
+
+
+########## [4] LOCO callees  (bn_function_callees)
+---
+tool: "bn_function_callees"
+function: "0x14369ff60"
+arch: "x86_64"
+name: "sub_14369ff60"
+platform: "windows-x86_64"
+offset: 0
+limit: 400
+count: 22
+total: 22
+nextOffset: null
+truncated: false
+---
+
+| Callsite | Architecture | Callee Address | Callee Functions |
+| --- | --- | --- | --- |
+| 0x1436a0027 | x86_64 | 0x144898ede | _fdclass (0x144898ede (x86_64)) |
+| 0x1436a003a | x86_64 | 0x144898ede | _fdclass (0x144898ede (x86_64)) |
+| 0x1436a004d | x86_64 | 0x144898ede | _fdclass (0x144898ede (x86_64)) |
+| 0x1436a006c | x86_64 | 0x1442847d0 | sub_1442847d0 (0x1442847d0 (x86_64)) |
+| 0x1436a0145 | x86_64 | 0x14322ce90 | j_sub_152948740 (0x14322ce90 (x86_64)) |
+| 0x1436a0151 | x86_64 | 0x1448958e8 | sub_1448958e8 (0x1448958e8 (x86_64)) |
+| 0x1436a0168 | x86_64 | 0x14322d2e0 | sub_14322d2e0 (0x14322d2e0 (x86_64)) |
+| 0x1436a0191 | x86_64 | 0x14369fb80 | j_sub_153bc8f30 (0x14369fb80 (x86_64)) |
+| 0x1436a01b6 | x86_64 | 0x143991bb0 | sub_143991bb0 (0x143991bb0 (x86_64)) |
+| 0x1436a01f8 | x86_64 | 0x144282080 | Teleport:: Movement-update (0x144282080 (x86_64)) |
+| 0x1436a0215 | x86_64 | 0x14369fb80 | j_sub_153bc8f30 (0x14369fb80 (x86_64)) |
+| 0x1436a0243 | x86_64 | 0x144281470 | sub_144281470 (0x144281470 (x86_64)) |
+| 0x1436a02cb | x86_64 | 0x14322ce90 | j_sub_152948740 (0x14322ce90 (x86_64)) |
+| 0x1436a02d7 | x86_64 | 0x1448958e8 | sub_1448958e8 (0x1448958e8 (x86_64)) |
+| 0x1436a02f2 | x86_64 | 0x14322d690 | sub_14322d690 (0x14322d690 (x86_64)) |
+| 0x1436a034d | x86_64 | 0x144898f0e | sqrtf (0x144898f0e (x86_64)) |
+| 0x1436a043e | x86_64 | 0x144898f0e | sqrtf (0x144898f0e (x86_64)) |
+| 0x1436a0452 | x86_64 | 0x140392cb0 | sub_140392cb0 (0x140392cb0 (x86_64)) |
+| 0x1436a04b7 | x86_64 | 0x144898f0e | sqrtf (0x144898f0e (x86_64)) |
+| 0x1436a07eb | x86_64 | 0x144898f9e | acosf (0x144898f9e (x86_64)) |
+| 0x1436a0873 | x86_64 | 0x143257230 | sub_143257230 (0x143257230 (x86_64)) |
+| 0x1436a0f20 | x86_64 | 0x144898f0e | sqrtf (0x144898f0e (x86_64)) |
+
+
+########## [5] LOCO prototype  (bn_function_prototype_get)
+{"prototype":{"function":{"function":"0x14369ff60","arch":"x86_64","start":"0x14369ff60","architecture":"x86_64","platform":"windows-x86_64","name":"sub_14369ff60"},"definition":"int64_t*(void* arg1, int32_t arg2[0x4] @ zmm1, int32_t (* arg3)[0x4], char arg4, int32_t arg5[0x4] @ zmm0, int32_t arg6[0x4] @ zmm7, int32_t arg7[0x4] @ zmm11, int128_t arg8 @ zmm12, int128_t arg9 @ zmm13, int128_t arg10 @ zmm14, int128_t arg11 @ zmm15, int32_t* arg12, char arg13, char arg14)","hasUserType":true,"callingConvention":{"name":"win64","architecture":"x86_64","platform":"windows-x86_64","isDefault":true,"isCdecl":true,"isStdcall":true,"isFastcall":true,"isSyscall":false}},"warnings":[]}
+
+

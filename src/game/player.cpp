@@ -94,11 +94,11 @@ namespace trinity::game
             // (a sibling realm's manager resolves fine and then fails silently),
             // so surface it rather than trusting the winner blindly.
             if (distinct > 1)
-                LOG_WARN("player: char-manager anchors DISAGREE (%d distinct values); "
+                LOG_WARN("player: character manager anchors DISAGREE (%d distinct values); "
                          "using %p with %d/%d votes - re-derive the anchors.",
                          distinct, reinterpret_cast<void*>(vals[best]), votes[best], matched);
             else if (matched < kN)
-                LOG("player: char-manager successfully resolved (%d anchors verified).", matched);
+                LOG("player: character manager successfully resolved (%d anchors verified).", matched);
 
             return vals[best];
         }
@@ -347,8 +347,10 @@ namespace trinity::game
             if (owner < kMinPointer || !WalkSelfChain(owner, &c)) return;
 
             if (!g_currentFallbackLogged.exchange(true, std::memory_order_acq_rel))
-                LOG_OK("player: current-character fallback resolved @ %p (active player only).",
-                       reinterpret_cast<void*>(owner));
+            {
+                LOG_OK("player: current-character fallback resolved (active player only).");
+                LOG_DEBUG("player: current-character fallback resolved @ %p", reinterpret_cast<void*>(owner));
+            }
 
             g_hpEntries[0].store(c.statArray, std::memory_order_release);
             g_actors[0].store(c.actor, std::memory_order_release);
@@ -821,7 +823,7 @@ namespace trinity::game
         // guard on this build; do not search/hook a stale ABI.
         if (core::UsesTu201CompatibleRevision(core::GetGameVersion().revision))
         {
-            LOG_OK("player: modern continuous stat-pin guard active (all resolved characters).");
+            LOG_OK("player: modern continuous stat pin guard active (all resolved characters).");
         }
         else
         {
@@ -837,16 +839,18 @@ namespace trinity::game
             if (mem::InstallHook("player: damage-apply (alt)", kSig_DamageApply_Alt, "damage multipliers disabled",
                                   &hkDamageApply, &oDamageApply, &g_damageHookTarget))
             {
-                LOG_OK("player: damage-apply hook installed @ %p", g_damageHookTarget);
+                LOG_OK("player: damage apply hook installed [OK]");
+                LOG_DEBUG("player: damage apply hook installed @ %p", g_damageHookTarget);
             }
             else
             {
-                LOG_ERR("player: damage-apply signature NOT FOUND (tried primary + alt) - infinite stamina drain block disabled.");
+                LOG_ERR("player: damage apply signature NOT FOUND (tried primary + alt) - infinite stamina drain block disabled.");
             }
         }
         else
         {
-            LOG_OK("player: damage-apply hook installed @ %p", g_damageHookTarget);
+            LOG_OK("player: damage apply hook installed [OK]");
+            LOG_DEBUG("player: damage apply hook installed @ %p", g_damageHookTarget);
         }
 
         // Native Combat Timing Evaluator: Perfect Parry & Perfect Dodge (sub_1407219c0)
@@ -854,7 +858,8 @@ namespace trinity::game
                              "Easy Parry & Easy Evade helper timing disabled",
                              &hkCombatTimingEval, &oCombatTimingEval, &g_combatTimingTarget))
         {
-            LOG_OK("player: combat-timing hook installed @ %p", g_combatTimingTarget);
+            LOG_OK("player: combat timing hook installed [OK]");
+            LOG_DEBUG("player: combat timing hook installed @ %p", g_combatTimingTarget);
         }
 
         const bool success = (g_damageHookTarget != nullptr) || (g_charMgrGlobal != 0);

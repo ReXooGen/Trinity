@@ -24,6 +24,7 @@
 #include "../game/dye_data.h" // legacy implementation retained out of startup/menu entry points
 #include "../game/equipment.h"
 #include "../game/friendly.h"
+#include "../game/worker.h"
 #include "../game/item_names.h"
 #include "../core/version_detect.h"
 
@@ -72,21 +73,6 @@ namespace trinity::gui
     }
 
     // --- Tab pages -----------------------------------------------------------
-
-    // --- Mount & Horse Options -----------------------------------------------
-    // PLAYER -> Mount & Horse Options
-    // Manages gear dyeing and customization for mounts and horses.
-    static void RenderMountOptions()
-    {
-        State& st = State::Get();
-        ui::Begin(LOC("Mount & Horse Options"));
-
-        bool changed = false;
-        if (changed && st.autoSave)
-            Settings::Save();
-
-        ui::End();
-    }
 
     // --- Combat & Gameplay Options --------------------------------------------
     // PLAYER -> Combat & Gameplay Options
@@ -144,10 +130,21 @@ namespace trinity::gui
                         ? LOC("Refine your gear and socket abyss gears into it.")
                         : LOC("Refine and socket your gear. Load into the world first."));
 
-        ui::Submenu(LOC("Mount & Horse Options"), "mount_options",
-                    LOC("Stamina, gear customization, and summon options for mounts and horses."));
-
         bool changed = false;
+        const bool workerBefore = st.workerMaxLevelAndSkills;
+        if (ui::Toggle(LOC("Max Worker Level & Skills"),
+                       &st.workerMaxLevelAndSkills,
+                       game::Worker::Ready()
+                           ? LOC("Unlocks maximum level and all worker abilities.")
+                           : LOC("Worker patch unavailable for this game revision.")))
+        {
+            if (!game::Worker::SetEnabled(st.workerMaxLevelAndSkills))
+            {
+                st.workerMaxLevelAndSkills = workerBefore;
+                ui::Toast(LOC("Worker patch could not be applied"));
+            }
+            changed = true;
+        }
         changed |= ui::ToggleFloat(LOC("Super Run"), &st.superRun, &st.superRunMult, 1.0f, 10.0f, 0.25f, 2.0f, "%.2fx",
                         LOC("Move faster than normal."));
         changed |= ui::ToggleFloat(LOC("Super Jump"), &st.superJump, &st.superJumpMult, 1.0f, 10.0f, 0.25f, 2.0f, "%.2fx",
@@ -192,7 +189,7 @@ namespace trinity::gui
         const game::Dye::OpState s = game::Dye::Status();
         if (s == game::Dye::OpState::Done)
         {
-            const int targetIdx = (game::Dye::GetTargetMode() == 0) ? game::Dye::GetActiveCharacter() : -1;
+            const int targetIdx = game::Dye::GetActiveCharacter();
             if (targetIdx == 1 || targetIdx == 2)
             {
                 const char* name = game::Equipment::CharacterName(targetIdx);
@@ -283,17 +280,6 @@ namespace trinity::gui
     {
         ui::Begin();
 
-        const bool isMount = (game::Dye::GetTargetMode() == 1);
-        if (isMount)
-        {
-            static const char* const kMountNames[] = { "Active Mount", "Mount 2", "Mount 3", "Mount 4" };
-            int mountIdx = game::Dye::GetActiveMount();
-            if (ui::Combo(LOC("Target Mount"), &mountIdx, kMountNames, 4, LOC("Select active horse or mount to dye.")))
-            {
-                game::Dye::SetActiveMount(mountIdx);
-            }
-        }
-        else
         {
             static const char* const kCharNames[] = { "Kliff", "Damiane", "Oongka" };
             int dyeChar = game::Dye::GetActiveCharacter();
@@ -305,26 +291,13 @@ namespace trinity::gui
 
         if (!game::Dye::Ready())
         {
-            if (isMount)
-            {
-                int mountIdx = game::Dye::GetActiveMount();
-                if (mountIdx > 0)
-                    ui::Option(LOC("Mount Not Detected in World"),
-                               LOC("This mount is not currently spawned or present in the game world."));
-                else
-                    ui::Option(LOC("No Active Mount Detected"),
-                               LOC("Please summon or mount a horse in the game world first."));
-            }
+            int dyeChar = game::Dye::GetActiveCharacter();
+            if (dyeChar > 0)
+                ui::Option(LOC("Character not loaded"),
+                           LOC("This companion is not currently loaded in memory."));
             else
-            {
-                int dyeChar = game::Dye::GetActiveCharacter();
-                if (dyeChar > 0)
-                    ui::Option(LOC("Character not loaded"),
-                               LOC("This companion is not currently loaded in memory."));
-                else
-                    ui::Option(LOC("Waiting for your equipment..."),
-                               LOC("Load into the world - if this persists, change any equipment piece once so the mod can see your gear."));
-            }
+                ui::Option(LOC("Waiting for your equipment..."),
+                           LOC("Load into the world - if this persists, change any equipment piece once so the mod can see your gear."));
             ui::End();
             return;
         }
@@ -3254,7 +3227,6 @@ namespace trinity::gui
         else if (!strcmp(cur, "invmoney_opt")) RenderInventoryMoneyOptional();
         else if (!strcmp(cur, "invabyss"))  RenderInventoryAbyss();
         else if (!strcmp(cur, "combat_options")) RenderCombatOptions();
-        else if (!strcmp(cur, "mount_options")) RenderMountOptions();
         else if (!strcmp(cur, "world_time_presets")) RenderTimePresets();
         else if (!strcmp(cur, "world_weather")) RenderWeatherAtmosphere();
         else                              RenderPlayer();

@@ -1,0 +1,37 @@
+########## [1] symbols at moveupdate  (bn_symbol_list)
+---
+tool: "bn_symbol_list"
+start: "0x144282080"
+offset: 0
+limit: 20
+count: 1
+total: 1
+nextOffset: null
+truncated: false
+---
+
+| symbol | name | type | namespace | ordinal | binding | fullName | autoDefined |
+| --- | --- | --- | --- | --- | --- | --- | --- |
+| 0x144282080 | Teleport:: Movement-update | FunctionSymbol | BNINTERNALNAMESPACE | 0 | NoBinding | Teleport:: Movement-update | false |
+
+
+########## [2] call site disasm 0x1436a01e0  (bn_memory_read)
+{"address":"0x1436a01e0","requestedLength":"0x30","bytesRead":48,"hex":"000048894424204c8d4c24604c8d45f0488d542470488b0be8831ebe00488bc341bf200000004539bdb8010000751241","base64":"AABIiUQkIEyNTCRgTI1F8EiNVCRwSIsL6IMevgBIi8NBvyAAAABFOb24AQAAdRJB\n","warnings":[]}
+
+########## [3] symbols at locostepper  (bn_symbol_list)
+---
+tool: "bn_symbol_list"
+start: "0x14369ff60"
+offset: 0
+limit: 20
+count: 0
+total: 0
+nextOffset: null
+truncated: false
+---
+
+| symbol | name | type | namespace | ordinal | binding | fullName | autoDefined |
+| --- | --- | --- | --- | --- | --- | --- | --- |
+
+
+

@@ -1,0 +1,15 @@
+Trinity record (PE 2944 travel dossier, Phase 0) - role and ABI above are unchanged.
+Trinity feature: Travel / Native Fast Travel - world-map destination selection gate.
+PE evidence: PE 2944 (CrimsonDesert.exe 1.0.0.2944). VA 0x140654ED0 / RVA 0x654ED0, .code, 470 bytes, 22 basic blocks.
+Locator: kSig_TravelToNode_PE2944 (31 bytes, see src/game/offsets.h) -> exactly 1 match in the whole image at this VA (all 12 PE sections scanned). NOTE: the offsets.h prose calls it a "32-byte prologue"; the string is actually 31 byte tokens.
+ABI (confirmed from the caller's setup at 0x140DBC362-0x140DBC38A):
+  RCX = int32* sceneId - pointer to the CALLER'S LOCAL copy (lea rcx,[rbp+0x1320] at 0x140DBC374). It is dereferenced by the table resolver, so it must stay valid for the synchronous call and must never be null.
+  EDX = int32 sceneId by value (mov edx,edi at 0x140DBC388)
+  R8D = int32 nodeIndex (mov r8d,ebx at 0x140DBC385)
+  R9  = not part of this entry point's contract
+  return AL: 1 = selection accepted (test al,al / je at 0x140DBC38F).
+Data: record = VIBE_LevelGimmickSceneObjectInfoTable_GetById(RCX); record+0x28 u32 nodeCount (caller bounds-checks nodeIndex < nodeCount with cmp ebx,[rax+0x28] / jae at 0x140DBC380); record+0x20 ptr nodeArray; node stride 0xD8; sub_1415DF310 copies one 0xD8-byte node entry. Map-UI selection source: [mapUI+0x5C0] -> +0xC8 xmm (low dword = sceneId, high dword = nodeIndex), +0xD0 kind byte compared against 0xE.
+Flow: single caller sub_140DBAC20 (world-map UI dispatch) at 0x140DBC38A. On AL=1 that caller stages the pending request as [rsi+0x960] = sceneId and [rsi+0x964] = nodeIndex, which VIBE_FastTravel_FlushPendingRequest later feeds to VIBE_FastTravel_TryAcceptRequest with R9D = 0. Callees: VIBE_ScopeAttacher_ClientActor_InitGlobal (0x14064F490), sub_14064F4D0 (field attacher), VIBE_LevelGimmickSceneObjectInfoTable_GetById (0x1404A2630), sub_1415DF310 (node-entry copy), sub_1417EDAC0 (888-byte validation/commit step - NOT identified; candidate, do not assume it is a modal).
+Trinity: src/game/teleport.cpp Teleport::Install() PE 2944 branch resolves this address with mem::FindPattern(kSig_TravelToNode_PE2944) purely as a presence/contract check. Trinity does NOT call it - g_travelFn is bound to the dispatcher VIBE_FastTravel_TryAcceptRequest at 0x1406550B0. Do not pass nullptr in RCX if a future change ever calls it directly.
+Proof: static = decompilation + caller register setup disassembly + shared registry/node contract with the confirmed dispatcher + shared pending-request staging. live = none in this pass.
+Confidence: strong candidate. Role (map-UI destination selection/validation, AL=accepted) is supported by two independent sources; the older note that it "opens CommonModalMessage" is NOT proven and is recorded as an open question in docs/binary-ninja/dossiers/travel.md.

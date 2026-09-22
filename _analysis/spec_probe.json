@@ -1,0 +1,8 @@
+[
+  { "label": "view info", "tool": "bn_binary_view_info", "args": {} },
+  { "label": "sections", "tool": "bn_section_list", "args": { "limit": 50 } },
+  { "label": "locomotion stepper 0x14369FF60", "tool": "bn_function_info", "args": { "function": "0x14369ff60" } },
+  { "label": "worker target containing func 0x14214BE8C", "tool": "bn_function_info", "args": { "function": "0x14214be8c" } },
+  { "label": "wanted evaluator 0x1425D7660", "tool": "bn_function_info", "args": { "function": "0x1425d7660" } },
+  { "label": "travel dispatcher 0x1406550B0", "tool": "bn_function_info", "args": { "function": "0x1406550b0" } }
+]

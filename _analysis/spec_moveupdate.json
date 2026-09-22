@@ -1,0 +1,8 @@
+[
+  { "label": "MOVEUPDATE info", "tool": "bn_function_list", "args": { "address": "0x144282080", "limit": 5 } },
+  { "label": "MOVEUPDATE proto", "tool": "bn_function_prototype_get", "args": { "function": "0x144282080" } },
+  { "label": "MOVEUPDATE callers", "tool": "bn_function_callers", "args": { "function": "0x144282080", "limit": 100 } },
+  { "label": "MOVEUPDATE callees", "tool": "bn_function_callees", "args": { "function": "0x144282080", "limit": 200 } },
+  { "label": "MOVEUPDATE disasm", "tool": "bn_function_disassembly", "args": { "function": "0x144282080", "limit": 400 } },
+  { "label": "MOVEUPDATE comment", "tool": "bn_comment_get", "args": { "comment": "0x144282080" } }
+]

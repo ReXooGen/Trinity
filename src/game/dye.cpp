@@ -1992,8 +1992,9 @@ namespace trinity::game
             LOG_WARN("dye: upsert signature not found - dye will apply but not persist.");
         else
         {
-            LOG("dye: batch apply @ %p, durable upsert @ %p.",
-                reinterpret_cast<void*>(apply), reinterpret_cast<void*>(upsert));
+            LOG_OK("dye: batch apply & durable upsert resolved [OK]");
+            LOG_DEBUG("dye: batch apply @ %p, durable upsert @ %p",
+                      reinterpret_cast<void*>(apply), reinterpret_cast<void*>(upsert));
         }
         g_dyeUpsert = reinterpret_cast<DyeUpsert_t>(upsert);
 
@@ -2011,17 +2012,20 @@ namespace trinity::game
         // fail. Optional: without it companions fall back to the leaves.
         g_dyeApplySlot = reinterpret_cast<DyeApplySlot_t>(mem::FindPattern(kSig_DyeApplySlot));
         if (g_dyeApplySlot)
-            LOG("dye: per-slot applier @ %p (companion-safe universal apply).",
-                reinterpret_cast<void*>(g_dyeApplySlot));
+        {
+            LOG_OK("dye: per-slot applier resolved (companion-safe universal apply) [OK]");
+            LOG_DEBUG("dye: per-slot applier @ %p (companion-safe universal apply)",
+                      reinterpret_cast<void*>(g_dyeApplySlot));
+        }
         else
             LOG_WARN("dye: per-slot applier not found - companion dye falls back to render leaves.");
         if (g_dyeVisualSet && g_dyeVisualClear && g_dyeRecRemove)
         {
-            LOG("dye: per-slot visual set @ %p, clear @ %p, record remove @ %p "
-                "(companion-safe live apply).",
-                reinterpret_cast<void*>(g_dyeVisualSet),
-                reinterpret_cast<void*>(g_dyeVisualClear),
-                reinterpret_cast<void*>(g_dyeRecRemove));
+            LOG_OK("dye: per-slot visual set/clear/record remove resolved [OK]");
+            LOG_DEBUG("dye: per-slot visual set @ %p, clear @ %p, record remove @ %p (companion-safe live apply)",
+                      reinterpret_cast<void*>(g_dyeVisualSet),
+                      reinterpret_cast<void*>(g_dyeVisualClear),
+                      reinterpret_cast<void*>(g_dyeRecRemove));
         }
         else
         {

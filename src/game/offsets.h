@@ -394,9 +394,16 @@ namespace trinity::game
     // the floor is for validating pointer CHAINS, not arguments the callee is
     // about to dereference anyway.
     //
-    // PE 2760 keeps the same ABI and body but adds an RCX home store and changes
-    // the frame to lea rbp,[rax-788h] / sub rsp,850h. The full fixed prologue is
-    // unique and was followed through its call to the movement integrator.
+    // PE 2944 live proof (2026-09-20): this exact function installed at
+    // 0x14369FF60 and the 40-byte prologue has one .code match.  Its local
+    // player move-owner is component+0x2C0 (not the older +0x2B8 layout).
+    // Keep this named PE-specific even though its ABI remains the same.
+    inline constexpr const char* kSig_LocoStepper_PE2944 =
+        "48 8B C4 48 89 58 10 44 88 48 20 48 89 48 08 55 56 57 41 54 41 55 41 56 41 57 "
+        "48 8D A8 78 F8 FF FF 48 81 EC 50 08 00 00";
+
+    // PE 2760/2850 modern contract.  Do not use it as a PE 2944 fallback:
+    // the PE 2944 branch above is explicit so a later changed build fails closed.
     inline constexpr const char* kSig_LocoStepper =
         "48 8B C4 48 89 58 10 44 88 48 20 48 89 48 08 55 56 57 41 54 41 55 41 56 41 57 "
         "48 8D A8 78 F8 FF FF 48 81 EC 50 08 00 00";
@@ -428,6 +435,26 @@ namespace trinity::game
     inline constexpr const char* kSig_TravelToNode_Legacy =
         "48 8B C4 48 89 58 18 89 50 10 48 89 48 08 57 48 81 EC 80 00 00 00";
 
+    // PE 2944 native fast-travel trigger, recovered from the live world-map
+    // dispatch at 0x140DBC38A. The caller bounds-checks nodeIndex against
+    // SceneDesc+0x28, passes sceneId in EDX, nodeIndex in R8D, and branches on
+    // AL. The 32-byte prologue is unique in CrimsonDesert.exe PE 2944 at
+    // 0x140654ED0. Unlike older builds, RCX is a pointer to the caller's local
+    // scene id and must remain valid for the synchronous call.
+    inline constexpr const char* kSig_TravelToNode_PE2944 =
+        "89 54 24 10 48 89 4C 24 08 53 55 56 57 41 54 41 56 41 57 48 81 EC "
+        "90 00 00 00 41 8B D8 33 FF";
+
+    // PE 2944's final native Fast Travel dispatcher. The map UI records a
+    // validated scene/node pair, shows CommonModalMessage, then calls this
+    // function only after affirmative confirmation. Its 44-byte prologue is
+    // unique in CrimsonDesert.exe PE 2944 at 0x1406550B0. ABI:
+    //   RCX ignored (the global ClientActor attacher is used), EDX sceneId,
+    //   R8D nodeIndex, R9D=0 for normal Fast Travel; returns AL acceptance.
+    inline constexpr const char* kSig_TravelDispatcher_PE2944 =
+        "48 89 5C 24 18 89 54 24 10 48 89 4C 24 08 55 56 57 41 56 41 57 "
+        "48 8D AC 24 50 FE FF FF 48 81 EC B0 02 00 00 41 8B F9 45 8B F8 33 DB";
+
     // The destinations live in the LevelGimmickSceneObjectInfo registry, a global
     // (IDB qword_6185008), read through its resolver sub_396CC0(u32* sceneId)
     // which returns the scene descriptor (and lazy-loads the data table row on
@@ -447,10 +474,12 @@ namespace trinity::game
     //                        null until the resolver lazy-loads the row - use
     //                        the resolver, not the raw slot)
     //   sceneDesc +0x28 u32  nodeCount
-    //   sceneDesc +0x20 ptr  nodeArray   (node  = nodeArray + 0xC0*index)
-    //   node      +0x10 ptr  gimmick object (a run of std::string members:
-    //                        sector keys, an item code, a type template)
-    //   node      +0x6c f32  world position x,y,z  (+0x50 is scale, +0x5c a quat)
+    //   sceneDesc +0x20 ptr  nodeArray   (node  = nodeArray + 0xD8*index)
+    //   node      +0x84 f32  world position x,y,z  (PE 2944 re-derived live:
+    //                        stride 0xC0->0xD8, position 0x6C->0x84)
+    //   node      +0x10 u16  gimmick/type word (observed live as a 16-bit cmp;
+    //                        the old +0x10 gimmick-ptr and +0x50/+0x5c scale/quat
+    //                        were pre-2944 offsets and need re-derivation)
     // Each "scene" is one gimmick TYPE (scene 0 = bells, 111 = ores, 165 = boards,
     // ...); the node index enumerates every instance of that type on the map.
     inline constexpr const char* kStr_GimmickSceneTable = "LevelGimmickSceneObjectInfo";
@@ -459,9 +488,9 @@ namespace trinity::game
     inline constexpr uintptr_t kOff_Registry_SceneTable = 0x50; // ptr[]
     inline constexpr uintptr_t kOff_SceneDesc_NodeCount = 0x28; // u32
     inline constexpr uintptr_t kOff_SceneDesc_NodeArray = 0x20; // ptr
-    inline constexpr uintptr_t kNode_Stride             = 0xC0;
-    inline constexpr uintptr_t kOff_Node_Gimmick        = 0x10; // ptr -> gimmick object
-    inline constexpr uintptr_t kOff_Node_Position       = 0x6C; // f32 x,y,z
+    inline constexpr uintptr_t kNode_Stride             = 0xD8;
+    inline constexpr uintptr_t kOff_Node_Gimmick        = 0x10; // UNVERIFIED on PE 2944 (observed live as u16, not ptr)
+    inline constexpr uintptr_t kOff_Node_Position       = 0x84; // f32 x,y,z
 
     // The scene descriptor is the reflected class LevelGimmickSceneObjectInfo
     // (112 bytes; field names recovered from its deserializer's error strings,
@@ -599,6 +628,20 @@ namespace trinity::game
     inline constexpr const char* kSig_InvSetExpandSlots =
         "48 89 5C 24 ? 56 48 83 EC 20 48 8B 41 ? 48 8B F2 8B 49";
 
+    // PE 2949 / Crimson Desert 2.03.01: (holder, &err, bucketType, expansion).
+    // The native routine owns writes to bucket+0x16, +0x1A and derived +0x14.
+    inline constexpr const char* kSig_InvSetExpandSlots2949 =
+        "48 89 6C 24 ? 48 89 74 24 ? 48 89 7C 24 ? 41 56 48 83 EC 20 "
+        "48 8B 41 18 41 0F B7 E9 8B 49 20 4C 8B F2 4C 8D 14 C8";
+
+    // PE 2949 pickup planner: Slot Size may temporarily bypass only this
+    // verified full-capacity branch, and must restore it when toggled off.
+    inline constexpr size_t kInvPickupCapacityPatchSize = 2;
+    inline constexpr uint8_t kInvPickupCapacityOriginal[kInvPickupCapacityPatchSize] = { 0x74, 0x07 };
+    inline constexpr uint8_t kInvPickupCapacityEnabled[kInvPickupCapacityPatchSize]  = { 0x90, 0x90 };
+    inline constexpr const char* kSig_InvPickupCapacity2949 =
+        "84 D2 74 07 0F B7 4C 24 48 EB 0F 0F B7 4F 14 66 39 4C 24 48 66 0F 4C 4C 24 48 66 89 4C 24 32";
+
     // The FREE-SPACE GATE (IDB sub_1CE8F40) - the check that actually throws
     // "inventory full" on a world pickup, BEFORE the insert planner runs:
     // the server-side give-items transaction (sub_2566C90) calls
@@ -637,6 +680,16 @@ namespace trinity::game
     inline constexpr const char* kSig_InvHolderInsert201 =
         "48 89 5C 24 20 4C 89 44 24 18 48 89 54 24 10 48 89 4C 24 08 "
         "55 56 57 41 54 41 55 41 56 41 57 48 8D AC 24 00 FE FF FF 48 81 EC 00 03 00 00";
+
+    // PE 2944 keeps the nine-argument planner ABI: after saving rcx/rdx/r8,
+    // it carries r8 (the inventory container) into GetHolder.  Only its frame
+    // changed to `lea rbp,[rsp-210h] / sub rsp,310h`; the exact form was a
+    // unique live match at 0x142407770 (RVA 0x2407770) on 2026-09-19.
+    // This deliberately has a separate signature so a later frame-only
+    // recompile cannot silently inherit PE 2850's more specific layout.
+    inline constexpr const char* kSig_InvHolderInsert2944 =
+        "48 89 5C 24 20 4C 89 44 24 18 48 89 54 24 10 48 89 4C 24 08 "
+        "55 56 57 41 54 41 55 41 56 41 57 48 8D AC 24 F0 FD FF FF 48 81 EC 10 03 00 00";
 
     inline constexpr const char* kSig_InvHolderInsert_Legacy =
         "48 89 5C 24 ? 4C 89 44 24 ? 48 89 54 24 ? 48 89 4C 24 ? 55 56 57 41 54 "
@@ -963,8 +1016,11 @@ namespace trinity::game
     // was tried and fails (bogus TEB, then an access violation on the second
     // call, almost certainly CFG rejecting an indirect call into our own page).
     inline constexpr uintptr_t kOff_Teb_TlsPointer = 0x58; // TEB.ThreadLocalStoragePointer
-    // Pre-2.01 offset. TU 2.01 moved this byte to +0x1FD; runtime selection is
-    // centralized in core::RealmFlagOffsetForRevision().
+    // Realm flag TLS offset — differs by PE revision; always use
+    // core::RealmFlagOffsetForRevision() at runtime. Table (confirmed):
+    //   PE 2850 (TU 2.02): 0x1EC  (0x1FD is a non-boolean byte there)
+    //   PE 2760 (TU 2.01): 0x1FD
+    //   Pre-TU 2.01:       0x1F2  (this constant, kept for documentation)
     inline constexpr uintptr_t kTls_RealmFlag      = 0x1F2; // u8: 0 = client, 1 = server
 
     // Item-info table (typeId -> item definition -> item key string, for names).
@@ -1789,4 +1845,21 @@ namespace trinity::game
     // silently reject every real trust update.
     inline constexpr uintptr_t kOff_FriendlyRec_Value = 0x20; // i64 trust value
     inline constexpr int64_t   kFriendly_Max          = 100;  // the taming/NPC cap (0..100)
+
+    // --- Worker level and ability unlock patch -----------------------------
+    // Exact injection contract from the user-supplied AA script: force the
+    // worker grade-selector's first `jne` branch to always return the top
+    // tier (5). PE 2850: CrimsonDesert.exe+20967CC; PE 2944:
+    // CrimsonDesert.exe+214BE8C (unique match, verified 2026-09-19).
+    // Original `JNZ +0x95` -> patched `JMP +0x96 / NOP`.
+    inline constexpr size_t kWorkerPatchSize = 6;
+    inline constexpr uint8_t kWorkerPatchOriginal[kWorkerPatchSize] =
+        { 0x0F, 0x85, 0x95, 0x00, 0x00, 0x00 };
+    inline constexpr uint8_t kWorkerPatchEnabled[kWorkerPatchSize] =
+        { 0xE9, 0x96, 0x00, 0x00, 0x00, 0x90 };
+
+    // Include the continuation after the injection bytes so an accidental
+    // matching conditional branch elsewhere cannot be patched.
+    inline constexpr const char* kSig_WorkerMaxLevelAndSkills =
+        "0F 85 95 00 00 00 48 8B 7C 24 20 41 0F B7 D5";
 }

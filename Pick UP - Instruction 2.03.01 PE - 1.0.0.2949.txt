@@ -1,0 +1,6 @@
+14240782D - 0FB7 4F 14  - movzx ecx,word ptr [rdi+14]
+1409C995A - 0FB7 48 14  - movzx ecx,word ptr [rax+14]
+140F64FE1 - 0FBF 48 14  - movsx ecx,word ptr [rax+14]
+14C828FC9 - 0FB7 79 14  - movzx edi,word ptr [rcx+14]
+142407FBC - 0FBF 4F 14  - movsx ecx,word ptr [rdi+14]
+1409C496B - 0FBF 48 14  - movsx ecx,word ptr [rax+14]

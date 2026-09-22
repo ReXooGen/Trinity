@@ -1,0 +1,6 @@
+[
+  {"label":"info_1406550b0","tool":"bn_function_info","args":{"function":"0x1406550b0"}},
+  {"label":"proto_1406550b0","tool":"bn_function_prototype_get","args":{"function":"0x1406550b0"}},
+  {"label":"comment_1406550b0","tool":"bn_comment_get","args":{"comment":"0x1406550b0"}},
+  {"label":"blocks_1406550b0","tool":"bn_function_basic_blocks","args":{"function":"0x1406550b0"}}
+]

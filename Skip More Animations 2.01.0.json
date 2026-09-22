@@ -1,0 +1,371 @@
+{
+  "modinfo": {
+    "title": "Skip More Animations 2.01.0",
+    "version": "0.4.8",
+    "author": "kuiye123",
+    "description": "Enable patch to skip animation part.",
+    "nexus_url": "https://www.nexusmods.com/crimsondesert/mods/774"
+  },
+  "patches": [
+    {
+      "game_file": "sequencer/binary__/stageseq/funcnpc/cd_seq_funcnpc_craftsmith.paseq",
+      "source_group": "0014",
+      "changes": [
+        {
+          "offset": 57517,
+          "label": "[SMITH REFINE] Trim all (mid04 animations) 46439 -> 1",
+          "original": "6FE80100",
+          "patched": "09330100"
+        },
+        {
+          "offset": 57759,
+          "label": "[SMITH REFINE] Trim to 1/8 (mid05 animations) 12839 -> 1604",
+          "original": "971A0200",
+          "patched": "B4EE0100"
+        },
+        {
+          "offset": 58251,
+          "label": "[SMITH CRAFT] Trim all (mid07 animations) 46439 -> 1",
+          "original": "3FF90200",
+          "patched": "D9430200"
+        },
+        {
+          "offset": 58493,
+          "label": "[SMITH CRAFT] Trim to 1/8 (mid08 animations) 12839 -> 1604",
+          "original": "672B0300",
+          "patched": "84FF0200"
+        },
+        {
+          "offset": 58985,
+          "label": "[SMITH EXTRACT] Trim all (mid10 animations) 46439 -> 1",
+          "original": "FF0A0400",
+          "patched": "99550300"
+        },
+        {
+          "offset": 59227,
+          "label": "[SMITH EXTRACT] Trim to 1/8 (mid11 animations) 12839 -> 1604",
+          "original": "273D0400",
+          "patched": "44110400"
+        }
+      ]
+    },
+    {
+      "game_file": "sequencer/binary__/stageseq/funcnpc/cd_seq_basecamp_funcnpc_craftsmith.paseq",
+      "source_group": "0014",
+      "changes": [
+        {
+          "offset": 57272,
+          "label": "[BASECOMP SMITH REFINE] Trim all (mid04 animations) 46439 -> 1",
+          "original": "5FDA0100",
+          "patched": "F9240100"
+        },
+        {
+          "offset": 57514,
+          "label": "[BASECOMP SMITH REFINE] Trim to 1/8 (mid05 animations) 12839 -> 1604",
+          "original": "870C0200",
+          "patched": "A4E00100"
+        },
+        {
+          "offset": 58006,
+          "label": "[BASECOMP SMITH CRAFT] Trim all (mid07 animations) 46439 -> 1",
+          "original": "2FEB0200",
+          "patched": "C9350200"
+        },
+        {
+          "offset": 58248,
+          "label": "[BASECOMP SMITH CRAFT] Trim to 1/8 (mid08 animations) 12839 -> 1604",
+          "original": "571D0300",
+          "patched": "74F10200"
+        },
+        {
+          "offset": 58740,
+          "label": "[BASECOMP SMITH EXTRACT] Trim all (mid10 animations) 46439 -> 1",
+          "original": "EFFC0300",
+          "patched": "89470300"
+        },
+        {
+          "offset": 58982,
+          "label": "[BASECOMP SMITH EXTRACT] Trim to 1/8 (mid11 animations) 12839 -> 1604",
+          "original": "172F0400",
+          "patched": "34030400"
+        }
+      ]
+    },
+    {
+      "game_file": "sequencer/binary__/baseseq/gimmickcalledseq/gimmick_craft_repair_01.paseq",
+      "source_group": "0014",
+      "changes": [
+        {
+          "offset": 37454,
+          "label": "[ARMOR REPAIR] Trim all (starting animations) 5399 -> 1",
+          "original": "17150000",
+          "patched": "01000000"
+        },
+        {
+          "offset": 37668,
+          "label": "[ARMOR REPAIR] Trim all (mid00 animations) 9599 -> 1",
+          "original": "973A0000",
+          "patched": "19150000"
+        },
+        {
+          "offset": 37882,
+          "label": "[ARMOR REPAIR] Trim all (mid01 animations) 9659 -> 1",
+          "original": "53600000",
+          "patched": "993A0000"
+        },
+        {
+          "offset": 38136,
+          "label": "[ARMOR REPAIR] Trim all (mid02 animations) 20939 -> 1",
+          "original": "1FB20000",
+          "patched": "55600000"
+        },
+        {
+          "offset": 38362,
+          "label": "[ARMOR REPAIR] Trim all (mid03 animations) 599 -> 1",
+          "original": "77B40000",
+          "patched": "21B20000"
+        },
+        {
+          "offset": 38592,
+          "label": "[ARMOR REPAIR] Trim all (ending animations) 9359 -> 1",
+          "original": "07D90000",
+          "patched": "79B40000"
+        }
+      ]
+    },
+    {
+      "game_file": "sequencer/binary__/baseseq/gimmickcalledseq/gimmick_craft_stone_repair_01.paseq",
+      "source_group": "0014",
+      "changes": [
+        {
+          "offset": 38969,
+          "label": "[WEPEON REINFORCE] Trim all (starting animations) 13199 -> 1",
+          "original": "8F330000",
+          "patched": "01000000"
+        },
+        {
+          "offset": 39183,
+          "label": "[WEPEON REINFORCE] Trim all (mid00 animations) 20399 -> 1",
+          "original": "3F830000",
+          "patched": "91330000"
+        },
+        {
+          "offset": 39397,
+          "label": "[WEPEON REINFORCE] Trim all (mid01 animations) 20759 -> 1",
+          "original": "57D40000",
+          "patched": "41830000"
+        },
+        {
+          "offset": 39651,
+          "label": "[WEPEON REINFORCE] Trim all (mid02 animations) 31559 -> 1",
+          "original": "9F4F0100",
+          "patched": "59D40000"
+        },
+        {
+          "offset": 39877,
+          "label": "[WEPEON REINFORCE] Trim all (mid03 animations) 599 -> 1",
+          "original": "F7510100",
+          "patched": "A14F0100"
+        },
+        {
+          "offset": 40107,
+          "label": "[WEPEON REINFORCE] Trim all (ending animations) 11879 -> 1",
+          "original": "5F800100",
+          "patched": "F9510100"
+        }
+      ]
+    },
+    {
+      "game_file": "sequencer/binary__/baseseq/gimmickcalledseq/gimmick_craft_stone_repair_right.paseq",
+      "source_group": "0014",
+      "changes": [
+        {
+          "offset": 39182,
+          "label": "[WEPEON REINFORCE RIGHT] Trim all (starting animations) 13199 -> 1",
+          "original": "8F330000",
+          "patched": "01000000"
+        },
+        {
+          "offset": 39396,
+          "label": "[WEPEON REINFORCE RIGHT] Trim all (mid00 animations) 20399 -> 1",
+          "original": "3F830000",
+          "patched": "91330000"
+        },
+        {
+          "offset": 39610,
+          "label": "[WEPEON REINFORCE RIGHT] Trim all (mid01 animations) 20759 -> 1",
+          "original": "57D40000",
+          "patched": "41830000"
+        },
+        {
+          "offset": 39864,
+          "label": "[WEPEON REINFORCE RIGHT] Trim all (mid02 animations) 31559 -> 1",
+          "original": "9F4F0100",
+          "patched": "59D40000"
+        },
+        {
+          "offset": 40090,
+          "label": "[WEPEON REINFORCE RIGHT] Trim all (mid03 animations) 599 -> 1",
+          "original": "F7510100",
+          "patched": "A14F0100"
+        },
+        {
+          "offset": 40320,
+          "label": "[WEPEON REINFORCE RIGHT] Trim all (ending animations) 13199 -> 1",
+          "original": "87850100",
+          "patched": "F9510100"
+        }
+      ]
+    },
+    {
+      "game_file": "sequencer/binary__/stageseq/funcnpc/cd_seq_funcnpc_witchstore_isolation.paseq",
+      "source_group": "0014",
+      "changes": [
+        {
+          "offset": 43885,
+          "label": "[WITCH OF NOVICE] Trim all (mid03 animations) 18359 -> 1",
+          "original": "6F7F0100",
+          "patched": "B9370100"
+        },
+        {
+          "offset": 44607,
+          "label": "[WITCH OF NOVICE] Trim all (mid06 animations) 18359 -> 1",
+          "original": "2B590200",
+          "patched": "75110200"
+        },
+        {
+          "offset": 45329,
+          "label": "[WITCH OF NOVICE] Trim all (mid09 animations) 18359 -> 1",
+          "original": "3F170300",
+          "patched": "89CF0200"
+        },
+        {
+          "offset": 46059,
+          "label": "[WITCH OF NOVICE] Trim all (mid12 animations) 18359 -> 1",
+          "original": "7FD60300",
+          "patched": "C98E0300"
+        }
+      ]
+    },
+    {
+      "game_file": "sequencer/binary__/stageseq/funcnpc/cd_seq_funcnpc_witchstore_goodness.paseq",
+      "source_group": "0014",
+      "changes": [
+        {
+          "offset": 45193,
+          "label": "[WITCH OF KINDNESS] Trim all (mid03 animations) 18359 -> 1",
+          "original": "0FC10100",
+          "patched": "59790100"
+        },
+        {
+          "offset": 45915,
+          "label": "[WITCH OF KINDNESS] Trim all (mid06 animations) 18359 -> 1",
+          "original": "8F9A0200",
+          "patched": "D9520200"
+        },
+        {
+          "offset": 46637,
+          "label": "[WITCH OF KINDNESS] Trim all (mid09 animations) 18359 -> 1",
+          "original": "A3580300",
+          "patched": "ED100300"
+        },
+        {
+          "offset": 47367,
+          "label": "[WITCH OF KINDNESS] Trim all (mid12 animations) 18359 -> 1",
+          "original": "E3170400",
+          "patched": "2DD00300"
+        }
+      ]
+    },
+    {
+      "game_file": "sequencer/binary__/stageseq/funcnpc/cd_seq_funcnpc_witchstore_modesty.paseq",
+      "source_group": "0014",
+      "changes": [
+        {
+          "offset": 45207,
+          "label": "[WITCH OF HUMILITY] Trim all (mid03 animations) 18359 -> 1",
+          "original": "0FC10100",
+          "patched": "59790100"
+        },
+        {
+          "offset": 45929,
+          "label": "[WITCH OF HUMILITY] Trim all (mid06 animations) 18359 -> 1",
+          "original": "6F9C0200",
+          "patched": "B9540200"
+        },
+        {
+          "offset": 46651,
+          "label": "[WITCH OF HUMILITY] Trim all (mid09 animations) 18359 -> 1",
+          "original": "475A0300",
+          "patched": "91120300"
+        },
+        {
+          "offset": 47381,
+          "label": "[WITCH OF HUMILITY] Trim all (mid12 animations) 18359 -> 1",
+          "original": "87190400",
+          "patched": "D1D10300"
+        }
+      ]
+    },
+    {
+      "game_file": "sequencer/binary__/stageseq/funcnpc/cd_seq_funcnpc_witchstore_power.paseq",
+      "source_group": "0014",
+      "changes": [
+        {
+          "offset": 43835,
+          "label": "[WITCH OF STRENGTH] Trim all (mid03 animations) 18359 -> 1",
+          "original": "0FC10100",
+          "patched": "59790100"
+        },
+        {
+          "offset": 44557,
+          "label": "[WITCH OF STRENGTH] Trim all (mid06 animations) 18359 -> 1",
+          "original": "6F9C0200",
+          "patched": "B9540200"
+        },
+        {
+          "offset": 45279,
+          "label": "[WITCH OF STRENGTH] Trim all (mid09 animations) 18359 -> 1",
+          "original": "CF590300",
+          "patched": "19120300"
+        },
+        {
+          "offset": 46009,
+          "label": "[WITCH OF STRENGTH] Trim all (mid12 animations) 18359 -> 1",
+          "original": "0F190400",
+          "patched": "59D10300"
+        }
+      ]
+    },
+    {
+      "game_file": "sequencer/binary__/stageseq/funcnpc/cd_seq_funcnpc_witchstore_wisdom.paseq",
+      "source_group": "0014",
+      "changes": [
+        {
+          "offset": 45181,
+          "label": "[WITCH OF WISDOM] Trim all (mid03 animations) 18359 -> 1",
+          "original": "0FC10100",
+          "patched": "59790100"
+        },
+        {
+          "offset": 45903,
+          "label": "[WITCH OF WISDOM] Trim all (mid06 animations) 18359 -> 1",
+          "original": "CB9A0200",
+          "patched": "15530200"
+        },
+        {
+          "offset": 46625,
+          "label": "[WITCH OF WISDOM] Trim all (mid09 animations) 18359 -> 1",
+          "original": "DF580300",
+          "patched": "29110300"
+        },
+        {
+          "offset": 47355,
+          "label": "[WITCH OF WISDOM] Trim all (mid12 animations) 18359 -> 1",
+          "original": "1F180400",
+          "patched": "69D00300"
+        }
+      ]
+    }
+  ]
+}

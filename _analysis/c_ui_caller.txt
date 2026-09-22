@@ -1,0 +1,6 @@
+Candidate - Trinity Travel (deliberately left as sub_*, NOT renamed).
+Travel-relevant role: this is the world-map UI routine that performs the Native Fast Travel destination hand-off. At 0x140DBC348 it reads the current map selection from [rsi+0x5C0] -> +0xC8 (xmm: low dword sceneId, high dword nodeIndex) and +0xD0 (kind byte, compared against 0xE). At 0x140DBC37B it bounds-checks the node against VIBE_LevelGimmickSceneObjectInfoTable_GetById(...)+0x28, then at 0x140DBC38A calls VIBE_FastTravel_SelectDestination. On AL=1 it stages the pending request at [rsi+0x960] = sceneId and [rsi+0x964] = nodeIndex.
+Why it stays sub_*: only this one travel callsite is understood. The function is 6802 bytes / 342 basic blocks and also drives unrelated UI (e.g. it references "SkillTreePanel" at 0x140DBC437), so any VIBE_ feature name would be wrong. Only the travel callsite is annotated.
+Locator: 48-byte prologue AOB "48 89 5C 24 20 55 56 57 41 54 41 55 41 56 41 57 48 8D AC 24 20 ED FF FF B8 E0 13 00 00 E8 1E B6 AD 03 48 2B E0" -> exactly 1 match in the whole image at 0x140DBAC20 (RVA 0xDBAC20).
+Trinity: not called and not hooked. Recorded because it is the UI anchor that fixes the selection gate's ABI (RCX = pointer, EDX = sceneId, R8D = nodeIndex, AL = accepted).
+Confidence: candidate (travel callsite only).

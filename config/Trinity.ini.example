@@ -42,6 +42,7 @@ freeFlight=0
 flightSpeed=8.000
 trustMult=0
 trustMultVal=20.000
+workerMaxLevelAndSkills=0
 
 ; Inventory Overrides
 invSlotSize=0

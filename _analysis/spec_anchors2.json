@@ -1,0 +1,20 @@
+[
+  { "label": "damage apply 0x1417AE100", "tool": "bn_function_list", "args": { "address": "0x1417AE100", "limit": 3 } },
+  { "label": "combat timing 0x140873850", "tool": "bn_function_list", "args": { "address": "0x140873850", "limit": 3 } },
+  { "label": "inv commit 0x14212E160", "tool": "bn_function_list", "args": { "address": "0x14212E160", "limit": 3 } },
+  { "label": "inv holder insert 0x142407770", "tool": "bn_function_list", "args": { "address": "0x142407770", "limit": 3 } },
+  { "label": "inv get holder 0x14212A0F0", "tool": "bn_function_list", "args": { "address": "0x14212A0F0", "limit": 3 } },
+  { "label": "inv get item qty 0x1417F8E70", "tool": "bn_function_list", "args": { "address": "0x1417F8E70", "limit": 3 } },
+  { "label": "tr item value ctor 0x142409910", "tool": "bn_function_list", "args": { "address": "0x142409910", "limit": 3 } },
+  { "label": "inv commit placement 0x14212DDF0", "tool": "bn_function_list", "args": { "address": "0x14212DDF0", "limit": 3 } },
+  { "label": "inv free placements 0x1404880C0", "tool": "bn_function_list", "args": { "address": "0x1404880C0", "limit": 3 } },
+  { "label": "field time tick 0x140A38440", "tool": "bn_function_list", "args": { "address": "0x140A38440", "limit": 3 } },
+  { "label": "weather rain 0x143DC39B0", "tool": "bn_function_list", "args": { "address": "0x143DC39B0", "limit": 3 } },
+  { "label": "wind pack 0x143DBCCC0", "tool": "bn_function_list", "args": { "address": "0x143DBCCC0", "limit": 3 } },
+  { "label": "world get time scale proto", "tool": "bn_function_list", "args": { "address": "0x140952080", "limit": 3 } },
+  { "label": "world frame update callers", "tool": "bn_function_callers", "args": { "function": "0x140AD23F0", "limit": 60 } },
+  { "label": "world get time scale callers", "tool": "bn_function_callers", "args": { "function": "0x140952080", "limit": 60 } },
+  { "label": "frame timer body container", "tool": "bn_function_list", "args": { "start": "0x140AD1300", "end": "0x140AD13C0", "limit": 20 } },
+  { "label": "field time realm container", "tool": "bn_function_list", "args": { "start": "0x1420E5500", "end": "0x1420E55B0", "limit": 20 } },
+  { "label": "tod engine global container", "tool": "bn_function_list", "args": { "start": "0x142CE5300", "end": "0x142CE5360", "limit": 20 } }
+]

@@ -1,0 +1,313 @@
+diff --git a/src/buffer.c b/src/buffer.c
+index d2850bf..c1c2282 100644
+--- a/src/buffer.c
++++ b/src/buffer.c
+@@ -244,10 +244,44 @@ static PMEMORY_BLOCK GetMemoryBlock(LPVOID pOrigin)
+ }
+ 
+ //-------------------------------------------------------------------------
+-LPVOID AllocateBuffer(LPVOID pOrigin)
++LPVOID AllocateBuffer(LPVOID pOrigin, BOOL *pUsesAbsolutePatch)
+ {
+     PMEMORY_SLOT  pSlot;
+     PMEMORY_BLOCK pBlock = GetMemoryBlock(pOrigin);
++
++    if (pUsesAbsolutePatch != NULL)
++        *pUsesAbsolutePatch = FALSE;
++
++#if defined(_M_X64) || defined(__x86_64__)
++    if (pBlock == NULL)
++    {
++        // Some large engines deliberately reserve or fragment every 64 KiB
++        // allocation slot near their main image.  The standard MinHook relay
++        // needs a nearby block for its 5-byte E9, but an absolute target patch
++        // does not.  Allocate a normal executable block and let hook.c select
++        // that 14-byte form instead of failing all otherwise-valid hooks.
++        pBlock = (PMEMORY_BLOCK)VirtualAlloc(
++            NULL, MEMORY_BLOCK_SIZE, MEM_COMMIT | MEM_RESERVE, PAGE_EXECUTE_READWRITE);
++        if (pBlock != NULL)
++        {
++            PMEMORY_SLOT pInitSlot = (PMEMORY_SLOT)pBlock + 1;
++            pBlock->pFree = NULL;
++            pBlock->usedCount = 0;
++            do
++            {
++                pInitSlot->pNext = pBlock->pFree;
++                pBlock->pFree = pInitSlot;
++                pInitSlot++;
++            } while ((ULONG_PTR)pInitSlot - (ULONG_PTR)pBlock <= MEMORY_BLOCK_SIZE - MEMORY_SLOT_SIZE);
++
++            pBlock->pNext = g_pMemoryBlocks;
++            g_pMemoryBlocks = pBlock;
++            if (pUsesAbsolutePatch != NULL)
++                *pUsesAbsolutePatch = TRUE;
++        }
++    }
++#endif
++
+     if (pBlock == NULL)
+         return NULL;
+ 
+diff --git a/src/buffer.h b/src/buffer.h
+index 204d551..ecb789e 100644
+--- a/src/buffer.h
++++ b/src/buffer.h
+@@ -37,6 +37,9 @@
+ 
+ VOID   InitializeBuffer(VOID);
+ VOID   UninitializeBuffer(VOID);
+-LPVOID AllocateBuffer(LPVOID pOrigin);
++// `*pUsesAbsolutePatch` is true only when the normal +/-512 MiB search has
++// no free allocation-granularity slot and the caller must patch the target
++// with a 14-byte absolute jump instead of MinHook's 5-byte relay jump.
++LPVOID AllocateBuffer(LPVOID pOrigin, BOOL *pUsesAbsolutePatch);
+ VOID   FreeBuffer(LPVOID pBuffer);
+ BOOL   IsExecutableAddress(LPVOID pAddress);
+diff --git a/src/hook.c b/src/hook.c
+index 06f5696..bc8e81f 100644
+--- a/src/hook.c
++++ b/src/hook.c
+@@ -61,17 +61,19 @@
+ typedef struct _HOOK_ENTRY
+ {
+     LPVOID pTarget;             // Address of the target function.
+-    LPVOID pDetour;             // Address of the detour or relay function.
++    LPVOID pDetour;             // Address of the relay or direct detour function.
+     LPVOID pTrampoline;         // Address of the trampoline function.
+-    UINT8  backup[8];           // Original prologue of the target function.
++    UINT8  backup[sizeof(JMP_ABS)]; // Original overwritten target instructions.
+ 
+     UINT8  patchAbove  : 1;     // Uses the hot patch area.
++    UINT8  usesAbsolutePatch : 1; // Direct 14-byte x64 detour; no nearby relay.
+     UINT8  isEnabled   : 1;     // Enabled.
+     UINT8  queueEnable : 1;     // Queued for enabling/disabling when != isEnabled.
+ 
+     UINT   nIP : 4;             // Count of the instruction boundaries.
+     UINT8  oldIPs[8];           // Instruction boundaries of the target function.
+     UINT8  newIPs[8];           // Instruction boundaries of the trampoline function.
++    UINT8  patchSize;            // Bytes restored at the target (5 or 14 on x64).
+ } HOOK_ENTRY, *PHOOK_ENTRY;
+ 
+ // Suspended threads for Freeze()/Unfreeze().
+@@ -174,8 +176,10 @@ static DWORD_PTR FindOldIP(PHOOK_ENTRY pHook, DWORD_PTR ip)
+     }
+ 
+ #if defined(_M_X64) || defined(__x86_64__)
+-    // Check relay function.
+-    if (ip == (DWORD_PTR)pHook->pDetour)
++    // Check the relay function.  An absolute fallback stores the user detour
++    // directly in pDetour; redirecting a suspended thread from that function
++    // to the target while disabling would corrupt its ordinary return path.
++    if (!pHook->usesAbsolutePatch && ip == (DWORD_PTR)pHook->pDetour)
+         return (DWORD_PTR)pHook->pTarget;
+ #endif
+ 
+@@ -394,7 +398,7 @@ static MH_STATUS EnableHookLL(UINT pos, BOOL enable)
+ {
+     PHOOK_ENTRY pHook = &g_hooks.pItems[pos];
+     DWORD  oldProtect;
+-    SIZE_T patchSize    = sizeof(JMP_REL);
++    SIZE_T patchSize    = pHook->patchSize;
+     LPBYTE pPatchTarget = (LPBYTE)pHook->pTarget;
+ 
+     if (pHook->patchAbove)
+@@ -408,9 +412,25 @@ static MH_STATUS EnableHookLL(UINT pos, BOOL enable)
+ 
+     if (enable)
+     {
+-        PJMP_REL pJmp = (PJMP_REL)pPatchTarget;
+-        pJmp->opcode = 0xE9;
+-        pJmp->operand = (INT32)((LPBYTE)pHook->pDetour - (pPatchTarget + sizeof(JMP_REL)));
++        if (pHook->usesAbsolutePatch)
++        {
++#if defined(_M_X64) || defined(__x86_64__)
++            // The game may reserve every allocation-granularity slot within
++            // rel32 range.  In that case write an absolute indirect jump at
++            // the target and use the far executable trampoline block directly.
++            PJMP_ABS pJmp = (PJMP_ABS)pPatchTarget;
++            pJmp->opcode0 = 0xFF;
++            pJmp->opcode1 = 0x25;
++            pJmp->dummy = 0;
++            pJmp->address = (UINT64)(ULONG_PTR)pHook->pDetour;
++#endif
++        }
++        else
++        {
++            PJMP_REL pJmp = (PJMP_REL)pPatchTarget;
++            pJmp->opcode = 0xE9;
++            pJmp->operand = (INT32)((LPBYTE)pHook->pDetour - (pPatchTarget + sizeof(JMP_REL)));
++        }
+ 
+         if (pHook->patchAbove)
+         {
+@@ -424,7 +444,7 @@ static MH_STATUS EnableHookLL(UINT pos, BOOL enable)
+         if (pHook->patchAbove)
+             memcpy(pPatchTarget, pHook->backup, sizeof(JMP_REL) + sizeof(JMP_REL_SHORT));
+         else
+-            memcpy(pPatchTarget, pHook->backup, sizeof(JMP_REL));
++            memcpy(pPatchTarget, pHook->backup, pHook->patchSize);
+     }
+ 
+     VirtualProtect(pPatchTarget, patchSize, oldProtect, &oldProtect);
+@@ -589,7 +609,8 @@ MH_STATUS WINAPI MH_CreateHook(LPVOID pTarget, LPVOID pDetour, LPVOID *ppOrigina
+             UINT pos = FindHookEntry(pTarget);
+             if (pos == INVALID_HOOK_POS)
+             {
+-                LPVOID pBuffer = AllocateBuffer(pTarget);
++                BOOL usesAbsolutePatch = FALSE;
++                LPVOID pBuffer = AllocateBuffer(pTarget, &usesAbsolutePatch);
+                 if (pBuffer != NULL)
+                 {
+                     TRAMPOLINE ct;
+@@ -597,6 +618,11 @@ MH_STATUS WINAPI MH_CreateHook(LPVOID pTarget, LPVOID pDetour, LPVOID *ppOrigina
+                     ct.pTarget     = pTarget;
+                     ct.pDetour     = pDetour;
+                     ct.pTrampoline = pBuffer;
++#if defined(_M_X64) || defined(__x86_64__)
++                    ct.patchSize   = usesAbsolutePatch ? sizeof(JMP_ABS) : sizeof(JMP_REL);
++#else
++                    ct.patchSize   = sizeof(JMP_REL);
++#endif
+                     if (CreateTrampolineFunction(&ct))
+                     {
+                         PHOOK_ENTRY pHook = AddHookEntry();
+@@ -604,15 +630,17 @@ MH_STATUS WINAPI MH_CreateHook(LPVOID pTarget, LPVOID pDetour, LPVOID *ppOrigina
+                         {
+                             pHook->pTarget     = ct.pTarget;
+ #if defined(_M_X64) || defined(__x86_64__)
+-                            pHook->pDetour     = ct.pRelay;
++                            pHook->pDetour     = usesAbsolutePatch ? ct.pDetour : ct.pRelay;
+ #else
+                             pHook->pDetour     = ct.pDetour;
+ #endif
+                             pHook->pTrampoline = ct.pTrampoline;
+                             pHook->patchAbove  = ct.patchAbove;
++                            pHook->usesAbsolutePatch = usesAbsolutePatch;
+                             pHook->isEnabled   = FALSE;
+                             pHook->queueEnable = FALSE;
+                             pHook->nIP         = ct.nIP;
++                            pHook->patchSize   = (UINT8)ct.patchSize;
+                             memcpy(pHook->oldIPs, ct.oldIPs, ARRAYSIZE(ct.oldIPs));
+                             memcpy(pHook->newIPs, ct.newIPs, ARRAYSIZE(ct.newIPs));
+ 
+@@ -627,7 +655,7 @@ MH_STATUS WINAPI MH_CreateHook(LPVOID pTarget, LPVOID pDetour, LPVOID *ppOrigina
+                             }
+                             else
+                             {
+-                                memcpy(pHook->backup, pTarget, sizeof(JMP_REL));
++                                memcpy(pHook->backup, pTarget, ct.patchSize);
+                             }
+ 
+                             if (ppOriginal != NULL)
+diff --git a/src/trampoline.c b/src/trampoline.c
+index cf8ce05..dbdbb52 100644
+--- a/src/trampoline.c
++++ b/src/trampoline.c
+@@ -27,6 +27,7 @@
+  */
+ 
+ #include <windows.h>
++#include <limits.h>
+ 
+ #if defined(_MSC_VER) && !defined(MINHOOK_DISABLE_INTRINSICS)
+     #define ALLOW_INTRINSICS
+@@ -106,6 +107,7 @@ BOOL CreateTrampolineFunction(PTRAMPOLINE ct)
+     };
+ #endif
+ 
++    const UINT patchSize = ct->patchSize ? ct->patchSize : sizeof(JMP_REL);
+     UINT8     oldPos   = 0;
+     UINT8     newPos   = 0;
+     ULONG_PTR jmpDest  = 0;     // Destination address of an internal jump.
+@@ -130,7 +132,7 @@ BOOL CreateTrampolineFunction(PTRAMPOLINE ct)
+             return FALSE;
+ 
+         pCopySrc = (LPVOID)pOldInst;
+-        if (oldPos >= sizeof(JMP_REL))
++        if (oldPos >= patchSize)
+         {
+             // The trampoline function is long enough.
+             // Complete the function with the jump to the target function.
+@@ -162,8 +164,17 @@ BOOL CreateTrampolineFunction(PTRAMPOLINE ct)
+ 
+             // Relative address is stored at (instruction length - immediate value length - 4).
+             pRelAddr = (PUINT32)(instBuf + hs.len - ((hs.flags & 0x3C) >> 2) - 4);
+-            *pRelAddr
+-                = (UINT32)((pOldInst + hs.len + (INT32)hs.disp.disp32) - (pNewInst + hs.len));
++            {
++                const INT64 rel = (INT64)(pOldInst + hs.len + (INT32)hs.disp.disp32)
++                    - (INT64)(pNewInst + hs.len);
++                // A near MinHook slot is always reachable, but the absolute
++                // fallback can live anywhere in the 64-bit address space.
++                // Refuse a RIP-relative instruction that cannot keep its
++                // signed disp32 rather than silently truncating it.
++                if (rel < INT_MIN || rel > INT_MAX)
++                    return FALSE;
++                *pRelAddr = (UINT32)(INT32)rel;
++            }
+ 
+             // Complete the function if JMP (FF /4).
+             if (hs.opcode == 0xFF && hs.modrm_reg == 4)
+@@ -288,24 +299,32 @@ BOOL CreateTrampolineFunction(PTRAMPOLINE ct)
+     } while (!finished);
+ 
+     // Is there enough place for a long jump?
+-    if (oldPos < sizeof(JMP_REL)
+-        && !IsCodePadding((LPBYTE)ct->pTarget + oldPos, sizeof(JMP_REL) - oldPos))
++    if (oldPos < patchSize)
+     {
+-        // Is there enough place for a short jump?
+-        if (oldPos < sizeof(JMP_REL_SHORT)
+-            && !IsCodePadding((LPBYTE)ct->pTarget + oldPos, sizeof(JMP_REL_SHORT) - oldPos))
+-        {
++        // A 14-byte absolute target patch cannot use MinHook's five-byte
++        // hot-patch area.  The caller must choose a target with enough whole
++        // prologue instructions for the long form.
++        if (patchSize > sizeof(JMP_REL))
+             return FALSE;
+-        }
+ 
+-        // Can we place the long jump above the function?
+-        if (!IsExecutableAddress((LPBYTE)ct->pTarget - sizeof(JMP_REL)))
+-            return FALSE;
++        if (!IsCodePadding((LPBYTE)ct->pTarget + oldPos, sizeof(JMP_REL) - oldPos))
++        {
++            // Is there enough place for a short jump?
++            if (oldPos < sizeof(JMP_REL_SHORT)
++                && !IsCodePadding((LPBYTE)ct->pTarget + oldPos, sizeof(JMP_REL_SHORT) - oldPos))
++            {
++                return FALSE;
++            }
+ 
+-        if (!IsCodePadding((LPBYTE)ct->pTarget - sizeof(JMP_REL), sizeof(JMP_REL)))
+-            return FALSE;
++            // Can we place the long jump above the function?
++            if (!IsExecutableAddress((LPBYTE)ct->pTarget - sizeof(JMP_REL)))
++                return FALSE;
+ 
+-        ct->patchAbove = TRUE;
++            if (!IsCodePadding((LPBYTE)ct->pTarget - sizeof(JMP_REL), sizeof(JMP_REL)))
++                return FALSE;
++
++            ct->patchAbove = TRUE;
++        }
+     }
+ 
+ #if defined(_M_X64) || defined(__x86_64__)
+diff --git a/src/trampoline.h b/src/trampoline.h
+index f7efb36..a49976d 100644
+--- a/src/trampoline.h
++++ b/src/trampoline.h
+@@ -93,6 +93,11 @@ typedef struct _TRAMPOLINE
+     LPVOID pDetour;         // [In] Address of the detour function.
+     LPVOID pTrampoline;     // [In] Buffer address for the trampoline and relay function.
+ 
++    // [In] Number of target bytes the caller will overwrite.  Normal hooks
++    // use JMP_REL (5); a far fallback uses JMP_ABS (14) and therefore copies
++    // enough complete instructions before returning to the target.
++    UINT   patchSize;
++
+ #if defined(_M_X64) || defined(__x86_64__)
+     LPVOID pRelay;          // [Out] Address of the relay function.
+ #endif
+

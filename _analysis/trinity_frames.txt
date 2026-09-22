@@ -1,0 +1,198 @@
+
+===== Trinity.asi + 0xFF844 (file off 0xFDE44) =====
+  00000001800FF844  55                           push rbp
+  00000001800FF845  52                           push rdx
+  00000001800FF846  4553                         push r11
+  00000001800FF848  202d2d2d0a20                 and byte ptr [rip + 0x200a2d2d], ch   ; -> rva 0x201A257B 
+  00000001800FF84E  20476f                       and byte ptr [rdi + 0x6f], al
+  00000001800FF851  644d6f                       outsd dx, dword ptr fs:[rsi]
+  00000001800FF854  64653a20                     cmp ah, byte ptr gs:[rax]
+  00000001800FF858  2573207c20                   and eax, 0x207c2073
+  00000001800FF85D  496e                         outsb dx, byte ptr [rsi]
+  00000001800FF85F  6653                         push bx
+  00000001800FF861  7461                         je 0x1800ff8c4
+  00000001800FF863  6d                           insd dword ptr [rdi], dx
+  00000001800FF864  696e613a202573               imul ebp, dword ptr [rsi + 0x61], 0x7325203a
+  00000001800FF86B  207c2049                     and byte ptr [rax + riz + 0x49], bh
+  00000001800FF86F  6e                           outsb dx, byte ptr [rsi]
+  00000001800FF870  664d6f                       outsw dx, word ptr [rsi]
+  00000001800FF873  756e                         jne 0x1800ff8e3
+  00000001800FF875  7453                         je 0x1800ff8ca
+  00000001800FF877  7461                         je 0x1800ff8da
+  00000001800FF879  6d                           insd dword ptr [rdi], dx
+  00000001800FF87A  696e613a202573               imul ebp, dword ptr [rsi + 0x61], 0x7325203a
+  00000001800FF881  207c2049                     and byte ptr [rax + riz + 0x49], bh
+  00000001800FF885  6e                           outsb dx, byte ptr [rsi]
+  00000001800FF886  6653                         push bx
+  00000001800FF888  7069                         jo 0x1800ff8f3
+  00000001800FF88A  7269                         jb 0x1800ff8f5
+  00000001800FF88C  743a                         je 0x1800ff8c8
+  00000001800FF88E  2025730a2020                 and byte ptr [rip + 0x20200a73], ah   ; -> rva 0x20300307 
+  00000001800FF894  4f6e                         outsb dx, byte ptr [rsi]
+  00000001800FF896  654869744b696c6c3a20         imul rsi, qword ptr gs:[rbx + rcx*2 + 0x69], 0x203a6c6c
+  00000001800FF8A0  2573207c20                   and eax, 0x207c2073
+  00000001800FF8A5  4e6f                         outsd dx, dword ptr [rsi]
+  00000001800FF8A7  426f                         outsd dx, dword ptr [rsi]
+  00000001800FF8A9  756e                         jne 0x1800ff919
+  00000001800FF8AB  7479                         je 0x1800ff926
+  00000001800FF8AD  3a20                         cmp ah, byte ptr [rax]
+  00000001800FF8AF  2573207c20                   and eax, 0x207c2073
+  00000001800FF8B4  4e6f                         outsd dx, dword ptr [rsi]
+
+===== Trinity.asi + 0xFF848 (file off 0xFDE48) =====
+  00000001800FF848  202d2d2d0a20                 and byte ptr [rip + 0x200a2d2d], ch   ; -> rva 0x201A257B 
+  00000001800FF84E  20476f                       and byte ptr [rdi + 0x6f], al
+  00000001800FF851  644d6f                       outsd dx, dword ptr fs:[rsi]
+  00000001800FF854  64653a20                     cmp ah, byte ptr gs:[rax]
+  00000001800FF858  2573207c20                   and eax, 0x207c2073
+  00000001800FF85D  496e                         outsb dx, byte ptr [rsi]
+  00000001800FF85F  6653                         push bx
+  00000001800FF861  7461                         je 0x1800ff8c4
+  00000001800FF863  6d                           insd dword ptr [rdi], dx
+  00000001800FF864  696e613a202573               imul ebp, dword ptr [rsi + 0x61], 0x7325203a
+  00000001800FF86B  207c2049                     and byte ptr [rax + riz + 0x49], bh
+  00000001800FF86F  6e                           outsb dx, byte ptr [rsi]
+  00000001800FF870  664d6f                       outsw dx, word ptr [rsi]
+  00000001800FF873  756e                         jne 0x1800ff8e3
+  00000001800FF875  7453                         je 0x1800ff8ca
+  00000001800FF877  7461                         je 0x1800ff8da
+  00000001800FF879  6d                           insd dword ptr [rdi], dx
+  00000001800FF87A  696e613a202573               imul ebp, dword ptr [rsi + 0x61], 0x7325203a
+  00000001800FF881  207c2049                     and byte ptr [rax + riz + 0x49], bh
+  00000001800FF885  6e                           outsb dx, byte ptr [rsi]
+  00000001800FF886  6653                         push bx
+  00000001800FF888  7069                         jo 0x1800ff8f3
+  00000001800FF88A  7269                         jb 0x1800ff8f5
+  00000001800FF88C  743a                         je 0x1800ff8c8
+  00000001800FF88E  2025730a2020                 and byte ptr [rip + 0x20200a73], ah   ; -> rva 0x20300307 
+  00000001800FF894  4f6e                         outsb dx, byte ptr [rsi]
+  00000001800FF896  654869744b696c6c3a20         imul rsi, qword ptr gs:[rbx + rcx*2 + 0x69], 0x203a6c6c
+  00000001800FF8A0  2573207c20                   and eax, 0x207c2073
+  00000001800FF8A5  4e6f                         outsd dx, dword ptr [rsi]
+  00000001800FF8A7  426f                         outsd dx, dword ptr [rsi]
+  00000001800FF8A9  756e                         jne 0x1800ff919
+  00000001800FF8AB  7479                         je 0x1800ff926
+  00000001800FF8AD  3a20                         cmp ah, byte ptr [rax]
+  00000001800FF8AF  2573207c20                   and eax, 0x207c2073
+  00000001800FF8B4  4e6f                         outsd dx, dword ptr [rsi]
+
+===== Trinity.asi + 0xFF080 (file off 0xFD680) =====
+  00000001800FF080  6e                           outsb dx, byte ptr [rsi]
+  00000001800FF081  7661                         jbe 0x1800ff0e4
+  00000001800FF083  6c                           insb byte ptr [rdi], dx
+  00000001800FF084  6964206164647265             imul esp, dword ptr [rax + riz + 0x61], 0x65726464
+  00000001800FF08C  7373                         jae 0x1800ff101
+  00000001800FF08E  2900                         sub dword ptr [rax], eax
+  00000001800FF090  57                           push rdi
+  00000001800FF091  7269                         jb 0x1800ff0fc
+  00000001800FF093  7465                         je 0x1800ff0fa
+  00000001800FF095  204163                       and byte ptr [rcx + 0x63], al
+  00000001800FF098  636573                       movsxd esp, dword ptr [rbp + 0x73]
+  00000001800FF09B  7320                         jae 0x1800ff0bd
+  00000001800FF09D  56                           push rsi
+  00000001800FF09E  696f6c6174696f               imul ebp, dword ptr [rdi + 0x6c], 0x6f697461
+  00000001800FF0A5  6e                           outsb dx, byte ptr [rsi]
+  00000001800FF0A6  2028                         and byte ptr [rax], ch
+  00000001800FF0A8  57                           push rdi
+  00000001800FF0A9  7269                         jb 0x1800ff114
+  00000001800FF0AB  7469                         je 0x1800ff116
+  00000001800FF0AD  6e                           outsb dx, byte ptr [rsi]
+  00000001800FF0AE  6720746f20                   and byte ptr [edi + ebp*2 + 0x20], dh
+  00000001800FF0B3  696e76616c6964               imul ebp, dword ptr [rsi + 0x76], 0x64696c61
+  00000001800FF0BA  206164                       and byte ptr [rcx + 0x64], ah
+  00000001800FF0BD  647265                       jb 0x1800ff125
+  00000001800FF0C0  7373                         jae 0x1800ff135
+  00000001800FF0C2  2900                         sub dword ptr [rax], eax
+  00000001800FF0C4  0000                         add byte ptr [rax], al
+  00000001800FF0C6  0000                         add byte ptr [rax], al
+  00000001800FF0C8  444550                       push r8
+  00000001800FF0CB  205669                       and byte ptr [rsi + 0x69], dl
+  00000001800FF0CE  6f                           outsd dx, dword ptr [rsi]
+  00000001800FF0CF  6c                           insb byte ptr [rdi], dx
+
+===== Trinity.asi + 0x26FC (file off 0x1AFC) =====
+  00000001800026FC  488bcf                       mov rcx, rdi
+  00000001800026FF  ff15aba90f00                 call qword ptr [rip + 0xfa9ab]   ; -> rva 0xFD0B0 
+  0000000180002705  488b9c2478200000             mov rbx, qword ptr [rsp + 0x2078]
+  000000018000270D  4c8bbc2440200000             mov r15, qword ptr [rsp + 0x2040]
+  0000000180002715  4c8ba42488200000             mov r12, qword ptr [rsp + 0x2088]
+  000000018000271D  33c0                         xor eax, eax
+  000000018000271F  488b8db01e0000               mov rcx, qword ptr [rbp + 0x1eb0]
+  0000000180002726  4833cc                       xor rcx, rsp
+  0000000180002729  e8d2470c00                   call 0x1800c6f00   ; -> rva 0xC6F00
+  000000018000272E  4881c450200000               add rsp, 0x2050
+  0000000180002735  415e                         pop r14
+  0000000180002737  5f                           pop rdi
+  0000000180002738  5d                           pop rbp
+  0000000180002739  c3                           ret 
+
+===== Trinity.asi + 0x1C70 (file off 0x1070) =====
+  0000000180001C70  4055                         push rbp
+  0000000180001C72  57                           push rdi
+  0000000180001C73  4156                         push r14
+  0000000180001C75  488dac2430e1ffff             lea rbp, [rsp - 0x1ed0]
+  0000000180001C7D  b850200000                   mov eax, 0x2050
+  0000000180001C82  e819520c00                   call 0x1800c6ea0   ; -> rva 0xC6EA0
+  0000000180001C87  482be0                       sub rsp, rax
+  0000000180001C8A  488b056f6c1c00               mov rax, qword ptr [rip + 0x1c6c6f]   ; -> rva 0x1C8900 
+  0000000180001C91  4833c4                       xor rax, rsp
+  0000000180001C94  488985b01e0000               mov qword ptr [rbp + 0x1eb0], rax
+  0000000180001C9B  488b01                       mov rax, qword ptr [rcx]
+  0000000180001C9E  488bf9                       mov rdi, rcx
+  0000000180001CA1  48894d28                     mov qword ptr [rbp + 0x28], rcx
+  0000000180001CA5  448b30                       mov r14d, dword ptr [rax]
+  0000000180001CA8  4181fe050000c0               cmp r14d, 0xc0000005
+  0000000180001CAF  7416                         je 0x180001cc7
+  0000000180001CB1  4181fe1d0000c0               cmp r14d, 0xc000001d
+  0000000180001CB8  740d                         je 0x180001cc7
+  0000000180001CBA  4181fefd0000c0               cmp r14d, 0xc00000fd
+  0000000180001CC1  0f85560a0000                 jne 0x18000271d
+  0000000180001CC7  488b4108                     mov rax, qword ptr [rcx + 8]
+  0000000180001CCB  4c89a42488200000             mov qword ptr [rsp + 0x2088], r12
+  0000000180001CD3  4c8ba0f8000000               mov r12, qword ptr [rax + 0xf8]
+  0000000180001CDA  488b054f841c00               mov rax, qword ptr [rip + 0x1c844f]   ; -> rva 0x1CA130 
+  0000000180001CE1  4885c0                       test rax, rax
+  0000000180001CE4  7412                         je 0x180001cf8
+  0000000180001CE6  4c3be0                       cmp r12, rax
+  0000000180001CE9  720d                         jb 0x180001cf8
+  0000000180001CEB  4c3b2546841c00               cmp r12, qword ptr [rip + 0x1c8446]   ; -> rva 0x1CA138 
+  0000000180001CF2  0f821d0a0000                 jb 0x180002715
+  0000000180001CF8  4c8d4598                     lea r8, [rbp - 0x68]
+  0000000180001CFC  48c7459800000000             mov qword ptr [rbp - 0x68], 0
+  0000000180001D04  498bd4                       mov rdx, r12
+  0000000180001D07  b906000000                   mov ecx, 6
+  0000000180001D0C  ff15eeb30f00                 call qword ptr [rip + 0xfb3ee]   ; -> rva 0xFD100 
+  0000000180001D12  85c0                         test eax, eax
+  0000000180001D14  7411                         je 0x180001d27
+  0000000180001D16  488b050b841c00               mov rax, qword ptr [rip + 0x1c840b]   ; -> rva 0x1CA128 
+  0000000180001D1D  48394598                     cmp qword ptr [rbp - 0x68], rax
+  0000000180001D21  0f84ee090000                 je 0x180002715
+  0000000180001D27  488b07                       mov rax, qword ptr [rdi]
+  0000000180001D2A  48899c2478200000             mov qword ptr [rsp + 0x2078], rbx
+  0000000180001D32  4889b42480200000             mov qword ptr [rsp + 0x2080], rsi
+  0000000180001D3A  4c89ac2448200000             mov qword ptr [rsp + 0x2048], r13
+  0000000180001D42  8b4818                       mov ecx, dword ptr [rax + 0x18]
+  0000000180001D45  4c89bc2440200000             mov qword ptr [rsp + 0x2040], r15
+  0000000180001D4D  85c9                         test ecx, ecx
+  0000000180001D4F  740f                         je 0x180001d60
+  0000000180001D51  488b5820                     mov rbx, qword ptr [rax + 0x20]
+  0000000180001D55  83f901                       cmp ecx, 1
+  0000000180001D58  7608                         jbe 0x180001d62
+  0000000180001D5A  4c8b7828                     mov r15, qword ptr [rax + 0x28]
+  0000000180001D5E  eb05                         jmp 0x180001d65   ; -> rva 0x1D65
+  0000000180001D60  33db                         xor ebx, ebx
+  0000000180001D62  4533ff                       xor r15d, r15d
+  0000000180001D65  33d2                         xor edx, edx
+  0000000180001D67  488d8d40060000               lea rcx, [rbp + 0x640]
+  0000000180001D6E  41b810010000                 mov r8d, 0x110
+  0000000180001D74  e8575a0f00                   call 0x1800f77d0   ; -> rva 0xF77D0
+  0000000180001D79  488d9540060000               lea rdx, [rbp + 0x640]
+  0000000180001D80  498bcc                       mov rcx, r12
+  0000000180001D83  e828feffff                   call 0x180001bb0   ; -> rva 0x1BB0
+  0000000180001D88  488d8d60080000               lea rcx, [rbp + 0x860]
+  0000000180001D8F  ba80000000                   mov edx, 0x80
+  0000000180001D94  84c0                         test al, al
+  0000000180001D96  7421                         je 0x180001db9
+  0000000180001D98  488b8548070000               mov rax, qword ptr [rbp + 0x748]
+  0000000180001D9F  4c8d8d40060000               lea r9, [rbp + 0x640]
+  0000000180001DA6  4c8d0563d20f00               lea r8, [rip + 0xfd263]   ; -> rva 0xFF010 "%s+0x%llX"

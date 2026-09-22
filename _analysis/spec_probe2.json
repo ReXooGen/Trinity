@@ -1,0 +1,9 @@
+[
+  { "label": "functions near worker target", "tool": "bn_function_list", "args": { "start": "0x142140000", "end": "0x142160000", "limit": 400 } },
+  { "label": "comment at 0x14214BE8C", "tool": "bn_comment_get", "args": { "comment": "0x14214be8c" } },
+  { "label": "comment at 0x1425D7660", "tool": "bn_comment_get", "args": { "comment": "0x1425d7660" } },
+  { "label": "comment at 0x14369FF60", "tool": "bn_comment_get", "args": { "comment": "0x14369ff60" } },
+  { "label": "bytes at worker target", "tool": "bn_memory_read", "args": { "address": "0x14214be8c", "length": 48 } },
+  { "label": "bytes at locomotion stepper", "tool": "bn_memory_read", "args": { "address": "0x14369ff60", "length": 64 } },
+  { "label": "bytes at wanted evaluator", "tool": "bn_memory_read", "args": { "address": "0x1425d7660", "length": 64 } }
+]

@@ -86,6 +86,31 @@ namespace trinity
         unsigned int flyUpPadMask   = 0x0200;  // Right Shoulder (RB)
         unsigned int flyDownPadMask = 0x20000; // Right Trigger (RT)
 
+        // No Clip (teleport.cpp hkMoveUpdate). Advances the character physics
+        // proxy's position along the direction the player is pushing, through
+        // the same write path map-marker teleport uses, so the proxy ends the
+        // tick inside geometry instead of being pushed back out of it - i.e.
+        // the player walks THROUGH walls.
+        //
+        // Standalone by design: it needs no flight mode and works on foot, and
+        // it has its OWN vertical binds rather than borrowing Free Flight's, so
+        // the two features never compete for a key.
+        //
+        // noClipSpeed is m/s and deliberately shares Free Flight's 35 m/s
+        // engine ceiling: beyond that the Havok broadphase overflows and the
+        // game can crash. Nothing moves while no direction is held. Off by
+        // default - it is the one movement feature that intentionally overrides
+        // the result of the engine's own collision sweep.
+        bool  noClip      = false;
+        float noClipSpeed = 8.0f;
+        // No Clip's own rise / sink binds. Defaults: Space rises, Left Ctrl
+        // sinks; on the pad D-Pad Up / D-Pad Down. Rebindable from the SYSTEM
+        // tab's Keybinds submenu and persisted in Trinity.ini.
+        int          noClipUpKeyVk     = 0x20;   // VK_SPACE
+        int          noClipDownKeyVk   = 0x11;   // VK_CONTROL
+        unsigned int noClipUpPadMask   = 0x0001; // D-Pad Up
+        unsigned int noClipDownPadMask = 0x0002; // D-Pad Down
+
         // Map Marker Teleport (teleport.cpp). Teleports to the custom waypoint
         // placed on the world map. Rebindable from the Keybinds submenu (default
         // F10 key) and persisted in Trinity.ini. Fallback height is used when the
@@ -146,6 +171,10 @@ namespace trinity
         int  invSlotSizeVal  = 700; // 700 is the engine's safe limit (prevents Error 298648703)
         bool invStackSize    = false;
         int  invStackSizeVal = 999999;
+
+        // Worker level and ability unlock patch (worker.cpp). Disabled by
+        // default and persisted as one toggle in Trinity.ini.
+        bool workerMaxLevelAndSkills = false;
 
         // UI Theme: 0=Crimson Red, 1=Cyber Cyan, 2=Neon Purple, 3=Matrix Emerald, 4=Royal Gold, 5=Sunset Orange
         int themeIndex = 0;

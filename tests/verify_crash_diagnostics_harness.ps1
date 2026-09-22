@@ -148,6 +148,30 @@ try {
         throw "Expected 3 .txt and 3 .dmp files, found $($retainedTxt.Count) txt and $($retainedDmp.Count) dmp"
     }
 
+    # Phase 5: Chained downstream filter test (handles subsequent SetUnhandledExceptionFilter registration)
+    $chainedDir = Join-Path $testRoot "chained"
+    New-Item -ItemType Directory -Path $chainedDir -Force | Out-Null
+
+    $chainedProc = Start-Process -FilePath $HarnessPath -ArgumentList @("--chained", $chainedDir) -Wait -PassThru -NoNewWindow
+    if ($chainedProc.ExitCode -eq 0) {
+        throw "Chained child process unexpectedly succeeded with exit code 0"
+    }
+
+    $chainedTxt = @(Get-ChildItem -LiteralPath $chainedDir -Filter "Trinity_Crash_*.txt")
+    $chainedDmp = @(Get-ChildItem -LiteralPath $chainedDir -Filter "Trinity_Crash_*.dmp")
+    $witnessFile = Join-Path $chainedDir "downstream_witness.txt"
+
+    if ($chainedTxt.Count -ne 1) {
+        throw "Expected exactly 1 crash report text file in chained mode, found $($chainedTxt.Count)"
+    }
+    if ($chainedDmp.Count -ne 1) {
+        throw "Expected exactly 1 minidump file in chained mode, found $($chainedDmp.Count)"
+    }
+    if (-not (Test-Path -LiteralPath $witnessFile)) {
+        throw "Downstream filter was not called in chained mode"
+    }
+    Write-Host "Chained crash filter verification PASSED."
+
     Write-Host "Crash diagnostics harness verification PASSED."
 }
 finally {

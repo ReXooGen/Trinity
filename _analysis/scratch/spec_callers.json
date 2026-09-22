@@ -1,0 +1,8 @@
+[
+  {"label":"callers_Vector68_Grow","tool":"bn_function_callers","args":{"function":"0x141ECCD40","limit":40}},
+  {"label":"callers_Map_FindOrCreateValueSlot","tool":"bn_function_callers","args":{"function":"0x140436380","limit":40}},
+  {"label":"callers_ItemInfoTable_GetById","tool":"bn_function_callers","args":{"function":"0x14038AB60","limit":40}},
+  {"label":"callers_UiList_QuerySlotEntriesFiltered","tool":"bn_function_callers","args":{"function":"0x14284FAB0","limit":40}},
+  {"label":"callers_World_GetTimeScale","tool":"bn_function_callers","args":{"function":"0x140952080","limit":40}},
+  {"label":"callers_SkillTable_GetById","tool":"bn_function_callers","args":{"function":"0x1403880A0","limit":40}}
+]

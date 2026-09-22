@@ -1,0 +1,21 @@
+########## [1] define loco stepper symbol  (bn_symbol_define)
+{"symbols":[{"symbol":"0x14369ff60","name":"VIBE_Locomotion_StepDriveVelocity","type":"FunctionSymbol","typeValue":0,"binding":"NoBinding","bindingValue":0,"shortName":"VIBE_Locomotion_StepDriveVelocity","fullName":"VIBE_Locomotion_StepDriveVelocity","rawName":"VIBE_Locomotion_StepDriveVelocity","namespace":"BNINTERNALNAMESPACE","ordinal":0,"autoDefined":false}],"changed":true,"mutation":{"operation":"bn_symbol_define","before":[],"after":[{"symbol":"0x14369ff60","name":"VIBE_Locomotion_StepDriveVelocity","type":"FunctionSymbol","typeValue":0,"binding":"NoBinding","bindingValue":0,"shortName":"VIBE_Locomotion_StepDriveVelocity","fullName":"VIBE_Locomotion_StepDriveVelocity","rawName":"VIBE_Locomotion_StepDriveVelocity","namespace":"BNINTERNALNAMESPACE","ordinal":0,"autoDefined":false}],"undoable":true},"warnings":[]}
+
+########## [2] verify  (bn_symbol_list)
+---
+tool: "bn_symbol_list"
+start: "0x14369ff60"
+offset: 0
+limit: 10
+count: 1
+total: 1
+nextOffset: null
+truncated: false
+---
+
+| symbol | name | type | namespace | ordinal | binding | fullName | autoDefined |
+| --- | --- | --- | --- | --- | --- | --- | --- |
+| 0x14369ff60 | VIBE_Locomotion_StepDriveVelocity | FunctionSymbol | BNINTERNALNAMESPACE | 0 | NoBinding | VIBE_Locomotion_StepDriveVelocity | false |
+
+
+

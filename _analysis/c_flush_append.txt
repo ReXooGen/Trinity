@@ -1,0 +1,6 @@
+--- PE 2944 travel record ---
+Locator: 48-byte prologue AOB "40 53 48 83 EC 20 48 8B D9 48 39 91 58 09 00 00 0F 85 3F 01 00 00 48 89 7C 24 38 48 C7 81 58 09 00 00 00 00 00 00 83 B9 60 09 00 00 FF 48 89 74" -> exactly 1 match in the whole image at 0x140DBC6C0 (RVA 0xDBC6C0, .code, 347 bytes, 15 basic blocks).
+ABI: RCX = this (the map-UI object carrying the pending request), RDX = key that must equal [this+0x958], R8B = cancel flag; returns void.
+Scene path proof: 0x140DBC7BA "xor r9d,r9d" then 0x140DBC7BD call -> the ordinary fast travel really is R9D = 0, matching Trinity's travelMode = 0.
+Trinity: this is the game's own equivalent of Trinity's queued dispatch (src/game/teleport.cpp fires g_travelFn on the game thread). Recorded as ABI corroboration; Trinity neither hooks nor calls it.
+Confidence: confirmed (locator + disassembly).

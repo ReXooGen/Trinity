@@ -1,0 +1,167 @@
+{
+ "exe": "E:\\Steam\\steamapps\\common\\Crimson Desert\\bin64\\CrimsonDesert.exe",
+ "image_base": 5368709120,
+ "checks": [
+  {
+   "check": "native Slot Size setter: exactly one match",
+   "expected": "1 match",
+   "actual": "1",
+   "result": "PASS",
+   "evidence": "mov qword ptr [rsp + 0x10], rbp; mov qword ptr [rsp + 0x18], rsi; mov qword ptr [rsp + 0x20], rdi; push r14; sub rsp, 0x20; mov rax, qword ptr [rcx + 0x18]; movzx ebp, r9w; mov ecx, dword ptr [rcx + 0x20]"
+  },
+  {
+   "check": "native Slot Size setter at plan RVA 0x2135850",
+   "expected": "0x2135850",
+   "actual": "0x2135850",
+   "result": "PASS",
+   "evidence": "VA 0x142135850"
+  },
+  {
+   "check": "setter ABI writes bucket+0x16, +0x1A, derived +0x14",
+   "expected": "all three store sites present",
+   "actual": "+ 0x16=yes, + 0x1a=yes, + 0x14=yes",
+   "result": "PASS",
+   "evidence": "capstone sweep of 400 instructions from the setter entry"
+  },
+  {
+   "check": "pickup capacity signature: exactly one match",
+   "expected": "1 match",
+   "actual": "1",
+   "result": "PASS",
+   "evidence": "RVA 0x2407822"
+  },
+  {
+   "check": "pickup branch at plan RVA 0x2407824",
+   "expected": "0x2407824",
+   "actual": "0x2407824",
+   "result": "PASS",
+   "evidence": "signature RVA + 2 (kInvPickupCapacityPatchSize offset used by InstallPickupCapacityPatch)"
+  },
+  {
+   "check": "pickup branch bytes are the reversible original",
+   "expected": "74 07",
+   "actual": "74 07",
+   "result": "PASS",
+   "evidence": "read straight out of the on-disk image"
+  },
+  {
+   "check": "pickup branch decodes as test dl,dl / je +7",
+   "expected": "test dl,dl ; je 0x...+7",
+   "actual": "test dl, dl ; je 0x14240782d ; movzx ecx, word ptr [rsp + 0x48]",
+   "result": "PASS",
+   "evidence": "capstone at the signature start"
+  },
+  {
+   "check": "RealmFlagOffsetForRevision(2949) matches the image's realm selector",
+   "expected": "0x1EC",
+   "actual": "0x1EC",
+   "result": "PASS",
+   "evidence": "kSig_FieldTimeRealm @ RVA 0x20E55B4: mov edx, 0x1ec"
+  },
+  {
+   "check": "readiness sentinel kSig_DamageApply_Alt",
+   "expected": "1 match",
+   "actual": "1",
+   "result": "PASS",
+   "evidence": "RVA 0x17AE110"
+  },
+  {
+   "check": "readiness sentinel kSig_CombatTimingEval",
+   "expected": "1 match",
+   "actual": "1",
+   "result": "PASS",
+   "evidence": "RVA 0x873850"
+  },
+  {
+   "check": "readiness sentinel kSig_MoveUpdate",
+   "expected": "1 match",
+   "actual": "1",
+   "result": "PASS",
+   "evidence": "RVA 0x4282090"
+  },
+  {
+   "check": "readiness sentinel kSig_InvGetItemQty",
+   "expected": "1 match",
+   "actual": "1",
+   "result": "PASS",
+   "evidence": "RVA 0x17F8E80"
+  },
+  {
+   "check": "readiness sentinel kSig_EvaluateCrimeWantedState",
+   "expected": "1 match",
+   "actual": "1",
+   "result": "PASS",
+   "evidence": "RVA 0x25D7670"
+  },
+  {
+   "check": "readiness sentinel kSig_TodEngineGlobal",
+   "expected": "1 match",
+   "actual": "1",
+   "result": "PASS",
+   "evidence": "RVA 0x2CE536A"
+  },
+  {
+   "check": "readiness sentinel kSig_WeatherRain",
+   "expected": "1 match",
+   "actual": "1",
+   "result": "PASS",
+   "evidence": "RVA 0x3DC39C0"
+  },
+  {
+   "check": "kSig_InvGetHolder exactly one match",
+   "expected": "1 match",
+   "actual": "1",
+   "result": "PASS",
+   "evidence": "RVA 0x212A100"
+  },
+  {
+   "check": "kSig_InvHolderInsert2944 exactly one match",
+   "expected": "1 match",
+   "actual": "1",
+   "result": "PASS",
+   "evidence": "RVA 0x2407780"
+  },
+  {
+   "check": "PE 2850/2760 holder-insert AOB must NOT match PE 2949",
+   "expected": "0 matches",
+   "actual": "0",
+   "result": "PASS",
+   "evidence": "proves PE 2949 does not silently inherit the PE 2850 frame"
+  },
+  {
+   "check": "kSig_InvCoreGlobal (durable container walk, optional)",
+   "expected": "informational",
+   "actual": "0 match(es)",
+   "result": "PASS",
+   "evidence": "used at inventory.cpp:2374 for TU201 revisions; a zero match degrades the inventory list to lazy discovery only"
+  },
+  {
+   "check": "UsesTu201CompatibleRevision admits exactly 2760/2850/2944/2949",
+   "expected": "2949 admitted, unknown revisions rejected",
+   "actual": "gate present",
+   "result": "PASS",
+   "evidence": "src/core/version_mapping.cpp:23-30"
+  },
+  {
+   "check": "LocoStepperContractForRevision maps 2949 to the PE2944 contract",
+   "expected": "Pe2944 (move-owner +0x2C0)",
+   "actual": "mapped",
+   "result": "PASS",
+   "evidence": "src/core/version_mapping.cpp:57-70"
+  },
+  {
+   "check": "unknown PE revisions fail closed for movement",
+   "expected": "default -> Unsupported (offset 0)",
+   "actual": "present",
+   "result": "PASS",
+   "evidence": "src/core/version_mapping.cpp:68"
+  },
+  {
+   "check": "SlotSizeOverrideSupportedForRevision returns true for every revision",
+   "expected": "documented as intentional (PE 2949 branch gates internally)",
+   "actual": "unconditional true",
+   "result": "PASS",
+   "evidence": "src/core/version_mapping.cpp:32-37 - install path itself gates on revision == 2949 and disables Slot Size when the setter is not unique"
+  }
+ ]
+}

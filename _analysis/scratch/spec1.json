@@ -1,0 +1,5 @@
+[
+  {"label":"function_search_VIBE","tool":"bn_function_search","args":{"query":"VIBE_","limit":1000}},
+  {"label":"symbol_list_VIBE","tool":"bn_symbol_list","args":{"query":"VIBE_","limit":1000}},
+  {"label":"binary_view_info","tool":"bn_binary_view_info","args":{}}
+]

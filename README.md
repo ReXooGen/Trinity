@@ -1,208 +1,164 @@
-# Trinity — Crimson Desert (vTweak by Lian)
+﻿# Trinity Mod Menu v1.3.5.4 for Crimson Desert
 
-Trinity is an in-game DirectX 12 mod menu for **Crimson Desert**, originally created by **XeTrinityz**. This repository contains the current source for the maintained build, including version-dependent game interfaces, auto-navigation, and quality-of-life enhancements.
+## Mod Information
 
-> **Single-player use only.** Do not use this project in online or anti-cheat-protected modes. This community project is not affiliated with or endorsed by Pearl Abyss.
+**Mod Name:** Trinity Mod Menu v1.3.5.4 (vUpdate by mul0)  
+**Original Creator:** XeTrinityz  
+**vTweak Maintenance:** Lian (ReXooGen)  
+**TU 2.03.01 Compatibility Update:** mul0  
+**Game Version:** 2.03.01 (PE 1.0.0.2949)  
+**Target Process:** `CrimsonDesert.exe`  
+**Architecture:** 64-bit  
+**Platform:** Steam / Windows  
+**Steam App ID:** 3321460  
+**Last Updated:** 22/09/2026  
 
-> **Maintenance status.** A game update can change AOBs, object layouts and hook
-> contracts. The source may recognize a revision without every feature having
-> been revalidated in the live game. For post-update work, start with
-> [GAME_UPDATE_PLAYBOOK.md](GAME_UPDATE_PLAYBOOK.md), then use the exact current
-> executable and installed `Trinity.asi` as evidence. Older changelog entries
-> describe their release at the time; they are not compatibility claims for a
-> later game build.
+## Links
 
----
+**Download:** https://mul0.com/trainer/crimson-desert-trinity-mod-menu  
+**Blog:** https://mul0.com/  
+**Steam:** https://store.steampowered.com/app/3321460/Crimson_Desert/  
+**Original Nexus Page:** https://www.nexusmods.com/crimsondesert/mods/3109  
+**vTweak Source:** https://github.com/ReXooGen/Trinity  
+**Video:** https://youtu.be/tJxeqWQpOKY
 
-## Screenshots & In-Game Previews
+## Description
 
-| Player Menu | Travel & Destination Teleport |
-| :---: | :---: |
-| ![Player Menu](images/image.png) | ![Travel Menu](images/image2.png) |
+Trinity is an in-game DirectX 12 mod menu for the Windows version of **Crimson Desert**. Version **1.3.5.4** updates the vTweak build for **TU 2.03.01** (PE 1.0.0.2949) and provides player, combat, worker, travel, inventory, equipment, world, weather, interface, and quality-of-life controls from a controller-friendly overlay.
 
-| Inventory & Max Stack Size | World & Game Speed Control |
-| :---: | :---: |
-| ![Inventory Menu](images/image3.png) | ![World Menu](images/image4.png) |
+The menu supports keyboard, mouse, and XInput controllers. English is built in, while nine optional language files add German, Spanish, French, Indonesian, Japanese, Korean, Brazilian Portuguese, Russian, and Simplified Chinese.
 
-| System Settings & Themes | Equipment Enhancer & Sockets |
-| :---: | :---: |
-| ![System Menu](images/image5.png) | ![Edit Equipment](images/image6.png) |
+## What's New in v1.3.5.4
 
-| Unlimited Custom Bookmarks | Storage Filters & Item Editor |
-| :---: | :---: |
-| ![Saved Locations](images/image7.png) | ![Storage Editor](images/image8.png) |
+- **Max Worker Level & Skills:** Brand-new feature under the PLAYER tab! Implements a reversible memory patch for the game's worker grade-selector branch, forcing top tier (tier 5) and instantly unlocking maximum worker level and all abilities. Gated and verified for PE 2850, PE 2944, and PE 2949, with full configuration persistence in `Trinity.ini` (`workerMaxLevelAndSkills=1`).
+- **Full Game Version 2.03.01 (PE 1.0.0.2949) & PE 2944 Compatibility:** Updated function signatures, offsets, and memory hooks to ensure complete stability on the latest retail patch.
+- **Bounded Crash Diagnostics System:** Integrated deterministic diagnostics engine with a 512-entry fixed ring buffer tracking feature toggles, hooks, patches, and memory mutation scopes (`NoteMemoryWrite`, `MutationScope`). Generates bounded diagnostic bundles (50–300 MB) for immediate root-cause triage without corrupting process state.
+- **Locomotion & Free Flight Offset Update:** Adjusted movement component owner pointer offset to `0x2C0` (`LocoStepperContract::Pe2944`), restoring full Free Flight and locomotion control on PE 2944 / PE 2949.
+- **Safe 700-Slot Inventory Expansion:** Native four-argument expansion setter and reversible pickup patch tailored for PE 2949, preventing container state corruption.
+- **Direct Map-Marker Teleport:** Verified map waypoint detection and Sky Arrival altitude handling on modern PE revisions.
+- **TLS Realm Selector Alignment:** Confirmed TLS realm offset at `0x1EC` across PE 2850, 2944, and 2949, preventing client/server realm mismatches when adding items.
 
----
+## Main Features
 
-## What's New in v1.3.3
+### Player, Combat and Workers
 
-- **Crimson Desert TU 2.00.02 Hotfix**:
-  - Waits for delayed gameplay-code regions before resolving hooks, preventing valid features from being disabled by early startup scans.
-  - Scans TU 2.00.02's executable `.debug` section instead of mistaking the live game code for stale debug data.
-  - Detects PE revision `1.0.0.2692` as TU 2.00.02.
+- **Max Worker Level & Skills:** Unlocks maximum level and all abilities for workers and mercenaries.
+- **One-Hit Kill:** Eliminates enemies and bosses with a single strike.
+- **God Mode:** Continuously restores player health.
+- **Infinite Item Durability:** Locks equipped gear at 100% durability.
+- **No Fall Damage:** Prevents damage from cliffs and sky teleports.
+- **Infinite Stamina & Mount:** Unlimited stamina for both player and mount.
+- **Infinite Spirit:** Unlimited Spirit ability gauge.
+- **No Bounty:** Clears and prevents guard alerts and bounty during the session.
+- **Damage Multipliers:** Independent outgoing and incoming damage tuning.
+- **Super Run & Super Jump:** Adjustable movement speed and jump height multipliers.
+- **Free Flight:** 3D aerial navigation with custom rise and sink keys.
+- **Trust Multiplier:** Faster NPC trust and animal taming progression.
 
-## Current version-detection baseline
+### Equipment
 
-The current source maps PE revisions `2625`, `2658`, `2692` and `2760` to title
-updates `2.00.00`, `2.00.01`, `2.00.02` and `2.01.00` respectively. This is a
-source-level recognition map, not a blanket live-support promise. Verify the
-current executable hash, AOB match counts, hook contracts and the affected
-in-game action after every title update.
+- Repair all equipped gear to full durability.
+- Refine all equipped gear to +10.
+- Unlock all Abyss sockets.
+- Edit individual refinement levels and Abyss socket contents.
+- Replace equipped weapons, shields, armor, and accessories with character and slot filters.
 
----
+### Travel
 
-## What's New in v1.3.2
+- Display and copy current player coordinates.
+- Teleport to the active world-map destination or custom waypoint.
+- Adjustable Sky Arrival Altitude when the marker does not provide elevation.
+- Unlimited saved-location bookmarks with teleport, rename, coordinate update, and delete controls.
+- Categorized Fast Travel database for regions and points of interest.
 
-- **New Combat Feature: Easy Parry (Just Guard)**:
-  - Automatically executes Perfect Parry, deflects, and posture break counters on any block against incoming enemy attacks.
-- **New Combat Feature: Easy Evade (Just Evade)**:
-  - Natively triggers Perfect Dodge with cinematic slow-motion evasion counters during combat maneuvers.
-- **New Feature: No Bounty (Crime & Bounty Neutralizer)**:
-  - Crimes and theft stop adding bounty penalties, regional fines, or triggering guard pursuit (session-only, save-safe).
-  - Preserves full vanilla combat behavior and mortality so NPCs and enemies can still be fought and defeated normally.
+### Inventory and Currency
 
-- **Universal Table Resolver for TU 2.00.01 (PE rev >= 2625)**:
-  - Modernized scanner to detect `sub rsp, 50h` table prologue structures and opcode-relative table globals (`WantedInfo`, `tribeinfo`, `iteminfo`, etc.).
-  - Added continuous per-frame upkeep so mod overrides seamlessly persist across fast travel and zone transitions.
+- Browse inventory by storage and category.
+- Search, change quantity, remove items, refresh inventory, or set quantities in bulk.
+- Search the complete item catalog and add individual items or filtered categories in bulk.
+- Safe Slot Size control up to 700 slots using the native expansion setter.
+- Custom Max Stack Size with duplicate-stack consolidation and protection for non-stackable equipment and quest items.
+- Set an exact Silver balance or add Silver to the current wallet.
+- Quick Silver presets up to the safe 20,000,000 cap.
+- Spawn and cash in Full Silver Pouches.
+- Clear bugged wallet coins and consolidate scattered money stacks.
+- Manage Sealed Abyss Artifact collections from 1 to 150 and remove duplicates.
+- Spawn Abyss Artifacts, skill items, Seeds, Cells, and permanent Abyss stat items.
+- Restore individually recorded sold, discarded, or deleted items, or restore the complete history.
+- Search and restore missing wanted posters, lore books, recipes, quest keys, collectibles, unique gear, mount gear, medals, tokens, and artifacts.
 
----
+### World and Atmosphere
 
-## What's New in v1.3.1
+- Adjustable Game Speed.
+- Freeze the current Time of Day.
+- Advance or rewind the clock by a custom number of hours.
+- Dawn, Midday, Sunset, Midnight, and exact-hour time controls.
+- Dynamic, Clear, Overcast, Rainy, Thunderstorm, and Dense Fog weather presets.
+- Clear distant fog, force a clear sky, or instantly clear active weather.
+- Adjust rain, snow, dust, cloud, fog, wind, gust, and turbulence values.
+- Disable environmental wind.
 
-- **Critical CTD Fixes & Engine Hardening**:
-  - **Fixed NPC Greeting / Interaction Crash (`Trinity.asi+0x19160`)**: Completely replaced inline code patches with SEH-guarded MinHook trampolines and robust pointer validation for quest and transient NPC records.
-  - **Fixed Weapon Swapping Race Condition (`CrimsonDesert.exe+0x121F192`)**: Eliminated multi-threaded race conditions between the DirectX 12 render loop and the engine's internal weapon mesh destructor (`ReleaseRef`) by serializing character and equipment scans on the main game thread.
-  - **Fixed Character Switching Freeze & Crash**: Resolved deadlocks and crashes occurring when switching between characters (e.g., Damiane ↔ Kliff) after equipment edits via direct actor pointers and SEH exception handlers.
-- **Smart Equipped Gear Protection**:
-  - Equipping weapons, armor, or accessories no longer falsely registers them as "Sold / Discarded" in the *Restore Lost & Sold Items* menu.
-  - Automatically filters actively equipped gear on Kliff, Damiane, and Oongka from the buyback list.
-- **Live Self-Healing Item Icons & Side-Panel Tooltips**:
-  - Automatically queries the engine's live item definition tables (`IconForTypeId`) to heal corrupted or truncated icon strings from disk history, restoring full high-resolution artwork for all equipment and quest items.
-  - Side-panel tooltip preview cards now render reliably for every selected item.
-- **Proportional Trust Multiplier Scaling**:
-  - Re-engineered trust scaling calculation to provide smooth, proportional progression (1.0x – 100.0x) instead of instant maxing.
-- **Native Engine Game Speed Scaling (`hkFrameTimerUpdate`)**:
-  - Replaced legacy fixed-timestep overrides with native engine frame timer scaling for smooth 0.1x – 10.0x speed manipulation without FPS drops or physics jitter.
+### System and Interface
 
----
+- Rebind Open Menu, Marker Teleport, Fly Up, and Fly Down controls.
+- Six menu themes: Crimson Red, Cyber Cyan, Neon Purple, Matrix Emerald, Royal Gold, and Sunset Orange.
+- Adjustable menu scale and item-tooltip size.
+- Xbox or PlayStation controller icons.
+- Built-in and custom `.ttf` / `.otf` title fonts.
+- FPS counter and optional console window.
+- Automatic game-version detection.
+- Auto Save Features and Reset All to Default.
 
-## What's New in v1.3.0
+## Default Controls
 
-- **Crimson Desert TU 2.00.00 – 2.00.01 Full Support**:
-  - Updated memory offsets, structures, and function signatures matching the major Title Update 2.00 overhaul.
-  - Re-anchored item reflection tables (`iteminfo`, `ItemGroupInfo`, `stringinfo`, `Inventory`, and `TrItemValue` constructor) for seamless Add Item spawning.
-- **Expanded Multi-Language Support (9 Languages)**:
-  - Added full native translations for: **English**, **German (Deutsch)**, **Spanish (Español)**, **French (Français)**, **Indonesian (Bahasa Indonesia)**, **Japanese (日本語)**, **Korean (한국어)**, **Portuguese - Brazil (Português - Brasil)**, **Russian (Русский)**, and **Simplified Chinese (简体中文)**.
-- **Enhanced Character Resolution**:
-  - 3-anchor verification for character manager resolution ensuring 100% reliable player detection across transitions.
+| Action | Keyboard / Mouse | Controller |
+|---|---|---|
+| Open / Close Menu | `Insert` | `LB + D-Pad Down` |
+| Navigate | Arrow Keys / Mouse | D-Pad |
+| Select / Toggle | `Enter`, `Space`, or Left Click | `A` |
+| Back | `Backspace` or `Esc` | `B` |
+| Change Tabs | `Q`, `E`, or `Tab` | `LB` / `RB` |
+| Adjust Values | Left / Right; hold `Shift` for faster adjustment | D-Pad Left / Right |
+| Teleport to Map Marker | `F10` | Unassigned by default |
+| Free Flight: Rise | Hold `Caps Lock` | Hold `RB` |
+| Free Flight: Descend | Hold `Ctrl` | Hold `RT` |
 
----
-
-## What's New in v1.2.4
-
-- **Smart Lost & Sold Items Tracker (Buyback & Recycle Bin)**:
-  - Real-time differential inventory change tracker that automatically logs every item sold to merchants, discarded, or deleted.
-  - One-click restoration per item or bulk `>> Restore All Lost & Sold Items <<`.
-  - Persistent disk storage (`Trinity_LostItems.txt`) so your buyback history persists across game sessions.
-- **Quest & Special Item Catalog Archive**:
-  - Dedicated searchable archive for 50+ Bounty Notices, Lore Documents, Recipes, Quest Keys, Relics, and Unique Gear.
-- **Universal Backwards Compatibility (TU 1.10 – 1.18+)**: Multi-version adaptive memory layout and dynamic slot strides (`0xC0` for TU <= 1.15, `0xC8` for TU >= 1.16).
-- **Runtime Binary Fingerprinting**: Live in-memory machine code scanner to accurately identify and display active Title Updates (e.g. `TU 1.18.02 (Active)`).
-- **Cross-Slot Controller Free Flight**: Polling across controller slots 0 through 3 for robust multi-controller and PS5 pad support.
-- **Dedicated Submenus**: Integrated **Money & Currency**, **Abyss Items & Artifacts**, and **Restore Items** submenus.
-- **Engine Memory Safety Hardening**: Completely eliminated destructive memory writes and wrapped all subsystem refreshes in SEH for 100% crash-free stability.
-
----
-
-## What's New in v1.2.3
-
-- **Infinite Mount Stamina TU 1.18+ Fix**: Restored full infinite stamina support for horses, mounts, and dragons while galloping and sprinting.
-- **Continuous Stamina & Spirit Auto-Refresh**: Refined stat commit interception so any consumed player or mount stamina and spirit instantly refreshes back to 100% full capacity in real-time.
-- **Character Spontaneous Combustion Fix**: Completely purged thermal and elemental debuff meters (types 17, 18, 28, 48) from the scanner, permanently resolving the bug where characters caught fire upon spawn.
-- **Native Weather & Environment Controls**: Built-in time of day and weather modifiers under the **WORLD** tab, providing seamless, crash-free environmental control without requiring conflicting external addons.
-- **Protagonist Scanning Stability**: Hardened `TickResolveSelf` vital chain validation to eliminate access violation crashes in crowded NPC areas.
-
----
-
-## Features
-
-- **Player & Combat**: God Mode, Infinite Stamina, Infinite Spirit, Easy Parry (Just Guard), Easy Evade (Just Evade), Super Jump, Super Run, Free Flight, One-Hit Kill, No Fall Damage, Damage Multipliers, and Trust Multipliers.
-- **Travel**: 
-  - One-Click **Teleport to Map Marker**.
-  - Fast Travel database grouped by region and POI type (fast-travel nodes, chests, ores, shops, dungeons).
-- **Inventory & Bounty**:
-  - **No Bounty**: Free crime & theft without accumulating bounty, regional penalties, or guard pursuit.
-  - Live Inventory Editor with storage & category filters, full-text search, and Set All quantities.
-  - Add Item catalog across 51 categories to spawn any weapon, armor, consumable, or quest item in the game.
-  - Smart Lost & Sold Items Tracker (Recycle Bin / Buyback) with one-click restore.
-  - Max Bag Space & Max Stack Size overrides.
-- **Equipment & Customization**:
-  - Live Dye Editor with RGB sliders and save persistence.
-  - Abyss Gear socket editor and item refinement level modifiers.
-- **World & System**:
-  - Time of day, weather, and game speed scaling.
-  - Full Controller (XInput) and Keyboard/Mouse navigation with custom keybinds.
-  - Clean DirectX 12 Dear ImGui overlay with decoded `.paz` item icons.
-  - Version-agnostic DX12 swapchain hook supporting DLSS (including DLSS 3 / 4+ Frame Generation) and OptiScaler.
-
----
+All action binds can be changed under **SYSTEM > Keybinds**.
 
 ## Installation
 
-1. Install a compatible **ASI Loader** for Crimson Desert (e.g. `dinput8.dll` or `winmm.dll`).
-2. Copy `Trinity.asi` into the game root directory (where `CrimsonDesert.exe` is located) or into your loader's `plugins/` folder.
-3. Launch the game and load your save.
-4. Press **Insert** (Keyboard) or **LB + D-pad Down** (Controller) to open the Trinity menu.
+1. Close Crimson Desert before copying or replacing mod files.
+2. Open the folder containing `CrimsonDesert.exe` (e.g. `Steam\steamapps\common\Crimson Desert\bin64`).
+3. Copy `winmm.dll`, `Trinity.asi`, and the optional `Trinity_*.ini` language files into that folder.
+4. Keep `Trinity.ini.example` as a reference or rename a configured copy to `Trinity.ini` if you want to prepare settings manually.
+5. Start the game, load a save, and wait until gameplay is fully initialized.
+6. Press `Insert` or `LB + D-Pad Down` to open Trinity.
 
----
+If another compatible ASI Loader is already installed, place `Trinity.asi` in the game directory or in the loader's `plugins` folder and avoid installing a second conflicting proxy DLL.
 
-## Controls
+## Required and Optional Package Files
 
-| Action | Keyboard / Mouse | Controller |
-| :--- | :--- | :--- |
-| **Open / Close Menu** | `Insert` (or `Esc` to close) | `LB` + `D-pad Down` |
-| **Navigate** | `Arrow Keys` / Mouse Click | `D-pad` |
-| **Select / Toggle** | `Enter` / `Space` / Left Click | `A` |
-| **Back / Parent Menu** | `Backspace` | `B` |
-| **Adjust Value / Amount** | `Left` / `Right` (Hold `Shift` for boost) | `D-pad Left` / `Right` |
-| **Direct Numeric Input** | Type `0`–`9` or click number text | N/A |
-| **Tab Switching** | `Q` / `E` or `Tab` | `LB` / `RB` |
+- **Required for the included installation method:** `winmm.dll` and `Trinity.asi`.
+- **Optional configuration reference:** `Trinity.ini.example`.
+- **Optional translations:** `Trinity_de.ini`, `Trinity_es.ini`, `Trinity_fr.ini`, `Trinity_id.ini`, `Trinity_ja.ini`, `Trinity_ko.ini`, `Trinity_ptbr.ini`, `Trinity_ru.ini`, and `Trinity_zh.ini`.
+- **Documentation only:** `README.md` and `LICENSE`.
+- `SHA256SUMS.txt` verifies file integrity but is not loaded by the game.
 
-Keybindings can be customized under **SYSTEM > Keybinds**.
+## Important
 
----
+- Use Trinity only in single-player gameplay. Do not use it in online or anti-cheat-protected modes.
+- Back up important save data before using inventory, currency, equipment, or restoration actions that can persist.
+- The No Bounty option is session-only. Other menu actions can intentionally change saved inventory or equipment data.
+- Game updates can change executable code and may require another compatibility update.
+- This community project is not affiliated with or endorsed by Pearl Abyss.
 
-## Building from Source
+## Credits
 
-### Requirements:
-- Windows 10 / 11 (64-bit)
-- Visual Studio 2022 Build Tools with **Desktop development with C++**
-- Windows 10/11 SDK
-- CMake 3.20 or newer
+- **XeTrinityz** - original Trinity creator and maintainer.
+- **Orcax1399** - research insights credited by the original project.
+- **Gugi96** - ASI and compatibility reference research.
+- **slingblade2047** - earlier Crimson Desert compatibility work.
+- **Lian (ReXooGen)** - vTweak features, localization, and maintenance.
+- **mul0** - TU 2.03.01 compatibility update and publication package.
 
-### Build Command:
-```powershell
-# Configure and build Release x64 binary
-powershell -ExecutionPolicy Bypass -File .\Build_Trinity.ps1
-```
-The compiled mod will be located at `build/Release/Trinity.asi`.
-
-`Build_Trinity.ps1` also refreshes the build timestamp and assembles release
-files. For a compile/test-only maintenance build, use the direct CMake commands
-in [GAME_UPDATE_PLAYBOOK.md](GAME_UPDATE_PLAYBOOK.md) instead. Before replacing
-an installed ASI, close the game and compare the build and destination SHA-256.
-
----
-
-## Credits & Acknowledgments
-
-Trinity is fully open-source under the MIT license. We gratefully acknowledge all contributors whose research and code made this project possible:
-
-- **XeTrinityz** — Original Trinity creator and maintainer ([https://github.com/XeTrinityz/Trinity](https://github.com/XeTrinityz/Trinity))
-- **Orcax1399** — Research insights credited by the original project
-- **Gugi96** — Working ASI / reference research that helped guide compatibility repairs
-- **slingblade2047** — Crimson Desert 1.17/1.18 compatibility work ([https://github.com/slingblade2047/Trinity](https://github.com/slingblade2047/Trinity))
-- **ReXooGen / Lian** — Additional vTweak features, localization, and maintenance ([https://github.com/ReXooGen/Trinity](https://github.com/ReXooGen/Trinity))
-
----
-*Crimson Desert is a trademark of Pearl Abyss. This project is open-source under the MIT license and intended solely for single-player modding and educational purposes.*
+Website: https://mul0.com/
