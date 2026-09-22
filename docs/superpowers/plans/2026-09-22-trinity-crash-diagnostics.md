@@ -1,6 +1,6 @@
 # Trinity Crash Diagnostics Implementation Plan
 
-> **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
+> **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [x]`) syntax for tracking.
 
 **Goal:** Replace the minimal fatal-crash reporter with a bounded 50–300 MB diagnostic bundle that can cautiously distinguish direct Trinity faults, suspected upstream Trinity corruption, game/driver faults, and inconclusive failures.
 
@@ -49,7 +49,7 @@
 - Create: `tests/crash_diagnostics_tests.cpp`
 - Modify: `CMakeLists.txt`
 
-- [ ] **Step 1: Write failing ring and attribution tests**
+- [x] **Step 1: Write failing ring and attribution tests**
 
 Add a standalone test executable covering ordering, 512-entry wraparound, consecutive-event coalescing, dropped contended writes, concurrent snapshots, and all attribution outcomes. The public test surface is:
 
@@ -135,7 +135,7 @@ CHECK(Classify(cleanGameFault) == Attribution::GameOrDriver);
 CHECK(Classify(noEvidence) == Attribution::Inconclusive);
 ```
 
-- [ ] **Step 2: Register and run the failing test**
+- [x] **Step 2: Register and run the failing test**
 
 Add `TrinityCrashDiagnosticsTests` to CMake using `tests/crash_diagnostics_tests.cpp` and `src/core/crash_diagnostics_logic.cpp`, then run:
 
@@ -145,20 +145,20 @@ ctest --test-dir build --build-config Release -R TrinityCrashDiagnosticsTests --
 
 Expected: failure because the diagnostics core is not implemented.
 
-- [ ] **Step 3: Implement the fixed ring and classifier**
+- [x] **Step 3: Implement the fixed ring and classifier**
 
 Use preallocated slots and `std::atomic_flag` as a non-blocking writer gate. A contended writer increments an atomic dropped counter and returns `false`. Publish a completed entry only after all fields are copied. Snapshot copies only published sequence numbers, sorts by sequence into caller storage, and never waits on the writer.
 
 Coalesce only an identical immediately preceding event within 250 ms. Classify a mutation as suspicious only when it succeeded, overlaps the exception target, and is at most 60 seconds old. Treat a `SafetyFailure` as suspicious only when at most 5 seconds old.
 
-- [ ] **Step 4: Run the test to green**
+- [x] **Step 4: Run the test to green**
 
 ```powershell
 cmake --build build --config Release --target TrinityCrashDiagnosticsTests
 ctest --test-dir build --build-config Release -R TrinityCrashDiagnosticsTests --output-on-failure
 ```
 
-- [ ] **Step 5: Commit the core**
+- [x] **Step 5: Commit the core**
 
 ```powershell
 git add src/core/crash_diagnostics_logic.h src/core/crash_diagnostics_logic.cpp tests/crash_diagnostics_tests.cpp
@@ -177,7 +177,7 @@ git commit -m "test: add crash diagnostics core"
 - Modify: `tests/crash_diagnostics_tests.cpp`
 - Modify: `CMakeLists.txt`
 
-- [ ] **Step 1: Write failing snapshot and mutation tests**
+- [x] **Step 1: Write failing snapshot and mutation tests**
 
 Test stable feature-bit encoding, unchanged-snapshot deduplication, mutation range expansion, write/failure counters, and nested-scope isolation. Use these exact types:
 
@@ -207,14 +207,14 @@ public:
 };
 ```
 
-- [ ] **Step 2: Run the focused test and confirm RED**
+- [x] **Step 2: Run the focused test and confirm RED**
 
 ```powershell
 cmake --build build --config Release --target TrinityCrashDiagnosticsTests
 ctest --test-dir build --build-config Release -R TrinityCrashDiagnosticsTests --output-on-failure
 ```
 
-- [ ] **Step 3: Implement the runtime API without fatal-path work yet**
+- [x] **Step 3: Implement the runtime API without fatal-path work yet**
 
 Expose this interface from `crash_diagnostics.h`:
 
@@ -252,14 +252,14 @@ private:
 
 Maintain two fixed feature-snapshot buffers and atomically publish the active index. `PublishFeatureSnapshot` records a breadcrumb only when encoded values change. `MutationScope` uses a thread-local active pointer; `NoteMemoryWrite` updates only the active scope, and the destructor emits one summary breadcrumb.
 
-- [ ] **Step 4: Run focused tests to green**
+- [x] **Step 4: Run focused tests to green**
 
 ```powershell
 cmake --build build --config Release --target TrinityCrashDiagnosticsTests
 ctest --test-dir build --build-config Release -R TrinityCrashDiagnosticsTests --output-on-failure
 ```
 
-- [ ] **Step 5: Commit snapshots and aggregation**
+- [x] **Step 5: Commit snapshots and aggregation**
 
 ```powershell
 git add src/core/crash_diagnostics.h src/core/crash_diagnostics.cpp src/core/crash_diagnostics_logic.h src/core/crash_diagnostics_logic.cpp tests/crash_diagnostics_tests.cpp
@@ -278,7 +278,7 @@ git commit -m "feat: add diagnostic snapshots and mutation scopes"
 - Modify: `tests/crash_diagnostics_tests.cpp`
 - Modify: `CMakeLists.txt`
 
-- [ ] **Step 1: Write failing policy, filename, and retention tests**
+- [x] **Step 1: Write failing policy, filename, and retention tests**
 
 Tests must verify:
 
@@ -299,14 +299,14 @@ static_assert((kDiagnosticDumpType & MiniDumpWithPrivateReadWriteMemory) == 0);
 
 Also assert the stem format `Trinity_Crash_YYYYMMDD-HHMMSS_PID`, preservation of the newest three stems, deletion of both members of an older pair, and safe handling of a partial `.txt`-only or `.dmp`-only bundle.
 
-- [ ] **Step 2: Run focused tests and confirm RED**
+- [x] **Step 2: Run focused tests and confirm RED**
 
 ```powershell
 cmake --build build --config Release --target TrinityCrashDiagnosticsTests
 ctest --test-dir build --build-config Release -R TrinityCrashDiagnosticsTests --output-on-failure
 ```
 
-- [ ] **Step 3: Capture immutable session identity during clean startup**
+- [x] **Step 3: Capture immutable session identity during clean startup**
 
 In `InitializeSession`, precompute and store in fixed buffers:
 
@@ -333,18 +333,18 @@ target_link_libraries(Trinity PRIVATE imgui minhook d3d12 dxgi dwmapi imm32 xinp
 
 Resolve paths, PE image size, hashes, and build timestamp before the game hooks start. Do not recalculate them inside the exception filter.
 
-- [ ] **Step 4: Implement startup-only retention**
+- [x] **Step 4: Implement startup-only retention**
 
 Scan only files matching `Trinity_Crash_*.txt` and `Trinity_Crash_*.dmp` in the selected output directory. Group by stem, order by embedded timestamp and PID, retain the newest three groups, and delete older group members. Run this once from `InitializeSession`, never from the filter.
 
-- [ ] **Step 5: Run focused tests to green**
+- [x] **Step 5: Run focused tests to green**
 
 ```powershell
 cmake --build build --config Release --target TrinityCrashDiagnosticsTests
 ctest --test-dir build --build-config Release -R TrinityCrashDiagnosticsTests --output-on-failure
 ```
 
-- [ ] **Step 6: Commit policy and session work**
+- [x] **Step 6: Commit policy and session work**
 
 ```powershell
 git add src/core/crash_diagnostics.h src/core/crash_diagnostics.cpp src/core/crash_diagnostics_logic.h src/core/crash_diagnostics_logic.cpp tests/crash_diagnostics_tests.cpp
@@ -361,7 +361,7 @@ git commit -m "feat: add bounded crash bundle policy"
 - Modify: `tests/verify_crash_reporting_contract.ps1`
 - Modify: `CMakeLists.txt`
 
-- [ ] **Step 1: Strengthen the source contract and confirm RED**
+- [x] **Step 1: Strengthen the source contract and confirm RED**
 
 Update the PowerShell contract to require `CrashDiagnostics::InstallUnhandledFilter`, `CrashDiagnostics::InitializeSession`, `kDiagnosticDumpType`, an interlocked recursion guard, and previous-filter chaining. It must reject `AddVectoredExceptionHandler`, `MiniDumpWithFullMemory`, and direct dump/report implementation in `dllmain.cpp`.
 
@@ -369,7 +369,7 @@ Update the PowerShell contract to require `CrashDiagnostics::InstallUnhandledFil
 ctest --test-dir build --build-config Release -R TrinityCrashReportingContractTests --output-on-failure
 ```
 
-- [ ] **Step 2: Implement independent text and dump writers**
+- [x] **Step 2: Implement independent text and dump writers**
 
 The filter must:
 
@@ -383,7 +383,7 @@ The filter must:
 
 The text report must contain these fixed sections: `Session`, `Exception`, `Registers`, `Fault Module`, `Stack`, `Feature Snapshot`, `Hook/Patch Snapshot`, `Breadcrumbs`, `Dump Result`, and `Attribution`.
 
-- [ ] **Step 3: Reduce `dllmain.cpp` to registration and lifecycle**
+- [x] **Step 3: Reduce `dllmain.cpp` to registration and lifecycle**
 
 Use this lifecycle shape:
 
@@ -410,14 +410,14 @@ BOOL APIENTRY DllMain(HMODULE module, DWORD reason, LPVOID) {
 
 `InstallUnhandledFilter` may only store the module and register the UEF under loader lock. All hashing, retention, symbol initialization, and directory work belongs to `MainThread` via `InitializeSession`.
 
-- [ ] **Step 4: Run contract and unit tests**
+- [x] **Step 4: Run contract and unit tests**
 
 ```powershell
 cmake --build build --config Release --target Trinity TrinityCrashDiagnosticsTests
 ctest --test-dir build --build-config Release -R "TrinityCrash(ReportingContract|Diagnostics)Tests" --output-on-failure
 ```
 
-- [ ] **Step 5: Commit the fatal reporter migration**
+- [x] **Step 5: Commit the fatal reporter migration**
 
 ```powershell
 git add src/core/crash_diagnostics.cpp src/dllmain.cpp tests/verify_crash_reporting_contract.ps1
@@ -442,17 +442,17 @@ git commit -m "feat: write bounded fatal crash bundles"
 - Modify: `src/hooks/dx12_hook.cpp`
 - Modify: `tests/verify_crash_reporting_contract.ps1`
 
-- [ ] **Step 1: Add failing instrumentation contract checks**
+- [x] **Step 1: Add failing instrumentation contract checks**
 
 Require each subsystem installer to call `CrashDiagnostics::Record` with a stable subsystem label and success result. Require `Settings::Load` and menu rendering to call `PublishFeatureSnapshot`. Require worker and inventory patch toggles to emit `PatchState`.
 
-- [ ] **Step 2: Run the contract test and confirm RED**
+- [x] **Step 2: Run the contract test and confirm RED**
 
 ```powershell
 ctest --test-dir build --build-config Release -R TrinityCrashReportingContractTests --output-on-failure
 ```
 
-- [ ] **Step 3: Instrument lifecycle and feature snapshots**
+- [x] **Step 3: Instrument lifecycle and feature snapshots**
 
 Record `mod.initialize.begin`, each subsystem initialization result, `mod.initialize.complete`, and reverse shutdown results. Publish once after settings load and once per menu render; internal bitwise deduplication prevents repeated events when state is unchanged.
 
@@ -473,14 +473,14 @@ patch.worker.job-time
 
 For hooks, store the target address, overwritten byte count where known, and success. For patches, record queued and completed states, exact target address/size, and success/failure without copying original memory contents into the log.
 
-- [ ] **Step 4: Run contract tests and build**
+- [x] **Step 4: Run contract tests and build**
 
 ```powershell
 cmake --build build --config Release --target Trinity
 ctest --test-dir build --build-config Release -R TrinityCrashReportingContractTests --output-on-failure
 ```
 
-- [ ] **Step 5: Commit instrumentation**
+- [x] **Step 5: Commit instrumentation**
 
 ```powershell
 git add src/core/mod.cpp src/core/settings.cpp src/gui/menu.cpp src/game/player.cpp src/game/teleport.cpp src/game/inventory.cpp src/game/world.cpp src/game/equipment.cpp src/game/friendly.cpp src/game/worker.cpp src/hooks/dx12_hook.cpp tests/verify_crash_reporting_contract.ps1
@@ -501,7 +501,7 @@ git commit -m "feat: record feature and hook crash context"
 - Modify: `src/game/worker.cpp`
 - Modify: `tests/verify_crash_reporting_contract.ps1`
 
-- [ ] **Step 1: Add failing memory-instrumentation contract checks**
+- [x] **Step 1: Add failing memory-instrumentation contract checks**
 
 Require guarded write and patch helpers to call:
 
@@ -514,17 +514,17 @@ CrashDiagnostics::NoteMemoryWrite(
 
 Require every named high-risk operation below to construct a `MutationScope`.
 
-- [ ] **Step 2: Run the contract test and confirm RED**
+- [x] **Step 2: Run the contract test and confirm RED**
 
 ```powershell
 ctest --test-dir build --build-config Release -R TrinityCrashReportingContractTests --output-on-failure
 ```
 
-- [ ] **Step 3: Instrument central safe writes**
+- [x] **Step 3: Instrument central safe writes**
 
 Call `NoteMemoryWrite` after each attempted `Write`, `WriteBytes`, and `PatchMemory`, including failures. Reads remain uninstrumented. When no scope is active, record only failed writes as `SafetyFailure`; successful unscoped writes do not generate breadcrumbs.
 
-- [ ] **Step 4: Add stable high-level mutation scopes**
+- [x] **Step 4: Add stable high-level mutation scopes**
 
 Wrap the existing operations, without changing their behavior, using these exact labels:
 
@@ -547,14 +547,14 @@ worker.job-time
 
 Queued actions must emit an `Operation` event when queued and another when completed. Per-frame scopes may emit at most one aggregate mutation event, and existing ring deduplication must collapse unchanged adjacent summaries.
 
-- [ ] **Step 5: Run unit, contract, and build checks**
+- [x] **Step 5: Run unit, contract, and build checks**
 
 ```powershell
 cmake --build build --config Release --target Trinity TrinityCrashDiagnosticsTests
 ctest --test-dir build --build-config Release -R "TrinityCrash(ReportingContract|Diagnostics)Tests" --output-on-failure
 ```
 
-- [ ] **Step 6: Commit mutation instrumentation**
+- [x] **Step 6: Commit mutation instrumentation**
 
 ```powershell
 git add src/mem/safe_memory.h src/game/player.cpp src/game/teleport.cpp src/game/inventory.cpp src/game/world.cpp src/game/equipment.cpp src/game/friendly.cpp src/game/worker.cpp tests/verify_crash_reporting_contract.ps1
