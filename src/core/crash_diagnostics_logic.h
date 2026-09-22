@@ -71,6 +71,29 @@ struct MutationSummary {
     std::uint32_t failures{};
 };
 
+struct CrashTimestamp {
+    std::uint16_t year{};
+    std::uint16_t month{};
+    std::uint16_t day{};
+    std::uint16_t hour{};
+    std::uint16_t minute{};
+    std::uint16_t second{};
+};
+
+struct CrashBundleFile {
+    char stem[64]{};
+    bool isText{};
+};
+
+bool FormatCrashStem(const CrashTimestamp& timestamp,
+                     std::uint32_t processId,
+                     wchar_t* output,
+                     std::size_t outputCapacity) noexcept;
+void SelectCrashFilesToPrune(const CrashBundleFile* files,
+                             std::size_t count,
+                             std::size_t bundlesToKeep,
+                             bool* prune) noexcept;
+
 class MutationAccumulator final {
 public:
     explicit MutationAccumulator(const char* label) noexcept;

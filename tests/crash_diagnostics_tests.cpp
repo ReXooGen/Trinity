@@ -1,9 +1,10 @@
-#include "core/crash_diagnostics_logic.h"
+#include "core/crash_diagnostics.h"
 #include "core/state.h"
 
 #include <atomic>
 #include <cstdio>
 #include <cstring>
+#include <cwchar>
 #include <thread>
 #include <vector>
 
@@ -29,6 +30,10 @@ namespace
     using trinity::core::diag::FeatureSnapshot;
     using trinity::core::diag::FeatureSnapshotsEqualIgnoringRevision;
     using trinity::core::diag::MutationAccumulator;
+    using trinity::core::diag::CrashBundleFile;
+    using trinity::core::diag::CrashTimestamp;
+    using trinity::core::diag::FormatCrashStem;
+    using trinity::core::diag::SelectCrashFilesToPrune;
 
     BreadcrumbInput Event(std::uint64_t tick,
                           std::int64_t detail,
@@ -267,6 +272,55 @@ namespace
         Expect(emptySummary.firstAddress == 0 && emptySummary.lastAddress == 0,
                "an empty mutation scope must not invent an address range");
     }
+
+    void TestDumpPolicyAndNaming()
+    {
+        using namespace trinity::core::CrashDiagnostics;
+        const unsigned flags = static_cast<unsigned>(kDiagnosticDumpType);
+        Expect((flags & MiniDumpWithThreadInfo) != 0,
+               "diagnostic dump must retain per-thread information");
+        Expect((flags & MiniDumpWithUnloadedModules) != 0,
+               "diagnostic dump must retain unloaded-module information");
+        Expect((flags & MiniDumpWithIndirectlyReferencedMemory) != 0,
+               "diagnostic dump must retain indirectly referenced memory");
+        Expect((flags & MiniDumpWithFullMemory) == 0,
+               "diagnostic dump must never become a full-memory dump");
+        Expect((flags & MiniDumpWithPrivateReadWriteMemory) == 0,
+               "diagnostic dump must never include all private read/write memory");
+
+        const CrashTimestamp timestamp{2026, 9, 22, 7, 8, 9};
+        wchar_t stem[80]{};
+        Expect(FormatCrashStem(timestamp, 4321, stem, 80),
+               "valid timestamp and PID must format a crash stem");
+        Expect(std::wcscmp(stem, L"Trinity_Crash_20260922-070809_4321") == 0,
+               "crash stem must be deterministic and sortable");
+        wchar_t tooSmall[8]{};
+        Expect(!FormatCrashStem(timestamp, 4321, tooSmall, 8),
+               "filename formatting must fail closed on a short buffer");
+    }
+
+    void TestRetentionSelection()
+    {
+        const CrashBundleFile files[] = {
+            {"Trinity_Crash_20260922-070000_1", true},
+            {"Trinity_Crash_20260922-070000_1", false},
+            {"Trinity_Crash_20260922-080000_1", true},
+            {"Trinity_Crash_20260922-090000_1", false},
+            {"Trinity_Crash_20260922-100000_1", true},
+            {"Trinity_Crash_20260922-100000_1", false},
+        };
+        bool prune[6]{};
+        SelectCrashFilesToPrune(files, 6, 3, prune);
+        Expect(prune[0] && prune[1], "both files in the oldest complete bundle must be pruned");
+        Expect(!prune[2], "a retained text-only partial bundle must remain intact");
+        Expect(!prune[3], "a retained dump-only partial bundle must remain intact");
+        Expect(!prune[4] && !prune[5], "both files in a retained complete bundle must remain");
+
+        bool keepAll[6]{true, true, true, true, true, true};
+        SelectCrashFilesToPrune(files, 6, 4, keepAll);
+        for (bool value : keepAll)
+            Expect(!value, "retention must keep every file when only four bundle stems exist");
+    }
 }
 
 int main()
@@ -277,6 +331,8 @@ int main()
     TestAttribution();
     TestFeatureSnapshot();
     TestMutationAggregation();
+    TestDumpPolicyAndNaming();
+    TestRetentionSelection();
     if (failures == 0) std::puts("Crash diagnostics tests passed.");
     return failures == 0 ? 0 : 1;
 }

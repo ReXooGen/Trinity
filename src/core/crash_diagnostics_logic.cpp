@@ -5,6 +5,7 @@
 #include <cmath>
 #include <cstring>
 #include <limits>
+#include <cwchar>
 
 namespace trinity::core::diag {
 
@@ -132,6 +133,61 @@ void MutationAccumulator::Note(std::uintptr_t address,
 MutationSummary MutationAccumulator::Finish() noexcept
 {
     return summary_;
+}
+
+bool FormatCrashStem(const CrashTimestamp& timestamp,
+                     std::uint32_t processId,
+                     wchar_t* output,
+                     std::size_t outputCapacity) noexcept
+{
+    if (!output || outputCapacity == 0 ||
+        timestamp.month < 1 || timestamp.month > 12 ||
+        timestamp.day < 1 || timestamp.day > 31 ||
+        timestamp.hour > 23 || timestamp.minute > 59 || timestamp.second > 59) {
+        return false;
+    }
+    const int written = std::swprintf(output,
+                                     outputCapacity,
+                                     L"Trinity_Crash_%04u%02u%02u-%02u%02u%02u_%u",
+                                     timestamp.year,
+                                     timestamp.month,
+                                     timestamp.day,
+                                     timestamp.hour,
+                                     timestamp.minute,
+                                     timestamp.second,
+                                     processId);
+    if (written < 0 || static_cast<std::size_t>(written) >= outputCapacity) {
+        output[0] = L'\0';
+        return false;
+    }
+    return true;
+}
+
+void SelectCrashFilesToPrune(const CrashBundleFile* files,
+                             std::size_t count,
+                             std::size_t bundlesToKeep,
+                             bool* prune) noexcept
+{
+    if (!prune) return;
+    for (std::size_t i = 0; i < count; ++i) prune[i] = false;
+    if (!files) return;
+
+    for (std::size_t i = 0; i < count; ++i) {
+        std::size_t newerUniqueStems = 0;
+        for (std::size_t j = 0; j < count; ++j) {
+            if (std::strcmp(files[j].stem, files[i].stem) <= 0) continue;
+            bool alreadyCounted = false;
+            for (std::size_t k = 0; k < j; ++k) {
+                if (std::strcmp(files[k].stem, files[j].stem) == 0 &&
+                    std::strcmp(files[k].stem, files[i].stem) > 0) {
+                    alreadyCounted = true;
+                    break;
+                }
+            }
+            if (!alreadyCounted) ++newerUniqueStems;
+        }
+        prune[i] = newerUniqueStems >= bundlesToKeep;
+    }
 }
 
 bool BreadcrumbRing::Record(const BreadcrumbInput& input) noexcept

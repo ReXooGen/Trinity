@@ -3,10 +3,37 @@
 #include "crash_diagnostics_logic.h"
 
 #include <Windows.h>
+#include <DbgHelp.h>
 
 namespace trinity { struct State; }
 
 namespace trinity::core::CrashDiagnostics {
+
+constexpr MINIDUMP_TYPE kDiagnosticDumpType = static_cast<MINIDUMP_TYPE>(
+    MiniDumpWithThreadInfo |
+    MiniDumpWithUnloadedModules |
+    MiniDumpWithHandleData |
+    MiniDumpWithIndirectlyReferencedMemory |
+    MiniDumpWithDataSegs |
+    MiniDumpWithProcessThreadData |
+    MiniDumpWithFullMemoryInfo |
+    MiniDumpIgnoreInaccessibleMemory);
+
+static_assert((static_cast<unsigned>(kDiagnosticDumpType) & MiniDumpWithFullMemory) == 0);
+static_assert((static_cast<unsigned>(kDiagnosticDumpType) & MiniDumpWithPrivateReadWriteMemory) == 0);
+
+struct SessionIdentity {
+    wchar_t outputDirectory[MAX_PATH]{};
+    wchar_t executablePath[MAX_PATH]{};
+    wchar_t trinityPath[MAX_PATH]{};
+    char executableSha256[65]{};
+    char trinitySha256[65]{};
+    char buildTimestamp[32]{};
+    std::uintptr_t trinityBase{};
+    std::size_t trinitySize{};
+    std::uint64_t startedTickMs{};
+    DWORD processId{};
+};
 
 void InstallUnhandledFilter(HMODULE module) noexcept;
 bool InitializeSession(HMODULE module,

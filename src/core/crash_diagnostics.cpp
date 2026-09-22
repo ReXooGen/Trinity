@@ -1,16 +1,24 @@
 #include "crash_diagnostics.h"
 
 #include "state.h"
+#include "build_timestamp.h"
 
+#include <bcrypt.h>
 #include <algorithm>
 #include <atomic>
+#include <cstdio>
+#include <cstring>
 #include <limits>
+#include <memory>
+#include <new>
+#include <vector>
 
 namespace trinity::core::CrashDiagnostics {
 namespace {
 
 diag::BreadcrumbRing g_breadcrumbs;
 HMODULE g_module = nullptr;
+SessionIdentity g_session{};
 std::atomic<std::uint64_t> g_featureRevision{0};
 
 struct AtomicFeatureSnapshot {
@@ -25,6 +33,148 @@ struct AtomicFeatureSnapshot {
 AtomicFeatureSnapshot g_featureSnapshots[2];
 std::atomic<unsigned> g_activeFeatureSnapshot{0};
 thread_local MutationScope* g_activeMutationScope = nullptr;
+
+void CopyWide(wchar_t* destination, std::size_t capacity, const wchar_t* source) noexcept
+{
+    if (!destination || capacity == 0) return;
+    destination[0] = L'\0';
+    if (!source) return;
+    wcsncpy_s(destination, capacity, source, _TRUNCATE);
+}
+
+void CopyNarrow(char* destination, std::size_t capacity, const char* source) noexcept
+{
+    if (!destination || capacity == 0) return;
+    destination[0] = '\0';
+    if (!source) return;
+    strncpy_s(destination, capacity, source, _TRUNCATE);
+}
+
+bool HashFileSha256(const wchar_t* path, char (&hex)[65]) noexcept
+{
+    CopyNarrow(hex, sizeof(hex), "UNAVAILABLE");
+    HANDLE file = CreateFileW(path, GENERIC_READ, FILE_SHARE_READ | FILE_SHARE_WRITE | FILE_SHARE_DELETE,
+                              nullptr, OPEN_EXISTING, FILE_ATTRIBUTE_NORMAL, nullptr);
+    if (file == INVALID_HANDLE_VALUE) return false;
+
+    BCRYPT_ALG_HANDLE algorithm = nullptr;
+    BCRYPT_HASH_HANDLE hash = nullptr;
+    DWORD objectLength = 0;
+    DWORD hashLength = 0;
+    DWORD resultLength = 0;
+    bool ok = BCryptOpenAlgorithmProvider(&algorithm, BCRYPT_SHA256_ALGORITHM, nullptr, 0) >= 0 &&
+              BCryptGetProperty(algorithm, BCRYPT_OBJECT_LENGTH,
+                                reinterpret_cast<PUCHAR>(&objectLength), sizeof(objectLength),
+                                &resultLength, 0) >= 0 &&
+              BCryptGetProperty(algorithm, BCRYPT_HASH_LENGTH,
+                                reinterpret_cast<PUCHAR>(&hashLength), sizeof(hashLength),
+                                &resultLength, 0) >= 0 && hashLength == 32;
+    std::vector<UCHAR> object(ok ? objectLength : 0);
+    std::vector<UCHAR> digest(ok ? hashLength : 0);
+    if (ok) ok = BCryptCreateHash(algorithm, &hash, object.data(), objectLength,
+                                  nullptr, 0, 0) >= 0;
+
+    UCHAR buffer[64 * 1024]{};
+    while (ok) {
+        DWORD read = 0;
+        if (!ReadFile(file, buffer, sizeof(buffer), &read, nullptr)) {
+            ok = false;
+            break;
+        }
+        if (read == 0) break;
+        ok = BCryptHashData(hash, buffer, read, 0) >= 0;
+    }
+    if (ok) ok = BCryptFinishHash(hash, digest.data(), hashLength, 0) >= 0;
+    if (ok) {
+        static constexpr char kHex[] = "0123456789ABCDEF";
+        for (DWORD i = 0; i < hashLength; ++i) {
+            hex[i * 2] = kHex[digest[i] >> 4];
+            hex[i * 2 + 1] = kHex[digest[i] & 0x0F];
+        }
+        hex[64] = '\0';
+    }
+
+    if (hash) BCryptDestroyHash(hash);
+    if (algorithm) BCryptCloseAlgorithmProvider(algorithm, 0);
+    CloseHandle(file);
+    return ok;
+}
+
+std::size_t ModuleImageSize(HMODULE module) noexcept
+{
+    if (!module) return 0;
+    __try {
+        const auto* dos = reinterpret_cast<const IMAGE_DOS_HEADER*>(module);
+        if (dos->e_magic != IMAGE_DOS_SIGNATURE) return 0;
+        const auto* nt = reinterpret_cast<const IMAGE_NT_HEADERS*>(
+            reinterpret_cast<const std::uint8_t*>(module) + dos->e_lfanew);
+        if (nt->Signature != IMAGE_NT_SIGNATURE) return 0;
+        return nt->OptionalHeader.SizeOfImage;
+    } __except (EXCEPTION_EXECUTE_HANDLER) {
+        return 0;
+    }
+}
+
+void ParentDirectory(const wchar_t* path, wchar_t (&directory)[MAX_PATH]) noexcept
+{
+    CopyWide(directory, MAX_PATH, path);
+    wchar_t* slash = wcsrchr(directory, L'\\');
+    if (slash) *slash = L'\0';
+}
+
+struct RetentionFile {
+    diag::CrashBundleFile diagnostic{};
+    wchar_t name[MAX_PATH]{};
+};
+
+void PruneOldBundles(const wchar_t* directory) noexcept
+{
+    wchar_t pattern[MAX_PATH]{};
+    _snwprintf_s(pattern, _TRUNCATE, L"%s\\Trinity_Crash_*.*", directory);
+    WIN32_FIND_DATAW data{};
+    HANDLE find = FindFirstFileW(pattern, &data);
+    if (find == INVALID_HANDLE_VALUE) return;
+
+    std::vector<RetentionFile> files;
+    do {
+        if ((data.dwFileAttributes & FILE_ATTRIBUTE_DIRECTORY) != 0) continue;
+        const wchar_t* extension = wcsrchr(data.cFileName, L'.');
+        const bool isText = extension && _wcsicmp(extension, L".txt") == 0;
+        const bool isDump = extension && _wcsicmp(extension, L".dmp") == 0;
+        if (!isText && !isDump) continue;
+
+        const std::size_t stemLength = static_cast<std::size_t>(extension - data.cFileName);
+        if (stemLength == 0 || stemLength >= 64) continue;
+        RetentionFile file{};
+        CopyWide(file.name, MAX_PATH, data.cFileName);
+        for (std::size_t i = 0; i < stemLength; ++i) {
+            if (data.cFileName[i] > 0x7F) {
+                file.diagnostic.stem[0] = '\0';
+                break;
+            }
+            file.diagnostic.stem[i] = static_cast<char>(data.cFileName[i]);
+            file.diagnostic.stem[i + 1] = '\0';
+        }
+        if (file.diagnostic.stem[0] == '\0') continue;
+        file.diagnostic.isText = isText;
+        files.push_back(file);
+    } while (FindNextFileW(find, &data));
+    FindClose(find);
+
+    std::vector<diag::CrashBundleFile> diagnosticFiles;
+    diagnosticFiles.reserve(files.size());
+    for (const RetentionFile& file : files) diagnosticFiles.push_back(file.diagnostic);
+    if (files.empty()) return;
+    std::unique_ptr<bool[]> flags(new (std::nothrow) bool[files.size()]{});
+    if (!flags) return;
+    diag::SelectCrashFilesToPrune(diagnosticFiles.data(), diagnosticFiles.size(), 3, flags.get());
+    for (std::size_t i = 0; i < files.size(); ++i) {
+        if (!flags[i]) continue;
+        wchar_t path[MAX_PATH]{};
+        _snwprintf_s(path, _TRUNCATE, L"%s\\%s", directory, files[i].name);
+        DeleteFileW(path);
+    }
+}
 
 diag::FeatureSnapshot LoadFeatureSnapshot(unsigned index) noexcept
 {
@@ -57,10 +207,27 @@ void InstallUnhandledFilter(HMODULE module) noexcept
     g_module = module;
 }
 
-bool InitializeSession(HMODULE module, const wchar_t*) noexcept
+bool InitializeSession(HMODULE module, const wchar_t* outputDirectoryOverride) noexcept
 {
     g_module = module;
-    return module != nullptr;
+    g_session = {};
+    g_session.processId = GetCurrentProcessId();
+    g_session.startedTickMs = GetTickCount64();
+    g_session.trinityBase = reinterpret_cast<std::uintptr_t>(module);
+    g_session.trinitySize = ModuleImageSize(module);
+    GetModuleFileNameW(nullptr, g_session.executablePath, MAX_PATH);
+    GetModuleFileNameW(module, g_session.trinityPath, MAX_PATH);
+    if (outputDirectoryOverride && outputDirectoryOverride[0] != L'\0') {
+        CopyWide(g_session.outputDirectory, MAX_PATH, outputDirectoryOverride);
+        CreateDirectoryW(g_session.outputDirectory, nullptr);
+    } else {
+        ParentDirectory(g_session.trinityPath, g_session.outputDirectory);
+    }
+    CopyNarrow(g_session.buildTimestamp, sizeof(g_session.buildTimestamp), TRINITY_BUILD_TIME);
+    HashFileSha256(g_session.executablePath, g_session.executableSha256);
+    HashFileSha256(g_session.trinityPath, g_session.trinitySha256);
+    PruneOldBundles(g_session.outputDirectory);
+    return module != nullptr && g_session.outputDirectory[0] != L'\0';
 }
 
 void Shutdown() noexcept
