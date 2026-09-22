@@ -26,9 +26,13 @@ struct SessionIdentity {
     wchar_t outputDirectory[MAX_PATH]{};
     wchar_t executablePath[MAX_PATH]{};
     wchar_t trinityPath[MAX_PATH]{};
+    char executablePathUtf8[MAX_PATH * 3]{};
+    char trinityPathUtf8[MAX_PATH * 3]{};
     char executableSha256[65]{};
     char trinitySha256[65]{};
     char buildTimestamp[32]{};
+    std::uintptr_t executableBase{};
+    std::size_t executableSize{};
     std::uintptr_t trinityBase{};
     std::size_t trinitySize{};
     std::uint64_t startedTickMs{};

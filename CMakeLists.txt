@@ -94,7 +94,7 @@ add_library(Trinity SHARED
 target_include_directories(Trinity PRIVATE src)
 # Resolve #include "core/version.h" from the .rc via an explicit /I for the RC compiler.
 target_include_directories(Trinity PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/src)
-target_link_libraries(Trinity PRIVATE imgui minhook d3d12 dxgi dwmapi imm32 xinput9_1_0 version bcrypt)
+target_link_libraries(Trinity PRIVATE imgui minhook d3d12 dxgi dwmapi imm32 xinput9_1_0 version bcrypt dbghelp)
 target_compile_definitions(Trinity PRIVATE
     WIN32_LEAN_AND_MEAN
     NOMINMAX
@@ -137,6 +137,11 @@ if(BUILD_TESTING)
     )
     target_include_directories(TrinityReadinessTests PRIVATE src)
     add_test(NAME TrinityReadinessTests COMMAND TrinityReadinessTests)
+
+    add_test(
+        NAME TrinityCrashReportingContractTests
+        COMMAND powershell -NoProfile -ExecutionPolicy Bypass
+                -File "${CMAKE_CURRENT_SOURCE_DIR}/tests/verify_crash_reporting_contract.ps1")
     add_executable(TrinityCrashDiagnosticsTests
         tests/crash_diagnostics_tests.cpp
         src/core/crash_diagnostics_logic.cpp
