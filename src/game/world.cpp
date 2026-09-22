@@ -13,6 +13,7 @@
 #include "../mem/hooks.h"
 #include "../core/logger.h"
 #include "../core/state.h"
+#include "../core/crash_diagnostics.h"
 
 namespace trinity::game
 {
@@ -600,6 +601,14 @@ namespace trinity::game
                 }
             }
         }
+
+        core::CrashDiagnostics::Record(
+            core::diag::BreadcrumbKind::HookState,
+            "hook.world",
+            reinterpret_cast<std::uintptr_t>(g_frameTimerUpdateTarget),
+            5,
+            0,
+            ok);
 
         return ok;
     }

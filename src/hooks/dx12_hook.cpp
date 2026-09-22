@@ -17,6 +17,7 @@
 #include "../core/localization.h"
 #include "../core/settings.h"
 #include "../core/state.h"
+#include "../core/crash_diagnostics.h"
 #include "../game/player.h"
 #include "../game/teleport.h"
 #include "../gui/framework.h"
@@ -1551,6 +1552,13 @@ namespace trinity::hooks
         if (!GetVTableAddresses(presentAddr, resizeAddr, execAddr, colorSpaceAddr))
         {
             LOG_ERR("Failed to resolve DX12 vtable addresses.");
+            core::CrashDiagnostics::Record(
+                core::diag::BreadcrumbKind::HookState,
+                "hook.dx12",
+                0,
+                0,
+                0,
+                false);
             return false;
         }
 
@@ -1585,6 +1593,15 @@ namespace trinity::hooks
         const char* exeName = strrchr(exePath, '\\');
         exeName = exeName ? exeName + 1 : exePath;
         LOG("DX12 hooks installed (%s, pid %lu).", exeName, GetCurrentProcessId());
+
+        core::CrashDiagnostics::Record(
+            core::diag::BreadcrumbKind::HookState,
+            "hook.dx12",
+            reinterpret_cast<std::uintptr_t>(presentAddr),
+            5,
+            0,
+            true);
+
         return true;
     }
 

@@ -11,6 +11,7 @@
 #include "framework.h"
 #include "widgets.h"
 #include "../core/settings.h"
+#include "../core/crash_diagnostics.h"
 #include "../core/state.h"
 #include "../core/text.h"
 #include "../core/logger.h"
@@ -3175,6 +3176,7 @@ namespace trinity::gui
     void Render()
     {
         State&   st = State::Get();
+        core::CrashDiagnostics::PublishFeatureSnapshot(st);
         ImGuiIO& io = ImGui::GetIO();
 
         const char* const localizedTabs[] = {

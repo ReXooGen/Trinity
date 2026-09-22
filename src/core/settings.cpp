@@ -9,6 +9,7 @@
 #include "mod.h"
 #include "state.h"
 #include "localization.h"
+#include "crash_diagnostics.h"
 
 namespace trinity
 {
@@ -47,11 +48,17 @@ namespace trinity
     {
         char path[MAX_PATH];
         if (!IniPath(path, sizeof(path)))
+        {
+            core::CrashDiagnostics::PublishFeatureSnapshot(State::Get());
             return;
+        }
 
         FILE* f = fopen(path, "r");
         if (!f)
+        {
+            core::CrashDiagnostics::PublishFeatureSnapshot(State::Get());
             return; // first run - nothing saved yet
+        }
 
         // Parse onto a default-constructed State so missing/garbled keys keep
         // their defaults, then apply in one step below.
@@ -221,7 +228,10 @@ namespace trinity
             st.markerFallbackHeight = vals.markerFallbackHeight;
 
         if (!st.autoSave)
+        {
+            core::CrashDiagnostics::PublishFeatureSnapshot(st);
             return; // remembered the preference, but features start clean
+        }
 
         // Clamp the floats to the same ranges the menu rows enforce, in case
         // the file was hand-edited.
@@ -259,6 +269,7 @@ namespace trinity
         loc::SetLanguageByCode(st.languageCode);
         st.languageIndex = loc::GetCurrentLanguageIndex();
 
+        core::CrashDiagnostics::PublishFeatureSnapshot(st);
         LOG_OK("Trinity.ini loaded - restored feature settings from last session.");
     }
 

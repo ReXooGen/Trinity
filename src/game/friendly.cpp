@@ -1,5 +1,6 @@
 #include "friendly.h"
 #include "friendly_logic.h"
+#include "../core/crash_diagnostics.h"
 
 #include <cstdint>
 #include <unordered_map>
@@ -296,6 +297,15 @@ namespace trinity::game
         g_hooksEnabled = g_hooksInstalled;
         if (!g_hooksInstalled)
             LOG_ERR("friendly: Trust Multiplier setters NOT FOUND - feature disabled.");
+
+        core::CrashDiagnostics::Record(
+            core::diag::BreadcrumbKind::HookState,
+            "hook.friendly",
+            reinterpret_cast<std::uintptr_t>(g_npcTarget ? g_npcTarget : g_petTarget),
+            5,
+            0,
+            g_hooksInstalled);
+
         return g_hooksInstalled;
     }
 

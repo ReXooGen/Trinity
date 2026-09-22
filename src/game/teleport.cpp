@@ -21,6 +21,7 @@
 #include <MinHook.h>
 
 #include "offsets.h"
+#include "../core/crash_diagnostics.h"
 #include "map_marker.h"
 #include "marker_teleport_logic.h"
 #include "player.h"
@@ -1797,7 +1798,16 @@ namespace trinity::game
     {
         if (!mem::InstallHook("teleport: movement-update", kSig_MoveUpdate, "position tracking disabled",
                               &hkMoveUpdate, &oMoveUpdate, &g_moveUpdateTarget))
+        {
+            core::CrashDiagnostics::Record(
+                core::diag::BreadcrumbKind::HookState,
+                "hook.teleport",
+                0,
+                0,
+                0,
+                false);
             return false;
+        }
 
         // Resolve the fast-travel trigger + the destination registry global.
         // Non-fatal if missing: position tracking still works, the fast-travel
@@ -1843,6 +1853,14 @@ namespace trinity::game
 
         // Map Marker Teleport subsystem (clean-room marker capture from crimsondesert-main).
         InitMarkerSubsystem();
+
+        core::CrashDiagnostics::Record(
+            core::diag::BreadcrumbKind::HookState,
+            "hook.teleport",
+            reinterpret_cast<std::uintptr_t>(g_moveUpdateTarget),
+            5,
+            0,
+            true);
 
         return true;
     }

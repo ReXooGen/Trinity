@@ -9,6 +9,7 @@
 #include "localization.h"
 #include "version_detect.h"
 #include "readiness.h"
+#include "crash_diagnostics.h"
 #include "../hooks/dx12_hook.h"
 #include "../mem/scanner.h"
 #include "../game/offsets.h"
@@ -80,6 +81,13 @@ namespace trinity
             return;
 
         m_module = module;
+        core::CrashDiagnostics::Record(
+            core::diag::BreadcrumbKind::Operation,
+            "mod.initialize.begin",
+            reinterpret_cast<std::uintptr_t>(module),
+            0,
+            0,
+            true);
         LOG("Trinity v%s initializing (built %s).", TRINITY_VERSION, TRINITY_BUILD_TIME);
 
         // Detect and log game version on startup
@@ -92,13 +100,29 @@ namespace trinity
         // feature hooks install, so restored toggles apply from frame one.
         Settings::Load();
 
-        if (MH_Initialize() != MH_OK)
+        const bool mhOk = (MH_Initialize() == MH_OK);
+        core::CrashDiagnostics::Record(
+            core::diag::BreadcrumbKind::Operation,
+            "minhook.initialize",
+            0,
+            0,
+            0,
+            mhOk);
+        if (!mhOk)
         {
             LOG("MinHook initialization failed.");
             return;
         }
 
-        if (!hooks::InstallDX12Hooks())
+        const bool dx12Ok = hooks::InstallDX12Hooks();
+        core::CrashDiagnostics::Record(
+            core::diag::BreadcrumbKind::Operation,
+            "dx12.initialize",
+            0,
+            0,
+            0,
+            dx12Ok);
+        if (!dx12Ok)
         {
             LOG("Failed to install DX12 hooks.");
             MH_Uninitialize();
@@ -124,17 +148,50 @@ namespace trinity
 
         // Gameplay features. Non-fatal: if a signature ever fails to resolve
         // the overlay still runs, the feature is just disabled and logged.
-        game::Player::Install();    // God Mode / Infinite Stamina
-        game::Teleport::Install();  // Live position tracking / Fast Travel
-        game::Inventory::Install(); // Item browser / quantity editor
-        game::World::Install();     // Game Speed / Time of Day (Freeze, Advance)
-        game::Equipment::Install(); // Abyss-gear socket editor
-        game::Friendly::Install();  // Trust Multiplier (gift/feed/tame)
+        const bool playerOk = game::Player::Install();
+        core::CrashDiagnostics::Record(
+            core::diag::BreadcrumbKind::Operation,
+            "player.initialize", 0, 0, 0, playerOk);
+
+        const bool teleportOk = game::Teleport::Install();
+        core::CrashDiagnostics::Record(
+            core::diag::BreadcrumbKind::Operation,
+            "teleport.initialize", 0, 0, 0, teleportOk);
+
+        const bool inventoryOk = game::Inventory::Install();
+        core::CrashDiagnostics::Record(
+            core::diag::BreadcrumbKind::Operation,
+            "inventory.initialize", 0, 0, 0, inventoryOk);
+
+        const bool worldOk = game::World::Install();
+        core::CrashDiagnostics::Record(
+            core::diag::BreadcrumbKind::Operation,
+            "world.initialize", 0, 0, 0, worldOk);
+
+        const bool equipOk = game::Equipment::Install();
+        core::CrashDiagnostics::Record(
+            core::diag::BreadcrumbKind::Operation,
+            "equipment.initialize", 0, 0, 0, equipOk);
+
+        const bool friendlyOk = game::Friendly::Install();
+        core::CrashDiagnostics::Record(
+            core::diag::BreadcrumbKind::Operation,
+            "friendly.initialize", 0, 0, 0, friendlyOk);
 #if defined(TRINITY_EXTENDED)
-        game::DLC::Install();
+        const bool dlcOk = game::DLC::Install();
+        core::CrashDiagnostics::Record(
+            core::diag::BreadcrumbKind::Operation,
+            "dlc.initialize", 0, 0, 0, dlcOk);
 #endif
 
         m_initialized = true;
+        core::CrashDiagnostics::Record(
+            core::diag::BreadcrumbKind::Operation,
+            "mod.initialize.complete",
+            reinterpret_cast<std::uintptr_t>(module),
+            0,
+            0,
+            true);
         LOG_OK("Ready - INSERT (or LB + DOWN on controller) toggles the menu in-game.");
         LOG_OK("If something isn't working or you'd like to leave a comment, visit my blog: https://mul0.com/trainer/crimson-desert-trinity-mod-menu/");
     }
@@ -144,25 +201,49 @@ namespace trinity
         if (!m_initialized)
             return;
 
+        core::CrashDiagnostics::Record(
+            core::diag::BreadcrumbKind::Operation,
+            "mod.shutdown.begin", 0, 0, 0, true);
+
         // Menu changes already save as they happen; this catches anything
         // mutated outside the menu since the last write. In the launcher this
         // is inert - Save() only writes for the process that owns the file.
         if (State::Get().autoSave)
             Settings::Save();
 
-        game::Player::Remove();
-        game::Teleport::Remove();
-        game::Inventory::Remove();
-        game::World::Remove();
-        game::Equipment::Remove();
-        game::Friendly::Remove();
 #if defined(TRINITY_EXTENDED)
         game::DLC::Remove();
+        core::CrashDiagnostics::Record(core::diag::BreadcrumbKind::Operation, "dlc.shutdown", 0, 0, 0, true);
 #endif
+        game::Friendly::Remove();
+        core::CrashDiagnostics::Record(core::diag::BreadcrumbKind::Operation, "friendly.shutdown", 0, 0, 0, true);
+
+        game::Equipment::Remove();
+        core::CrashDiagnostics::Record(core::diag::BreadcrumbKind::Operation, "equipment.shutdown", 0, 0, 0, true);
+
+        game::World::Remove();
+        core::CrashDiagnostics::Record(core::diag::BreadcrumbKind::Operation, "world.shutdown", 0, 0, 0, true);
+
+        game::Inventory::Remove();
+        core::CrashDiagnostics::Record(core::diag::BreadcrumbKind::Operation, "inventory.shutdown", 0, 0, 0, true);
+
+        game::Teleport::Remove();
+        core::CrashDiagnostics::Record(core::diag::BreadcrumbKind::Operation, "teleport.shutdown", 0, 0, 0, true);
+
+        game::Player::Remove();
+        core::CrashDiagnostics::Record(core::diag::BreadcrumbKind::Operation, "player.shutdown", 0, 0, 0, true);
+
         hooks::RemoveDX12Hooks();
+        core::CrashDiagnostics::Record(core::diag::BreadcrumbKind::Operation, "dx12.shutdown", 0, 0, 0, true);
+
         MH_Uninitialize();
+        core::CrashDiagnostics::Record(core::diag::BreadcrumbKind::Operation, "minhook.shutdown", 0, 0, 0, true);
+
         Logger::Shutdown();
         m_initialized = false;
+        core::CrashDiagnostics::Record(
+            core::diag::BreadcrumbKind::Operation,
+            "mod.shutdown.complete", 0, 0, 0, true);
     }
 }
 

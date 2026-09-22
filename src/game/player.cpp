@@ -21,6 +21,7 @@
 #include "../core/version_mapping.h"
 #include "../core/version_detect.h"
 #include "player_logic.h"
+#include "../core/crash_diagnostics.h"
 
 namespace trinity::game
 {
@@ -855,6 +856,16 @@ namespace trinity::game
         {
             LOG_OK("player: combat-timing hook installed @ %p", g_combatTimingTarget);
         }
+
+        const bool success = (g_damageHookTarget != nullptr) || (g_charMgrGlobal != 0);
+        const uintptr_t target = g_damageHookTarget ? reinterpret_cast<uintptr_t>(g_damageHookTarget) : g_charMgrGlobal;
+        core::CrashDiagnostics::Record(
+            core::diag::BreadcrumbKind::HookState,
+            "hook.player",
+            target,
+            g_damageHookTarget ? 5 : 0,
+            0,
+            success);
 
         return true;
     }

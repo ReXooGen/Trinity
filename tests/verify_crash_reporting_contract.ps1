@@ -42,6 +42,86 @@ if (($dll + $runtime) -match 'MiniDumpWithFullMemory(?!Info)|MiniDumpWithPrivate
     $failures.Add('Full/private-memory dump flags are forbidden.')
 }
 
+$modPath = Join-Path $PSScriptRoot '..\src\core\mod.cpp'
+$settingsPath = Join-Path $PSScriptRoot '..\src\core\settings.cpp'
+$menuPath = Join-Path $PSScriptRoot '..\src\gui\menu.cpp'
+$playerPath = Join-Path $PSScriptRoot '..\src\game\player.cpp'
+$teleportPath = Join-Path $PSScriptRoot '..\src\game\teleport.cpp'
+$inventoryPath = Join-Path $PSScriptRoot '..\src\game\inventory.cpp'
+$worldPath = Join-Path $PSScriptRoot '..\src\game\world.cpp'
+$equipmentPath = Join-Path $PSScriptRoot '..\src\game\equipment.cpp'
+$friendlyPath = Join-Path $PSScriptRoot '..\src\game\friendly.cpp'
+$workerPath = Join-Path $PSScriptRoot '..\src\game\worker.cpp'
+$dx12Path = Join-Path $PSScriptRoot '..\src\hooks\dx12_hook.cpp'
+
+$mod = Get-Content -LiteralPath $modPath -Raw
+$settings = Get-Content -LiteralPath $settingsPath -Raw
+$menu = Get-Content -LiteralPath $menuPath -Raw
+$player = Get-Content -LiteralPath $playerPath -Raw
+$teleport = Get-Content -LiteralPath $teleportPath -Raw
+$inventory = Get-Content -LiteralPath $inventoryPath -Raw
+$world = Get-Content -LiteralPath $worldPath -Raw
+$equipment = Get-Content -LiteralPath $equipmentPath -Raw
+$friendly = Get-Content -LiteralPath $friendlyPath -Raw
+$worker = Get-Content -LiteralPath $workerPath -Raw
+$dx12 = Get-Content -LiteralPath $dx12Path -Raw
+
+if ($settings -notmatch 'CrashDiagnostics::PublishFeatureSnapshot\s*\(') {
+    $failures.Add('Settings::Load must publish a feature snapshot.')
+}
+
+if ($menu -notmatch 'CrashDiagnostics::PublishFeatureSnapshot\s*\(') {
+    $failures.Add('Menu rendering must publish a feature snapshot.')
+}
+
+if ($mod -notmatch 'CrashDiagnostics::Record\s*\(\s*[^,]+,\s*"mod\.initialize\.begin"') {
+    $failures.Add('Mod::Initialize must record mod.initialize.begin.')
+}
+
+if ($mod -notmatch 'CrashDiagnostics::Record\s*\(\s*[^,]+,\s*"mod\.initialize\.complete"') {
+    $failures.Add('Mod::Initialize must record mod.initialize.complete.')
+}
+
+if ($player -notmatch 'CrashDiagnostics::Record\s*\(\s*[^,]+,\s*"hook\.player"') {
+    $failures.Add('Player installer must record hook.player.')
+}
+
+if ($teleport -notmatch 'CrashDiagnostics::Record\s*\(\s*[^,]+,\s*"hook\.teleport"') {
+    $failures.Add('Teleport installer must record hook.teleport.')
+}
+
+if ($inventory -notmatch 'CrashDiagnostics::Record\s*\(\s*[^,]+,\s*"hook\.inventory"') {
+    $failures.Add('Inventory installer must record hook.inventory.')
+}
+
+if ($world -notmatch 'CrashDiagnostics::Record\s*\(\s*[^,]+,\s*"hook\.world"') {
+    $failures.Add('World installer must record hook.world.')
+}
+
+if ($equipment -notmatch 'CrashDiagnostics::Record\s*\(\s*[^,]+,\s*"hook\.equipment"') {
+    $failures.Add('Equipment installer must record hook.equipment.')
+}
+
+if ($friendly -notmatch 'CrashDiagnostics::Record\s*\(\s*[^,]+,\s*"hook\.friendly"') {
+    $failures.Add('Friendly installer must record hook.friendly.')
+}
+
+if ($worker -notmatch 'CrashDiagnostics::Record\s*\(\s*[^,]+,\s*"hook\.worker"') {
+    $failures.Add('Worker installer must record hook.worker.')
+}
+
+if ($dx12 -notmatch 'CrashDiagnostics::Record\s*\(\s*[^,]+,\s*"hook\.dx12"') {
+    $failures.Add('DX12 installer must record hook.dx12.')
+}
+
+if ($inventory -notmatch 'CrashDiagnostics::Record\s*\(\s*(?:(?:trinity::)?core::diag::|diag::)?BreadcrumbKind::PatchState\s*,\s*"patch\.inventory\.pickup-capacity"') {
+    $failures.Add('Inventory pickup capacity patch must record PatchState breadcrumbs.')
+}
+
+if ($worker -notmatch 'CrashDiagnostics::Record\s*\(\s*(?:(?:trinity::)?core::diag::|diag::)?BreadcrumbKind::PatchState\s*,\s*"patch\.worker\.job-time"') {
+    $failures.Add('Worker job-time patch must record PatchState breadcrumbs.')
+}
+
 if ($failures.Count -ne 0) {
     $failures | ForEach-Object { Write-Error $_ }
     exit 1

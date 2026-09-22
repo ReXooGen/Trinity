@@ -1,5 +1,6 @@
 #include "equipment.h"
 #include "equipment_logic.h"
+#include "../core/crash_diagnostics.h"
 
 #include <Windows.h>
 #include <atomic>
@@ -1577,6 +1578,15 @@ namespace trinity::game
 
         // 1. Load Persistent Equipment Profiles from Disk (Trinity_EquipmentProfile.ini)
         LoadEquipProfilesFromDisk();
+
+        const bool ok = (g_refresh != nullptr);
+        core::CrashDiagnostics::Record(
+            core::diag::BreadcrumbKind::HookState,
+            "hook.equipment",
+            reinterpret_cast<std::uintptr_t>(g_refresh),
+            0,
+            0,
+            ok);
 
         return true;
     }

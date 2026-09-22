@@ -16,6 +16,7 @@
 #include <MinHook.h>
 
 #include "offsets.h"
+#include "../core/crash_diagnostics.h"
 #include "crime_hook_contract.h"
 #include "inventory_hook_contract.h"
 #include "player.h"
@@ -2237,6 +2238,14 @@ namespace trinity::game
         const uintptr_t locGet = mem::FindPattern(kSig_LocStringGet);
         if (locGet)
             g_locMgrGlobal = mem::ResolveRipAt(locGet + kOff_LocGet_MovGlobal, 7);
+
+        core::CrashDiagnostics::Record(
+            core::diag::BreadcrumbKind::HookState,
+            "hook.inventory",
+            reinterpret_cast<std::uintptr_t>(g_qtyTarget),
+            5,
+            0,
+            true);
 
         return true;
     }
