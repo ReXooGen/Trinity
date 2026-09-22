@@ -10,6 +10,16 @@
 
 **Spec:** `docs/superpowers/specs/2026-09-22-trinity-crash-diagnostics-design.md`
 
+## Execution checkpoint
+
+**Paused:** 2026-09-22 after Task 4 at the user's request to conserve tokens.
+
+**Completed:** Tasks 1-4 in commits `4d073b6`, `e2342f8`, `7f38494`, and `faa43bb`. The Release `Trinity` target builds, and `TrinityCrashReportingContractTests` plus `TrinityCrashDiagnosticsTests` pass 2/2.
+
+**Resume at:** Task 5, Step 1 — add failing instrumentation contract checks. Tasks 5-7 have not been started. Do not repeat Tasks 1-4; consult `.superpowers/sdd/2026-09-22-trinity-crash-diagnostics/progress.md` for rulings and RED→GREEN evidence.
+
+**Known baseline issue:** the pre-existing hard-coded timestamp assertion still leaves `TrinityReadinessTests` failing and remains scheduled for Task 7. No ASI was deployed.
+
 ## Global Constraints
 
 - Preserve unrelated dirty-tree changes and stage only diagnostics-owned paths or exact hunks.
