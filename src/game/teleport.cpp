@@ -1215,6 +1215,7 @@ namespace trinity::game
             if (!ReadVec3(vel, v)) return;
             if (v[kIdx_MoveOwner_Up] <= kSuperJump_RiseThreshold) return;
 
+            core::CrashDiagnostics::MutationScope scope("player.movement");
             WriteFloat(vel + 4u * kIdx_MoveOwner_Up,
                        v[kIdx_MoveOwner_Up] * st.superJumpMult);
         }

@@ -151,6 +151,7 @@ namespace trinity::game
             s_lastTrustMap[cacheKey] = newValue;
             if (newValue == incoming) return;
 
+            core::CrashDiagnostics::MutationScope scope("friendly.trust");
             Write64(r + kOff_FriendlyRec_Value, static_cast<uint64_t>(newValue));
         }
 

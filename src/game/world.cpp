@@ -162,6 +162,7 @@ namespace trinity::game
         // always write both. Guarded per field.
         void WriteClockDayHour(int day, int hour)
         {
+            core::CrashDiagnostics::MutationScope scope("world.time");
             for (uintptr_t g : { g_timeClient, g_timeServer })
             {
                 if (!g) continue;
@@ -904,6 +905,7 @@ namespace trinity::game
 
     bool World::SetWeatherPreset(int presetId)
     {
+        core::CrashDiagnostics::MutationScope scope("world.weather");
         State& st = State::Get();
         st.weatherPreset = presetId;
 

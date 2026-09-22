@@ -122,6 +122,37 @@ if ($worker -notmatch 'CrashDiagnostics::Record\s*\(\s*(?:(?:trinity::)?core::di
     $failures.Add('Worker job-time patch must record PatchState breadcrumbs.')
 }
 
+$safeMemPath = Join-Path $PSScriptRoot '..\src\mem\safe_memory.h'
+$safeMem = Get-Content -LiteralPath $safeMemPath -Raw
+
+if ($safeMem -notmatch 'CrashDiagnostics::NoteMemoryWrite\s*\(') {
+    $failures.Add('Safe memory write helpers must call CrashDiagnostics::NoteMemoryWrite.')
+}
+
+$scopes = @(
+    @{ File = $player; Label = 'player.stat-pin'; Name = 'player.stat-pin' },
+    @{ File = $teleport; Label = 'player.movement'; Name = 'player.movement' },
+    @{ File = $teleport; Label = 'teleport.position'; Name = 'teleport.position' },
+    @{ File = $teleport; Label = 'teleport.flight'; Name = 'teleport.flight' },
+    @{ File = $teleport; Label = 'teleport.noclip'; Name = 'teleport.noclip' },
+    @{ File = $inventory; Label = 'inventory.stack-size'; Name = 'inventory.stack-size' },
+    @{ File = $inventory; Label = 'inventory.slot-size'; Name = 'inventory.slot-size' },
+    @{ File = $inventory; Label = 'inventory.add-item'; Name = 'inventory.add-item' },
+    @{ File = $inventory; Label = 'inventory.quantity'; Name = 'inventory.quantity' },
+    @{ File = $world; Label = 'world.time'; Name = 'world.time' },
+    @{ File = $world; Label = 'world.weather'; Name = 'world.weather' },
+    @{ File = $equipment; Label = 'equipment.modify'; Name = 'equipment.modify' },
+    @{ File = $friendly; Label = 'friendly.trust'; Name = 'friendly.trust' },
+    @{ File = $worker; Label = 'worker.job-time'; Name = 'worker.job-time' }
+)
+
+foreach ($s in $scopes) {
+    $escaped = [regex]::Escape($s.Label)
+    if ($s.File -notmatch "MutationScope(?:\s+[A-Za-z0-9_]+)?\s*\(\s*`"$escaped`"\s*\)") {
+        $failures.Add("MutationScope for $($s.Name) must be present.")
+    }
+}
+
 if ($failures.Count -ne 0) {
     $failures | ForEach-Object { Write-Error $_ }
     exit 1

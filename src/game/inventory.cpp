@@ -2547,6 +2547,7 @@ namespace trinity::game
 
     bool Inventory::SetAllMaxStackSizes(bool enable, int64_t value)
     {
+        core::CrashDiagnostics::MutationScope scope("inventory.stack-size");
         if (!g_itemTableGlobal) return false;
         uintptr_t table = 0;
         if (!ReadPtr(g_itemTableGlobal, &table)) return false;
@@ -2904,6 +2905,7 @@ namespace trinity::game
 
     bool Inventory::SetAllSlotSizes(bool enable, int value)
     {
+        core::CrashDiagnostics::MutationScope scope("inventory.slot-size");
         if (value < 1) value = 1;
         if (value > 700) value = 700;
         const uint16_t v = static_cast<uint16_t>(value);
@@ -3257,6 +3259,7 @@ namespace trinity::game
 
     bool Inventory::SetQuantity(int st, int cat, int idx, int64_t value)
     {
+        core::CrashDiagnostics::MutationScope scope("inventory.quantity");
         Item* ip = ItemAt(st, cat, idx);
         if (!ip) return false;
         if (value < 0) value = 0;
@@ -5013,6 +5016,8 @@ namespace trinity::game
 
     bool Inventory::AddItem(uint16_t typeId, int64_t qty)
     {
+        core::CrashDiagnostics::MutationScope scope("inventory.add-item");
+        core::CrashDiagnostics::Record(core::diag::BreadcrumbKind::Operation, "inventory.add-item.queued", typeId, static_cast<uint32_t>(qty), 0, true);
         if (qty < 1) return false;
         if (typeId == kInvSlot_EmptyType || typeId == 0) return false;
         uintptr_t def = 0;

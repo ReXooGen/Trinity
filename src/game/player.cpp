@@ -881,18 +881,22 @@ namespace trinity::game
             return;
 
         TickResolveSelf();
-        if (st.infStamina || st.infMountStamina)
+        if (st.infStamina || st.infMountStamina || st.infSpirit)
         {
-            for (int i = 0; i < kMaxStatEntries; ++i)
+            core::CrashDiagnostics::MutationScope scope("player.stat-pin");
+            if (st.infStamina || st.infMountStamina)
             {
-                if (st.infStamina) PinEntry(g_stamEntries[i].load(std::memory_order_relaxed));
-                if (st.infMountStamina) PinEntry(g_mountStamEntries[i].load(std::memory_order_relaxed));
+                for (int i = 0; i < kMaxStatEntries; ++i)
+                {
+                    if (st.infStamina) PinEntry(g_stamEntries[i].load(std::memory_order_relaxed));
+                    if (st.infMountStamina) PinEntry(g_mountStamEntries[i].load(std::memory_order_relaxed));
+                }
             }
-        }
-        if (st.infSpirit)
-        {
-            for (int i = 0; i < kMaxStatEntries; ++i)
-                PinEntry(g_spiritEntries[i].load(std::memory_order_relaxed));
+            if (st.infSpirit)
+            {
+                for (int i = 0; i < kMaxStatEntries; ++i)
+                    PinEntry(g_spiritEntries[i].load(std::memory_order_relaxed));
+            }
         }
     }
 

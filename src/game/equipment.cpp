@@ -1660,6 +1660,7 @@ namespace trinity::game
     // --- Edits -------------------------------------------------------------
     bool Equipment::AddGear(uint16_t tag, int socketIdx, uint16_t gearTypeId, bool* persisted)
     {
+        core::CrashDiagnostics::MutationScope scope("equipment.modify");
         if (persisted) *persisted = false;
         if (socketIdx < 0 || socketIdx >= kMaxSockets || gearTypeId == kSock_Empty) return false;
 

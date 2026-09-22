@@ -4,6 +4,7 @@
 #include <cstddef>
 
 #include "../game/offsets.h"
+#include "../core/crash_diagnostics.h"
 
 namespace trinity::mem
 {
@@ -59,38 +60,102 @@ namespace trinity::mem
         __except (EXCEPTION_EXECUTE_HANDLER) { return false; }
     }
 
+    template <typename T>
+    inline bool Write(uintptr_t addr, const T& val)
+    {
+        if (!IsValidUserPtr(addr) || !IsValidUserPtr(addr + sizeof(T) - 1))
+        {
+            core::CrashDiagnostics::NoteMemoryWrite(addr, static_cast<uint32_t>(sizeof(T)), false);
+            return false;
+        }
+        bool ok = false;
+        __try { *reinterpret_cast<volatile T*>(addr) = val; ok = true; }
+        __except (EXCEPTION_EXECUTE_HANDLER) { ok = false; }
+        core::CrashDiagnostics::NoteMemoryWrite(addr, static_cast<uint32_t>(sizeof(T)), ok);
+        return ok;
+    }
+
+    inline bool WriteBytes(uintptr_t addr, const void* data, size_t size)
+    {
+        if (!IsValidUserPtr(addr) || !data || size == 0 || !IsValidUserPtr(addr + size - 1))
+        {
+            core::CrashDiagnostics::NoteMemoryWrite(addr, static_cast<uint32_t>(size), false);
+            return false;
+        }
+        bool ok = false;
+        __try { memcpy(reinterpret_cast<void*>(addr), data, size); ok = true; }
+        __except (EXCEPTION_EXECUTE_HANDLER) { ok = false; }
+        core::CrashDiagnostics::NoteMemoryWrite(addr, static_cast<uint32_t>(size), ok);
+        return ok;
+    }
+
     inline bool Write8(uintptr_t addr, uint8_t val)
     {
-        if (!IsValidUserPtr(addr)) return false;
-        __try { *reinterpret_cast<volatile uint8_t*>(addr) = val; return true; }
-        __except (EXCEPTION_EXECUTE_HANDLER) { return false; }
+        if (!IsValidUserPtr(addr))
+        {
+            core::CrashDiagnostics::NoteMemoryWrite(addr, sizeof(val), false);
+            return false;
+        }
+        bool ok = false;
+        __try { *reinterpret_cast<volatile uint8_t*>(addr) = val; ok = true; }
+        __except (EXCEPTION_EXECUTE_HANDLER) { ok = false; }
+        core::CrashDiagnostics::NoteMemoryWrite(addr, sizeof(val), ok);
+        return ok;
     }
     inline bool Write16(uintptr_t addr, uint16_t val)
     {
-        if (!IsValidUserPtr(addr)) return false;
-        __try { *reinterpret_cast<volatile uint16_t*>(addr) = val; return true; }
-        __except (EXCEPTION_EXECUTE_HANDLER) { return false; }
+        if (!IsValidUserPtr(addr))
+        {
+            core::CrashDiagnostics::NoteMemoryWrite(addr, sizeof(val), false);
+            return false;
+        }
+        bool ok = false;
+        __try { *reinterpret_cast<volatile uint16_t*>(addr) = val; ok = true; }
+        __except (EXCEPTION_EXECUTE_HANDLER) { ok = false; }
+        core::CrashDiagnostics::NoteMemoryWrite(addr, sizeof(val), ok);
+        return ok;
     }
     inline bool Write32(uintptr_t addr, uint32_t val)
     {
-        if (!IsValidUserPtr(addr)) return false;
-        __try { *reinterpret_cast<volatile uint32_t*>(addr) = val; return true; }
-        __except (EXCEPTION_EXECUTE_HANDLER) { return false; }
+        if (!IsValidUserPtr(addr))
+        {
+            core::CrashDiagnostics::NoteMemoryWrite(addr, sizeof(val), false);
+            return false;
+        }
+        bool ok = false;
+        __try { *reinterpret_cast<volatile uint32_t*>(addr) = val; ok = true; }
+        __except (EXCEPTION_EXECUTE_HANDLER) { ok = false; }
+        core::CrashDiagnostics::NoteMemoryWrite(addr, sizeof(val), ok);
+        return ok;
     }
     // A single overload (rather than one per signedness) - two same-rank
     // overloads differing only in signedness make an int/int64_t literal
     // argument (e.g. `0`) an ambiguous call.
     inline bool Write64(uintptr_t addr, uint64_t val)
     {
-        if (!IsValidUserPtr(addr)) return false;
-        __try { *reinterpret_cast<volatile uint64_t*>(addr) = val; return true; }
-        __except (EXCEPTION_EXECUTE_HANDLER) { return false; }
+        if (!IsValidUserPtr(addr))
+        {
+            core::CrashDiagnostics::NoteMemoryWrite(addr, sizeof(val), false);
+            return false;
+        }
+        bool ok = false;
+        __try { *reinterpret_cast<volatile uint64_t*>(addr) = val; ok = true; }
+        __except (EXCEPTION_EXECUTE_HANDLER) { ok = false; }
+        core::CrashDiagnostics::NoteMemoryWrite(addr, sizeof(val), ok);
+        return ok;
     }
     inline bool WritePtr(uintptr_t addr, uintptr_t val)
     {
-        if (!IsValidUserPtr(addr)) return false;
-        __try { *reinterpret_cast<volatile uintptr_t*>(addr) = val; return true; }
-        __except (EXCEPTION_EXECUTE_HANDLER) { return false; }
+        if (!IsValidUserPtr(addr))
+        {
+            core::CrashDiagnostics::NoteMemoryWrite(addr, sizeof(val), false);
+            return false;
+        }
+        bool ok = false;
+        __try { *reinterpret_cast<volatile uintptr_t*>(addr) = val; ok = true; }
+        __except (EXCEPTION_EXECUTE_HANDLER) { ok = false; }
+        core::CrashDiagnostics::NoteMemoryWrite(addr, sizeof(val), ok);
+        return ok;
     }
 
     inline bool ReadFloat(uintptr_t addr, float* out)
@@ -101,9 +166,16 @@ namespace trinity::mem
     }
     inline bool WriteFloat(uintptr_t addr, float val)
     {
-        if (!IsValidUserPtr(addr)) return false;
-        __try { *reinterpret_cast<volatile float*>(addr) = val; return true; }
-        __except (EXCEPTION_EXECUTE_HANDLER) { return false; }
+        if (!IsValidUserPtr(addr))
+        {
+            core::CrashDiagnostics::NoteMemoryWrite(addr, sizeof(val), false);
+            return false;
+        }
+        bool ok = false;
+        __try { *reinterpret_cast<volatile float*>(addr) = val; ok = true; }
+        __except (EXCEPTION_EXECUTE_HANDLER) { ok = false; }
+        core::CrashDiagnostics::NoteMemoryWrite(addr, sizeof(val), ok);
+        return ok;
     }
 
     // Three packed floats (a Vec3) at addr+0/4/8.
@@ -161,21 +233,32 @@ namespace trinity::mem
     // Safely unprotects, modifies, reprotects, and flushes instructions for a memory region
     inline bool PatchMemory(uintptr_t addr, const void* data, size_t size)
     {
-        if (!IsValidUserPtr(addr) || !data || size == 0) return false;
+        if (!IsValidUserPtr(addr) || !data || size == 0)
+        {
+            core::CrashDiagnostics::NoteMemoryWrite(addr, static_cast<uint32_t>(size), false);
+            return false;
+        }
         DWORD oldProtect = 0;
         if (!VirtualProtect(reinterpret_cast<void*>(addr), size, PAGE_EXECUTE_READWRITE, &oldProtect))
+        {
+            core::CrashDiagnostics::NoteMemoryWrite(addr, static_cast<uint32_t>(size), false);
             return false;
+        }
+        bool ok = false;
         __try
         {
             memcpy(reinterpret_cast<void*>(addr), data, size);
+            ok = true;
         }
         __except (EXCEPTION_EXECUTE_HANDLER)
         {
             VirtualProtect(reinterpret_cast<void*>(addr), size, oldProtect, &oldProtect);
+            core::CrashDiagnostics::NoteMemoryWrite(addr, static_cast<uint32_t>(size), false);
             return false;
         }
         VirtualProtect(reinterpret_cast<void*>(addr), size, oldProtect, &oldProtect);
         FlushInstructionCache(GetCurrentProcess(), reinterpret_cast<void*>(addr), size);
-        return true;
+        core::CrashDiagnostics::NoteMemoryWrite(addr, static_cast<uint32_t>(size), ok);
+        return ok;
     }
 }
