@@ -135,4 +135,10 @@ if(BUILD_TESTING)
     )
     target_include_directories(TrinityReadinessTests PRIVATE src)
     add_test(NAME TrinityReadinessTests COMMAND TrinityReadinessTests)
+    add_executable(TrinityCrashDiagnosticsTests
+        tests/crash_diagnostics_tests.cpp
+        src/core/crash_diagnostics_logic.cpp
+    )
+    target_include_directories(TrinityCrashDiagnosticsTests PRIVATE src)
+    add_test(NAME TrinityCrashDiagnosticsTests COMMAND TrinityCrashDiagnosticsTests)
 endif()
