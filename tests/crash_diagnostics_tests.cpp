@@ -1,4 +1,5 @@
 #include "core/crash_diagnostics_logic.h"
+#include "core/state.h"
 
 #include <atomic>
 #include <cstdio>
@@ -24,6 +25,10 @@ namespace
     using trinity::core::diag::BreadcrumbKind;
     using trinity::core::diag::BreadcrumbRing;
     using trinity::core::diag::Classify;
+    using trinity::core::diag::BuildFeatureSnapshot;
+    using trinity::core::diag::FeatureSnapshot;
+    using trinity::core::diag::FeatureSnapshotsEqualIgnoringRevision;
+    using trinity::core::diag::MutationAccumulator;
 
     BreadcrumbInput Event(std::uint64_t tick,
                           std::int64_t detail,
@@ -195,6 +200,73 @@ namespace
         Expect(Classify(recentOverlappingMutation) == Attribution::GameOrDriver,
                "a mutation older than 60 seconds must not imply Trinity suspicion");
     }
+
+    void TestFeatureSnapshot()
+    {
+        trinity::State state{};
+        state.godMode = true;
+        state.noClip = true;
+        state.invSlotSize = true;
+        state.workerMaxLevelAndSkills = true;
+        state.noClipSpeed = 12.345f;
+        state.superRunMult = 3.25f;
+        state.superJumpMult = 4.5f;
+        state.invSlotSizeVal = 700;
+
+        const FeatureSnapshot first = BuildFeatureSnapshot(state, 9);
+        Expect(first.revision == 9, "feature snapshot must preserve its publication revision");
+        Expect((first.enabledBits & (std::uint64_t{1} << 0)) != 0,
+               "feature bit zero must identify God Mode");
+        Expect((first.enabledBits & (std::uint64_t{1} << 11)) != 0,
+               "feature bit eleven must identify No Clip");
+        Expect((first.enabledBits & (std::uint64_t{1} << 21)) != 0,
+               "feature bit twenty-one must identify Slot Size");
+        Expect((first.enabledBits & (std::uint64_t{1} << 23)) != 0,
+               "feature bit twenty-three must identify the worker patch");
+        Expect(first.walkSpeedMilli == 12345, "No Clip speed must use stable milli-units");
+        Expect(first.sprintSpeedMilli == 3250, "Super Run multiplier must use stable milli-units");
+        Expect(first.jumpHeightMilli == 4500, "Super Jump multiplier must use stable milli-units");
+        Expect(first.slotSize == 700, "slot-size snapshot must preserve the configured value");
+
+        FeatureSnapshot second = BuildFeatureSnapshot(state, 10);
+        Expect(FeatureSnapshotsEqualIgnoringRevision(first, second),
+               "a revision-only change must be deduplicated");
+        state.noClipSpeed = 12.346f;
+        second = BuildFeatureSnapshot(state, 11);
+        Expect(!FeatureSnapshotsEqualIgnoringRevision(first, second),
+               "a diagnostic value change must publish a new snapshot");
+    }
+
+    void TestMutationAggregation()
+    {
+        MutationAccumulator outer("inventory.quantity");
+        outer.Note(0x1200, 4, true);
+        outer.Note(0x1100, 8, false);
+        outer.Note(0x1300, 16, true);
+
+        MutationAccumulator inner("equipment.modify");
+        inner.Note(0x9000, 2, true);
+        const auto innerSummary = inner.Finish();
+        const auto outerSummary = outer.Finish();
+
+        Expect(std::strcmp(outerSummary.label, "inventory.quantity") == 0,
+               "mutation summary must retain its stable scope label");
+        Expect(outerSummary.firstAddress == 0x1100,
+               "mutation summary must expand to the lowest write address");
+        Expect(outerSummary.lastAddress == 0x1310,
+               "mutation summary must expand through the final written byte");
+        Expect(outerSummary.writes == 3 && outerSummary.failures == 1,
+               "mutation summary must count attempts and failures separately");
+        Expect(innerSummary.firstAddress == 0x9000 && innerSummary.lastAddress == 0x9002,
+               "a nested accumulator must retain its independent address range");
+        Expect(innerSummary.writes == 1 && innerSummary.failures == 0,
+               "a nested accumulator must not inherit outer writes");
+
+        MutationAccumulator empty("empty");
+        const auto emptySummary = empty.Finish();
+        Expect(emptySummary.firstAddress == 0 && emptySummary.lastAddress == 0,
+               "an empty mutation scope must not invent an address range");
+    }
 }
 
 int main()
@@ -203,6 +275,8 @@ int main()
     TestCoalescing();
     TestConcurrentPublication();
     TestAttribution();
+    TestFeatureSnapshot();
+    TestMutationAggregation();
     if (failures == 0) std::puts("Crash diagnostics tests passed.");
     return failures == 0 ? 0 : 1;
 }

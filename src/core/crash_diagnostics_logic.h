@@ -5,6 +5,8 @@
 #include <cstddef>
 #include <cstdint>
 
+namespace trinity { struct State; }
+
 namespace trinity::core::diag {
 
 enum class BreadcrumbKind : std::uint8_t {
@@ -46,6 +48,37 @@ struct Breadcrumb {
     std::int64_t detail{};
     std::uint32_t repeatCount{};
     std::uint8_t success{};
+};
+
+struct FeatureSnapshot {
+    std::uint64_t revision{};
+    std::uint64_t enabledBits{};
+    std::int32_t walkSpeedMilli{};
+    std::int32_t sprintSpeedMilli{};
+    std::int32_t jumpHeightMilli{};
+    std::int32_t slotSize{};
+};
+
+FeatureSnapshot BuildFeatureSnapshot(const State& state, std::uint64_t revision) noexcept;
+bool FeatureSnapshotsEqualIgnoringRevision(const FeatureSnapshot& left,
+                                           const FeatureSnapshot& right) noexcept;
+
+struct MutationSummary {
+    char label[32]{};
+    std::uintptr_t firstAddress{};
+    std::uintptr_t lastAddress{};
+    std::uint32_t writes{};
+    std::uint32_t failures{};
+};
+
+class MutationAccumulator final {
+public:
+    explicit MutationAccumulator(const char* label) noexcept;
+    void Note(std::uintptr_t address, std::uint32_t size, bool success) noexcept;
+    MutationSummary Finish() noexcept;
+
+private:
+    MutationSummary summary_{};
 };
 
 class BreadcrumbRing final {

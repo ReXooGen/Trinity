@@ -57,6 +57,8 @@ endif()
 # --- Trinity ASI -----------------------------------------------------------
 add_library(Trinity SHARED
     src/dllmain.cpp
+    src/core/crash_diagnostics.cpp
+    src/core/crash_diagnostics_logic.cpp
     src/core/mod.cpp
     src/core/readiness.cpp
     src/core/version_mapping.cpp

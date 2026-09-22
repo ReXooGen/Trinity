@@ -1,7 +1,10 @@
 #include "crash_diagnostics_logic.h"
+#include "state.h"
 
 #include <algorithm>
+#include <cmath>
 #include <cstring>
+#include <limits>
 
 namespace trinity::core::diag {
 
@@ -34,7 +37,102 @@ bool Recent(std::uint64_t now, std::uint64_t then, std::uint64_t window) noexcep
     return now >= then && now - then <= window;
 }
 
+std::int32_t ToMilli(float value) noexcept
+{
+    if (!std::isfinite(value)) return 0;
+    const double scaled = static_cast<double>(value) * 1000.0;
+    const double low = static_cast<double>(std::numeric_limits<std::int32_t>::min());
+    const double high = static_cast<double>(std::numeric_limits<std::int32_t>::max());
+    if (scaled <= low) return std::numeric_limits<std::int32_t>::min();
+    if (scaled >= high) return std::numeric_limits<std::int32_t>::max();
+    return static_cast<std::int32_t>(std::llround(scaled));
+}
+
+void SetBit(std::uint64_t& bits, unsigned index, bool enabled) noexcept
+{
+    if (enabled) bits |= std::uint64_t{1} << index;
+}
+
 }  // namespace
+
+FeatureSnapshot BuildFeatureSnapshot(const State& state, std::uint64_t revision) noexcept
+{
+    FeatureSnapshot snapshot{};
+    snapshot.revision = revision;
+    SetBit(snapshot.enabledBits, 0, state.godMode);
+    SetBit(snapshot.enabledBits, 1, state.oneHitKill);
+    SetBit(snapshot.enabledBits, 2, state.infDurability);
+    SetBit(snapshot.enabledBits, 3, state.noFallDamage);
+    SetBit(snapshot.enabledBits, 4, state.infStamina);
+    SetBit(snapshot.enabledBits, 5, state.infMountStamina);
+    SetBit(snapshot.enabledBits, 6, state.infSpirit);
+    SetBit(snapshot.enabledBits, 7, state.noBounty);
+    SetBit(snapshot.enabledBits, 8, state.superRun);
+    SetBit(snapshot.enabledBits, 9, state.superJump);
+    SetBit(snapshot.enabledBits, 10, state.freeFlight);
+    SetBit(snapshot.enabledBits, 11, state.noClip);
+    SetBit(snapshot.enabledBits, 12, state.trustMult);
+    SetBit(snapshot.enabledBits, 13, state.gameSpeed);
+    SetBit(snapshot.enabledBits, 14, state.timeFrozen);
+    SetBit(snapshot.enabledBits, 15, state.forceClearSky);
+    SetBit(snapshot.enabledBits, 16, state.noWind);
+    SetBit(snapshot.enabledBits, 17, state.clearDistantFog);
+    SetBit(snapshot.enabledBits, 18, state.showFps);
+    SetBit(snapshot.enabledBits, 19, state.showConsole);
+    SetBit(snapshot.enabledBits, 20, state.invStackSize);
+    SetBit(snapshot.enabledBits, 21, state.invSlotSize);
+    SetBit(snapshot.enabledBits, 22, state.playstationIcons);
+    SetBit(snapshot.enabledBits, 23, state.workerMaxLevelAndSkills);
+    SetBit(snapshot.enabledBits, 24, state.fileLogging);
+    SetBit(snapshot.enabledBits, 25, state.autoSave);
+    SetBit(snapshot.enabledBits, 26, state.useCustomFont);
+    SetBit(snapshot.enabledBits, 27, state.showItemTooltip);
+    snapshot.walkSpeedMilli = ToMilli(state.noClipSpeed);
+    snapshot.sprintSpeedMilli = ToMilli(state.superRunMult);
+    snapshot.jumpHeightMilli = ToMilli(state.superJumpMult);
+    snapshot.slotSize = state.invSlotSizeVal;
+    return snapshot;
+}
+
+bool FeatureSnapshotsEqualIgnoringRevision(const FeatureSnapshot& left,
+                                           const FeatureSnapshot& right) noexcept
+{
+    return left.enabledBits == right.enabledBits &&
+           left.walkSpeedMilli == right.walkSpeedMilli &&
+           left.sprintSpeedMilli == right.sprintSpeedMilli &&
+           left.jumpHeightMilli == right.jumpHeightMilli &&
+           left.slotSize == right.slotSize;
+}
+
+MutationAccumulator::MutationAccumulator(const char* label) noexcept
+{
+    if (!label) return;
+    std::size_t length = 0;
+    while (length < sizeof(summary_.label) - 1 && label[length] != '\0') ++length;
+    std::memcpy(summary_.label, label, length);
+}
+
+void MutationAccumulator::Note(std::uintptr_t address,
+                               std::uint32_t size,
+                               bool success) noexcept
+{
+    const std::uintptr_t maxAddress = std::numeric_limits<std::uintptr_t>::max();
+    const std::uintptr_t end = size > maxAddress - address ? maxAddress : address + size;
+    if (summary_.writes == 0) {
+        summary_.firstAddress = address;
+        summary_.lastAddress = end;
+    } else {
+        summary_.firstAddress = std::min(summary_.firstAddress, address);
+        summary_.lastAddress = std::max(summary_.lastAddress, end);
+    }
+    ++summary_.writes;
+    if (!success) ++summary_.failures;
+}
+
+MutationSummary MutationAccumulator::Finish() noexcept
+{
+    return summary_;
+}
 
 bool BreadcrumbRing::Record(const BreadcrumbInput& input) noexcept
 {
