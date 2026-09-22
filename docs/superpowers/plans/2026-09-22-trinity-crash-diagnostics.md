@@ -571,7 +571,7 @@ git commit -m "feat: aggregate risky memory mutations"
 - Modify: `CMakeLists.txt`
 - Modify: `docs/superpowers/specs/2026-09-22-trinity-crash-diagnostics-design.md`
 
-- [ ] **Step 1: Write the failing harness verifier**
+- [x] **Step 1: Write the failing harness verifier**
 
 The PowerShell test must create a unique temporary directory, run a handled-exception mode, assert that no bundle exists, then run a fatal-child mode and assert:
 
@@ -584,7 +584,7 @@ The PowerShell test must create a unique temporary directory, run a handled-exce
 
 Always remove only the verified test directory in `finally`.
 
-- [ ] **Step 2: Add the harness executable**
+- [x] **Step 2: Add the harness executable**
 
 Implement these modes:
 
@@ -611,11 +611,11 @@ int RunFatal(const wchar_t* outputDirectory) {
 
 Build `TrinityCrashDiagnosticsHarness` from the harness, diagnostics sources, and the same DbgHelp/BCrypt dependencies. Register only the parent PowerShell verifier with CTest so the expected child crash is interpreted correctly.
 
-- [ ] **Step 3: Fix the unrelated hard-coded readiness timestamp assertion**
+- [x] **Step 3: Fix the unrelated hard-coded readiness timestamp assertion**
 
 Change the literal timestamp assertion in `readiness_tests.cpp` to validate that `TRINITY_BUILD_TIMESTAMP` is non-empty and matches `YYYY-MM-DD HH:MM:SS UTC`. Do not alter release compatibility or signature assertions.
 
-- [ ] **Step 4: Run the harness and inspect the dump**
+- [x] **Step 4: Run the harness and inspect the dump**
 
 ```powershell
 cmake --build build --config Release --target TrinityCrashDiagnosticsHarness
@@ -632,7 +632,7 @@ lm
 
 Confirm the exception address, register block, thread stacks, loaded/unloaded modules, and `harness.pre-crash` text marker correlate to the same timestamped bundle.
 
-- [ ] **Step 5: Run the complete Release verification**
+- [x] **Step 5: Run the complete Release verification**
 
 Enter the Visual Studio developer environment, then run:
 
@@ -645,7 +645,7 @@ Get-FileHash build\Release\Trinity.asi -Algorithm SHA256
 
 Expected: all tests pass. Record the ASI SHA-256 and synthetic `.txt`/`.dmp` sizes. Do not deploy the artifact.
 
-- [ ] **Step 6: Update the design evidence and commit verification**
+- [x] **Step 6: Update the design evidence and commit verification**
 
 Append an implementation-evidence section to the approved spec containing commit IDs, CTest result, ASI hash, synthetic bundle sizes, and the explicit remaining proof: a fresh real-game crash is still required to validate live attribution.
 
@@ -656,7 +656,7 @@ git diff --cached --check
 git commit -m "test: verify bounded crash diagnostics bundle"
 ```
 
-- [ ] **Step 7: Review scope and history**
+- [x] **Step 7: Review scope and history**
 
 ```powershell
 git status --short

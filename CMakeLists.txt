@@ -148,4 +148,19 @@ if(BUILD_TESTING)
     )
     target_include_directories(TrinityCrashDiagnosticsTests PRIVATE src)
     add_test(NAME TrinityCrashDiagnosticsTests COMMAND TrinityCrashDiagnosticsTests)
+
+    add_executable(TrinityCrashDiagnosticsHarness
+        tests/crash_diagnostics_harness.cpp
+        src/core/crash_diagnostics.cpp
+        src/core/crash_diagnostics_logic.cpp
+    )
+    target_include_directories(TrinityCrashDiagnosticsHarness PRIVATE src)
+    target_compile_definitions(TrinityCrashDiagnosticsHarness PRIVATE NOMINMAX)
+    target_link_libraries(TrinityCrashDiagnosticsHarness PRIVATE dbghelp bcrypt version)
+
+    add_test(
+        NAME TrinityCrashDiagnosticsHarnessTests
+        COMMAND powershell -NoProfile -ExecutionPolicy Bypass
+                -File "${CMAKE_CURRENT_SOURCE_DIR}/tests/verify_crash_diagnostics_harness.ps1"
+                -HarnessPath "$<TARGET_FILE:TrinityCrashDiagnosticsHarness>")
 endif()

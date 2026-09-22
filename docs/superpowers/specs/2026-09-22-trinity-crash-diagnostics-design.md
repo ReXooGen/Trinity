@@ -136,3 +136,53 @@ Verification requires a Release build and the complete CTest suite. Live proof r
 - The report includes the last relevant Trinity mutations and an evidence-backed attribution category.
 - Normal gameplay produces no crash-log spam and no measurable per-frame disk activity.
 - Existing user-owned changes and the installed ASI remain untouched until a separately authorized deployment.
+
+## Implementation evidence
+
+### Commits
+- `4d073b6` `test: add crash diagnostics core` (Task 1: lock-free BreadcrumbRing, atomic sequencing, Attribution classifier)
+- `e2342f8` `feat: add diagnostic snapshots and mutation scopes` (Task 2: double-buffered feature snapshots, MutationScope/Accumulator)
+- `7f38494` `feat: add bounded crash bundle policy` (Task 3: bounded dump flags, deterministic naming, startup bundle retention)
+- `faa43bb` `feat: write bounded fatal crash bundles` (Task 4: independent text/dump writers, UEF registration, DllMain reduction)
+- `f90e093` `feat: record feature and hook crash context` (Task 5: hook breadcrumbs, patch state tracking, settings/menu snapshots)
+- `8bbdd0f` `feat: aggregate risky memory mutations` (Task 6: safe memory write note integration, high-risk mutation scopes)
+- (Task 7): `test: verify bounded crash diagnostics bundle` (harness, PowerShell verifier, WinDbg dump validation)
+
+### Full CTest verification (Release)
+```text
+Test project C:/Users/mul0/Documents/GitHub/Trinity/build
+    Start 1: TrinityMapMarkerTests
+1/8 Test #1: TrinityMapMarkerTests .................   Passed    0.01 sec
+    Start 2: TrinityTravelLogicTests
+2/8 Test #2: TrinityTravelLogicTests ...............   Passed    0.02 sec
+    Start 3: TrinityNoClipLogicTests
+3/8 Test #3: TrinityNoClipLogicTests ...............   Passed    0.01 sec
+    Start 4: TrinityReadinessTests
+4/8 Test #4: TrinityReadinessTests .................   Passed    0.01 sec
+    Start 5: TrinityCrashReportingContractTests
+5/8 Test #5: TrinityCrashReportingContractTests ....   Passed    0.30 sec
+    Start 6: TrinityCrashDiagnosticsTests
+6/8 Test #6: TrinityCrashDiagnosticsTests ..........   Passed    0.02 sec
+    Start 7: TrinityCrashDiagnosticsHarnessTests
+7/8 Test #7: TrinityCrashDiagnosticsHarnessTests ...   Passed   15.09 sec
+    Start 8: TrinityMinHookFallbackTests
+8/8 Test #8: TrinityMinHookFallbackTests ...........   Passed    0.12 sec
+
+100% tests passed, 0 tests failed out of 8
+```
+
+### Artifact hashes and synthetic bundle metrics
+- **Target `Trinity.asi` SHA-256**: `0FA8D3057CB931C7D8095AF31822576048D94A96D292CF6556F86911F267E194`
+- **Synthetic crash dump size (`.dmp`)**: 1,993,607 bytes (~1.99 MB, within <= 300 MB bounds)
+- **Synthetic crash report size (`.txt`)**: 2,172 bytes
+
+### WinDbg / CDB validation
+- **Exception code**: `0xC0000005` (`EXCEPTION_ACCESS_VIOLATION`) writing to `0x0000000000001234`.
+- **Fault instruction**: `mov qword ptr [1234h], 1` at `TrinityCrashDiagnosticsHarness+0x1459`.
+- **Stack trace & threads**: 4 threads enumerated, faulting thread unwound cleanly through harness and `BaseThreadInitThunk` / `RtlUserThreadStart`.
+- **Loaded modules**: Verified complete module list (`TrinityCrashDiagnosticsHarness.exe`, `dbgcore.dll`, `version.dll`, `dbghelp.dll`, `bcrypt.dll`, `kernel32.dll`, `ntdll.dll`).
+- **Attribution & Breadcrumbs**: Correlated `harness.pre-crash` breadcrumb marker and `TRINITY_DIRECT` classification to the identical timestamped `.txt` report.
+
+### Remaining proof
+- Synthetic child execution proves that handled exceptions generate no bundles, unhandled fatal crashes generate matched text and dump bundles, partial dump failures preserve text diagnostics, and startup retention preserves exactly 3 newest bundles.
+- A fresh crash in the actual game (`CrimsonDesert.exe`) is still required to validate live attribution against full game memory structures. No deployed ASI was overwritten during this verification.

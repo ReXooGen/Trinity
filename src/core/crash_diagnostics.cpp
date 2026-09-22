@@ -627,8 +627,8 @@ MutationScope::~MutationScope() noexcept
     const std::uintptr_t extent = summary.lastAddress >= summary.firstAddress
         ? summary.lastAddress - summary.firstAddress
         : 0;
-    const std::uint32_t size = extent > std::numeric_limits<std::uint32_t>::max()
-        ? std::numeric_limits<std::uint32_t>::max()
+    const std::uint32_t size = extent > (std::numeric_limits<std::uint32_t>::max)()
+        ? (std::numeric_limits<std::uint32_t>::max)()
         : static_cast<std::uint32_t>(extent);
     const std::int64_t detail =
         (static_cast<std::int64_t>(summary.writes) << 32) | summary.failures;
