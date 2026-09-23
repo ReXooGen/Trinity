@@ -567,6 +567,11 @@ namespace trinity::game
     inline constexpr const char* kSig_MarkerPlayer =
         "48 8B 06 C5 F8 11 88 B0 01 00 00";
 
+    // PE 2976 / Patch 2.03.02: the player marker store was recompiled; the
+    // store destination remains +0x1B0, but the old rsi load is absent.
+    inline constexpr const char* kSig_MarkerPlayer_PE2976 =
+        "C5 F8 11 88 B0 01 00 00";
+
     inline constexpr const char* kSig_MarkerProtection =
         "48 8B 46 08 48 89 F1";
 

@@ -519,7 +519,11 @@ namespace trinity::game
                 slot.valid.store(0, std::memory_order_relaxed);
             }
 
-            const auto players = mem::FindAllMatches(kSig_MarkerPlayer, 2);
+            const uint16_t revision = core::GetGameVersion().revision;
+            const char* const markerPlayerSig = revision == 2976
+                ? kSig_MarkerPlayer_PE2976
+                : kSig_MarkerPlayer;
+            const auto players = mem::FindAllMatches(markerPlayerSig, 2);
             const auto markers = mem::FindAllMatches(kSig_MarkerPattern, 16);
             const auto origins = mem::FindAllMatches(kSig_MarkerOriginPrefix, 32);
             const auto protections = mem::FindAllMatches(kSig_MarkerProtection, 2);
@@ -1838,7 +1842,7 @@ namespace trinity::game
 
         const uint16_t revision = core::GetGameVersion().revision;
         uintptr_t travel = 0;
-        if (revision == 2944 || revision == 2949)
+        if (revision == 2944 || revision == 2949 || revision == 2976)
         {
             const uintptr_t selectAddr = mem::FindPattern(kSig_TravelToNode_PE2944);
             const uintptr_t dispatchAddr = mem::FindPattern(kSig_TravelDispatcher_PE2944);
@@ -1846,15 +1850,15 @@ namespace trinity::game
             {
                 g_travelFn = reinterpret_cast<TravelFn>(dispatchAddr);
                 travel = dispatchAddr;
-                LOG_OK("teleport: native fast travel trigger resolved (PE 2944/2949) [OK]");
-                LOG_DEBUG("teleport: PE 2944/2949 selection @ %p, confirmation dispatcher @ %p",
+                LOG_OK("teleport: native fast travel trigger resolved (PE 2944/2949/2976) [OK]");
+                LOG_DEBUG("teleport: PE 2944/2949/2976 selection @ %p, confirmation dispatcher @ %p",
                           reinterpret_cast<void*>(selectAddr), reinterpret_cast<void*>(dispatchAddr));
-                LOG_DEBUG("teleport: native fast travel trigger resolved @ %p (PE 2944/2949)",
+                LOG_DEBUG("teleport: native fast travel trigger resolved @ %p (PE 2944/2949/2976)",
                           reinterpret_cast<void*>(dispatchAddr));
             }
             else
             {
-                LOG_ERR("teleport: PE 2944/2949 native Fast Travel contract incomplete (selection=%p dispatcher=%p) - menu disabled.",
+                LOG_ERR("teleport: PE 2944/2949/2976 native Fast Travel contract incomplete (selection=%p dispatcher=%p) - menu disabled.",
                         reinterpret_cast<void*>(selectAddr), reinterpret_cast<void*>(dispatchAddr));
             }
         }

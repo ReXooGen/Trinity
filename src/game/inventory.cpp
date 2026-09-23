@@ -328,7 +328,7 @@ namespace trinity::game
             g_pickupCapacityPatchTarget = 0;
             g_pickupCapacityPatchReady = false;
             g_pickupCapacityPatchOn = false;
-            if (revision != 2949) return;
+            if (revision != 2949 && revision != 2976) return;
 
             const auto matches = mem::FindAllMatches(kSig_InvPickupCapacity2949, 2);
             if (matches.size() != 1)
@@ -2302,7 +2302,7 @@ namespace trinity::game
         // Catches containers that only appear later (e.g. character swap).
         if (usesTu201CompatibleAbi)
         {
-            const char* holderInsertSig = (revision == 2944 || revision == 2949)
+            const char* holderInsertSig = (revision == 2944 || revision == 2949 || revision == 2976)
                 ? kSig_InvHolderInsert2944
                 : kSig_InvHolderInsert201;
             mem::InstallHook("inventory: modern holder-insert", holderInsertSig,

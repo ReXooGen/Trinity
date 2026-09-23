@@ -102,6 +102,9 @@ namespace
         const char* const pe2949Title = ModernTitleUpdateForRevision(2949);
         Expect(pe2949Title && std::strcmp(pe2949Title, "2.03.01") == 0,
                "PE revision 2949 must identify the user-confirmed 2.03.01 update");
+        const char* const pe2976Title = ModernTitleUpdateForRevision(2976);
+        Expect(pe2976Title && std::strcmp(pe2976Title, "2.03.02") == 0,
+               "PE revision 2976 must identify Patch 2.03.02");
         Expect(std::strcmp(ModernTitleUpdateForRevision(2692), "2.00.02") == 0,
                "PE revision 2692 must identify TU 2.00.02");
         Expect(std::strcmp(ModernTitleUpdateForRevision(2658), "2.00.01") == 0,
@@ -129,6 +132,8 @@ namespace
                "PE revision 2944 must not wait for the removed stat-commit sentinel");
         Expect(ReadinessProfileForRevision(2949) == ReadinessProfile::Tu201KnownCompatible,
                "PE revision 2949 must use its byte-verified modern readiness probes");
+        Expect(ReadinessProfileForRevision(2976) == ReadinessProfile::Tu201KnownCompatible,
+               "PE revision 2976 must use its audited modern readiness probes");
         Expect(ReadinessProfileForRevision(2692) == ReadinessProfile::LegacyComplete,
                "PE revision 2692 must retain the complete TU 2.00.02 readiness profile");
     }
@@ -145,6 +150,8 @@ namespace
                "PE 2944 must use the live-observed move-owner offset 0x2C0 so Super Run/Free Flight can identify the local player");
         Expect(MoveComponentOwnerOffsetForRevision(2949) == 0x2C0,
                "PE 2949 must retain the byte-verified PE 2944 move-owner offset 0x2C0");
+        Expect(MoveComponentOwnerOffsetForRevision(2976) == 0x2C0,
+               "PE 2976 must retain the audited PE 2944 move-owner offset 0x2C0");
         Expect(MoveComponentOwnerOffsetForRevision(2692) == 0x298,
                "pre-2.01 locomotion components must retain move-owner offset 0x298");
         Expect(MoveComponentOwnerOffsetForRevision(2945) == 0,
@@ -160,6 +167,8 @@ namespace
                "PE 2944 must select its exact live-observed locomotion-stepper contract");
         Expect(LocoStepperContractForRevision(2949) == LocoStepperContract::Pe2944,
                "PE 2949 must select the byte-verified PE 2944 locomotion-stepper contract");
+        Expect(LocoStepperContractForRevision(2976) == LocoStepperContract::Pe2944,
+               "PE 2976 must select the audited PE 2944 locomotion-stepper contract");
         Expect(LocoStepperContractForRevision(2850) == LocoStepperContract::Modern,
                "PE 2850 must keep its separately verified modern locomotion contract");
         Expect(LocoStepperContractForRevision(2945) == LocoStepperContract::Unsupported,
@@ -202,6 +211,8 @@ namespace
                "PE 2944's live-audited modern transaction primitives must select the current inventory ABI");
         Expect(UsesTu201CompatibleRevision(2949),
                "PE 2949's unique PE 2944 transaction primitives must select the modern inventory ABI");
+        Expect(UsesTu201CompatibleRevision(2976),
+               "PE 2976's audited transaction primitives must select the modern inventory ABI");
         Expect(!UsesTu201CompatibleRevision(2692),
                "TU 2.00.02 must not be routed through the newer inventory ABI");
         Expect(!UsesTu201CompatibleRevision(2851),
@@ -223,6 +234,15 @@ namespace
         Expect(std::strstr(trinity::game::kSig_InvSetExpandSlots2949,
                            "48 8B 41 18 41 0F B7 E9 8B 49 20 4C 8B F2 4C 8D 14 C8") != nullptr,
                "PE 2949 must bind the audited four-argument native setter");
+    }
+
+    void Pe2976KeepsOnlyItsAuditedWorkerAndMarkerContracts()
+    {
+        Expect(trinity::game::WorkerPatchSupportedForRevision(2976),
+               "PE 2976 must enable the uniquely audited worker patch");
+        Expect(std::strstr(trinity::game::kSig_MarkerPlayer_PE2976,
+                           "C5 F8 11 88 B0 01 00 00") != nullptr,
+               "PE 2976 must use the audited marker-player store signature");
     }
 
     void Pe2949PickupPatchOnlyTransitionsBetweenExactInstructionStates()
@@ -271,6 +291,8 @@ namespace
                "PE 2944's live realm-selector probe must use tls+0x1EC");
         Expect(RealmFlagOffsetForRevision(2949) == 0x1EC,
                "PE 2949 must retain the byte-verified tls+0x1EC realm selector");
+        Expect(RealmFlagOffsetForRevision(2976) == 0x1EC,
+               "PE 2976 must retain the audited tls+0x1EC realm selector");
         Expect(RealmFlagOffsetForRevision(2692) == 0x1F2,
                "pre-2.01 builds must retain the legacy TLS byte at +0x1F2");
     }
@@ -651,6 +673,7 @@ int main()
     Pe2944SkipsTheObsoleteCrimeEventDispatcherProbe();
     Tu202UsesOnlyTheConfirmedModernInventoryContract();
     Pe2949UsesTheNativeSlotExpansionSetter();
+    Pe2976KeepsOnlyItsAuditedWorkerAndMarkerContracts();
     Pe2949PickupPatchOnlyTransitionsBetweenExactInstructionStates();
     InventoryRootAnchorTracksCurrentInstructionLayout();
     RealmFlagOffsetTracksCurrentTlsLayout();

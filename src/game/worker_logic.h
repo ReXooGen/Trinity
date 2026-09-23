@@ -12,12 +12,11 @@ namespace trinity::game
         Patched
     };
 
-    // PE 2850 supplied the original Auto Assembler patch; PE 2944 and PE 2949
-    // keep the same unique grade-selector branch bytes, so the identical
-    // reversible patch applies to all three revisions.
+    // PE 2850 supplied the original Auto Assembler patch; PE 2944, PE 2949,
+    // and PE 2976 retain the same unique grade-selector branch bytes.
     inline bool WorkerPatchSupportedForRevision(int revision)
     {
-        return revision == 2850 || revision == 2944 || revision == 2949;
+        return revision == 2850 || revision == 2944 || revision == 2949 || revision == 2976;
     }
 
     // Validate the bytes that are currently at the injection point before a
