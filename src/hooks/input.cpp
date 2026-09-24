@@ -17,6 +17,18 @@ namespace trinity::input
     // move around with the menu up.
     static bool IsMenuKey(WPARAM vk)
     {
+        const State& st = State::Get();
+        if (vk == static_cast<WPARAM>(st.navSelectKeyVk) ||
+            vk == static_cast<WPARAM>(st.navBackKeyVk) ||
+            vk == static_cast<WPARAM>(st.navClearKeyVk) ||
+            vk == static_cast<WPARAM>(st.navPrevTabKeyVk) ||
+            vk == static_cast<WPARAM>(st.navNextTabKeyVk) ||
+            vk == static_cast<WPARAM>(st.navUpKeyVk) ||
+            vk == static_cast<WPARAM>(st.navDownKeyVk) ||
+            vk == static_cast<WPARAM>(st.navLeftKeyVk) ||
+            vk == static_cast<WPARAM>(st.navRightKeyVk))
+            return true;
+
         switch (vk)
         {
         case VK_UP: case VK_DOWN: case VK_LEFT: case VK_RIGHT:

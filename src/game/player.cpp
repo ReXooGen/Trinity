@@ -25,6 +25,7 @@
 #include "../core/logger.h"
 #include "../core/state.h"
 #include "../core/version_detect.h"
+#include "../core/mod.h"
 
 namespace trinity::game
 {
@@ -1257,6 +1258,15 @@ namespace trinity::game
                 }
             }
 
+            // 1b. Check party character handles (Kliff, Damiane, Oongka)
+            for (int i = 0; i < kMaxPartyPlayers; ++i)
+            {
+                const uintptr_t own = g_characterOwners[i].load(std::memory_order_relaxed);
+                if (own >= kMinPointer && target == own) return true;
+                const uintptr_t act = g_characterActors[i].load(std::memory_order_relaxed);
+                if (act >= kMinPointer && target == act) return true;
+            }
+
             // 2. Direct live fallback: ONLY accept move-owner if strictly verified via PossessorRoundTrip!
             // NPCs must NEVER be recognized as player entities or they steal God Mode and become immortal.
             const uintptr_t moveOwn = Teleport::GetMoveOwner();
@@ -1286,6 +1296,81 @@ namespace trinity::game
             }
 
             return false;
+        }
+
+        uintptr_t GetVerifiedPartyAttacker(uintptr_t sourceCtx)
+        {
+            if (sourceCtx < kMinPointer) return 0;
+
+            // 1. Direct match with verified player/party owners or actors
+            for (int i = 0; i < kMaxPlayers; ++i)
+            {
+                const uintptr_t own = g_owners[i].load(std::memory_order_relaxed);
+                if (own >= kMinPointer)
+                {
+                    if (sourceCtx == own) return sourceCtx;
+                    const uintptr_t act = g_actors[i].load(std::memory_order_relaxed);
+                    if (act >= kMinPointer && sourceCtx == act) return sourceCtx;
+                }
+            }
+
+            // 2. Direct match with party character handles (Kliff=0, Damiane=1, Oongka=2)
+            for (int i = 0; i < kMaxPartyPlayers; ++i)
+            {
+                const uintptr_t own = g_characterOwners[i].load(std::memory_order_relaxed);
+                if (own >= kMinPointer)
+                {
+                    if (sourceCtx == own) return sourceCtx;
+                    const uintptr_t act = g_characterActors[i].load(std::memory_order_relaxed);
+                    if (act >= kMinPointer && sourceCtx == act) return sourceCtx;
+                }
+            }
+
+            // 3. Move-owner fallback
+            const uintptr_t moveOwn = Teleport::GetMoveOwner();
+            if (moveOwn >= kMinPointer && PossessorRoundTrip(moveOwn))
+            {
+                if (sourceCtx == moveOwn) return sourceCtx;
+                SelfChain c;
+                if (WalkSelfChain(moveOwn, &c))
+                {
+                    if (sourceCtx == c.actor || sourceCtx == c.targetOwner)
+                        return sourceCtx;
+                }
+            }
+
+            // 4. Companion tag + shared player possessor validation
+            if (IsPlayerOrCompanion(sourceCtx))
+            {
+                const uintptr_t poss = g_playerPossessor.load(std::memory_order_relaxed);
+                uint64_t candPoss = 0;
+                if (poss >= kMinPointer && Read64(sourceCtx + kOff_Owner_Possessor, &candPoss) && candPoss == poss)
+                    return sourceCtx;
+            }
+
+            // 5. If sourceCtx is an actor, check if its owner is a verified party entity
+            uintptr_t marker = 0, candOwner = 0;
+            if (ReadPtr(sourceCtx + kOff_Actor_StatusMarker, &marker) && marker >= kMinPointer &&
+                ReadPtr(marker + 8, &candOwner) && candOwner >= kMinPointer && candOwner != sourceCtx)
+            {
+                for (int i = 0; i < kMaxPlayers; ++i)
+                {
+                    if (g_owners[i].load(std::memory_order_relaxed) == candOwner) return sourceCtx;
+                }
+                for (int i = 0; i < kMaxPartyPlayers; ++i)
+                {
+                    if (g_characterOwners[i].load(std::memory_order_relaxed) == candOwner) return sourceCtx;
+                }
+                if (IsPlayerOrCompanion(candOwner))
+                {
+                    const uintptr_t poss = g_playerPossessor.load(std::memory_order_relaxed);
+                    uint64_t candPoss = 0;
+                    if (poss >= kMinPointer && Read64(candOwner + kOff_Owner_Possessor, &candPoss) && candPoss == poss)
+                        return sourceCtx;
+                }
+            }
+
+            return 0;
         }
 
         // --- Hook 1: pa_StatCommit (Stat write funnel) ---------------------
@@ -1439,7 +1524,10 @@ namespace trinity::game
         constexpr const char* kDamageEventSignature =
             "48 8B C4 4C 89 48 20 4C 89 40 18 48 89 50 10 48 89 48 08 "
             "55 53 56 57 41 54 41 55 41 56 41 57 48 8D A8 B8 F6 FF FF "
-            "48 81 EC 08 0A 00 00 C5 F8 29 70 A8 C5 F8 29 78 98";
+            "48 81 EC 08 0A 00 00 C5 F8 29 70 A8 C5 F8 29 78 98 "
+            "C5 78 29 40 88 C5 78 29 88 78 FF FF FF C5 78 29 90 68 FF FF FF "
+            "C5 78 29 98 58 FF FF FF C5 78 29 A0 48 FF FF FF C5 78 29 A8 38 FF FF FF "
+            "4D 8B F1 49 8B C8 45 33 FF 44 89 7D 98";
         constexpr const char* kDamageDefinitionSignature =
             "40 53 48 83 EC 20 48 8B D9 B8 FF FF 00 00 48 81 C1 EA 00 00 00 "
             "66 39 01 74 ?? E8 ?? ?? ?? ?? 8B 8B 34 01 00 00 48 03 C9 "
@@ -1553,15 +1641,18 @@ namespace trinity::game
                 const auto matches = mem::FindAllMatches(signature, 2);
                 return matches.size() == 1 ? matches[0] : 0;
             };
-            const uintptr_t entry = unique(kDamageEventSignature);
+            uintptr_t entry = unique(kDamageEventSignature);
             const uintptr_t accessor = unique(kDamageDefinitionSignature);
             const uintptr_t factory = unique(kDamageBuffVtableSignature);
             const uintptr_t caller = unique(
                 "48 8B 8D A0 00 00 00 48 89 4C 24 38 48 8D 4C 24 70 "
                 "48 89 4C 24 30 48 89 44 24 28 48 89 74 24 20 4D 8B CF "
                 "4D 8B C6 48 8D 54 24 78 49 8B CC E8 ?? ?? ?? ??");
-            if (!entry || !accessor || !factory || !caller || !DamageImageContains(entry, 0xD42) ||
-                mem::ResolveCall(caller + 46) != entry)
+            if (!caller) return false;
+            const uintptr_t callerTarget = mem::ResolveCall(caller + 46);
+            if (!entry && callerTarget) entry = callerTarget;
+            if (!entry || !accessor || !factory || !DamageImageContains(entry, 0xD42) ||
+                callerTarget != entry)
                 return false;
             const mem::ModuleRegion event{entry, 0xD42};
             const uintptr_t definitionCall = mem::FindPattern(
@@ -1767,7 +1858,8 @@ namespace trinity::game
             const uintptr_t mainPlayer = g_owners[0].load(std::memory_order_relaxed);
             bool clientMount = false;
             const bool clientTarget = ClientStatEntry(0, owner, &clientMount);
-            if (mainPlayer < kMinPointer && !clientTarget)
+            const uintptr_t verifiedAttacker = GetVerifiedPartyAttacker(sourceCtx);
+            if (mainPlayer < kMinPointer && !clientTarget && verifiedAttacker == 0)
             {
                 return oDamageApply(targetOwner, statusId, time, delta, sourceCtx, a6, a7, a8, a9, a10, out);
             }
@@ -1788,7 +1880,7 @@ namespace trinity::game
             if (isEnemyTarget)
             {
                 if ((st.oneHitKill || st.dmgOutMult != 1.0f) && healthStatusKnown && isHealth &&
-                    delta < 0 && sourceCtx == mainPlayer && PossessorRoundTrip(mainPlayer))
+                    delta < 0 && verifiedAttacker != 0)
                 {
                     // 141719901 -> HP r9 -> [rbp+118] -> 141717CCE: source is
                     // dereferenced at +60/+88/+68, i.e. entity/owner, not an action
@@ -1798,7 +1890,7 @@ namespace trinity::game
                     hit.healthStatusId = healthStatus;
                     hit.healthStatusKnown = healthStatusKnown;
                     hit.source = sourceCtx;
-                    hit.verifiedPlayerOwner = mainPlayer;
+                    hit.verifiedPlayerOwner = verifiedAttacker;
                     hit.victimRoot = owner;
                     hit.time = time;
                     hit.context = context;
@@ -1930,8 +2022,34 @@ namespace trinity::game
             LOG_ERR("player: char-manager global NOT FOUND (no anchor matched).");
         }
 
-        if (!mem::InstallHook("player: stat-commit", kSig_StatCommit, nullptr,
-                              &hkStatCommit, &oStatCommit, &g_commitTarget))
+        const State& st = State::Get();
+        bool hasSuperGlide = (GetModuleHandleW(L"SuperGlide.asi") != nullptr) ||
+                             (GetModuleHandleW(L"SuperGlide43.asi") != nullptr);
+        if (!hasSuperGlide)
+        {
+            wchar_t modPath[MAX_PATH];
+            if (GetModuleFileNameW(reinterpret_cast<HMODULE>(Mod::Get().Module()), modPath, MAX_PATH))
+            {
+                wchar_t* slash = wcsrchr(modPath, L'\\');
+                if (slash)
+                {
+                    *slash = L'\0';
+                    wchar_t sgPath[MAX_PATH];
+                    swprintf_s(sgPath, L"%s\\SuperGlide.asi", modPath);
+                    if (GetFileAttributesW(sgPath) != INVALID_FILE_ATTRIBUTES)
+                        hasSuperGlide = true;
+                }
+            }
+        }
+
+        const bool shouldBypassCommit = st.bypassStatCommit || (st.superGlideCompat && hasSuperGlide);
+
+        if (shouldBypassCommit)
+        {
+            LOG_OK("player: stat-commit hook bypassed for SuperGlide compatibility (God Mode & Stamina managed by damage-apply hook & stat pins).");
+        }
+        else if (!mem::InstallHook("player: stat-commit", kSig_StatCommit, nullptr,
+                                   &hkStatCommit, &oStatCommit, &g_commitTarget))
         {
             if (!mem::InstallHook("player: stat-commit (legacy)", kSig_StatCommit_Legacy, nullptr,
                                   &hkStatCommit, &oStatCommit, &g_commitTarget))
@@ -1979,6 +2097,81 @@ namespace trinity::game
         return true;
     }
 
+    namespace
+    {
+        uintptr_t g_mercenaryMgrGlobal = 0;
+        uintptr_t g_petMercenaryInfo = 0;
+
+        void UpdatePetSlotCapacity()
+        {
+            const State& st = State::Get();
+
+            if (!g_mercenaryMgrGlobal)
+            {
+                // Unique signature for MercenaryInfoManager singleton setter:
+                // 48 89 0D ? ? ? ? C3 CC CC CC CC CC CC CC CC 48 C7 05 ? ? ? ? 00 00 00 00 C3 CC CC CC CC E9 1B 68
+                constexpr const char* kSig_MercenaryMgr =
+                    "48 89 0D ? ? ? ? C3 CC CC CC CC CC CC CC CC 48 C7 05 ? ? ? ? 00 00 00 00 C3 CC CC CC CC E9 1B 68";
+                const uintptr_t match = mem::FindPattern(kSig_MercenaryMgr);
+                if (match)
+                {
+                    g_mercenaryMgrGlobal = mem::ResolveRipAt(match, 7);
+                }
+                else
+                {
+                    const uintptr_t base = reinterpret_cast<uintptr_t>(GetModuleHandleA(nullptr));
+                    if (base)
+                        g_mercenaryMgrGlobal = base + 0x6D69A80;
+                }
+            }
+
+            if (!g_mercenaryMgrGlobal) return;
+
+            uintptr_t mgr = 0;
+            if (!ReadPtr(g_mercenaryMgrGlobal, &mgr) || mgr < kMinPointer)
+            {
+                g_petMercenaryInfo = 0;
+                return;
+            }
+
+            if (!g_petMercenaryInfo)
+            {
+                uint32_t count = 0;
+                uintptr_t table = 0;
+                if (Read32(mgr + 8, &count) && ReadPtr(mgr + 0x58, &table) && table >= kMinPointer && count < 100)
+                {
+                    for (uint32_t i = 0; i < count; ++i)
+                    {
+                        uintptr_t item = 0;
+                        if (ReadPtr(table + i * sizeof(uintptr_t), &item) && item >= kMinPointer)
+                        {
+                            uint8_t type = 0;
+                            if (Read8(item, &type) && type == 0x43) // Key 67: Pet ('C')
+                            {
+                                g_petMercenaryInfo = item;
+                                break;
+                            }
+                        }
+                    }
+                }
+            }
+
+            if (g_petMercenaryInfo >= kMinPointer)
+            {
+                const uint32_t targetLimit = (st.petSlotLimit && st.petSlotLimitVal >= 30) ? static_cast<uint32_t>(st.petSlotLimitVal) : 30u;
+                uint32_t currentLimit = 0;
+                if (Read32(g_petMercenaryInfo + 0x18, &currentLimit))
+                {
+                    if (currentLimit != targetLimit)
+                    {
+                        Write32(g_petMercenaryInfo + 0x18, targetLimit);
+                        LOG_OK("player: pet registration slot capacity set to %u in memory (was %u)", targetLimit, currentLimit);
+                    }
+                }
+            }
+        }
+    }
+
     void Player::Tick()
     {
         static std::atomic_flag busy = ATOMIC_FLAG_INIT;
@@ -2004,6 +2197,7 @@ namespace trinity::game
         {
             s_lastResolve = now;
             TickResolveSelf();
+            UpdatePetSlotCapacity();
         }
 
         RefreshClientStats();
@@ -2017,7 +2211,7 @@ namespace trinity::game
     void Player::RefreshSelf()
     {
         const State& st = State::Get();
-        if (st.infStamina)
+        if (st.infStamina || (st.freeFlight && Teleport::GetFlightEngaged()))
         {
             for (int i = 0; i < kMaxStatEntries; ++i)
             {

@@ -457,8 +457,13 @@ namespace trinity::game
     // sub_5019D0, which pulls the travel manager from a global and ignores it),
     // so we pass nullptr. It validates nodeIndex < nodeCount then triggers travel.
     //   char sub_505140(void* /*ignored*/, int sceneId, unsigned nodeIndex)
-    // TU 2.01.00 Fast Travel trigger (unique match):
+    // TU 2.03.00 Fast Travel trigger (unique match @ 0x1406550b0):
     inline constexpr const char* kSig_TravelToNode =
+        "48 89 5C 24 18 89 54 24 10 48 89 4C 24 08 55 56 57 41 56 41 57 "
+        "48 8D AC 24 50 FE FF FF 48 81 EC B0 02 00 00 41 8B F9 45 8B F8 33 DB 45 85 C9";
+
+    // TU 2.01.00 / TU 2.02.00 Fast Travel trigger (kept for fallback):
+    inline constexpr const char* kSig_TravelToNode_TU201 =
         "48 89 5C 24 18 48 89 74 24 20 89 54 24 10 48 89 4C 24 08 55 57 41 56 "
         "48 8D 6C 24 B9 48 81 EC B0 00 00 00 41 8B F0 33 DB 83 FA FF";
 
@@ -504,9 +509,11 @@ namespace trinity::game
     inline constexpr uintptr_t kOff_Registry_SceneTable = 0x50; // ptr[]
     inline constexpr uintptr_t kOff_SceneDesc_NodeCount = 0x28; // u32
     inline constexpr uintptr_t kOff_SceneDesc_NodeArray = 0x20; // ptr
-    inline constexpr uintptr_t kNode_Stride             = 0xC0;
+    inline constexpr uintptr_t kNode_Stride             = 0xD8; // TU 2.03+ (0xD8 stride)
+    inline constexpr uintptr_t kNode_Stride_Legacy      = 0xC0; // TU 2.01/legacy (0xC0 stride)
     inline constexpr uintptr_t kOff_Node_Gimmick        = 0x10; // ptr -> gimmick object
-    inline constexpr uintptr_t kOff_Node_Position       = 0x6C; // f32 x,y,z
+    inline constexpr uintptr_t kOff_Node_Position       = 0x84; // f32 x,y,z in TU 2.03+
+    inline constexpr uintptr_t kOff_Node_Position_Legacy= 0x6C; // f32 x,y,z in TU 2.01/legacy
 
     // The scene descriptor is the reflected class LevelGimmickSceneObjectInfo
     // (112 bytes; field names recovered from its deserializer's error strings,
@@ -2053,69 +2060,5 @@ namespace trinity::game
     inline constexpr uintptr_t kOff_FriendlyRec_Value = 0x28; // i64 trust value (confirmed: QWORD @ +0x28 in TU 2.00)
     inline constexpr int64_t   kFriendly_Max          = 100;  // the taming/NPC cap (0..100)
 
-    // --- Portable Barber (barber.cpp) ----------------------------------------
-    // The game's official barber screen is the class
-    // pa::uiCommonScript::UIGamePlayControlRootBarberShop (RTTI type
-    // descriptor 0x1469B10F0, COL 0x145CFCAD0, vftable 0x1455B3CE8 in TU
-    // 2.01.00; ctor 0x140F0F230/0x140F0F290 - both read the client/server
-    // realm flag from TLS 0x1FD, matching kTls_RealmFlag_TU201). Its element
-    // strings (UI_BarberShop_HairLength, UI_BarberShop_BeardLengh,
-    // UI_BarberShop_Tattoo*, dyeingcamera_barber, ...) confirm the full
-    // hair/beard/tattoo/palette screen ships in the binary.
-    //
-    // Every script-visible UI object has an auto-generated binding thunk of
-    // the shape (7115 of them in TU 2.01.00, all with the same constants):
-    //     41 B9 FF FF 02 00     mov  r9d, 0x2FFFF          // bind tag
-    //     48 8D 15 <rip+32>     lea  rdx, <object name>    // e.g. this root
-    //     41 B8 01 00 00 00     mov  r8d, 1
-    //     48 8D 0D <rip+32>     lea  rcx, <dword handle slot>
-    //     E9 <rel32>            jmp  UiBindObject (below)
-    // The barber thunk is therefore NOT identified by byte pattern alone -
-    // the scanner accepts only the match whose lea rdx resolves to the name
-    // string below (exactly 1 of the 7115 validates). This stays correct if
-    // the thunks are reordered or regenerated in a future build.
-    // IDB (TU 2.01.00): thunk 0x14015F430, name string 0x1455848F8, handle
-    // slot 0x146B99168.
-    inline constexpr const char* kSig_BarberUIThunk =
-        "41 B9 FF FF 02 00 48 8D 15 ?? ?? ?? ?? 41 B8 01 00 00 00 "
-        "48 8D 0D ?? ?? ?? ?? E9";
-
-    // Anchor name of the gameplay-control root the barber screen is bound to.
-    // Occurs 3x in the image (standalone name table entry + inside the
-    // .?AV/.?AU RTTI names); the thunk validation picks the right one.
-    inline constexpr const char* kStr_BarberUIRoot =
-        "UIGamePlayControlRootBarberShop";
-
-    // UiBindObject (0x141231110) - the common resolver all 7115 thunks tail-
-    // jump into: lazily binds a script-visible UI object by name into a dword
-    // handle slot (zeroes the slot, takes a once-guard via lock cmpxchg, then
-    // runs the bind job on a TLS frame). Fallback entry when the thunk shape
-    // ever changes but the resolver does not:
-    //   void __fastcall UiBindObject(unsigned* outSlot, const char* name,
-    //                                int create, int tag)
-    // In-game v1 result (TU 2.02.00, PE 1.0.0.2850): thunk resolves and the
-    // bind lands (handle 0xCF6 in the slot), but binding alone does NOT show
-    // the screen - the game's own open glue binds into a local slot and then
-    // resolves + event-invokes the object through the script VM. v2 adds a
-    // logging hook on UiBindObject: when the game naturally opens a gameplay
-    // root (dyehouse, bank, barber...), the logged return address marks the
-    // exact glue site that performs the show, per root.
-    inline constexpr const char* kSig_BarberUIResolver =
-        "48 89 5C 24 20 44 89 44 24 18 48 89 54 24 10 48 89 4C 24 08 55 56 57 "
-        "41 54 41 55 41 56 41 57 48 8D 6C 24 D9 48 81 EC C0 00 00 00 41 8B F9";
-
-    // UiResolveObject (0x140404C10) - resolves a bound script object from a
-    // handle slot: a global registry pointer (slot 0x146B52E30 in TU 2.01.00,
-    // read via the rip-relative operand at fn+0x14) maps handle -> a 16-byte
-    // entry ([REG+0x58] + handle*16; +8 = inner id); a per-script-VM hashtable
-    // argument then maps that inner id to the object wrapper (+8 = object).
-    //   void* __fastcall UiResolveObject(void* vmCtx, unsigned* handleSlot)
-    // The VM context is not synthetically callable, so for now this function
-    // is used as a static anchor only: the module dumps the raw registry
-    // entry for our handle (entry+0 may be the object itself) to Trinity.log
-    // to map the layout without guessing.
-    inline constexpr const char* kSig_BarberUIResolveObject =
-        "48 83 EC 08 83 79 04 00 4C 8B C1 75 07 33 C0 48 83 C4 08 C3 48 8B 05 "
-        "?? ?? ?? ?? 8B 09 48 89 1C 24 8B 1A";
 }
 

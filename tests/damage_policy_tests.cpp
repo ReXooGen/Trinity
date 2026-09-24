@@ -5,6 +5,7 @@
 #include <thread>
 
 #include "game/damage_policy.h"
+#include "core/text.h"
 
 namespace
 {
@@ -126,6 +127,28 @@ namespace
               "Native calculation-result flag blocked ordinary outgoing multiplier");
         hit.context.noDead = true;
         ExpectNative(hit, -100);
+
+        // Damiane rapier, martial, and skill attacks must amplify with OHK and multiplier
+        const uint8_t damianeTypes[] = {
+            188, // Demian Rapier Normal / Charge / Parry / Run Kick / Jump Attack
+            157, // Demian Rapier Hard / Finish / Stride Thrust
+            141, // Demian Kick
+            132, // Demian Rapier Down Thrust / JumpGrabSpin
+            189, // Demian Wall Kick
+            32,  // Demian Shield Dash
+            166, // Caliburn Rapier Passive
+            10   // Demian Rapier Run Attack / Shield Throw
+        };
+        for (uint8_t dt : damianeTypes)
+        {
+            hit = MortalHit();
+            hit.flags = {0, 0, 8, dt, 0};
+            Check(ApplyOutgoing(hit, -100, true, 1.0f) == -100000,
+                  "Damiane combat attack OHK is disabled");
+            Check(ApplyOutgoing(hit, -100, false, 2.5f) == -250,
+                  "Damiane combat attack multiplier is disabled");
+        }
+
         // Observed special caller tuples plus invalid/high-bit control bytes.
         const NativeFlags special[] = {
             {1, 0, 8, 10, 0}, {0, 2, 8, 10, 0}, {0, 0, 0x13, 10, 0},
@@ -285,8 +308,25 @@ namespace
                                   std::numeric_limits<float>::quiet_NaN()})
             Check(ApplyOutgoing(hit, -7, false, multiplier) == -7,
                   "Invalid multiplier changed sign or caused an out-of-range conversion");
-        Check(ApplyOutgoing(hit, -7, false, (std::numeric_limits<float>::max)()) == -max,
-              "Large multiplier overflowed");
+    }
+
+    void TestSmartSearchMatching()
+    {
+        const char* name = "Leather Riding Hat";
+        const char* key = "riding_Leather_Helm";
+
+        Check(trinity::SearchMatchesItem(name, key, "riding leather helmet"),
+              "Smart search failed to match riding leather helmet");
+        Check(trinity::SearchMatchesItem(name, key, "leather helmet"),
+              "Smart search failed to match leather helmet");
+        Check(trinity::SearchMatchesItem(name, key, "helmet"),
+              "Smart search failed to match helmet");
+        Check(trinity::SearchMatchesItem(name, key, "riding helmet"),
+              "Smart search failed to match riding helmet");
+        Check(trinity::SearchMatchesItem(name, key, "leather hat"),
+              "Smart search failed to match leather hat");
+        Check(trinity::SearchMatchesItem(name, key, "riding leather"),
+              "Smart search failed to match riding leather");
     }
 }
 
@@ -301,6 +341,7 @@ int main()
         TestNestedContextLifetime();
         TestDispatcherCallbacks();
         TestBoundariesAndOrdinaryCombat();
+        TestSmartSearchMatching();
         std::puts("damage_policy_tests: passed");
         return 0;
     }

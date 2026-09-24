@@ -578,6 +578,59 @@ namespace trinity::ui
         g_nav = {};
     }
 
+    static ImGuiKey VkToImGuiKey(int vk)
+    {
+        if (vk >= 'A' && vk <= 'Z') return static_cast<ImGuiKey>(ImGuiKey_A + (vk - 'A'));
+        if (vk >= '0' && vk <= '9') return static_cast<ImGuiKey>(ImGuiKey_0 + (vk - '0'));
+        switch (vk)
+        {
+        case VK_TAB:      return ImGuiKey_Tab;
+        case VK_LEFT:     return ImGuiKey_LeftArrow;
+        case VK_RIGHT:    return ImGuiKey_RightArrow;
+        case VK_UP:       return ImGuiKey_UpArrow;
+        case VK_DOWN:     return ImGuiKey_DownArrow;
+        case VK_PRIOR:    return ImGuiKey_PageUp;
+        case VK_NEXT:     return ImGuiKey_PageDown;
+        case VK_HOME:     return ImGuiKey_Home;
+        case VK_END:      return ImGuiKey_End;
+        case VK_INSERT:   return ImGuiKey_Insert;
+        case VK_DELETE:   return ImGuiKey_Delete;
+        case VK_BACK:     return ImGuiKey_Backspace;
+        case VK_SPACE:    return ImGuiKey_Space;
+        case VK_RETURN:   return ImGuiKey_Enter;
+        case VK_ESCAPE:   return ImGuiKey_Escape;
+        case VK_NUMPAD0:  return ImGuiKey_Keypad0;
+        case VK_NUMPAD1:  return ImGuiKey_Keypad1;
+        case VK_NUMPAD2:  return ImGuiKey_Keypad2;
+        case VK_NUMPAD3:  return ImGuiKey_Keypad3;
+        case VK_NUMPAD4:  return ImGuiKey_Keypad4;
+        case VK_NUMPAD5:  return ImGuiKey_Keypad5;
+        case VK_NUMPAD6:  return ImGuiKey_Keypad6;
+        case VK_NUMPAD7:  return ImGuiKey_Keypad7;
+        case VK_NUMPAD8:  return ImGuiKey_Keypad8;
+        case VK_NUMPAD9:  return ImGuiKey_Keypad9;
+        case VK_MULTIPLY: return ImGuiKey_KeypadMultiply;
+        case VK_ADD:      return ImGuiKey_KeypadAdd;
+        case VK_SUBTRACT: return ImGuiKey_KeypadSubtract;
+        case VK_DECIMAL:  return ImGuiKey_KeypadDecimal;
+        case VK_DIVIDE:   return ImGuiKey_KeypadDivide;
+        default:          return ImGuiKey_None;
+        }
+    }
+
+    static Icon IconForPadMask(unsigned int mask)
+    {
+        if (mask & XINPUT_GAMEPAD_A) return Icon::PadA;
+        if (mask & XINPUT_GAMEPAD_B) return Icon::PadB;
+        if (mask & XINPUT_GAMEPAD_X) return Icon::PadX;
+        if (mask & XINPUT_GAMEPAD_Y) return Icon::PadY;
+        if (mask & XINPUT_GAMEPAD_LEFT_SHOULDER) return Icon::PadLB;
+        if (mask & XINPUT_GAMEPAD_RIGHT_SHOULDER) return Icon::PadRB;
+        if (mask & (XINPUT_GAMEPAD_DPAD_UP | XINPUT_GAMEPAD_DPAD_DOWN | XINPUT_GAMEPAD_DPAD_LEFT | XINPUT_GAMEPAD_DPAD_RIGHT))
+            return Icon::PadDpad;
+        return Icon::None;
+    }
+
     // --- Input gathering --------------------------------------------------------
     void BeginFrame()
     {
@@ -603,29 +656,41 @@ namespace trinity::ui
         bool anyKey = false;
         auto key = [&](ImGuiKey k, bool repeat)
         {
+            if (k == ImGuiKey_None) return false;
             const bool p = ImGui::IsKeyPressed(k, repeat);
             anyKey |= p;
             return p;
         };
 
-        g_nav.up       = key(ImGuiKey_UpArrow, true);
-        g_nav.down     = key(ImGuiKey_DownArrow, true);
-        g_nav.left     = key(ImGuiKey_LeftArrow, true);
-        g_nav.right    = key(ImGuiKey_RightArrow, true);
+        auto keyOrVk = [&](ImGuiKey defaultKey, int customVk, bool repeat) -> bool
+        {
+            bool res = key(defaultKey, repeat);
+            if (customVk > 0)
+            {
+                ImGuiKey k = VkToImGuiKey(customVk);
+                if (k != ImGuiKey_None && k != defaultKey)
+                    res |= key(k, repeat);
+            }
+            return res;
+        };
+
+        g_nav.up       = keyOrVk(ImGuiKey_UpArrow, st.navUpKeyVk, true);
+        g_nav.down     = keyOrVk(ImGuiKey_DownArrow, st.navDownKeyVk, true);
+        g_nav.left     = keyOrVk(ImGuiKey_LeftArrow, st.navLeftKeyVk, true);
+        g_nav.right    = keyOrVk(ImGuiKey_RightArrow, st.navRightKeyVk, true);
         g_nav.pageUp   = key(ImGuiKey_PageUp, true);
         g_nav.pageDown = key(ImGuiKey_PageDown, true);
         g_nav.home     = key(ImGuiKey_Home, false);
         g_nav.end      = key(ImGuiKey_End, false);
-        g_nav.select   = key(ImGuiKey_Enter, false) || key(ImGuiKey_KeypadEnter, false) || (!st.textCapture && key(ImGuiKey_Space, false));
-        g_nav.back     = key(ImGuiKey_Backspace, false);
-        g_nav.clear    = key(ImGuiKey_Delete, false);
+        g_nav.select   = keyOrVk(ImGuiKey_Enter, st.navSelectKeyVk, false) || key(ImGuiKey_KeypadEnter, false) || (!st.textCapture && key(ImGuiKey_Space, false));
+        g_nav.back     = keyOrVk(ImGuiKey_Backspace, st.navBackKeyVk, false);
+        g_nav.clear    = keyOrVk(ImGuiKey_Delete, st.navClearKeyVk, false);
 
         // Section switching - suspended while typing so 'q'/'e' reach the text.
         if (!st.textCapture)
         {
-            if (key(ImGuiKey_Q, false))   g_nav.tabDelta = -1;
-            if (key(ImGuiKey_E, false))   g_nav.tabDelta = +1;
-            if (key(ImGuiKey_Tab, false)) g_nav.tabDelta = +1;
+            if (keyOrVk(ImGuiKey_Q, st.navPrevTabKeyVk, false))   g_nav.tabDelta = -1;
+            if (keyOrVk(ImGuiKey_E, st.navNextTabKeyVk, false) || key(ImGuiKey_Tab, false))   g_nav.tabDelta = +1;
         }
 
         // ESC leaves text capture first, then acts as Back (End() closes the
@@ -637,20 +702,18 @@ namespace trinity::ui
             else                g_nav.back     = true;
         }
 
-        // Controller: d-pad repeats, buttons edge-triggered. LB doubles as the
-        // menu-toggle modifier (LB + D-Pad Down), so tab-prev fires on LB
-        // RELEASE and only if the combo didn't happen while it was held.
+        // Controller: d-pad repeats, buttons edge-triggered.
         bool padEvent = false;
         XINPUT_STATE xs;
         if (PollPad(xs))
         {
-            static WORD      s_prevButtons = 0;
-            static bool      s_lbHeld      = false;
-            static bool      s_lbCombo     = false;
-            static ULONGLONG s_lastPoll    = 0;
+            const unsigned int curBtns = PadButtonsWithTriggers();
+            static unsigned int s_prevBtns = 0;
+            static bool         s_lbHeld   = false;
+            static bool         s_lbCombo  = false;
+            static ULONGLONG    s_lastPoll = 0;
 
-            const WORD b  = xs.Gamepad.wButtons;
-            const bool lb = (b & XINPUT_GAMEPAD_LEFT_SHOULDER) != 0;
+            const bool lb = (curBtns & XINPUT_GAMEPAD_LEFT_SHOULDER) != 0;
 
             // If the menu just (re)opened with LB still held from the open
             // combo, don't treat that release as a tab switch.
@@ -659,39 +722,60 @@ namespace trinity::ui
             s_lastPoll = now;
             if (reopened)
             {
-                s_prevButtons = b;
-                s_lbHeld      = lb;
-                s_lbCombo     = lb; // swallow the in-flight press
+                s_prevBtns = curBtns;
+                s_lbHeld   = lb;
+                s_lbCombo  = lb; // swallow the in-flight press
             }
 
             if (lb && !s_lbHeld) { s_lbHeld = true; s_lbCombo = false; }
-            if (lb && (b & XINPUT_GAMEPAD_DPAD_DOWN)) s_lbCombo = true;
+            if (lb && (curBtns & XINPUT_GAMEPAD_DPAD_DOWN)) s_lbCombo = true;
+
+            const bool prevTabIsLB = (st.navPrevTabPadMask == XINPUT_GAMEPAD_LEFT_SHOULDER);
             if (!lb && s_lbHeld)
             {
                 s_lbHeld = false;
-                if (!s_lbCombo) { g_nav.tabDelta = -1; padEvent = true; }
+                if (prevTabIsLB && !s_lbCombo) { g_nav.tabDelta = -1; padEvent = true; }
+            }
+            if (!prevTabIsLB && st.navPrevTabPadMask != 0)
+            {
+                if ((curBtns & st.navPrevTabPadMask) && !(s_prevBtns & st.navPrevTabPadMask))
+                {
+                    g_nav.tabDelta = -1;
+                    padEvent = true;
+                }
             }
 
-            // While LB is held it's a modifier - the d-pad shouldn't navigate.
+            // While LB is held it's a modifier - directional nav shouldn't navigate.
             const bool dpadLive = !lb;
-            g_nav.up    |= RepeatHeld(0, dpadLive && (b & XINPUT_GAMEPAD_DPAD_UP));
-            g_nav.down  |= RepeatHeld(1, dpadLive && (b & XINPUT_GAMEPAD_DPAD_DOWN));
-            g_nav.left  |= RepeatHeld(2, dpadLive && (b & XINPUT_GAMEPAD_DPAD_LEFT));
-            g_nav.right |= RepeatHeld(3, dpadLive && (b & XINPUT_GAMEPAD_DPAD_RIGHT));
+            const unsigned int upMask    = st.navUpPadMask    ? st.navUpPadMask    : XINPUT_GAMEPAD_DPAD_UP;
+            const unsigned int downMask  = st.navDownPadMask  ? st.navDownPadMask  : XINPUT_GAMEPAD_DPAD_DOWN;
+            const unsigned int leftMask  = st.navLeftPadMask  ? st.navLeftPadMask  : XINPUT_GAMEPAD_DPAD_LEFT;
+            const unsigned int rightMask = st.navRightPadMask ? st.navRightPadMask : XINPUT_GAMEPAD_DPAD_RIGHT;
+            const unsigned int selMask   = st.navSelectPadMask   ? st.navSelectPadMask   : XINPUT_GAMEPAD_A;
+            const unsigned int backMask  = st.navBackPadMask     ? st.navBackPadMask     : XINPUT_GAMEPAD_B;
+            const unsigned int clrMask   = st.navClearPadMask    ? st.navClearPadMask    : XINPUT_GAMEPAD_X;
+            const unsigned int nextMask  = st.navNextTabPadMask  ? st.navNextTabPadMask  : XINPUT_GAMEPAD_RIGHT_SHOULDER;
 
-            if ((b & XINPUT_GAMEPAD_A) && !(s_prevButtons & XINPUT_GAMEPAD_A))
+            g_nav.up    |= RepeatHeld(0, dpadLive && (curBtns & upMask));
+            g_nav.down  |= RepeatHeld(1, dpadLive && (curBtns & downMask));
+            g_nav.left  |= RepeatHeld(2, dpadLive && (curBtns & leftMask));
+            g_nav.right |= RepeatHeld(3, dpadLive && (curBtns & rightMask));
+
+            if ((curBtns & selMask) && !(s_prevBtns & selMask))
             {
                 g_nav.select    = true;
                 g_nav.selectPad = true;
             }
-            g_nav.back  |= (b & XINPUT_GAMEPAD_B) && !(s_prevButtons & XINPUT_GAMEPAD_B);
-            g_nav.clear |= (b & XINPUT_GAMEPAD_X) && !(s_prevButtons & XINPUT_GAMEPAD_X);
-            if ((b & XINPUT_GAMEPAD_RIGHT_SHOULDER) && !(s_prevButtons & XINPUT_GAMEPAD_RIGHT_SHOULDER))
+            if ((curBtns & backMask) && !(s_prevBtns & backMask))
+                g_nav.back = true;
+            if ((curBtns & clrMask) && !(s_prevBtns & clrMask))
+                g_nav.clear = true;
+            if ((curBtns & nextMask) && !(s_prevBtns & nextMask))
                 g_nav.tabDelta = +1;
 
-            if (b & ~s_prevButtons)
+            if (curBtns & ~s_prevBtns)
                 padEvent = true;
-            s_prevButtons = b;
+            s_prevBtns = curBtns;
         }
 
         // The footer shows glyphs for whichever device spoke last.
@@ -795,25 +879,30 @@ namespace trinity::ui
         auto add = [&](Icon ic, const char* t) { o[n++] = { ic, t }; };
         if (pad)
         {
+            const State& st = State::Get();
+            const Icon icSel  = IconForPadMask(st.navSelectPadMask);
+            const Icon icBack = IconForPadMask(st.navBackPadMask);
+            const Icon icClr  = IconForPadMask(st.navClearPadMask);
+
             switch (k)
             {
-            case RowKind::Action:  add(Icon::PadA, LOC("Select")); break;
-            case RowKind::Toggle:  add(Icon::PadA, LOC("Toggle")); break;
-            case RowKind::Value:   add(Icon::PadDpad, LOC("Adjust")); add(Icon::PadX, LOC("Reset")); break;
-            case RowKind::ToggleValue: add(Icon::PadA, LOC("Toggle")); add(Icon::PadDpad, LOC("Adjust"));
-                                       add(Icon::PadX, LOC("Reset")); break;
+            case RowKind::Action:  add(icSel, LOC("Select")); break;
+            case RowKind::Toggle:  add(icSel, LOC("Toggle")); break;
+            case RowKind::Value:   add(Icon::PadDpad, LOC("Adjust")); add(icClr, LOC("Reset")); break;
+            case RowKind::ToggleValue: add(icSel, LOC("Toggle")); add(Icon::PadDpad, LOC("Adjust"));
+                                       add(icClr, LOC("Reset")); break;
             case RowKind::Choice:  add(Icon::PadDpad, LOC("Pick")); break;
-            case RowKind::Submenu: add(Icon::PadA, LOC("Open")); break;
-            case RowKind::Search:  add(Icon::PadA, LOC("Type")); add(Icon::PadX, LOC("Clear")); break;
-            case RowKind::Typing:  add(Icon::PadA, LOC("Done")); add(Icon::PadB, LOC("Erase")); break;
-            case RowKind::TypingApply: add(Icon::PadA, LOC("Apply")); add(Icon::PadB, LOC("Erase")); break;
-            case RowKind::Item:    add(Icon::PadDpad, LOC("Amount")); add(Icon::PadX, LOC("Remove")); break;
-            case RowKind::ItemAdd: add(Icon::PadDpad, LOC("Amount")); add(Icon::PadA, LOC("Add")); break;
-            case RowKind::ValueAction: add(Icon::PadDpad, LOC("Amount")); add(Icon::PadA, LOC("Apply"));
-                                       add(Icon::PadX, LOC("Reset")); break;
-            case RowKind::Bind:    add(Icon::PadDpad, LOC("Pick")); add(Icon::PadA, LOC("Rebind"));
-                                       add(Icon::PadX, LOC("Reset")); break;
-            case RowKind::Bookmark: add(Icon::PadA, LOC("Open")); add(Icon::PadX, LOC("Delete")); break;
+            case RowKind::Submenu: add(icSel, LOC("Open")); break;
+            case RowKind::Search:  add(icSel, LOC("Type")); add(icClr, LOC("Clear")); break;
+            case RowKind::Typing:  add(icSel, LOC("Done")); add(icBack, LOC("Erase")); break;
+            case RowKind::TypingApply: add(icSel, LOC("Apply")); add(icBack, LOC("Erase")); break;
+            case RowKind::Item:    add(Icon::PadDpad, LOC("Amount")); add(icClr, LOC("Remove")); break;
+            case RowKind::ItemAdd: add(Icon::PadDpad, LOC("Amount")); add(icSel, LOC("Add")); break;
+            case RowKind::ValueAction: add(Icon::PadDpad, LOC("Amount")); add(icSel, LOC("Apply"));
+                                       add(icClr, LOC("Reset")); break;
+            case RowKind::Bind:    add(Icon::PadDpad, LOC("Pick")); add(icSel, LOC("Rebind"));
+                                       add(icClr, LOC("Reset")); break;
+            case RowKind::Bookmark: add(icSel, LOC("Open")); add(icClr, LOC("Delete")); break;
             default: break;
             }
         }
@@ -855,8 +944,13 @@ namespace trinity::ui
         auto add = [&](Icon ic, const char* t) { o[n++] = { ic, t }; };
         if (pad)
         {
-            add(Icon::PadB, atRoot ? LOC("Close") : LOC("Back"));
-            add(Icon::PadLB, ""); add(Icon::PadRB, LOC("Tab"));
+            const State& st = State::Get();
+            const Icon icBack = IconForPadMask(st.navBackPadMask);
+            const Icon icPrev = IconForPadMask(st.navPrevTabPadMask);
+            const Icon icNext = IconForPadMask(st.navNextTabPadMask);
+
+            add(icBack, atRoot ? LOC("Close") : LOC("Back"));
+            add(icPrev, ""); add(icNext, LOC("Tab"));
         }
         else
         {

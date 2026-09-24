@@ -10,7 +10,7 @@ $ErrorActionPreference = 'Stop'
 $source = $PSScriptRoot
 # Game title-update tag stamped into package metadata and release names.
 # Bump this when the mod is rebuilt for a new Crimson Desert TU.
-$tuTag = '2.02.00'
+$tuTag = '2.03.00'
 $build = if ($WithDLC) { Join-Path $source 'build-dlc' } else { Join-Path $source 'build-clean' }
 $dlcFlag = if ($WithDLC) { "-DENABLE_EXTENDED_HOOKS=ON" } else { "-DENABLE_EXTENDED_HOOKS=OFF" }
 $variantTag = if ($WithDLC) { "-DLC" } else { "" }

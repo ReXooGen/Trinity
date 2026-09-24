@@ -53,6 +53,8 @@ namespace trinity
         bool easyParry       = false;
         bool easyEvade       = false;
         bool noBounty        = false;
+        bool superGlideCompat = true;  // Auto-bypass stat-commit hook if SuperGlide.asi is present
+        bool bypassStatCommit = false; // Manual force-bypass for stat-commit hook
 
         // Battle-damage multipliers (player.cpp). Applied to the signed HP
         // delta at the damage-apply dispatcher; 1.0 = game behavior.
@@ -97,6 +99,29 @@ namespace trinity
         unsigned int markerTeleportPadMask = 0;    // Disabled on pad by default
         float        markerFallbackHeight = 1200.0f;
 
+        // Menu Navigation bindings (framework.cpp)
+        // Controller button masks (XInput):
+        unsigned int navSelectPadMask   = 0x1000;  // XINPUT_GAMEPAD_A (A / Cross)
+        unsigned int navBackPadMask     = 0x2000;  // XINPUT_GAMEPAD_B (B / Circle)
+        unsigned int navClearPadMask    = 0x4000;  // XINPUT_GAMEPAD_X (X / Square)
+        unsigned int navPrevTabPadMask  = 0x0100;  // XINPUT_GAMEPAD_LEFT_SHOULDER (LB)
+        unsigned int navNextTabPadMask  = 0x0200;  // XINPUT_GAMEPAD_RIGHT_SHOULDER (RB)
+        unsigned int navUpPadMask       = 0x0001;  // XINPUT_GAMEPAD_DPAD_UP
+        unsigned int navDownPadMask     = 0x0002;  // XINPUT_GAMEPAD_DPAD_DOWN
+        unsigned int navLeftPadMask     = 0x0004;  // XINPUT_GAMEPAD_DPAD_LEFT
+        unsigned int navRightPadMask    = 0x0008;  // XINPUT_GAMEPAD_DPAD_RIGHT
+
+        // Keyboard virtual keys (Win32 VK):
+        int navSelectKeyVk  = 0x0D; // VK_RETURN (Enter)
+        int navBackKeyVk    = 0x08; // VK_BACK (Backspace)
+        int navClearKeyVk   = 0x2E; // VK_DELETE (Delete)
+        int navPrevTabKeyVk = 0x51; // 'Q'
+        int navNextTabKeyVk = 0x45; // 'E'
+        int navUpKeyVk      = 0x26; // VK_UP
+        int navDownKeyVk    = 0x28; // VK_DOWN
+        int navLeftKeyVk    = 0x25; // VK_LEFT
+        int navRightKeyVk   = 0x27; // VK_RIGHT
+
         // Trust Multiplier (friendly.cpp). Scales the trust ("Friendly")
         // GAINED when gifting NPCs or feeding/taming animals, at the friendly-
         // apply funnel. Only real interactions are scaled (save-load is not);
@@ -104,6 +129,12 @@ namespace trinity
         // just reaches max / tames in fewer gifts. 1.0x = game behavior.
         bool  trustMult    = false;
         float trustMultVal = 3.0f;
+
+        // Mount & Pet Options (menu.cpp). Controls Pet registration capacity
+        // and pet hire limit up to 999 slots.
+        bool  petSlotLimit    = true;
+        int   petSlotLimitVal = 999;
+
 
         // World features (world.cpp). Game Speed forces the engine's fixed
         // frame-timestep so the whole simulation runs at gameSpeedMult of the

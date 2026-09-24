@@ -64,8 +64,8 @@ namespace trinity::game
         void* g_moveUpdateTarget = nullptr;
 
         // --- Fast-travel catalog / trigger ---------------------------------
-        // sub_505140(ignored, sceneId, nodeIndex) - the game's own fast travel.
-        using TravelFn = char(__fastcall*)(void*, int, unsigned int);
+        // sub_505140(ignored, sceneId, nodeIndex, flag) - the game's own fast travel.
+        using TravelFn = char(__fastcall*)(void*, int, unsigned int, unsigned int);
         TravelFn   g_travelFn = nullptr;
 
         // Data-table resolvers, found by the string-anchored scan in Install()
@@ -152,6 +152,7 @@ namespace trinity::game
         std::atomic<uintptr_t> g_playerMoveOwner{0};
         constexpr uintptr_t    kOff_MoveComp_MoveOwner       = 0x298; // TU 2.00
         constexpr uintptr_t    kOff_MoveComp_MoveOwner_TU201 = 0x2B8; // TU 2.01
+        constexpr uintptr_t    kOff_MoveComp_MoveOwner_TU202 = 0x2C0; // TU 2.02.00 (PE 1.0.0.2944)
 
         std::array<CandidateSlot, kExpected_MarkerMatches> g_markerCandidates{};
         std::atomic<uint64_t> g_markerProtectFlag{0};
@@ -1511,11 +1512,15 @@ namespace trinity::game
                     cat->name = rule->category;
                 }
 
+                const bool isModernTU = (mem::FindPattern(kSig_TravelToNode) != 0);
+                const uintptr_t nodeStride = isModernTU ? kNode_Stride : kNode_Stride_Legacy;
+                const uintptr_t posOffset  = isModernTU ? kOff_Node_Position : kOff_Node_Position_Legacy;
+
                 for (uint32_t i = 0; i < nc; ++i)
                 {
-                    const uintptr_t node = na + kNode_Stride * i;
+                    const uintptr_t node = na + nodeStride * i;
                     float pos[3] = { 0.0f, 0.0f, 0.0f };
-                    ReadVec3(node + kOff_Node_Position, pos);
+                    ReadVec3(node + posOffset, pos);
 
                     // Raw per-node label, same source the manual mapping above
                     // was built from: the area-box name for a real fast-travel
@@ -1631,9 +1636,6 @@ namespace trinity::game
             bool  down  = false;
         };
 
-        static std::atomic<float> g_flightHeadingX{0.0f};
-        static std::atomic<float> g_flightHeadingZ{1.0f};
-
         FlyInputState PollFlyInputs(const State& st)
         {
             FlyInputState in{};
@@ -1650,7 +1652,11 @@ namespace trinity::game
 
             if (st.flyUpKeyVk != 0 && (GetAsyncKeyState(st.flyUpKeyVk) & 0x8000) != 0)
                 in.up = true;
+            if ((GetAsyncKeyState('E') & 0x8000) != 0)
+                in.up = true;
             if (st.flyDownKeyVk != 0 && (GetAsyncKeyState(st.flyDownKeyVk) & 0x8000) != 0)
+                in.down = true;
+            if ((GetAsyncKeyState('Q') & 0x8000) != 0)
                 in.down = true;
 
             // Controller polling (Iterate slots 0-3 for all gamepads)
@@ -1758,9 +1764,6 @@ namespace trinity::game
 
                 if (s_flightAscended)
                 {
-                    constexpr float kMaxSafeVerticalSpeed = 35.0f;
-                    const float safeSpeed = (st.flightSpeed > kMaxSafeVerticalSpeed) ? kMaxSafeVerticalSpeed : st.flightSpeed;
-
                     if (st.menuOpen || st.textCapture)
                     {
                         WriteFloat(vel, 0.0f);
@@ -1770,6 +1773,9 @@ namespace trinity::game
                     }
                     else
                     {
+                        constexpr float kMaxSafeVerticalSpeed = 35.0f;
+                        const float safeSpeed = (st.flightSpeed > kMaxSafeVerticalSpeed) ? kMaxSafeVerticalSpeed : st.flightSpeed;
+
                         if (in.up && !in.down)
                         {
                             WriteFloat(vel + 4, safeSpeed);
@@ -1848,30 +1854,31 @@ namespace trinity::game
             {
                 const uintptr_t player = g_playerMoveOwner.load(std::memory_order_relaxed);
                 uintptr_t owner = 0;
-                if (player >= kMinPointer)
+                if (ReadPtr(comp + kOff_MoveComp_MoveOwner_TU202, &owner) && owner >= kMinPointer)
                 {
-                    if (ReadPtr(comp + kOff_MoveComp_MoveOwner_TU201, &owner) && owner == player)
-                        isPlayer = true;
-                    else if (ReadPtr(comp + kOff_MoveComp_MoveOwner, &owner) && owner == player)
+                    if (player >= kMinPointer && owner == player)
                         isPlayer = true;
                 }
-                if (!isPlayer)
+                else if (ReadPtr(comp + kOff_MoveComp_MoveOwner_TU201, &owner) && owner >= kMinPointer)
+                {
+                    if (player >= kMinPointer && owner == player)
+                        isPlayer = true;
+                }
+                else if (ReadPtr(comp + kOff_MoveComp_MoveOwner, &owner) && owner >= kMinPointer)
+                {
+                    if (player >= kMinPointer && owner == player)
+                        isPlayer = true;
+                }
+
+                if (!isPlayer && owner >= kMinPointer)
                 {
                     for (int p = 0; p < 3; ++p)
                     {
                         const uintptr_t act = Player::GetActor(p);
-                        if (act >= kMinPointer)
+                        if (act >= kMinPointer && owner == act)
                         {
-                            if (ReadPtr(comp + kOff_MoveComp_MoveOwner_TU201, &owner) && owner == act)
-                            {
-                                isPlayer = true;
-                                break;
-                            }
-                            else if (ReadPtr(comp + kOff_MoveComp_MoveOwner, &owner) && owner == act)
-                            {
-                                isPlayer = true;
-                                break;
-                            }
+                            isPlayer = true;
+                            break;
                         }
                     }
                 }
@@ -1892,15 +1899,21 @@ namespace trinity::game
             }
 
             // Super Run: scale sub-step delta time (dt) in-place during the call
-            if (isPlayer && st.superRun && st.superRunMult > 1.0f && pDt && !st.menuOpen && !st.textCapture)
+            if (isPlayer && st.superRun && !st.freeFlight && st.superRunMult > 1.0f && pDt && !st.menuOpen && !st.textCapture)
             {
                 float origDt0 = 0.0f, origDt1 = 0.0f;
                 if (RawReadFloat(pDt, &origDt0) && origDt0 > 0.0001f && origDt0 < 0.5f)
                 {
                     RawReadFloat(pDt + 1, &origDt1);
-                    RawWriteFloat(pDt, origDt0 * st.superRunMult);
+                    float scaledDt0 = origDt0 * st.superRunMult;
+                    if (scaledDt0 > 0.25f) scaledDt0 = 0.25f;
+                    RawWriteFloat(pDt, scaledDt0);
                     if (origDt1 > 0.0001f && origDt1 < 0.5f)
-                        RawWriteFloat(pDt + 1, origDt1 * st.superRunMult);
+                    {
+                        float scaledDt1 = origDt1 * st.superRunMult;
+                        if (scaledDt1 > 0.25f) scaledDt1 = 0.25f;
+                        RawWriteFloat(pDt + 1, scaledDt1);
+                    }
 
                     __try
                     {
@@ -2034,7 +2047,7 @@ namespace trinity::game
                 g_pendValid.store(false, std::memory_order_release);
                 if (scene >= 0 && index >= 0)
                 {
-                    __try { g_travelFn(nullptr, scene, static_cast<unsigned int>(index)); }
+                    __try { g_travelFn(nullptr, scene, static_cast<unsigned int>(index), 0); }
                     __except (EXCEPTION_EXECUTE_HANDLER) {}
                 }
             }
@@ -2191,6 +2204,8 @@ namespace trinity::game
         // Non-fatal if missing: position tracking still works, the fast-travel
         // menu just stays empty (logged).
         uintptr_t travel = mem::FindPattern(kSig_TravelToNode);
+        if (!travel)
+            travel = mem::FindPattern(kSig_TravelToNode_TU201);
         if (!travel)
             travel = mem::FindPattern(kSig_TravelToNode_TU200);
         if (!travel)

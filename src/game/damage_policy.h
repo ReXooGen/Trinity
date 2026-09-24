@@ -70,6 +70,58 @@ namespace trinity::game::damage_policy
         HealthState health{};
     };
 
+    // Ordinary combat causes and protagonist damage types (Kliff sword/unarmed,
+    // Damiane rapier/musket/martial, Oongka axe/hammer/martial).
+    // Native DamageBuffData context verification (definitionVerified + !noDead)
+    // decides lethality; this gate preserves special flags and excludes fall damage.
+    inline bool IsOrdinaryCombatCause(uint8_t a8, uint8_t a9)
+    {
+        // Strictly exclude fall damage / high landing impact (a8=0x13 / 19) and invalid broadcast bytes
+        if (a8 == 0x13 || a8 == 19 || a8 == 0xFF)
+            return false;
+
+        // Kliff sword basic attack I/II (8,10) and unarmed (0,0)
+        if ((a8 == 8 && a9 == 10) || (a8 == 0 && a9 == 0))
+            return true;
+
+        // Protagonist combat actions and skill damage types from skill.pabgb
+        if (a8 == 8 || a8 == 0 || a8 == 1 || a8 == 3 || a8 == 10 || a8 == 11 || a8 == 12 || a8 == 14 || a8 == 16)
+        {
+            switch (a9)
+            {
+            case 0:   // Unarmed / default combat action
+            case 10:  // Sword / basic strike / Damiane run attack
+            case 32:  // Axe roll attack / Damiane shield dash
+            case 58:  // Skill strike
+            case 101: // Companion passive / strike
+            case 121: // Weapon mastery
+            case 128: // Combat action
+            case 132: // Rapier down thrust / JumpGrabSpin / Battle axe
+            case 136: // Combat action / Taunt
+            case 138: // Combat action
+            case 140: // Fast avoid / Evade strike
+            case 141: // Demian kick
+            case 144: case 145:
+            case 152: // Lift attack
+            case 153: // Dash attack
+            case 157: // Demian rapier hard attack / finish / stride thrust
+            case 160:
+            case 164: // Battle axe down attack
+            case 165: case 166: // Caliburn rapier
+            case 176:
+            case 180: // Shield glider / Rocket pack strike
+            case 185:
+            case 188: // Demian rapier normal attack / charge attack / run kick / low attack / jump attack / parry
+            case 189: // Demian wall kick
+            case 236: case 237:
+                return true;
+            default:
+                break;
+            }
+        }
+        return false;
+    }
+
     inline bool CanAmplify(const OutgoingHit& hit, int64_t delta)
     {
         // Keep existing script/grass exclusions, but never use magnitude as proof of combat.
@@ -87,11 +139,9 @@ namespace trinity::game::damage_policy
             return false;
 
         // The verified native caller supplies a6=0, a7=boolean calculation result,
-        // a10=0. Sword Attack I/II use cause=8, SkillInfo._damageType=10. Both
-        // lethal and NoDead definitions share (8,10): context, not this tuple,
-        // decides lethality. Preserve other special causes and control flags.
-        const bool ordinaryCause = (hit.flags.a8 == 8 && hit.flags.a9 == 10) ||
-                                   (hit.flags.a8 == 0 && hit.flags.a9 == 0);
+        // a10=0. Context, not this tuple alone, decides lethality.
+        // Preserve other special causes and control flags.
+        const bool ordinaryCause = IsOrdinaryCombatCause(hit.flags.a8, hit.flags.a9);
         return hit.flags.a6 == 0 && hit.flags.a7 <= 1 && ordinaryCause && hit.flags.a10 == 0;
     }
 

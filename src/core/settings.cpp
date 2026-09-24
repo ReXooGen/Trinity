@@ -76,6 +76,24 @@ namespace trinity
             else if (!strcmp(key, "markerTeleportKeyVk"))  vals.markerTeleportKeyVk = atoi(val);
             else if (!strcmp(key, "markerTeleportPadMask"))vals.markerTeleportPadMask= static_cast<unsigned int>(strtoul(val, nullptr, 0));
             else if (!strcmp(key, "markerFallbackHeight")) vals.markerFallbackHeight = strtof(val, nullptr);
+            else if (!strcmp(key, "navSelectPadMask"))    vals.navSelectPadMask    = static_cast<unsigned int>(strtoul(val, nullptr, 0));
+            else if (!strcmp(key, "navBackPadMask"))      vals.navBackPadMask      = static_cast<unsigned int>(strtoul(val, nullptr, 0));
+            else if (!strcmp(key, "navClearPadMask"))     vals.navClearPadMask     = static_cast<unsigned int>(strtoul(val, nullptr, 0));
+            else if (!strcmp(key, "navPrevTabPadMask"))   vals.navPrevTabPadMask   = static_cast<unsigned int>(strtoul(val, nullptr, 0));
+            else if (!strcmp(key, "navNextTabPadMask"))   vals.navNextTabPadMask   = static_cast<unsigned int>(strtoul(val, nullptr, 0));
+            else if (!strcmp(key, "navUpPadMask"))        vals.navUpPadMask        = static_cast<unsigned int>(strtoul(val, nullptr, 0));
+            else if (!strcmp(key, "navDownPadMask"))      vals.navDownPadMask      = static_cast<unsigned int>(strtoul(val, nullptr, 0));
+            else if (!strcmp(key, "navLeftPadMask"))      vals.navLeftPadMask      = static_cast<unsigned int>(strtoul(val, nullptr, 0));
+            else if (!strcmp(key, "navRightPadMask"))     vals.navRightPadMask     = static_cast<unsigned int>(strtoul(val, nullptr, 0));
+            else if (!strcmp(key, "navSelectKeyVk"))      vals.navSelectKeyVk      = atoi(val);
+            else if (!strcmp(key, "navBackKeyVk"))        vals.navBackKeyVk        = atoi(val);
+            else if (!strcmp(key, "navClearKeyVk"))       vals.navClearKeyVk       = atoi(val);
+            else if (!strcmp(key, "navPrevTabKeyVk"))     vals.navPrevTabKeyVk     = atoi(val);
+            else if (!strcmp(key, "navNextTabKeyVk"))     vals.navNextTabKeyVk     = atoi(val);
+            else if (!strcmp(key, "navUpKeyVk"))          vals.navUpKeyVk          = atoi(val);
+            else if (!strcmp(key, "navDownKeyVk"))        vals.navDownKeyVk        = atoi(val);
+            else if (!strcmp(key, "navLeftKeyVk"))        vals.navLeftKeyVk        = atoi(val);
+            else if (!strcmp(key, "navRightKeyVk"))       vals.navRightKeyVk       = atoi(val);
             else if (!strcmp(key, "autoSave"))            vals.autoSave            = atoi(val) != 0;
             else if (!strcmp(key, "godMode"))             vals.godMode             = atoi(val) != 0;
             else if (!strcmp(key, "oneHitKill"))           vals.oneHitKill           = atoi(val) != 0;
@@ -87,6 +105,8 @@ namespace trinity
             else if (!strcmp(key, "easyParry"))           vals.easyParry           = atoi(val) != 0;
             else if (!strcmp(key, "easyEvade"))           vals.easyEvade           = atoi(val) != 0;
             else if (!strcmp(key, "noBounty"))            vals.noBounty            = atoi(val) != 0;
+            else if (!strcmp(key, "superGlideCompat"))    vals.superGlideCompat    = atoi(val) != 0;
+            else if (!strcmp(key, "bypassStatCommit"))    vals.bypassStatCommit    = atoi(val) != 0;
             else if (!strcmp(key, "dmgOutMult"))          vals.dmgOutMult          = strtof(val, nullptr);
             else if (!strcmp(key, "dmgInMult"))           vals.dmgInMult           = strtof(val, nullptr);
             else if (!strcmp(key, "gameSpeed"))           vals.gameSpeed           = atoi(val) != 0;
@@ -100,6 +120,8 @@ namespace trinity
             else if (!strcmp(key, "flightSpeed"))         vals.flightSpeed         = strtof(val, nullptr);
             else if (!strcmp(key, "trustMult"))           vals.trustMult           = atoi(val) != 0;
             else if (!strcmp(key, "trustMultVal"))        vals.trustMultVal        = strtof(val, nullptr);
+            else if (!strcmp(key, "petSlotLimit"))        vals.petSlotLimit        = atoi(val) != 0;
+            else if (!strcmp(key, "petSlotLimitVal"))     vals.petSlotLimitVal     = atoi(val);
             else if (!strcmp(key, "invSlotSize"))         vals.invSlotSize         = atoi(val) != 0;
             else if (!strcmp(key, "invSlotSizeVal"))      vals.invSlotSizeVal      = atoi(val);
             else if (!strcmp(key, "invStackSize"))        vals.invStackSize        = atoi(val) != 0;
@@ -197,6 +219,8 @@ namespace trinity
         st.playstationIcons = vals.playstationIcons;
         st.useCustomFont = vals.useCustomFont;
         st.builtInFontIndex = vals.builtInFontIndex;
+        st.superGlideCompat = vals.superGlideCompat;
+        st.bypassStatCommit = vals.bypassStatCommit;
         snprintf(st.customFont, sizeof(st.customFont), "%s", vals.customFont);
 
         st.savedLocations.clear();
@@ -226,6 +250,26 @@ namespace trinity
         if (vals.markerFallbackHeight >= 50.0f && vals.markerFallbackHeight <= 5000.0f)
             st.markerFallbackHeight = vals.markerFallbackHeight;
 
+        st.navSelectPadMask   = vals.navSelectPadMask   & 0x3FFFF;
+        st.navBackPadMask     = vals.navBackPadMask     & 0x3FFFF;
+        st.navClearPadMask    = vals.navClearPadMask    & 0x3FFFF;
+        st.navPrevTabPadMask  = vals.navPrevTabPadMask  & 0x3FFFF;
+        st.navNextTabPadMask  = vals.navNextTabPadMask  & 0x3FFFF;
+        st.navUpPadMask       = vals.navUpPadMask       & 0x3FFFF;
+        st.navDownPadMask     = vals.navDownPadMask     & 0x3FFFF;
+        st.navLeftPadMask     = vals.navLeftPadMask     & 0x3FFFF;
+        st.navRightPadMask    = vals.navRightPadMask    & 0x3FFFF;
+
+        if (vals.navSelectKeyVk >= 0 && vals.navSelectKeyVk <= 0xFF)   st.navSelectKeyVk   = vals.navSelectKeyVk;
+        if (vals.navBackKeyVk >= 0 && vals.navBackKeyVk <= 0xFF)       st.navBackKeyVk     = vals.navBackKeyVk;
+        if (vals.navClearKeyVk >= 0 && vals.navClearKeyVk <= 0xFF)     st.navClearKeyVk    = vals.navClearKeyVk;
+        if (vals.navPrevTabKeyVk >= 0 && vals.navPrevTabKeyVk <= 0xFF) st.navPrevTabKeyVk  = vals.navPrevTabKeyVk;
+        if (vals.navNextTabKeyVk >= 0 && vals.navNextTabKeyVk <= 0xFF) st.navNextTabKeyVk  = vals.navNextTabKeyVk;
+        if (vals.navUpKeyVk >= 0 && vals.navUpKeyVk <= 0xFF)           st.navUpKeyVk       = vals.navUpKeyVk;
+        if (vals.navDownKeyVk >= 0 && vals.navDownKeyVk <= 0xFF)       st.navDownKeyVk     = vals.navDownKeyVk;
+        if (vals.navLeftKeyVk >= 0 && vals.navLeftKeyVk <= 0xFF)       st.navLeftKeyVk     = vals.navLeftKeyVk;
+        if (vals.navRightKeyVk >= 0 && vals.navRightKeyVk <= 0xFF)     st.navRightKeyVk    = vals.navRightKeyVk;
+
         if (!st.autoSave)
             return; // remembered the preference, but features start clean
 
@@ -254,6 +298,8 @@ namespace trinity
         st.flightSpeed   = ClampF(vals.flightSpeed, 1.0f, 40.0f);
         st.trustMult     = vals.trustMult;
         st.trustMultVal  = ClampF(vals.trustMultVal, 1.0f, 25.0f);
+        st.petSlotLimit    = vals.petSlotLimit;
+        st.petSlotLimitVal = ClampI(vals.petSlotLimitVal, 30, 999);
         st.invSlotSize     = vals.invSlotSize;
         st.invSlotSizeVal  = ClampI(vals.invSlotSizeVal, 1, 700); // 240 vanilla / 700 modded cap
         st.invStackSize    = vals.invStackSize;
@@ -311,6 +357,24 @@ namespace trinity
                 "markerTeleportKeyVk=%d\n"
                 "markerTeleportPadMask=%u\n"
                 "markerFallbackHeight=%.3f\n"
+                "navSelectPadMask=%u\n"
+                "navBackPadMask=%u\n"
+                "navClearPadMask=%u\n"
+                "navPrevTabPadMask=%u\n"
+                "navNextTabPadMask=%u\n"
+                "navUpPadMask=%u\n"
+                "navDownPadMask=%u\n"
+                "navLeftPadMask=%u\n"
+                "navRightPadMask=%u\n"
+                "navSelectKeyVk=%d\n"
+                "navBackKeyVk=%d\n"
+                "navClearKeyVk=%d\n"
+                "navPrevTabKeyVk=%d\n"
+                "navNextTabKeyVk=%d\n"
+                "navUpKeyVk=%d\n"
+                "navDownKeyVk=%d\n"
+                "navLeftKeyVk=%d\n"
+                "navRightKeyVk=%d\n"
                 "autoSave=%d\n"
                 "godMode=%d\n"
                 "oneHitKill=%d\n"
@@ -322,6 +386,8 @@ namespace trinity
                 "easyParry=%d\n"
                 "easyEvade=%d\n"
                 "noBounty=%d\n"
+                "superGlideCompat=%d\n"
+                "bypassStatCommit=%d\n"
                 "dmgOutMult=%.3f\n"
                 "dmgInMult=%.3f\n"
                 "gameSpeed=%d\n"
@@ -335,6 +401,8 @@ namespace trinity
                 "flightSpeed=%.3f\n"
                 "trustMult=%d\n"
                 "trustMultVal=%.3f\n"
+                "petSlotLimit=%d\n"
+                "petSlotLimitVal=%d\n"
                 "invSlotSize=%d\n"
                 "invSlotSizeVal=%d\n"
                 "invStackSize=%d\n"
@@ -377,6 +445,24 @@ namespace trinity
                 st.markerTeleportKeyVk,
                 st.markerTeleportPadMask,
                 st.markerFallbackHeight,
+                st.navSelectPadMask,
+                st.navBackPadMask,
+                st.navClearPadMask,
+                st.navPrevTabPadMask,
+                st.navNextTabPadMask,
+                st.navUpPadMask,
+                st.navDownPadMask,
+                st.navLeftPadMask,
+                st.navRightPadMask,
+                st.navSelectKeyVk,
+                st.navBackKeyVk,
+                st.navClearKeyVk,
+                st.navPrevTabKeyVk,
+                st.navNextTabKeyVk,
+                st.navUpKeyVk,
+                st.navDownKeyVk,
+                st.navLeftKeyVk,
+                st.navRightKeyVk,
                 st.autoSave ? 1 : 0,
                 st.godMode ? 1 : 0,
                 st.oneHitKill ? 1 : 0,
@@ -388,6 +474,8 @@ namespace trinity
                 st.easyParry ? 1 : 0,
                 st.easyEvade ? 1 : 0,
                 st.noBounty ? 1 : 0,
+                st.superGlideCompat ? 1 : 0,
+                st.bypassStatCommit ? 1 : 0,
                 st.dmgOutMult,
                 st.dmgInMult,
                 st.gameSpeed ? 1 : 0,
@@ -401,6 +489,8 @@ namespace trinity
                 st.flightSpeed,
                 st.trustMult ? 1 : 0,
                 st.trustMultVal,
+                st.petSlotLimit ? 1 : 0,
+                st.petSlotLimitVal,
                 st.invSlotSize ? 1 : 0,
                 st.invSlotSizeVal,
                 st.invStackSize ? 1 : 0,
@@ -488,6 +578,8 @@ namespace trinity
         st.markerFallbackHeight = def.markerFallbackHeight;
         st.trustMult            = def.trustMult;
         st.trustMultVal         = def.trustMultVal;
+        st.petSlotLimit         = def.petSlotLimit;
+        st.petSlotLimitVal      = def.petSlotLimitVal;
         st.invSlotSize          = def.invSlotSize;
         st.invSlotSizeVal       = def.invSlotSizeVal;
         st.invStackSize         = def.invStackSize;
@@ -509,5 +601,23 @@ namespace trinity
         st.flyDownPadMask         = def.flyDownPadMask;
         st.markerTeleportKeyVk    = def.markerTeleportKeyVk;
         st.markerTeleportPadMask  = def.markerTeleportPadMask;
+        st.navSelectPadMask       = def.navSelectPadMask;
+        st.navBackPadMask         = def.navBackPadMask;
+        st.navClearPadMask        = def.navClearPadMask;
+        st.navPrevTabPadMask      = def.navPrevTabPadMask;
+        st.navNextTabPadMask      = def.navNextTabPadMask;
+        st.navUpPadMask           = def.navUpPadMask;
+        st.navDownPadMask         = def.navDownPadMask;
+        st.navLeftPadMask         = def.navLeftPadMask;
+        st.navRightPadMask        = def.navRightPadMask;
+        st.navSelectKeyVk         = def.navSelectKeyVk;
+        st.navBackKeyVk           = def.navBackKeyVk;
+        st.navClearKeyVk          = def.navClearKeyVk;
+        st.navPrevTabKeyVk        = def.navPrevTabKeyVk;
+        st.navNextTabKeyVk        = def.navNextTabKeyVk;
+        st.navUpKeyVk             = def.navUpKeyVk;
+        st.navDownKeyVk           = def.navDownKeyVk;
+        st.navLeftKeyVk           = def.navLeftKeyVk;
+        st.navRightKeyVk          = def.navRightKeyVk;
     }
 }

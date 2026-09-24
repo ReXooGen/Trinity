@@ -74,13 +74,13 @@ namespace trinity::gui
 
     // --- Tab pages -----------------------------------------------------------
 
-    // --- Mount & Horse Options -----------------------------------------------
-    // PLAYER -> Mount & Horse Options
-    // Manages gear dyeing and customization for mounts and horses.
+    // --- Mount & Pet Options -------------------------------------------------
+    // PLAYER -> Mount & Pet Options
+    // Manages gear dyeing for mounts, stamina, and pet registration capacity.
     static void RenderMountOptions()
     {
         State& st = State::Get();
-        ui::Begin(LOC("Mount & Horse Options"));
+        ui::Begin(LOC("Mount & Pet Options"));
 
         bool changed = false;
         if (ui::Submenu(LOC("Mount Equipment Dye"), "dyeslots",
@@ -88,6 +88,11 @@ namespace trinity::gui
         {
             game::Dye::SetTargetMode(1);
         }
+
+        if (ui::ToggleInt(LOC("Pet Registration Slots"), &st.petSlotLimit, &st.petSlotLimitVal,
+                          30, 999, 10, 999,
+                          LOC("Sets maximum Pet registration capacity up to 999 slots directly in memory.")))
+            changed = true;
 
         if (changed && st.autoSave)
             Settings::Save();
@@ -166,8 +171,8 @@ namespace trinity::gui
                         ? LOC("Refine your gear and socket abyss gears into it.")
                         : LOC("Refine and socket your gear. Load into the world first."));
 
-        ui::Submenu(LOC("Mount & Horse Options"), "mount_options",
-                    LOC("Stamina, gear customization, and summon options for mounts and horses."));
+        ui::Submenu(LOC("Mount & Pet Options"), "mount_options",
+                    LOC("Mount stamina, gear dyeing, and pet registration capacity options."));
 
         changed |= ui::ToggleFloat(LOC("Super Run"), &st.superRun, &st.superRunMult, 1.0f, 10.0f, 0.25f, 2.0f, "%.2fx",
                         LOC("Move faster than normal."));
@@ -352,8 +357,8 @@ namespace trinity::gui
                 }
                 else
                 {
-                    if (i == 0) snprintf(mountLabelStorage[i], sizeof(mountLabelStorage[i]), "Active Mount (None Nearby)");
-                    else        snprintf(mountLabelStorage[i], sizeof(mountLabelStorage[i]), "Mount %d (None)", i + 1);
+                    if (i == 0) snprintf(mountLabelStorage[i], sizeof(mountLabelStorage[i]), "%s", LOC("Active Mount (None Nearby)"));
+                    else        snprintf(mountLabelStorage[i], sizeof(mountLabelStorage[i]), LOC("Mount %d (None)"), i + 1);
                 }
                 mountLabels[i] = mountLabelStorage[i];
             }
@@ -2261,7 +2266,7 @@ namespace trinity::gui
     {
         game::Inventory::ItemInfo it{};
         if (!game::Inventory::GetCatalogItem(cat, idx, &it)) return false;
-        if (filter && filter[0] && !SearchMatches(it.name, filter) && !SearchMatches(it.key, filter)) return false;
+        if (filter && filter[0] && !SearchMatchesItem(it.name, it.key, filter)) return false;
 
         char desc[224];
         if (locked)
@@ -2363,7 +2368,7 @@ namespace trinity::gui
         {
             game::Inventory::ItemInfo it{};
             if (!game::Inventory::GetCatalogItem(cat, i, &it)) continue;
-            if (filter && filter[0] && !ContainsNoCase(it.name, filter)) continue;
+            if (filter && filter[0] && !SearchMatchesItem(it.name, it.key, filter)) continue;
             ids.push_back(it.typeId);
         }
         if (ids.empty()) return;
@@ -2398,7 +2403,7 @@ namespace trinity::gui
         {
             game::Inventory::ItemInfo it{};
             if (!game::Inventory::GetCatalogItem(s_invAddCat, i, &it)) continue;
-            if (s_invAddFilter[0] && !SearchMatches(it.name, s_invAddFilter) && !SearchMatches(it.key, s_invAddFilter)) continue;
+            if (s_invAddFilter[0] && !SearchMatchesItem(it.name, it.key, s_invAddFilter)) continue;
             ++shown;
         }
 
@@ -3035,7 +3040,7 @@ namespace trinity::gui
     {
         switch (vk)
         {
-        case 0:           return "None";
+        case 0:           return LOC("None");
         case VK_INSERT:   return "Insert";
         case VK_DELETE:   return "Delete";
         case VK_HOME:     return "Home";
@@ -3090,7 +3095,7 @@ namespace trinity::gui
                 if (buf[0]) strncat(buf, " + ", sizeof(buf) - strlen(buf) - 1);
                 strncat(buf, b.name, sizeof(buf) - strlen(buf) - 1);
             }
-        return buf[0] ? buf : "None";
+        return buf[0] ? buf : LOC("None");
     }
 
     // Lowest virtual-key currently held (mouse buttons 0x01-0x06 skipped),
@@ -3109,7 +3114,20 @@ namespace trinity::gui
     // single ui::BindRow.
     enum class BindTarget
     {
-        None, MenuKey, MenuPad, MarkerKey, MarkerPad, FlyUpKey, FlyUpPad, FlyDownKey, FlyDownPad
+        None,
+        MenuKey, MenuPad,
+        MarkerKey, MarkerPad,
+        FlyUpKey, FlyUpPad,
+        FlyDownKey, FlyDownPad,
+        NavSelectKey, NavSelectPad,
+        NavBackKey, NavBackPad,
+        NavClearKey, NavClearPad,
+        NavPrevTabKey, NavPrevTabPad,
+        NavNextTabKey, NavNextTabPad,
+        NavUpKey, NavUpPad,
+        NavDownKey, NavDownPad,
+        NavLeftKey, NavLeftPad,
+        NavRightKey, NavRightPad
     };
     static BindTarget s_capTarget = BindTarget::None;
 
@@ -3128,14 +3146,14 @@ namespace trinity::gui
         const bool capPad = (s_capTarget == padTarget);
 
         char keyBuf[48], padBuf[64];
-        snprintf(keyBuf, sizeof(keyBuf), "%s", capKey ? "press a key..." : KeyName(*keyVk));
-        snprintf(padBuf, sizeof(padBuf), "%s", capPad ? "press a button..." : PadMaskName(*padMask));
+        snprintf(keyBuf, sizeof(keyBuf), "%s", capKey ? LOC("press a key...") : KeyName(*keyVk));
+        snprintf(padBuf, sizeof(padBuf), "%s", capPad ? LOC("press a button...") : PadMaskName(*padMask));
 
         // While listening, the description spells out how to finish; otherwise
         // it's the action's own explanation.
         const char* rowDesc = desc;
-        if      (capKey) rowDesc = "Press the key you want to bind, or Esc to cancel.";
-        else if (capPad) rowDesc = "Press the button or combo you want to bind, or Esc to cancel.";
+        if      (capKey) rowDesc = LOC("Press the key you want to bind, or Esc to cancel.");
+        else if (capPad) rowDesc = LOC("Press the button or combo you want to bind, or Esc to cancel.");
 
         const int capCol = capKey ? 0 : capPad ? 1 : -1;
         switch (ui::BindRow(label, cursor, keyBuf, padBuf, capCol, rowDesc))
@@ -3150,13 +3168,13 @@ namespace trinity::gui
             *keyVk = defKeyVk;
             if (capKey) s_capTarget = BindTarget::None;
             Settings::Save(); // binds persist regardless of Auto Save
-            ui::Toast("%s keyboard bind reset to %s", label, KeyName(defKeyVk));
+            ui::Toast(LOC("%s keyboard bind reset to %s"), label, KeyName(defKeyVk));
             break;
         case ui::BindEdit::ResetPad:
             *padMask = defPadMask;
             if (capPad) s_capTarget = BindTarget::None;
             Settings::Save();
-            ui::Toast("%s controller bind reset to %s", label, PadMaskName(defPadMask));
+            ui::Toast(LOC("%s controller bind reset to %s"), label, PadMaskName(defPadMask));
             break;
         default:
             break;
@@ -3199,14 +3217,32 @@ namespace trinity::gui
         const char*   label          = "";
         switch (s_capTarget)
         {
-        case BindTarget::MenuKey:    keyField = &st.openKeyVk;           label = "Menu key";               break;
-        case BindTarget::MenuPad:    padField = &st.openPadMask;         label = "Menu button";            break;
-        case BindTarget::MarkerKey:  keyField = &st.markerTeleportKeyVk; label = "Marker Teleport key";   break;
-        case BindTarget::MarkerPad:  padField = &st.markerTeleportPadMask; label = "Marker Teleport button"; padTriggersOk = true; break;
-        case BindTarget::FlyUpKey:   keyField = &st.flyUpKeyVk;          label = "Fly Up key";             break;
-        case BindTarget::FlyUpPad:   padField = &st.flyUpPadMask;        label = "Fly Up button";          padTriggersOk = true; break;
-        case BindTarget::FlyDownKey: keyField = &st.flyDownKeyVk;        label = "Fly Down key";           break;
-        case BindTarget::FlyDownPad: padField = &st.flyDownPadMask;      label = "Fly Down button";        padTriggersOk = true; break;
+        case BindTarget::MenuKey:        keyField = &st.openKeyVk;           label = LOC("Menu key");               break;
+        case BindTarget::MenuPad:        padField = &st.openPadMask;         label = LOC("Menu button");            break;
+        case BindTarget::MarkerKey:      keyField = &st.markerTeleportKeyVk; label = LOC("Marker Teleport key");   break;
+        case BindTarget::MarkerPad:      padField = &st.markerTeleportPadMask; label = LOC("Marker Teleport button"); padTriggersOk = true; break;
+        case BindTarget::FlyUpKey:       keyField = &st.flyUpKeyVk;          label = LOC("Fly Up key");             break;
+        case BindTarget::FlyUpPad:       padField = &st.flyUpPadMask;        label = LOC("Fly Up button");          padTriggersOk = true; break;
+        case BindTarget::FlyDownKey:     keyField = &st.flyDownKeyVk;        label = LOC("Fly Down key");           break;
+        case BindTarget::FlyDownPad:     padField = &st.flyDownPadMask;      label = LOC("Fly Down button");        padTriggersOk = true; break;
+        case BindTarget::NavSelectKey:   keyField = &st.navSelectKeyVk;      label = LOC("Menu Select key");        break;
+        case BindTarget::NavSelectPad:   padField = &st.navSelectPadMask;    label = LOC("Menu Select button");     break;
+        case BindTarget::NavBackKey:     keyField = &st.navBackKeyVk;        label = LOC("Menu Back key");          break;
+        case BindTarget::NavBackPad:     padField = &st.navBackPadMask;      label = LOC("Menu Back button");       break;
+        case BindTarget::NavClearKey:    keyField = &st.navClearKeyVk;       label = LOC("Menu Reset/Clear key");   break;
+        case BindTarget::NavClearPad:    padField = &st.navClearPadMask;     label = LOC("Menu Reset/Clear button"); break;
+        case BindTarget::NavPrevTabKey:  keyField = &st.navPrevTabKeyVk;     label = LOC("Previous Tab key");       break;
+        case BindTarget::NavPrevTabPad:  padField = &st.navPrevTabPadMask;   label = LOC("Previous Tab button");    padTriggersOk = true; break;
+        case BindTarget::NavNextTabKey:  keyField = &st.navNextTabKeyVk;     label = LOC("Next Tab key");           break;
+        case BindTarget::NavNextTabPad:  padField = &st.navNextTabPadMask;   label = LOC("Next Tab button");        padTriggersOk = true; break;
+        case BindTarget::NavUpKey:       keyField = &st.navUpKeyVk;          label = LOC("Navigate Up key");        break;
+        case BindTarget::NavUpPad:       padField = &st.navUpPadMask;        label = LOC("Navigate Up button");     break;
+        case BindTarget::NavDownKey:     keyField = &st.navDownKeyVk;        label = LOC("Navigate Down key");      break;
+        case BindTarget::NavDownPad:     padField = &st.navDownPadMask;      label = LOC("Navigate Down button");   break;
+        case BindTarget::NavLeftKey:     keyField = &st.navLeftKeyVk;        label = LOC("Navigate Left key");      break;
+        case BindTarget::NavLeftPad:     padField = &st.navLeftPadMask;      label = LOC("Navigate Left button");   break;
+        case BindTarget::NavRightKey:    keyField = &st.navRightKeyVk;       label = LOC("Navigate Right key");     break;
+        case BindTarget::NavRightPad:    padField = &st.navRightPadMask;     label = LOC("Navigate Right button");  break;
         default: break;
         }
 
@@ -3226,7 +3262,7 @@ namespace trinity::gui
             {
                 *keyField = pendKey;
                 Settings::Save();                                               // binds persist regardless of Auto Save
-                ui::Toast("%s set to %s", label, KeyName(pendKey));
+                ui::Toast(LOC("%s set to %s"), label, KeyName(pendKey));
                 s_capTarget = BindTarget::None;
             }
         }
@@ -3241,7 +3277,7 @@ namespace trinity::gui
             {
                 *padField = padAccum;
                 Settings::Save();
-                ui::Toast("%s set to %s", label, PadMaskName(padAccum));
+                ui::Toast(LOC("%s set to %s"), label, PadMaskName(padAccum));
                 s_capTarget = BindTarget::None;
             }
         }
@@ -3264,11 +3300,50 @@ namespace trinity::gui
         // Per-row focus column (0 = keyboard, 1 = controller), remembered across
         // frames so the highlight stays where the user left it on each row.
         static int s_curMenu = 0, s_curMarker = 0, s_curUp = 0, s_curDown = 0;
+        static int s_curNavSel = 0, s_curNavBack = 0, s_curNavClr = 0;
+        static int s_curNavPrevTab = 0, s_curNavNextTab = 0;
+        static int s_curNavUp = 0, s_curNavDown = 0, s_curNavLeft = 0, s_curNavRight = 0;
 
         KeybindActionRow(LOC("Open Menu"), LOC("Opens and closes this menu."),
                          &s_curMenu, &st.openKeyVk, &st.openPadMask,
                          def.openKeyVk, def.openPadMask,
                          BindTarget::MenuKey, BindTarget::MenuPad);
+        KeybindActionRow(LOC("Menu Select"), LOC("Confirm selection, toggle items, or activate buttons in menu."),
+                         &s_curNavSel, &st.navSelectKeyVk, &st.navSelectPadMask,
+                         def.navSelectKeyVk, def.navSelectPadMask,
+                         BindTarget::NavSelectKey, BindTarget::NavSelectPad);
+        KeybindActionRow(LOC("Menu Back"), LOC("Go back to previous menu page, cancel typing, or close menu."),
+                         &s_curNavBack, &st.navBackKeyVk, &st.navBackPadMask,
+                         def.navBackKeyVk, def.navBackPadMask,
+                         BindTarget::NavBackKey, BindTarget::NavBackPad);
+        KeybindActionRow(LOC("Menu Reset / Clear"), LOC("Reset slider/value to default or clear search input."),
+                         &s_curNavClr, &st.navClearKeyVk, &st.navClearPadMask,
+                         def.navClearKeyVk, def.navClearPadMask,
+                         BindTarget::NavClearKey, BindTarget::NavClearPad);
+        KeybindActionRow(LOC("Previous Tab"), LOC("Switch to the previous category tab."),
+                         &s_curNavPrevTab, &st.navPrevTabKeyVk, &st.navPrevTabPadMask,
+                         def.navPrevTabKeyVk, def.navPrevTabPadMask,
+                         BindTarget::NavPrevTabKey, BindTarget::NavPrevTabPad);
+        KeybindActionRow(LOC("Next Tab"), LOC("Switch to the next category tab."),
+                         &s_curNavNextTab, &st.navNextTabKeyVk, &st.navNextTabPadMask,
+                         def.navNextTabKeyVk, def.navNextTabPadMask,
+                         BindTarget::NavNextTabKey, BindTarget::NavNextTabPad);
+        KeybindActionRow(LOC("Navigate Up"), LOC("Move selection up in the menu."),
+                         &s_curNavUp, &st.navUpKeyVk, &st.navUpPadMask,
+                         def.navUpKeyVk, def.navUpPadMask,
+                         BindTarget::NavUpKey, BindTarget::NavUpPad);
+        KeybindActionRow(LOC("Navigate Down"), LOC("Move selection down in the menu."),
+                         &s_curNavDown, &st.navDownKeyVk, &st.navDownPadMask,
+                         def.navDownKeyVk, def.navDownPadMask,
+                         BindTarget::NavDownKey, BindTarget::NavDownPad);
+        KeybindActionRow(LOC("Navigate Left"), LOC("Adjust slider left or change selection."),
+                         &s_curNavLeft, &st.navLeftKeyVk, &st.navLeftPadMask,
+                         def.navLeftKeyVk, def.navLeftPadMask,
+                         BindTarget::NavLeftKey, BindTarget::NavLeftPad);
+        KeybindActionRow(LOC("Navigate Right"), LOC("Adjust slider right or change selection."),
+                         &s_curNavRight, &st.navRightKeyVk, &st.navRightPadMask,
+                         def.navRightKeyVk, def.navRightPadMask,
+                         BindTarget::NavRightKey, BindTarget::NavRightPad);
         KeybindActionRow(LOC("Marker Teleport"), LOC("Teleport directly to the map marker / custom waypoint placed on the map."),
                          &s_curMarker, &st.markerTeleportKeyVk, &st.markerTeleportPadMask,
                          def.markerTeleportKeyVk, def.markerTeleportPadMask,
