@@ -183,7 +183,7 @@ namespace trinity::gui
         {
             LARGE_INTEGER d0{}, d1{};
             QueryPerformanceCounter(&d0);
-            const bool equipReady = game::Equipment::Ready();
+            const bool equipReady = game::Equipment::ReadyHint();
             QueryPerformanceCounter(&d1);
             s_playerEquipReadyMs += (d1.QuadPart - d0.QuadPart);
             s_playerEquipReadyCalls++;
@@ -191,7 +191,7 @@ namespace trinity::gui
         }
 
         ui::Submenu(LOC("Edit Equipment"), "equipslots",
-                    game::Equipment::Ready()
+                    game::Equipment::ReadyHint()
                         ? LOC("Refine your gear and socket abyss gears into it.")
                         : LOC("Refine and socket your gear. Load into the world first."));
 

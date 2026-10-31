@@ -1567,6 +1567,11 @@ namespace trinity::game
         bool                   g_snapshotPersist = false;
         bool                   g_snapshotReadFailed = false;
         int                    g_lastSnapshotFrame = -1;
+        // Lock-free hint for render-thread tooltip calls (PLAYER tab evaluates
+        // Equipment::Ready in a Submenu description every frame; taking
+        // g_snapshotMutex there and demand-rebuilding mid-frame measured
+        // 12-47 ms stalls). Published by the game-thread pump in Tick().
+        std::atomic<bool>      g_snapshotReadyHint{ false };
 
         const char* SlotNameForTag(uint16_t tag)
         {
@@ -1820,6 +1825,7 @@ namespace trinity::game
             g_snapshotAutoCharacter = autoCharacter;
             g_slotCount = 0;
             g_snapshotReady = false;
+            g_snapshotReadyHint.store(false, std::memory_order_release);
             g_snapshotPersist = false;
             g_snapshotAttempted = false;
             g_snapshotReadFailed = false;
@@ -1832,6 +1838,7 @@ namespace trinity::game
             {
                 g_slotCount = 0;
                 g_snapshotReady = false;
+                g_snapshotReadyHint.store(false, std::memory_order_release);
                 g_snapshotPersist = false;
             }
         }
@@ -1869,6 +1876,7 @@ namespace trinity::game
                 for (int i = 0; i < count; ++i) g_slots[i] = rows[i];
                 g_slotCount = count;
                 g_snapshotReady = true;
+                g_snapshotReadyHint.store(true, std::memory_order_release);
                 g_snapshotPersist = persist;
                 g_lastSnapshotSuccess = g_lastSnapshotAttempt;
             }
@@ -2210,6 +2218,14 @@ namespace trinity::game
         std::lock_guard<std::mutex> lock(g_snapshotMutex);
         EnsureSnapshot();
         return g_snapshotReady;
+    }
+
+    bool Equipment::ReadyHint()
+    {
+        // Render-thread safe: reads the game-thread-published hint without
+        // locking or triggering a mid-frame rebuild. Only used for tooltip
+        // text and root-tab descriptions; editors keep the full Ready().
+        return g_snapshotReadyHint.load(std::memory_order_acquire);
     }
 
     void Equipment::ForceRefresh()
@@ -2673,6 +2689,20 @@ namespace trinity::game
         return s_savedEquipSlots[charIdx][tag].active;
     }
 
+    // Game-thread snapshot pump for the render-thread ready hint (see
+    // g_snapshotReadyHint). Kept out of Tick(): Tick uses SEH and cannot
+    // own objects with destructors.
+    void PumpSnapshotHint()
+    {
+        static ULONGLONG s_lastPump = 0;
+        const ULONGLONG now = GetTickCount64();
+        if (now - s_lastPump < 250) return;
+        s_lastPump = now;
+        std::lock_guard<std::mutex> lock(g_snapshotMutex);
+        g_lastSnapshotFrame = -1;
+        EnsureSnapshot();
+    }
+
     // Game-thread refinement queue and optional older-build effect upkeep.
     void Equipment::Tick()
     {
@@ -2680,8 +2710,10 @@ namespace trinity::game
         if (!Player::Ready())
         {
             ClearRefineRequests();
+            g_snapshotReadyHint.store(false, std::memory_order_release);
             return;
         }
+        PumpSnapshotHint();
 
         ProcessPendingRefines();
 

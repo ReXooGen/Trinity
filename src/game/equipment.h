@@ -33,6 +33,7 @@ namespace trinity::game
         // Readiness of the copied UI snapshot (200 ms refresh; up to 750 ms
         // grace for failed table reads in the same world/selection).
         static bool Ready();
+        static bool ReadyHint();
         static void ForceRefresh();
 
         // Historical API name: true means the snapshot source has Server RTTI.
