@@ -231,6 +231,11 @@ namespace trinity::ui
 
     int CurrentTab() { return g_tab; }
 
+    const char* CurrentTabName()
+    {
+        return (g_tabNames && g_tab >= 0 && g_tab < g_tabCount) ? g_tabNames[g_tab] : "?";
+    }
+
     void SetScale(float scale)
     {
         g_scale = scale < 0.5f ? 0.5f : (scale > 2.5f ? 2.5f : scale);

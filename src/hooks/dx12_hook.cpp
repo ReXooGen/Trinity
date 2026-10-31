@@ -826,7 +826,8 @@ namespace trinity::hooks
             if (now - s_lastUiWarn >= 1000)
             {
                 s_lastUiWarn = now;
-                LOG_WARN("perf: overlay ui-build %.2f ms this frame (menu open).", uiMs);
+                LOG_WARN("perf: overlay ui-build %.2f ms (tab=%s menu='%s')", uiMs,
+                         ui::CurrentTabName(), *ui::CurrentMenu() ? ui::CurrentMenu() : "<root>");
             }
         }
 

@@ -55,6 +55,7 @@ namespace trinity::ui
     // anywhere; switching clears the submenu stack of the old section.
     void SetTabs(const char* const* names, int count);
     int  CurrentTab();
+    const char* CurrentTabName();
 
     void BeginFrame();
 
