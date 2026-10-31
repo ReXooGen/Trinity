@@ -2037,7 +2037,9 @@ namespace trinity::game
             core::TickMetrics::Record(core::TickPart::Equipment, tickStart);
 
             // Upkeep Trust Multiplier hook state (only engaged when toggle is on)
+            tickStart = core::TickMetrics::Now();
             Friendly::Tick();
+            core::TickMetrics::Record(core::TickPart::Friendly, tickStart);
 
             // Expire marker teleport temporary fall protection
             ServiceProtectionExpiry();

@@ -805,9 +805,20 @@ namespace trinity::hooks
         ImGui_ImplWin32_NewFrame();
         ImGui::NewFrame();
 
+        const LONGLONG uiStart = core::TickMetrics::Now();
         gui::Render();
-
         ImGui::Render();
+        // PLAYER-tab frame-drop hunt: time the whole UI build (menu tree +
+        // ImGui tessellation). Now() reads 0 while perfLogging is off, so fall
+        // back to a direct counter to keep this measurement always-on.
+        LARGE_INTEGER qpcNow{};
+        QueryPerformanceCounter(&qpcNow);
+        const LONGLONG uiMs = core::TickMetrics::enabled.load(std::memory_order_acquire)
+            ? core::TickMetrics::Now() - uiStart
+            : qpcNow.QuadPart - uiStart;
+        if (uiMs > core::TickMetrics::frequency / 250) // > 4 ms
+            LOG_WARN("perf: overlay ui-build %.2f ms this frame (menu open, PLAYER-tab suspect).",
+                     uiMs * 1000.0 / core::TickMetrics::frequency);
 
         // WantsDraw already skips a closed overlay. Also skip a final empty
         // draw list (e.g. a toast expired while building this frame).

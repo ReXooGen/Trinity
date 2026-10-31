@@ -5,7 +5,7 @@
 
 namespace trinity::core
 {
-    enum class TickPart { Player, World, Inventory, Dye, Equipment, Count };
+    enum class TickPart { Player, World, Inventory, Dye, Equipment, Friendly, Count };
     struct TickMetrics
     {
         inline static std::atomic<bool> enabled{false};
@@ -52,15 +52,15 @@ namespace trinity::core
             const ULONGLONG now = GetTickCount64();
             ULONGLONG due = nextReport.load(std::memory_order_relaxed);
             if (now < due || !frequency || !nextReport.compare_exchange_strong(due, now + 10000, std::memory_order_relaxed)) return;
-            double values[5]{};
+            double values[6]{};
             bool slow = false;
-            for (unsigned i = 0; i < 5; ++i)
+            for (unsigned i = 0; i < 6; ++i)
             {
                 values[i] = maxima[i].exchange(0, std::memory_order_relaxed) * 1000.0 / frequency;
                 slow |= values[i] >= 2.0;
             }
-            if (slow) LOG_WARN("perf: game-tick max/10s ms player=%.3f world=%.3f inventory=%.3f dye=%.3f equipment=%.3f",
-                              values[0], values[1], values[2], values[3], values[4]);
+            if (slow) LOG_WARN("perf: game-tick max/10s ms player=%.3f world=%.3f inventory=%.3f dye=%.3f equipment=%.3f friendly=%.3f",
+                              values[0], values[1], values[2], values[3], values[4], values[5]);
             const double waitMs = overlayWait.exchange(0, std::memory_order_relaxed) * 1000.0 / frequency;
             if (waitMs >= 2.0) LOG_WARN("perf: overlay fence-wait max/10s ms=%.3f", waitMs);
         }
