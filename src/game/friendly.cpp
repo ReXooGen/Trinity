@@ -212,6 +212,36 @@ namespace trinity::game
             }
         }
 
+        // One-shot diagnostic: the friendly-comp offsets (sub+0x140, +0x1C size,
+        // +0x30 entries) arrived from static 2.03 research and have never been
+        // live-verified on PE 3446 - a silent walk failure means Trust Multiplier
+        // never scales anything. When enabled and the walk finds no records, dump
+        // the plausible component slots around sub+0x140 so the log names the real
+        // layout on the next session (comp candidates: backref==owner at +8).
+        void DiagnoseFriendlyChainOnce(uintptr_t owner)
+        {
+            static bool s_ran = false;
+            if (s_ran || owner < kMinPointer) return;
+            uintptr_t sub = 0;
+            if (!mem::ReadPtr(owner + kOff_Owner_Actor, &sub) || sub < kMinPointer) return;
+            s_ran = true;
+            LOG("friendly: chain diagnostic (owner=%p sub=%p)", reinterpret_cast<void*>(owner), reinterpret_cast<void*>(sub));
+            for (uintptr_t off = 0x100; off <= 0x1C0; off += 8)
+            {
+                uintptr_t cand = 0;
+                if (!mem::ReadPtr(sub + off, &cand) || cand < kMinPointer) continue;
+                uintptr_t back = 0;
+                mem::ReadPtr(cand + 0x08, &back);
+                uint32_t sz = 0;
+                mem::Read32(cand + 0x1C, &sz);
+                uintptr_t ent = 0;
+                mem::ReadPtr(cand + 0x30, &ent);
+                LOG("friendly: sub+%#llx -> %p back==owner=%d size@1C=%u entries@30=%s",
+                    static_cast<unsigned long long>(off), reinterpret_cast<void*>(cand),
+                    back == owner ? 1 : 0, sz, ent >= kMinPointer ? "yes" : "no");
+            }
+        }
+
         // TU 2.04: scale each rise of a client trust value, then mirror the result to
         // the server's copy of the same relationship so it persists. First sight of a
         // relationship only seeds the cache. The single-step clamp keeps the ledger
@@ -226,19 +256,16 @@ namespace trinity::game
         void PollTrustMultiplier(float mult)
         {
             static std::unordered_map<uint64_t, int64_t> s_last;
-            // Per-key write throttle. Near NPCs/mounts the game awards trust
-            // continuously (proximity, feeding), and every client+server write
-            // here pokes the game's relationship UI - at 20x that was a visible
-            // frame drop in NPC-dense areas (live: 35 fps in Hernand village).
-            // Poll DETECTION stays at the 120ms cadence; WRITES are limited to
-            // one round per key per 2 s. Pending delta carries over, so the
-            // multiplier still lands - just in fewer, larger steps.
             static std::unordered_map<uint64_t, ULONGLONG> s_nextWrite;
             const ULONGLONG now = GetTickCount64();
             const uintptr_t client = Player::GetControlledOwner();
             const uintptr_t server = Inventory::ServerCharacterAddr();
+            // Count what the walk yields this pass; zero records on an enabled
+            // multiplier triggers the one-shot chain diagnostic (log next line).
+            unsigned walked = 0;
             ForEachTrust(client, [&](uint64_t key, uintptr_t valueAddr)
             {
+                ++walked;
                 int64_t value = 0;
                 if (!Read64(valueAddr, reinterpret_cast<uint64_t*>(&value)) || value < 0 || value > kFriendly_Max)
                     return;
@@ -277,6 +304,19 @@ namespace trinity::game
                 });
                 Write64(valueAddr, static_cast<uint64_t>(target));
             });
+            if (walked == 0)
+            {
+                // The walk found nothing on this pass. Dump the candidate layout
+                // once so a running session reveals the real 3446 offsets.
+                static ULONGLONG s_lastDiag = 0;
+                if (now - s_lastDiag > 30000)
+                {
+                    s_lastDiag = now;
+                    LOG_WARN("friendly: trust walk yielded 0 records (multiplier %.2fx) - running chain diagnostic.",
+                             mult);
+                    DiagnoseFriendlyChainOnce(client);
+                }
+            }
             g_trustSeeded = true;
         }
     }
