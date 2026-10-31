@@ -277,8 +277,38 @@ namespace trinity::game
                 const auto seen = s_last.find(key);
                 if (seen == s_last.end())
                 {
-                    // A relationship that appeared after seeding (new NPC): seed it.
+                    // Live-verified on PE 3446 (2026-11-01 session): a greet/gift
+                    // APPENDS a brand-new record already carrying the base gain
+                    // (0 -> 5/10 between two 120 ms passes; watched externally via
+                    // RPM, entries 409/410 of the client component). First sight of
+                    // a new key therefore IS the gain event - seed it AND scale it.
+                    // Old relationships discovered later are no-ops: a maxed 100
+                    // computes target=100 (single-step clamp keeps scaled<=20, so
+                    // max(gain,scaled)=gain) and the target==value guard skips it.
                     s_last[key] = value;
+                    if (value <= 0) return;
+                    const int64_t gain = value;
+                    const int64_t scaled = (std::min)(static_cast<int64_t>(gain * mult + 0.5f), int64_t{ 20 });
+                    const int64_t target = (std::min)((std::max)(gain, scaled), kFriendly_Max);
+                    if (target == value) return;
+                    const auto throttle = s_nextWrite.find(key);
+                    if (throttle != s_nextWrite.end() && now < throttle->second) return;
+                    s_nextWrite[key] = now + 2000;
+                    uint64_t serverHit = 0;
+                    ForEachTrust(server, [&](uint64_t serverKey, uintptr_t serverValue)
+                    {
+                        if (serverKey == key)
+                        {
+                            Write64(serverValue, static_cast<uint64_t>(target));
+                            serverHit = serverValue;
+                        }
+                    });
+                    LOG_INFO("friendly: scale(new) key=%llu gain=%lld mult=%.2f target=%lld client=%llx server=%llx",
+                             static_cast<unsigned long long>(key), static_cast<long long>(gain),
+                             mult, static_cast<long long>(target),
+                             static_cast<unsigned long long>(valueAddr),
+                             static_cast<unsigned long long>(serverHit));
+                    Write64(valueAddr, static_cast<uint64_t>(target));
                     return;
                 }
                 if (value <= seen->second)
