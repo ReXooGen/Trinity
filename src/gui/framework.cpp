@@ -202,6 +202,7 @@ namespace trinity::ui
     static bool                                       g_pendingPop = false;
 
     static const char* const* g_tabNames  = nullptr;
+    static char               g_tabNameStore[8][64] = {};
     static int                g_tabCount  = 0;
     static int                g_tab       = 0;
     static int                g_pendingTab = -1; // set by clicks; End() applies
@@ -224,9 +225,21 @@ namespace trinity::ui
 
     void SetTabs(const char* const* names, int count)
     {
-        g_tabNames = names;
-        g_tabCount = count;
-        if (g_tab >= count) g_tab = 0;
+        // names[] is typically a stack-local array in the caller; copy the
+        // strings so probes after Render() never read a dangling frame.
+        const int n = count > 8 ? 8 : count;
+        for (int i = 0; i < n; ++i)
+        {
+            strncpy(g_tabNameStore[i], names[i] ? names[i] : "", sizeof(g_tabNameStore[i]) - 1);
+            g_tabNameStore[i][sizeof(g_tabNameStore[i]) - 1] = '\0';
+        }
+        g_tabCount = n;
+        static const char* const storePtrs[8] = {
+            g_tabNameStore[0], g_tabNameStore[1], g_tabNameStore[2], g_tabNameStore[3],
+            g_tabNameStore[4], g_tabNameStore[5], g_tabNameStore[6], g_tabNameStore[7]
+        };
+        g_tabNames = storePtrs;
+        if (g_tab >= n) g_tab = 0;
     }
 
     int CurrentTab() { return g_tab; }
