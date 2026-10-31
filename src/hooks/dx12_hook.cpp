@@ -805,20 +805,30 @@ namespace trinity::hooks
         ImGui_ImplWin32_NewFrame();
         ImGui::NewFrame();
 
-        const LONGLONG uiStart = core::TickMetrics::Now();
+        // PLAYER-tab frame-drop hunt: time the whole UI build (menu tree +
+        // ImGui tessellation). Measured with a raw QPC pair - NOT TickMetrics::
+        // Now(), which returns 0 while perfLogging is off (the first cut of
+        // this probe subtracted that 0 from an absolute counter and logged a
+        // nonsense number every frame, itself a render-thread stall).
+        LARGE_INTEGER qpcA{}, qpcB{};
+        QueryPerformanceCounter(&qpcA);
         gui::Render();
         ImGui::Render();
-        // PLAYER-tab frame-drop hunt: time the whole UI build (menu tree +
-        // ImGui tessellation). Now() reads 0 while perfLogging is off, so fall
-        // back to a direct counter to keep this measurement always-on.
-        LARGE_INTEGER qpcNow{};
-        QueryPerformanceCounter(&qpcNow);
-        const LONGLONG uiMs = core::TickMetrics::enabled.load(std::memory_order_acquire)
-            ? core::TickMetrics::Now() - uiStart
-            : qpcNow.QuadPart - uiStart;
-        if (uiMs > core::TickMetrics::frequency / 250) // > 4 ms
-            LOG_WARN("perf: overlay ui-build %.2f ms this frame (menu open, PLAYER-tab suspect).",
-                     uiMs * 1000.0 / core::TickMetrics::frequency);
+        QueryPerformanceCounter(&qpcB);
+        const double uiMs = (qpcB.QuadPart - qpcA.QuadPart) * 1000.0 / core::TickMetrics::frequency;
+        // Rate-limit: one line per second max. A per-frame warn here would be a
+        // synchronous file write on the render thread - the very frame drop we
+        // are hunting.
+        static ULONGLONG s_lastUiWarn = 0;
+        if (uiMs > 4.0)
+        {
+            const ULONGLONG now = GetTickCount64();
+            if (now - s_lastUiWarn >= 1000)
+            {
+                s_lastUiWarn = now;
+                LOG_WARN("perf: overlay ui-build %.2f ms this frame (menu open).", uiMs);
+            }
+        }
 
         // WantsDraw already skips a closed overlay. Also skip a final empty
         // draw list (e.g. a toast expired while building this frame).
