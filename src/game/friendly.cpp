@@ -226,6 +226,15 @@ namespace trinity::game
         void PollTrustMultiplier(float mult)
         {
             static std::unordered_map<uint64_t, int64_t> s_last;
+            // Per-key write throttle. Near NPCs/mounts the game awards trust
+            // continuously (proximity, feeding), and every client+server write
+            // here pokes the game's relationship UI - at 20x that was a visible
+            // frame drop in NPC-dense areas (live: 35 fps in Hernand village).
+            // Poll DETECTION stays at the 120ms cadence; WRITES are limited to
+            // one round per key per 2 s. Pending delta carries over, so the
+            // multiplier still lands - just in fewer, larger steps.
+            static std::unordered_map<uint64_t, ULONGLONG> s_nextWrite;
+            const ULONGLONG now = GetTickCount64();
             const uintptr_t client = Player::GetControlledOwner();
             const uintptr_t server = Inventory::ServerCharacterAddr();
             ForEachTrust(client, [&](uint64_t key, uintptr_t valueAddr)
@@ -252,9 +261,16 @@ namespace trinity::game
                 }
                 const int64_t gain = value - seen->second;
                 const int64_t scaled = (std::min)(static_cast<int64_t>(gain * mult + 0.5f), int64_t{ 20 });
-                const int64_t target = (std::min)(seen->second + (std::max)(gain, scaled), kFriendly_Max);
+                int64_t target = (std::min)(seen->second + (std::max)(gain, scaled), kFriendly_Max);
                 s_last[key] = target;
                 if (target == value) return;
+                const auto throttle = s_nextWrite.find(key);
+                if (throttle != s_nextWrite.end() && now < throttle->second)
+                {
+                    // Too soon - fold this gain into the next write window.
+                    return;
+                }
+                s_nextWrite[key] = now + 2000;
                 ForEachTrust(server, [&](uint64_t serverKey, uintptr_t serverValue)
                 {
                     if (serverKey == key) Write64(serverValue, static_cast<uint64_t>(target));
