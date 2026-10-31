@@ -149,14 +149,29 @@ namespace trinity::gui
         ui::End();
     }
 
+    // PLAYER-tab frame-drop attribution statics (see RenderPlayer below).
+    static LONGLONG   s_playerEquipReadyMs   = 0; // QPC ticks, not ms
+    static unsigned   s_playerEquipReadyCalls = 0;
+    static unsigned   s_playerFrames          = 0;
+    static ULONGLONG  s_lastPlayerReport      = 0;
+
     static void RenderPlayer()
     {
         State& st = State::Get();
+
+        // Frame-drop attribution: the tab-level probe says this tab costs
+        // 11-89 ms per frame while every game tick stays under 2 ms. Split
+        // the tab into its three work classes so the log names the guilty
+        // one: submenu descriptions (which call Dye/Equipment::Ready every
+        // frame), the toggle rows, and ui::End().
+        LARGE_INTEGER qA{}, qB{}, qSub{}, qTog{};
+        QueryPerformanceCounter(&qA);
         ui::Begin();
 
         bool changed = false;
         ui::Submenu(LOC("Combat & Gameplay Options"), "combat_options",
                     LOC("One-Hit Kill, God Mode, Durability, and damage multipliers."));
+        QueryPerformanceCounter(&qSub);
 
         if (ui::Submenu(LOC("Dye Equipment"), "dyeslots",
                     game::Dye::Ready()
@@ -164,6 +179,15 @@ namespace trinity::gui
                         : LOC("Recolor your equipped gear. Load into the world first.")))
         {
             game::Dye::SetTargetMode(0);
+        }
+        {
+            LARGE_INTEGER d0{}, d1{};
+            QueryPerformanceCounter(&d0);
+            const bool equipReady = game::Equipment::Ready();
+            QueryPerformanceCounter(&d1);
+            s_playerEquipReadyMs += (d1.QuadPart - d0.QuadPart);
+            s_playerEquipReadyCalls++;
+            (void)equipReady;
         }
 
         ui::Submenu(LOC("Edit Equipment"), "equipslots",
@@ -173,6 +197,7 @@ namespace trinity::gui
 
         ui::Submenu(LOC("Mount & Pet Options"), "mount_options",
                     LOC("Mount stamina, gear dyeing, and pet registration capacity options."));
+        QueryPerformanceCounter(&qTog);
 
         changed |= ui::ToggleFloat(LOC("Super Run"), &st.superRun, &st.superRunMult, 1.0f, 10.0f, 0.25f, 2.0f, "%.2fx",
                         LOC("Move faster than normal."));
@@ -186,6 +211,32 @@ namespace trinity::gui
         if (changed && st.autoSave)
             Settings::Save();
         ui::End();
+
+        QueryPerformanceCounter(&qB);
+        const double subMs = (qSub.QuadPart - qA.QuadPart) * 1000.0 / core::TickMetrics::frequency;
+        const double togMs = (qB.QuadPart - qTog.QuadPart) * 1000.0 / core::TickMetrics::frequency;
+        const double allMs = (qB.QuadPart - qA.QuadPart) * 1000.0 / core::TickMetrics::frequency;
+        s_playerFrames++;
+        if (allMs > 4.0)
+        {
+            const ULONGLONG now = GetTickCount64();
+            if (now - s_lastPlayerReport >= 1000)
+            {
+                s_lastPlayerReport = now;
+                const double eqMs = s_playerEquipReadyCalls
+                    ? s_playerEquipReadyMs * 1000.0 / core::TickMetrics::frequency : 0.0;
+                LOG_WARN("perf: player-tab total=%.2f ms (submenus=%.2f toggles=%.2f equipReadyAcc=%.2f over %u calls, frames=%u)",
+                         allMs, subMs, togMs, eqMs, s_playerEquipReadyCalls, s_playerFrames);
+                s_playerEquipReadyMs = 0;
+                s_playerEquipReadyCalls = 0;
+                s_playerFrames = 0;
+            }
+        }
+        else
+        {
+            s_playerEquipReadyMs = 0;
+            s_playerEquipReadyCalls = 0;
+        }
     }
 
     // --- Dye editor -----------------------------------------------------------
