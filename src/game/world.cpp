@@ -54,19 +54,28 @@ namespace trinity::game
                 {
                     uintptr_t app = reinterpret_cast<uintptr_t>(appMgr);
                     uintptr_t timeStruct = 0;
-                    if (mem::ReadPtr(app + 0x60, &timeStruct) && timeStruct >= kMinPointer)
+                    // TU 2.04 (PE 3446): the engine's own FrameTimerUpdate body
+                    // reads [rcx+0x68] then delta at [rdx+0x6C] and stores the
+                    // scaled copy at [rdx+0x68] (legacy 2.00 layout was
+                    // +0x60/+0x64/+0x68 - live-decoded from the installed
+                    // hook's target bytes).
+                    if (mem::ReadPtr(app + 0x68, &timeStruct) && timeStruct >= kMinPointer)
                     {
                         const float mult = Clamp(st.gameSpeedMult, 0.1f, 10.0f);
                         float dt = 0.0f;
                         uint32_t bits = 0;
-                        if (mem::Read32(timeStruct + kOff_TimeStruct_Delta, &bits))
+                        // TU 2.04: Delta=+0x6C, ScaledDelta=+0x68 (engine's own
+                        // copy order). Legacy constants live in offsets.h.
+                        constexpr uintptr_t kDelta = 0x6C;
+                        constexpr uintptr_t kScaled = 0x68;
+                        if (mem::Read32(timeStruct + kDelta, &bits))
                         {
                             std::memcpy(&dt, &bits, sizeof(dt));
                             if (dt > 0.0001f && dt < 1.0f)
                             {
                                 const float newDt = dt * mult;
-                                mem::Write32(timeStruct + kOff_TimeStruct_Delta, FloatBits(newDt));
-                                mem::Write32(timeStruct + kOff_TimeStruct_ScaledDelta, FloatBits(newDt));
+                                mem::Write32(timeStruct + kDelta, FloatBits(newDt));
+                                mem::Write32(timeStruct + kScaled, FloatBits(newDt));
                             }
                         }
                     }

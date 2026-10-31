@@ -305,12 +305,28 @@ namespace trinity::game
             if (!ReadPtr(rcx40 + 0x130, &context) || !IsValidCanonicalPtr(context)) return false;
             if (!ReadPtr(context, &handle) || !IsValidCanonicalPtr(handle)) return false;
             if (!ReadPtr(handle + 8, &resource) || !IsValidCanonicalPtr(resource)) return false;
-            if (!ReadPtr(resource + 0x78, &parts) || !IsValidCanonicalPtr(parts)) return false;
-            // 1403F6F90 binary-searches 16-byte {key, part*} rows.
-            if (!Read32(parts + 0x60, &count) || !count || count > 65536) return false;
-            if (!ReadPtr(parts + 0x58, &array) || !IsValidCanonicalPtr(array)) return false;
-            if (!ReadPtr(array, &probe) ||
-                !ReadPtr(array + static_cast<uintptr_t>(count - 1) * 16 + 8, &probe)) return false;
+
+            // The part map was located on TU 2.02 (resource+0x78 -> +0x58 array /
+            // +0x60 count). On PE 3446 that offset holds a float pair
+            // (0x3F8000003F800000) in the very client replica the editor resolves,
+            // so requiring it rejected the real render target and left
+            // liveComp=0 - records were saved but nothing repainted, on both
+            // equipment and mounts.
+            //
+            // The discriminator that still holds is the context chain above: the
+            // client replica reaches a valid context with a valid pointee, while
+            // the server copy of the same hero holds a float pair there
+            // (0x3F80000000000000). So the part map became a bonus check: when a
+            // plausible pointer is present it must be consistent, otherwise the
+            // component is accepted on the context proof alone.
+            if (ReadPtr(resource + 0x78, &parts) && IsValidCanonicalPtr(parts))
+            {
+                // binary-searches 16-byte {key, part*} rows
+                if (!Read32(parts + 0x60, &count) || !count || count > 65536) return false;
+                if (!ReadPtr(parts + 0x58, &array) || !IsValidCanonicalPtr(array)) return false;
+                if (!ReadPtr(array, &probe) ||
+                    !ReadPtr(array + static_cast<uintptr_t>(count - 1) * 16 + 8, &probe)) return false;
+            }
             if (outContext) *outContext = context;
             return true;
         }

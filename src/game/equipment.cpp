@@ -777,6 +777,21 @@ namespace trinity::game
             if (Inventory::IsTransactionActive()) { req.reason = "transaction"; return false; }
             uintptr_t comps[72] = {};
             int count = GatherRefineComponents(req.charIndex, comps, 72);
+            // The component the editor was opened on MUST be among the targets.
+            // GatherRefineComponents rebuilds the list from Player/Inventory
+            // handles; when those handles are unresolved it returns zero even
+            // though req.component is a validated component for this character -
+            // that is the components=0/holders=0 case that made every edit time
+            // out while the user could see the value change on the client side.
+            // The source was already identity-checked by the menu, so adding it
+            // only widens the set to what the user actually selected.
+            if (req.component && CompValid(req.component) && count < 72)
+            {
+                bool present = false;
+                for (int i = 0; i < count; ++i)
+                    if (comps[i] == req.component) { present = true; break; }
+                if (!present) comps[count++] = req.component;
+            }
             if (!RefineStampCurrent(req, comps, count)) return false;
             if (Inventory::IsTransactionActive()) { req.reason = "transaction"; return false; }
             const uintptr_t replica = Dye::FindClientEquipmentReplica(req.component, req.charIndex, req.tag, req.typeId, req.instanceId);
@@ -925,7 +940,33 @@ namespace trinity::game
             if (holdersDone) { req.reason = "replica-missing"; req.retryDelay = 500; }
             // Distinguish a data-only update from a verified client/server pair.
             // A TLS flag cannot turn the same pointer into a different realm.
-            return clientWritten && serverWritten && holdersDone;
+            if (clientWritten && serverWritten && holdersDone) return true;
+
+            // Component-verified acceptance: an EQUIPPED item lives on the
+            // character's equipment component; the bag-side holder copy either
+            // does not exist or mirrors the component. Requiring the holder
+            // scans here made every edit of equipped gear time out on TU
+            // 2.04.02 even though both realm component writes verified and the
+            // game UI reflected the change immediately - the transaction epoch
+            // bumps constantly (autobuffs/currency/durability commits) and
+            // resets the scans before they can finish inside the 15s deadline.
+            // Both realm components verified is the strongest proof that
+            // survives on this engine; the user-visible state agrees.
+            if (clientWritten && serverWritten && req.hadWrites)
+            {
+                static ULONGLONG s_lastCompVerif = 0;
+                const ULONGLONG now = GetTickCount64();
+                if (now - s_lastCompVerif > 2000)
+                {
+                    s_lastCompVerif = now;
+                    LOG("equipment: edit op=%d char=%d tag=%u accepted component-verified (client+server); holder scan skipped %d/%d complete.",
+                        static_cast<int>(req.edit), req.charIndex, req.tag,
+                        req.holders[0].complete ? 1 : 0, req.holders[1].complete ? 1 : 0);
+                }
+                for (auto& state : req.holders) state.Reset();
+                return true;
+            }
+            return false;
         }
 
         bool QueueEquipmentEdit(EquipmentEdit edit, uint16_t tag, int value, uint16_t gear,

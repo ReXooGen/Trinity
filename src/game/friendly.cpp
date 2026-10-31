@@ -150,7 +150,11 @@ namespace trinity::game
         }
         else
         {
-            LOG_WARN("friendly: SetNpc signature NOT FOUND.");
+            // Expected on TU 2.04: both setters are gone/inlined (see the
+            // offsets.h note). Trust Multiplier runs through the component
+            // poll in Friendly::Tick instead - this hook was only the
+            // instant-write capture path for gifting/dialogue.
+            LOG_INFO("friendly: SetNpc signature not present on this TU - using the component poll path.");
         }
 
         // 2. Install SetPet prologue hook (Strictly for pet/mount taming & feeding)
@@ -175,7 +179,8 @@ namespace trinity::game
         }
         else
         {
-            LOG_WARN("friendly: SetPet signature NOT FOUND.");
+            // Expected on TU 2.04 - see the SetNpc note above.
+            LOG_INFO("friendly: SetPet signature not present on this TU - using the component poll path.");
         }
 
         g_hooksEnabled = true;
@@ -211,6 +216,13 @@ namespace trinity::game
         // the server's copy of the same relationship so it persists. First sight of a
         // relationship only seeds the cache. The single-step clamp keeps the ledger
         // delta small (see the v1.2.5 Error 298648703 notes).
+        // Seeding state: when the multiplier turns on, snapshot every current
+        // value WITHOUT scaling, so the very next real gain (the first gift,
+        // the "+5 Stranger" popup) is already a delta and gets multiplied.
+        // Without this, the first gain of any relationship passes unscaled.
+        // Lives at namespace scope: Friendly::Tick re-arms it on disable.
+        bool g_trustSeeded = false;
+
         void PollTrustMultiplier(float mult)
         {
             static std::unordered_map<uint64_t, int64_t> s_last;
@@ -221,8 +233,19 @@ namespace trinity::game
                 int64_t value = 0;
                 if (!Read64(valueAddr, reinterpret_cast<uint64_t*>(&value)) || value < 0 || value > kFriendly_Max)
                     return;
+                if (!g_trustSeeded)
+                {
+                    s_last[key] = value;
+                    return;
+                }
                 const auto seen = s_last.find(key);
-                if (seen == s_last.end() || value <= seen->second)
+                if (seen == s_last.end())
+                {
+                    // A relationship that appeared after seeding (new NPC): seed it.
+                    s_last[key] = value;
+                    return;
+                }
+                if (value <= seen->second)
                 {
                     s_last[key] = value;
                     return;
@@ -238,6 +261,7 @@ namespace trinity::game
                 });
                 Write64(valueAddr, static_cast<uint64_t>(target));
             });
+            g_trustSeeded = true;
         }
     }
 
@@ -245,10 +269,16 @@ namespace trinity::game
     {
         if (core::GetGameVersion().revision < 3400) return;
         const State& st = State::Get();
-        if (!st.trustMult || st.trustMultVal <= 1.0f) return;
+        if (!st.trustMult || st.trustMultVal <= 1.0f)
+        {
+            // Re-arm the seeding so the next enable snapshots fresh baselines
+            // instead of treating accumulated offline gains as one event.
+            g_trustSeeded = false;
+            return;
+        }
         static ULONGLONG s_lastPoll = 0;
         const ULONGLONG now = GetTickCount64();
-        if (now - s_lastPoll < 250) return;
+        if (now - s_lastPoll < 120) return;
         s_lastPoll = now;
         __try { PollTrustMultiplier(st.trustMultVal); }
         __except (EXCEPTION_EXECUTE_HANDLER) {}
@@ -279,6 +309,9 @@ namespace trinity::game
 
     bool Friendly::Ready()
     {
-        return g_hooksInstalled;
+        // TU 2.04: the SetNpc/SetPet hooks are gone (inlined upstream), but the
+        // component poll in Friendly::Tick scales trust without them. The menu
+        // must not claim "Unavailable right now." while the poll path works.
+        return g_hooksInstalled || core::GetGameVersion().revision >= 3400;
     }
 }

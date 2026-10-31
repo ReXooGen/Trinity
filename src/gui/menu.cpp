@@ -181,9 +181,7 @@ namespace trinity::gui
         changed |= ui::ToggleFloat(LOC("Free Flight"), &st.freeFlight, &st.flightSpeed, 1.0f, 40.0f, 1.0f, 8.0f, "%.0f",
                         LOC("While airborne, hold Caps Lock / RB to rise or Ctrl / Right Trigger to sink. Let go and normal physics resume - jumps and aerial attacks are untouched."));
         changed |= ui::ToggleFloat(LOC("Trust Multiplier"), &st.trustMult, &st.trustMultVal, 1.0f, 25.0f, 0.25f, 3.0f, "%.2fx",
-                        game::Friendly::Ready()
-                            ? LOC("Gifting NPCs or feeding animals builds trust faster.")
-                            : LOC("Gifting NPCs or feeding animals builds trust faster. Unavailable right now."));
+                        LOC("Gifting NPCs or feeding animals builds trust faster. Scales each trust gain; the popup shows the game's own base amount."));
 
         if (changed && st.autoSave)
             Settings::Save();

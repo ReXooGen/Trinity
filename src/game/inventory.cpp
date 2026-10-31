@@ -2417,7 +2417,9 @@ namespace trinity::game
                               &hkGetItemQty, &oGetItemQty, &g_qtyTarget, 4))
         {
             if (!mem::InstallHook("inventory: item-count accessor legacy", kSig_InvGetItemQty_Legacy,
-                                  "holder capture uses the controlled character",
+                                  core::GetGameVersion().revision >= 3400
+                                      ? nullptr // expected miss on 2.04; the durable walk owns holder capture
+                                      : "holder capture uses the controlled character",
                                   &hkGetItemQty, &oGetItemQty, &g_qtyTarget, 4) &&
                 core::GetGameVersion().revision < 3400)
                 return false;
@@ -3308,6 +3310,11 @@ namespace trinity::game
                 Write16(bucket + kOff_InvBucket_DeltaClamped, expand);
                 Write16(bucket + kOff_InvBucket_MaxSlots, static_cast<uint16_t>(defSlots + expand));
                 any = true;
+                if (type == 1)
+                    LOG("inventory: slot cap type1 -> cap=%u (engineSetter=%d err=%d holder=%p)",
+                        static_cast<unsigned>(defSlots + expand),
+                        oSetExpandSlots20202 || oSetExpandSlots ? 1 : 0, err,
+                        reinterpret_cast<void*>(holder));
             }
             return any;
         }
@@ -3321,18 +3328,22 @@ namespace trinity::game
             if (!Read32(table + kOff_ItemTable_Count, &count) || count == 0 || count > 4096) return false;
 
             static std::vector<uint16_t> s_origTableMax;
+            static std::vector<uint16_t> s_origTableDef;
             static bool s_tableMaxCaptured = false;
 
             if (!s_tableMaxCaptured || s_origTableMax.size() != count)
             {
                 s_origTableMax.assign(count, 0);
+                s_origTableDef.assign(count, 0);
                 for (uint32_t row = 0; row < count; ++row)
                 {
                     uintptr_t def = 0;
                     if (!DefForRow(g_invTableGlobal, static_cast<uint16_t>(row), &def)) continue;
-                    uint16_t m = 0;
+                    uint16_t m = 0, d = 0;
                     Read16(def + kOff_InvDef_MaxSlots, &m);
+                    Read16(def + kOff_InvDef_DefSlots, &d);
                     s_origTableMax[row] = m;
+                    s_origTableDef[row] = d;
                 }
                 s_tableMaxCaptured = true;
             }
@@ -3351,6 +3362,16 @@ namespace trinity::game
                 if (Read16(def + kOff_InvDef_MaxSlots, &curM) && curM == finalM)
                     continue;
                 if (Write16(def + kOff_InvDef_MaxSlots, finalM))
+                    any = true;
+                // The storage UI renders "used / _defaultSlotCount" (+0x10), not
+                // /_maxSlotCount. Live-confirmed on TU 2.04.02: every table max
+                // and bucket cap showed 700 while the game still displayed
+                // 156/240. Raise the default column too, so the denominator the
+                // player actually sees follows the raised cap.
+                uint16_t finalD = enable ? finalM : s_origTableDef[row];
+                uint16_t curD = 0;
+                if (Read16(def + kOff_InvDef_DefSlots, &curD) && curD != finalD &&
+                    Write16(def + kOff_InvDef_DefSlots, finalD))
                     any = true;
             }
             return any;
@@ -3503,17 +3524,10 @@ namespace trinity::game
         }
     }
 
-    static void InventoryTickImpl()
+    static void InventoryTickTracker()
     {
         __try
         {
-            const State& st = State::Get();
-
-            // Any queued Add Item runs here, on the game thread: unlike every other
-            // write in this file it calls into engine code, which the render thread
-            // must never do.
-            RunPendingAdd();
-
             // Real-time tracker for items sold, discarded, or removed
             if (Player::Ready())
             {
@@ -3525,7 +3539,14 @@ namespace trinity::game
                     TrackInventoryChanges();
                 }
             }
+        }
+        __except (EXCEPTION_EXECUTE_HANDLER) {}
+    }
 
+    static void InventoryTickRepair()
+    {
+        __try
+        {
             // Heal accounting in bounded slices; only lower used counts after a
             // complete bucket and unchanged holder/transaction epoch.
             if (Player::Ready())
@@ -3554,7 +3575,15 @@ namespace trinity::game
                     }
                 }
             }
+        }
+        __except (EXCEPTION_EXECUTE_HANDLER) {}
+    }
 
+    static void InventoryTickStackSlots()
+    {
+        __try
+        {
+            const State& st = State::Get();
             if (st.invStackSize && Player::Ready())
             {
                 if (!g_stackApplied || g_stackAppliedVal != st.invStackSizeVal)
@@ -3606,7 +3635,18 @@ namespace trinity::game
     {
         static std::atomic_flag busy = ATOMIC_FLAG_INIT;
         if (busy.test_and_set(std::memory_order_acquire)) return;
-        __try { InventoryTickImpl(); }
+        __try
+        {
+            // One SEH frame per feature. A recurring fault in any scan/helper
+            // used to abort the whole impl every tick - live-caught on TU
+            // 2.04.02: Add Item still ran (first in the impl) while Stack/Slot
+            // Size silently stopped applying. Isolating the frames keeps the
+            // other features alive and makes the broken one obvious in logs.
+            __try { RunPendingAdd(); } __except (EXCEPTION_EXECUTE_HANDLER) {}
+            __try { InventoryTickTracker(); } __except (EXCEPTION_EXECUTE_HANDLER) {}
+            __try { InventoryTickRepair(); } __except (EXCEPTION_EXECUTE_HANDLER) {}
+            __try { InventoryTickStackSlots(); } __except (EXCEPTION_EXECUTE_HANDLER) {}
+        }
         __finally { busy.clear(std::memory_order_release); }
     }
     namespace
@@ -4767,6 +4807,17 @@ namespace trinity::game
             if (serverH && serverH != clientH)
             {
                 okServer = AddIntoHolder(serverH, /*serverRealm=*/true,  typeId, qty, id, def);
+            }
+            else if (!serverH)
+            {
+                static ULONGLONG s_lastServerSkip = 0;
+                const ULONGLONG now = GetTickCount64();
+                if (now - s_lastServerSkip > 5000)
+                {
+                    s_lastServerSkip = now;
+                    LOG_WARN("inventory: add %u - server holder unresolved; client-only item will be wiped by the next server reconcile.",
+                             typeId);
+                }
             }
             if (!okServer)
             {
