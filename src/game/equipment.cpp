@@ -521,7 +521,7 @@ namespace trinity::game
             // 3. Server Realm (Equip Comp + Mirrors) with RealmFlag = 1
             uint8_t oldFlag = 0;
             const uintptr_t flagAddr = Inventory::RealmFlagAddress(&oldFlag);
-            if (flagAddr && RawWrite8(flagAddr, 1))
+            if (flagAddr && Inventory::WriteRealmFlags(flagAddr, 1))
             {
                 const uintptr_t serverC = ServerComp();
                 if (serverC)
@@ -575,7 +575,7 @@ namespace trinity::game
                     *(c->ok) |= WriteSocketToEntry(slot, c->idx, c->gear, c->expected);
                 }, &ctx, typeId);
 
-                RawWrite8(flagAddr, oldFlag);
+                Inventory::WriteRealmFlags(flagAddr, oldFlag);
             }
 
             return ok;
@@ -1023,7 +1023,7 @@ namespace trinity::game
             // 3. Server Realm
             uint8_t oldFlag = 0;
             const uintptr_t flagAddr = Inventory::RealmFlagAddress(&oldFlag);
-            if (flagAddr && RawWrite8(flagAddr, 1))
+            if (flagAddr && Inventory::WriteRealmFlags(flagAddr, 1))
             {
                 const uintptr_t serverC = ServerComp();
                 if (serverC) openOnEntry(FindEntryByTag(serverC, tag));
@@ -1067,7 +1067,7 @@ namespace trinity::game
                     *(c->ok) |= OpenAllSockets(slot, c->maxSock, c->expected);
                 }, &ctx, typeId);
 
-                RawWrite8(flagAddr, oldFlag);
+                Inventory::WriteRealmFlags(flagAddr, oldFlag);
             }
 
             return ok;
@@ -1131,7 +1131,7 @@ namespace trinity::game
             // 3. Server Realm
             uint8_t oldFlag = 0;
             const uintptr_t flagAddr = Inventory::RealmFlagAddress(&oldFlag);
-            if (flagAddr && RawWrite8(flagAddr, 1))
+            if (flagAddr && Inventory::WriteRealmFlags(flagAddr, 1))
             {
                 const uintptr_t serverC = ServerComp();
                 if (serverC) emptyOnEntry(FindEntryByTag(serverC, tag));
@@ -1175,7 +1175,7 @@ namespace trinity::game
                     *(c->ok) |= EmptyAllSockets(slot, c->expected);
                 }, &ctx, typeId);
 
-                RawWrite8(flagAddr, oldFlag);
+                Inventory::WriteRealmFlags(flagAddr, oldFlag);
             }
 
             return ok;
@@ -1474,6 +1474,8 @@ namespace trinity::game
                 {
                     if (req.changedThisVisit) InvalidateSnapshot();
                     SyncSlotToProfile(req.charIndex, req.tag, req.component);
+                    // Both realms now hold the edit; rebuild its effects on the next pump.
+                    g_dirty.store(true, std::memory_order_release);
                     g_editState.store(Equipment::EditState::Synced, std::memory_order_release);
                     LOG("equipment: edit synced op=%d char=%d tag=%u type=%u instance=0x%llX value=%u components=%d holders=%d (client/server verified; native effects deferred).",
                         static_cast<int>(req.edit), req.charIndex, req.tag, req.typeId, static_cast<unsigned long long>(req.instanceId),
@@ -2111,7 +2113,19 @@ namespace trinity::game
         ClearRefineRequests();
         InvalidateSnapshot();
         g_refresh = nullptr;
-        if (core::GetGameVersion().revision >= 2800)
+        const uint16_t revision = core::GetGameVersion().revision;
+        if (revision >= 3400)
+        {
+            const auto refresh = mem::FindAllMatches(kSig_EquipEffectRefresh_TU204, 2);
+            if (refresh.size() == 1)
+            {
+                g_refresh = reinterpret_cast<EquipRefresh_t>(refresh[0]);
+                LOG_OK("equipment: EquipEffectRefresh resolved @ %p.", reinterpret_cast<void*>(g_refresh));
+            }
+            else
+                LOG_WARN("equipment: EquipEffectRefresh not unique (%zu) - gear applies on reload.", refresh.size());
+        }
+        else if (revision >= 2800)
             LOG("equipment: TU 2.02 false refresh signature disabled (native ChallengeDescription UI, not equipment).");
         else
         {
@@ -2446,7 +2460,7 @@ namespace trinity::game
         {
             uint8_t oldFlag = 0;
             const uintptr_t flagAddr = Inventory::RealmFlagAddress(&oldFlag);
-            if (flagAddr && RawWrite8(flagAddr, 1))
+            if (flagAddr && Inventory::WriteRealmFlags(flagAddr, 1))
             {
                 const EquipTableDesc stbl = ReadEquipTableDesc(scomp);
                 if (stbl.valid)
@@ -2454,7 +2468,7 @@ namespace trinity::game
                     for (uint32_t s = 0; s < stbl.count; ++s)
                         repairEntry(stbl.array + static_cast<uintptr_t>(s) * stbl.stride);
                 }
-                RawWrite8(flagAddr, oldFlag);
+                Inventory::WriteRealmFlags(flagAddr, oldFlag);
             }
         }
 
@@ -2543,7 +2557,7 @@ namespace trinity::game
         // 2. Server Realm Mirror
         uint8_t oldFlag = 0;
         const uintptr_t flagAddr = Inventory::RealmFlagAddress(&oldFlag);
-        if (flagAddr && RawWrite8(flagAddr, 1))
+        if (flagAddr && Inventory::WriteRealmFlags(flagAddr, 1))
         {
             const uintptr_t scomp = ServerComp(charIdx);
             if (scomp)
@@ -2551,7 +2565,7 @@ namespace trinity::game
                 const uintptr_t se = FindEntryByTag(scomp, tag);
                 if (se) stampItem(se);
             }
-            RawWrite8(flagAddr, oldFlag);
+            Inventory::WriteRealmFlags(flagAddr, oldFlag);
         }
 
         if (const uintptr_t profC = ProfileComp(charIdx))
@@ -2649,7 +2663,8 @@ namespace trinity::game
         // cannot establish item ownership after reload; native saves own the data.
 
         if (!g_dirty.exchange(false, std::memory_order_acq_rel)) return;
-        if (core::GetGameVersion().revision >= 2800) return;
+        const uint16_t revision = core::GetGameVersion().revision;
+        if (revision >= 2800 && revision < 3400) return;
         if (!g_refresh) return;
 
         const uintptr_t comp = ClientComp();

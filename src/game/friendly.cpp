@@ -11,6 +11,8 @@
 
 #include "offsets.h"
 #include "player.h"
+#include "inventory.h"
+#include "../core/version_detect.h"
 #include "../mem/safe_memory.h"
 #include "../mem/scanner.h"
 #include "../core/logger.h"
@@ -180,8 +182,76 @@ namespace trinity::game
         return g_hooksInstalled;
     }
 
+    namespace
+    {
+        // Walks one realm's friendly component; fn(relationshipKey, valueAddr).
+        template <typename Fn>
+        void ForEachTrust(uintptr_t owner, Fn&& fn)
+        {
+            uintptr_t sub = 0, comp = 0, back = 0, entries = 0;
+            uint32_t size = 0;
+            if (owner < kMinPointer || !mem::ReadPtr(owner + kOff_Owner_Actor, &sub) || sub < kMinPointer ||
+                !mem::ReadPtr(sub + kOff_Sub_FriendlyComp, &comp) || comp < kMinPointer ||
+                !mem::ReadPtr(comp + 0x08, &back) || back != owner ||
+                !Read32(comp + kOff_FriendlyComp_Size, &size) || size > 4096 ||
+                !mem::ReadPtr(comp + kOff_FriendlyComp_Entries, &entries) || entries < kMinPointer)
+                return;
+            for (uint32_t i = 0; i < size; ++i)
+            {
+                uintptr_t entry = 0, record = 0;
+                uint64_t key = 0;
+                if (mem::ReadPtr(entries + i * 8ull, &entry) && entry >= kMinPointer &&
+                    Read64(entry, &key) &&
+                    mem::ReadPtr(entry + kOff_FriendlyEntry_Record, &record) && record >= kMinPointer)
+                    fn(key, record + kOff_FriendlyRecord_Value);
+            }
+        }
+
+        // TU 2.04: scale each rise of a client trust value, then mirror the result to
+        // the server's copy of the same relationship so it persists. First sight of a
+        // relationship only seeds the cache. The single-step clamp keeps the ledger
+        // delta small (see the v1.2.5 Error 298648703 notes).
+        void PollTrustMultiplier(float mult)
+        {
+            static std::unordered_map<uint64_t, int64_t> s_last;
+            const uintptr_t client = Player::GetControlledOwner();
+            const uintptr_t server = Inventory::ServerCharacterAddr();
+            ForEachTrust(client, [&](uint64_t key, uintptr_t valueAddr)
+            {
+                int64_t value = 0;
+                if (!Read64(valueAddr, reinterpret_cast<uint64_t*>(&value)) || value < 0 || value > kFriendly_Max)
+                    return;
+                const auto seen = s_last.find(key);
+                if (seen == s_last.end() || value <= seen->second)
+                {
+                    s_last[key] = value;
+                    return;
+                }
+                const int64_t gain = value - seen->second;
+                const int64_t scaled = (std::min)(static_cast<int64_t>(gain * mult + 0.5f), int64_t{ 20 });
+                const int64_t target = (std::min)(seen->second + (std::max)(gain, scaled), kFriendly_Max);
+                s_last[key] = target;
+                if (target == value) return;
+                ForEachTrust(server, [&](uint64_t serverKey, uintptr_t serverValue)
+                {
+                    if (serverKey == key) Write64(serverValue, static_cast<uint64_t>(target));
+                });
+                Write64(valueAddr, static_cast<uint64_t>(target));
+            });
+        }
+    }
+
     void Friendly::Tick()
     {
+        if (core::GetGameVersion().revision < 3400) return;
+        const State& st = State::Get();
+        if (!st.trustMult || st.trustMultVal <= 1.0f) return;
+        static ULONGLONG s_lastPoll = 0;
+        const ULONGLONG now = GetTickCount64();
+        if (now - s_lastPoll < 250) return;
+        s_lastPoll = now;
+        __try { PollTrustMultiplier(st.trustMultVal); }
+        __except (EXCEPTION_EXECUTE_HANDLER) {}
     }
 
     void Friendly::Remove()

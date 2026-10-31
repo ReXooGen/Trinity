@@ -95,11 +95,11 @@ namespace
         explicit Table(uintptr_t layout, uint32_t slots = 4) : stride(layout), count(slots)
         {
             Check(stride == 0xD0 || stride == 0xC8, "Unknown fixture layout");
-            component.Put(0x90, descriptor.Address());
+            component.Put(0xA0, descriptor.Address());
             descriptor.Put(kOff_EquipTable_Array, entries.Address());
             descriptor.Put(kOff_EquipTable_Count, count);
-            component.Put(0xA0, uint8_t{0xA5});
-            component.Put(0xA1, uint8_t{0x5A});
+            component.Put(0xB0, uint8_t{0xA5});
+            component.Put(0xB1, uint8_t{0x5A});
             for (uint32_t i = 0; i < 64; ++i)
             {
                 const uintptr_t entry = i * stride;
@@ -292,9 +292,9 @@ namespace
             CheckInvalid(ReadUnchanged(pointer, {}));
             Table table(0xD0, 1);
             table.Item(0, 7);
-            table.component.Put(0x90, pointer);
+            table.component.Put(0xA0, pointer);
             CheckInvalid(table.Read());
-            table.component.Put(0x90, table.descriptor.Address());
+            table.component.Put(0xA0, table.descriptor.Address());
             table.descriptor.Put(kOff_EquipTable_Array, pointer);
             CheckInvalid(table.Read());
         }
@@ -401,7 +401,7 @@ namespace
         CheckInvalid(ReadNativeEquipmentTableLayout(table.component.Address()));
         table.Item(1, 5);
         table.component.Put(0x88, table.descriptor.Address());
-        table.component.Put(0x90, uintptr_t{0});
+        table.component.Put(0xA0, uintptr_t{0});
         Check(table.Read().valid, "Heuristic alternate descriptor fixture invalid");
         CheckInvalid(ReadNativeEquipmentTableLayout(table.component.Address()));
         Table other(0xC8, 2);

@@ -376,6 +376,7 @@ namespace trinity::game
 
         static int       ActivePlayerCharacterIdx();
         static uintptr_t RealmFlagAddress(uint8_t* outVal);
+        static bool WriteRealmFlags(uintptr_t flagAddress, uint8_t value);
         static uintptr_t ClientHolderAddr();
         static uintptr_t ServerHolderAddr();
         static uint64_t MutationEpoch();

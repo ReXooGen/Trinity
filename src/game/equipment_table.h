@@ -107,7 +107,7 @@ namespace trinity::game
         EquipTableDesc out{};
         uintptr_t desc = 0, array = 0;
         uint32_t count = 0;
-        if (!mem::ReadPtr(comp + 0x90, &desc) || !IsEquipmentPointer(desc) ||
+        if (!mem::ReadPtr(comp + 0xA0, &desc) || !IsEquipmentPointer(desc) ||
             !mem::ReadPtr(desc + 8, &array) || !IsEquipmentPointer(array) ||
             !mem::Read32(desc + 0x10, &count) || count == 0 || count > 64)
             return out;
@@ -130,7 +130,7 @@ namespace trinity::game
     inline EquipTableDesc ReadNativeEquipmentTable(uintptr_t comp)
     {
         if (GetNativeEquipKind(comp) == NativeEquipKind::Unknown) return {};
-        // TU 2.02 native dye/equipment paths use precisely +0x90 / 0xD0 / +0xC8.
+        // TU 2.02 native dye/equipment paths use precisely +0xA0 / 0xD0 / +0xC8 (TU 2.04).
         // A different plausible field is not another supported native layout.
         return ReadNativeEquipmentTableLayout(comp);
     }
@@ -161,7 +161,7 @@ namespace trinity::game
         EquipTableDesc best{};
         if (!IsEquipmentPointer(comp)) return best;
         int bestScore = 0;
-        const uintptr_t tableOffsets[] = { 0x90, 0x88, 0x80, 0x50, 0x78, 0x38, 0x40, 0x48, 0x60, 0x70 };
+        const uintptr_t tableOffsets[] = { 0xA0, 0x90, 0x88, 0x80, 0x50, 0x78, 0x38, 0x40, 0x48, 0x60, 0x70 };
         const uintptr_t strides[] = { 0xD0, 0xC8 };
         for (uintptr_t offset : tableOffsets)
         {

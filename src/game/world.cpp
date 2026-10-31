@@ -87,6 +87,7 @@ namespace trinity::game
         // the field clock, so the field-time freeze above does not hold it.
         // See offsets.h kSig_TodEngineGlobal. Zero if it did not resolve.
         uintptr_t g_todEngineGlobal = 0;
+        static uintptr_t g_pEnvManager = 0;
 
         // While frozen we pin the manager's lower==upper==g_todTargetHour so
         // the engine clamps the sun there. Captured once on enable; the
@@ -141,12 +142,13 @@ namespace trinity::game
         // load) or if the global did not resolve - callers no-op on 0.
         uintptr_t ResolveTodManager()
         {
-            if (!g_todEngineGlobal) return 0;
-            uintptr_t engine = 0;
-            if (!mem::ReadPtr(g_todEngineGlobal, &engine) || engine < kMinPointer)
-                return 0;
-            uintptr_t mgr = 0;
-            if (!mem::ReadPtr(engine + kOff_Tod_Manager, &mgr) || mgr < kMinPointer)
+            // TU 2.04: the manager is the environment entity, EnvManager+0x60 (live-read:
+            // current hour at +0x3B8 tracks the field clock, limits 0/24 follow it). The
+            // old engine-global signature now lands on an unrelated image object.
+            if (!g_pEnvManager) return 0;
+            uintptr_t env = 0, mgr = 0;
+            if (!mem::ReadPtr(g_pEnvManager, &env) || env < kMinPointer ||
+                !mem::ReadPtr(env + 0x60, &mgr) || mgr < kMinPointer)
                 return 0;
             return mgr;
         }
@@ -363,7 +365,6 @@ namespace trinity::game
         }
 
         // --- Safe Weather & Atmosphere discovery (Non-hooking field controller) ---
-        static uintptr_t g_pEnvManager = 0;
 
         struct ResolvedWeatherEnv
         {
@@ -389,7 +390,7 @@ namespace trinity::game
                 if (!vt || reinterpret_cast<uintptr_t>(vt) < kMinPointer)
                     return env;
 
-                auto getEntity = reinterpret_cast<uintptr_t(__fastcall*)(uintptr_t)>(vt[0x40 / 8]);
+                auto getEntity = reinterpret_cast<uintptr_t(__fastcall*)(uintptr_t)>(vt[0x60 / 8]);
                 if (!getEntity || reinterpret_cast<uintptr_t>(getEntity) < kMinPointer)
                     return env;
 
@@ -398,11 +399,7 @@ namespace trinity::game
                     return env;
 
                 uintptr_t ws = 0;
-                if (!mem::ReadPtr(env.entity + 0xEF0, &ws) || ws < kMinPointer)
-                {
-                    if (!mem::ReadPtr(env.entity + 0xEE0, &ws) || ws < kMinPointer)
-                        mem::ReadPtr(env.entity + 0xED8, &ws);
-                }
+                mem::ReadPtr(env.entity + 0xF70, &ws);
                 if (ws < kMinPointer) return env;
 
                 env.weatherState = ws;
@@ -416,8 +413,8 @@ namespace trinity::game
 
                 if (result >= kMinPointer)
                 {
-                    mem::ReadPtr(result + 0x18, &env.cloudNode);
-                    mem::ReadPtr(result + 0x20, &env.windNode);
+                    mem::ReadPtr(result + 0x20, &env.cloudNode);
+                    mem::ReadPtr(result + 0x28, &env.windNode);
                 }
 
                 env.valid = (env.cloudNode >= kMinPointer || env.weatherState >= kMinPointer);

@@ -81,6 +81,7 @@ static EquipTableDesc ReadNativeEquipmentTable(uintptr_t comp) {
 }
 namespace core { struct Version { int revision=2850; }; static Version GetGameVersion() { return {}; } }
 static uintptr_t g_characterTableGlobal = 0;
+static uintptr_t ResolveCharacterTable() { return g_characterTableGlobal; }
 static const char* ItemKey(uint16_t tid) {
     switch (tid) {
     case 6353: return "Nairaden_OneHandMace";

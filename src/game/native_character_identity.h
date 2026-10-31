@@ -9,7 +9,8 @@ namespace trinity::game
     // owner+68 -> sub+20 -> status+30 (u16 row), NOT from worn item TypeIDs.
     // Native getter 140383820 reads table+8 count and table+58 row pointers.
     // Read resident data only: calling that getter can trigger lazy-load writes.
-    inline int ReadNativeCharacterIdentity(uintptr_t owner, uintptr_t tableGlobal)
+    // TU 2.04 (PE rev >= 3400) moved the row's string key from def+8 to def+0.
+    inline int ReadNativeCharacterIdentity(uintptr_t owner, uintptr_t tableGlobal, uintptr_t keyOff = 8)
     {
         using namespace trinity::mem;
         uintptr_t sub = 0, status = 0, back = 0, table = 0, defs = 0;
@@ -25,7 +26,7 @@ namespace trinity::game
             !Read32(table + 8, &count) || !count || count > 65536 || row >= count ||
             !ReadPtr(table + 0x58, &defs) || !IsValidUserPtr(defs) ||
             !ReadPtr(defs + uintptr_t{row} * 8, &def) || !IsValidUserPtr(def) ||
-            !ReadPtr(def + 8, &textObject) || !IsValidUserPtr(textObject) ||
+            !ReadPtr(def + keyOff, &textObject) || !IsValidUserPtr(textObject) ||
             !ReadPtr(textObject, &text) || !IsValidUserPtr(text)) return -1;
 
         char key[64]{};
@@ -45,7 +46,7 @@ namespace trinity::game
             !Read32(table + 8, &currentCount) || currentCount != count ||
             !ReadPtr(table + 0x58, &current) || current != defs ||
             !ReadPtr(defs + uintptr_t{row} * 8, &current) || current != def ||
-            !ReadPtr(def + 8, &current) || current != textObject ||
+            !ReadPtr(def + keyOff, &current) || current != textObject ||
             !ReadPtr(textObject, &current) || current != text) return -1;
         return identity;
     }
