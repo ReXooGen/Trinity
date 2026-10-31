@@ -1523,15 +1523,14 @@ namespace trinity::game
 
         constexpr const char* kDamageEventSignature =
             "48 8B C4 4C 89 48 20 4C 89 40 18 48 89 50 10 48 89 48 08 "
-            "55 53 56 57 41 54 41 55 41 56 41 57 48 8D A8 B8 F6 FF FF "
-            "48 81 EC 08 0A 00 00 C5 F8 29 70 A8 C5 F8 29 78 98 "
+            "55 53 56 57 41 54 41 55 41 56 41 57 48 8D A8 ?? ?? FF FF "
+            "48 81 EC ?? ?? 00 00 C5 F8 29 70 A8 C5 F8 29 78 98 "
             "C5 78 29 40 88 C5 78 29 88 78 FF FF FF C5 78 29 90 68 FF FF FF "
             "C5 78 29 98 58 FF FF FF C5 78 29 A0 48 FF FF FF C5 78 29 A8 38 FF FF FF "
-            "4D 8B F1 49 8B C8 45 33 FF 44 89 7D 98";
+            "4D 8B F0 45 33 FF 44 89 7D 90";
         constexpr const char* kDamageDefinitionSignature =
-            "40 53 48 83 EC 20 48 8B D9 B8 FF FF 00 00 48 81 C1 EA 00 00 00 "
-            "66 39 01 74 ?? E8 ?? ?? ?? ?? 8B 8B 34 01 00 00 48 03 C9 "
-            "48 8B 40 18 48 8B 44 C8 08";
+            "40 53 48 83 EC 20 0F B7 91 EA 00 00 00 48 8B D9 81 FA FF FF 00 00 74 ?? E8 ?? ?? ?? ?? "
+            "8B 8B 34 01 00 00 48 03 C9 48 8B 40 20 48 8B 44 C8 08";
         constexpr const char* kDamageBuffVtableSignature =
             "48 8D 05 ?? ?? ?? ?? 48 89 07 C6 87 90 00 00 00 02 "
             "48 89 B7 98 00 00 00 48 89 B7 A0 00 00 00 48 89 B7 A8 00 00 00";
@@ -1645,7 +1644,7 @@ namespace trinity::game
             const uintptr_t accessor = unique(kDamageDefinitionSignature);
             const uintptr_t factory = unique(kDamageBuffVtableSignature);
             const uintptr_t caller = unique(
-                "48 8B 8D A0 00 00 00 48 89 4C 24 38 48 8D 4C 24 70 "
+                "48 8B 8D ?? 00 00 00 48 89 4C 24 38 48 8D 4C 24 70 "
                 "48 89 4C 24 30 48 89 44 24 28 48 89 74 24 20 4D 8B CF "
                 "4D 8B C6 48 8D 54 24 78 49 8B CC E8 ?? ?? ?? ??");
             if (!caller) return false;
@@ -1656,31 +1655,31 @@ namespace trinity::game
                 return false;
             const mem::ModuleRegion event{entry, 0xD42};
             const uintptr_t definitionCall = mem::FindPattern(
-                "4D 8B F1 49 8B C8 45 33 FF 44 89 7D 98 E8 ?? ?? ?? ?? "
-                "4C 8B C8 44 38 78 08 4D 0F 45 CF 4C 89 4D A0", event);
+                "4D 8B F0 45 33 FF 44 89 7D 90 49 8B C8 E8 ?? ?? ?? ?? "
+                "4C 8B C0 44 38 78 08 4D 0F 45 C7 4C 89 45 A0", event);
             const uintptr_t hpCall = mem::FindPattern(
-                "48 8D 85 60 09 00 00 48 89 44 24 50 C6 44 24 48 00 "
-                "0F B6 85 50 09 00 00 88 44 24 40 44 88 64 24 38 44 88 54 24 30 "
-                "C6 44 24 28 00 4C 89 74 24 20 4C 8B 85 78 09 00 00 "
+                "48 8D 45 28 48 89 44 24 50 C6 44 24 48 00 "
+                "0F B6 85 60 09 00 00 88 44 24 40 44 88 64 24 38 44 88 54 24 30 "
+                "C6 44 24 28 00 48 89 5C 24 20 4C 8B 85 88 09 00 00 "
                 "0F B7 92 A0 00 00 00 48 8B 49 18 E8 ?? ?? ?? ??", event);
             const uintptr_t noDead = mem::FindPattern(
-                "48 8B 5D A0 80 BB 18 01 00 00 00 74 3F 48 8B 4D 20 "
+                "48 8B 5D A0 80 BB 18 01 00 00 00 74 3F 48 8B 4D 98 "
                 "48 3B CF 7F 36 48 89 7E 08 48 B8 CF F7 53 E3 A5 9B C4 20", event);
             if (!definitionCall || mem::ResolveCall(definitionCall + 13) != accessor ||
-                !hpCall || mem::ResolveCall(hpCall + 66) != reinterpret_cast<uintptr_t>(g_damageHookTarget) || !noDead)
+                !hpCall || mem::ResolveCall(hpCall + 63) != reinterpret_cast<uintptr_t>(g_damageHookTarget) || !noDead)
                 return false;
             const uintptr_t vtable = mem::ResolveRipAt(factory, 7);
             uintptr_t reader = 0;
             if (!IsDamageBuffVtable(vtable) || !ReadPtr(vtable + 0x50, &reader) ||
                 !DamageImageContains(reader, 0x1E1) || !mem::FindPattern(
-                    "48 8D 97 18 01 00 00 41 B8 01 00 00 00 48 8B CB FF 50 08",
+                    "48 8D 97 18 01 00 00 41 B8 01 00 00 00 48 8B CB FF 50 28",
                     mem::ModuleRegion{reader, 0x1E1}))
                 return false;
 
             // Publish immutable metadata before enabling the detour.
             g_damageDefinition = reinterpret_cast<DamageDefinition_t>(accessor);
             g_damageBuffVtable = vtable;
-            g_damageEventHpReturn = hpCall + 71;
+            g_damageEventHpReturn = hpCall + 68;
             if (mem::InstallHook("player: per-hit damage context", kDamageEventSignature,
                                  "outgoing damage left native", &hkDamageEvent,
                                  &oDamageEvent, &g_damageEventTarget))
@@ -1734,10 +1733,10 @@ namespace trinity::game
                     return NativeDamageContract{};
                 const mem::ModuleRegion healthFunction{hp, 0xA00};
                 result.targetLayoutVerified = mem::FindPattern(
-                    "49 8B 0F 48 8B 81 F8 03 00 00 80 78 18 00 75 ?? "
-                    "80 B9 98 03 00 00 00 75 ?? 49 8B 07 0F B6 88 73 02 00 00 "
-                    "88 4C 24 45 84 C9", healthFunction) != 0 && mem::FindPattern(
-                    "0F B6 80 72 02 00 00 88 44 24 44 0F B7 D3 49 8B CF E8", healthFunction) != 0;
+                    "49 8B 4D 00 48 8B 81 28 04 00 00 80 78 18 00 75 ?? "
+                    "80 B9 C8 03 00 00 00 75 ?? 49 8B 45 00 0F B6 88 93 02 00 00 "
+                    "88 4C 24 56 84 C9", healthFunction) != 0 && mem::FindPattern(
+                    "0F B6 80 92 02 00 00 88 44 24 55 0F B7 D6 49 8B CD E8", healthFunction) != 0;
                 return result;
             }();
             return contract;
@@ -1811,9 +1810,9 @@ namespace trinity::game
             // engine[398], and engine[273] gates application unless a6 permits it.
             // 141717BC9/C64 write WORD engine[272]=1/100: these are transition
             // states, NOT proven no-death flags. Conservatively preserve either state.
-            if (!Read8(engine + 0x272, &state272) || !Read8(engine + 0x273, &state273) ||
-                !Read8(engine + 0x398, &blocked398) ||
-                !ReadPtr(engine + 0x3F8, &protection) || protection < kMinPointer ||
+            if (!Read8(engine + 0x292, &state272) || !Read8(engine + 0x293, &state273) ||
+                !Read8(engine + 0x3C8, &blocked398) ||
+                !ReadPtr(engine + 0x428, &protection) || protection < kMinPointer ||
                 !Read8(protection + 0x18, &blocked18))
                 return state;
             state.nativeProtected = state272 || state273 || blocked398 || blocked18;
@@ -2106,8 +2105,19 @@ namespace trinity::game
         {
             const State& st = State::Get();
 
-            if (!g_mercenaryMgrGlobal)
+            // One lookup only: this runs on the game thread every 100 ms and a full
+            // image scan takes ~0.5 s, so a failed match must not be retried.
+            static bool s_mercenaryLooked = false;
+            const bool tu204 = core::GetGameVersion().revision >= 3400;
+            // TU 2.04: plain table lookup; still a scan, so only once the option is on.
+            if (tu204 && !g_mercenaryMgrGlobal && !s_mercenaryLooked && st.petSlotLimit)
             {
+                s_mercenaryLooked = true;
+                g_mercenaryMgrGlobal = Inventory::FindTableGlobal("MercenaryInfo");
+            }
+            if (!tu204 && !g_mercenaryMgrGlobal && !s_mercenaryLooked)
+            {
+                s_mercenaryLooked = true;
                 // Unique signature for MercenaryInfoManager singleton setter:
                 // 48 89 0D ? ? ? ? C3 CC CC CC CC CC CC CC CC 48 C7 05 ? ? ? ? 00 00 00 00 C3 CC CC CC CC E9 1B 68
                 constexpr const char* kSig_MercenaryMgr =
@@ -2116,12 +2126,6 @@ namespace trinity::game
                 if (match)
                 {
                     g_mercenaryMgrGlobal = mem::ResolveRipAt(match, 7);
-                }
-                else
-                {
-                    const uintptr_t base = reinterpret_cast<uintptr_t>(GetModuleHandleA(nullptr));
-                    if (base)
-                        g_mercenaryMgrGlobal = base + 0x6D69A80;
                 }
             }
 
@@ -2146,7 +2150,7 @@ namespace trinity::game
                         if (ReadPtr(table + i * sizeof(uintptr_t), &item) && item >= kMinPointer)
                         {
                             uint8_t type = 0;
-                            if (Read8(item, &type) && type == 0x43) // Key 67: Pet ('C')
+                            if (Read8(item + (tu204 ? 0x08 : 0), &type) && type == 0x43) // Key 67: Pet ('C')
                             {
                                 g_petMercenaryInfo = item;
                                 break;
@@ -2160,11 +2164,12 @@ namespace trinity::game
             {
                 const uint32_t targetLimit = (st.petSlotLimit && st.petSlotLimitVal >= 30) ? static_cast<uint32_t>(st.petSlotLimitVal) : 30u;
                 uint32_t currentLimit = 0;
-                if (Read32(g_petMercenaryInfo + 0x18, &currentLimit))
+                const uintptr_t limitOff = tu204 ? 0x50 : 0x18; // _defaultLimitHireCount
+                if (Read32(g_petMercenaryInfo + limitOff, &currentLimit))
                 {
                     if (currentLimit != targetLimit)
                     {
-                        Write32(g_petMercenaryInfo + 0x18, targetLimit);
+                        Write32(g_petMercenaryInfo + limitOff, targetLimit);
                         LOG_OK("player: pet registration slot capacity set to %u in memory (was %u)", targetLimit, currentLimit);
                     }
                 }

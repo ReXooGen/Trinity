@@ -92,6 +92,8 @@ namespace trinity::game::pak
             std::vector<uint8_t>    fileBlob;
             std::vector<DirEntry>   dirs;
             std::vector<FileEntry>  files;
+            bool                     compactNames = false; // TU 2.04+ name blob format
+            std::vector<std::string> extensions;           // FileEntry::flag -> ".dds"
             // Per-directory name -> file index, built on a directory's first
             // lookup. Reconstructing every name in a big directory per read
             // is wasteful once callers stream many files from one place
@@ -101,7 +103,8 @@ namespace trinity::game::pak
         };
 
         // Reconstruct a '/'-joined path from parent-linked fragments in `blob`.
-        std::string NameFromBlob(const std::vector<uint8_t>& blob, uint32_t off)
+        // Pre-2.04 node: u32 parent offset (0xFFFFFFFF = root), u8 len, chars.
+        std::string NameFromLegacyBlob(const std::vector<uint8_t>& blob, uint32_t off)
         {
             std::string parts[64];
             int n = 0;
@@ -121,6 +124,52 @@ namespace trinity::game::pak
             for (int i = n - 1; i >= 0; --i)
                 out += parts[i];
             return out;
+        }
+
+        // TU 2.04 node: LEB128 distance back to the parent node (0 = root), u8
+        // len, chars. The file blob also drops extensions into a shared table.
+        std::string NameFromCompactBlob(const std::vector<uint8_t>& blob, uint32_t off)
+        {
+            std::string parts[64];
+            int n = 0;
+            while (n < 64)
+            {
+                const uint32_t node = off;
+                uint32_t distance = 0;
+                int shift = 0;
+                uint8_t b = 0;
+                do
+                {
+                    if (off >= blob.size() || shift > 28) return {};
+                    b = blob[off++];
+                    distance |= static_cast<uint32_t>(b & 0x7F) << shift;
+                    shift += 7;
+                } while (b & 0x80);
+                if (off >= blob.size()) return {};
+                const uint8_t len = blob[off++];
+                if (off + len > blob.size()) return {};
+                parts[n++].assign(reinterpret_cast<const char*>(&blob[off]), len);
+                if (distance == 0) break;
+                if (distance > node) return {};
+                off = node - distance;
+            }
+            std::string out;
+            for (int i = n - 1; i >= 0; --i)
+                out += parts[i];
+            return out;
+        }
+
+        std::string NameFromBlob(const Manifest& m, const std::vector<uint8_t>& blob, uint32_t off)
+        {
+            return m.compactNames ? NameFromCompactBlob(blob, off) : NameFromLegacyBlob(blob, off);
+        }
+
+        std::string FileName(const Manifest& m, const FileEntry& file)
+        {
+            std::string name = NameFromBlob(m, m.fileBlob, file.nameOff);
+            if (m.compactNames && file.flag < m.extensions.size())
+                name += m.extensions[file.flag];
+            return name;
         }
 
         // --- Game-root resolution + manifest cache --------------------------
@@ -240,6 +289,25 @@ namespace trinity::game::pak
             if (!need(static_cast<size_t>(nFiles) * sizeof(FileEntry))) return nullptr;
             m.files.resize(nFiles);
             memcpy(m.files.data(), &d[o], static_cast<size_t>(nFiles) * sizeof(FileEntry));
+            o += static_cast<size_t>(nFiles) * sizeof(FileEntry);
+
+            // Legacy blobs open with the root's 0xFFFFFFFF parent; compact ones
+            // with a zero distance byte. Compact manifests end in u32 size +
+            // NUL-separated extension table (index 0 = no extension).
+            m.compactNames = !m.dirBlob.empty() && m.dirBlob[0] != 0xFF;
+            if (m.compactNames)
+            {
+                if (!need(4)) return nullptr;
+                const uint32_t extSize = u32(o); o += 4;
+                if (!need(extSize)) return nullptr;
+                std::string current;
+                for (size_t i = 0; i < extSize; ++i)
+                {
+                    if (d[o + i]) { current.push_back(static_cast<char>(d[o + i])); continue; }
+                    m.extensions.push_back(current);
+                    current.clear();
+                }
+            }
 
             m.valid = true;
             return &m;
@@ -269,7 +337,7 @@ namespace trinity::game::pak
             const DirEntry* dir = nullptr;
             for (const auto& e : m->dirs)
             {
-                if (NameFromBlob(m->dirBlob, e.nameOff) == dirPath) { dir = &e; break; }
+                if (NameFromBlob(*m, m->dirBlob, e.nameOff) == dirPath) { dir = &e; break; }
             }
             if (!dir) { LOG_ERR("pak: dir '%s' not found in chunk %d.", dirPath, chunk); return false; }
 
@@ -277,7 +345,7 @@ namespace trinity::game::pak
             const uint32_t end = dir->firstFile + dir->fileCount;
             index.reserve(dir->fileCount);
             for (uint32_t i = dir->firstFile; i < end && i < m->files.size(); ++i)
-                index.emplace(NameFromBlob(m->fileBlob, m->files[i].nameOff), i);
+                index.emplace(FileName(*m, m->files[i]), i);
             dirIt = m->dirIndex.find(dirPath);
         }
 

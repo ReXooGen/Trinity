@@ -67,7 +67,7 @@ namespace trinity::game
         using HolderInsert_t = void*(__fastcall*)(void*, void*, void*, void*, uint16_t,
                                                   void*, uint8_t, uint8_t, uint8_t);
         // Transaction commit: (holder, err, CONTAINER, items, out, c, c).
-        using Commit_t = void*(__fastcall*)(void*, void*, void*, void*, void*, uint8_t, uint8_t);
+        using Commit_t = void*(__fastcall*)(void*, void*, void*, void*, void*, void*, void*, void*, void*, void*, void*, void*);
         // The game's own slot-expansion setter (kSig_InvSetExpandSlots).
         // TU 2.02: (holder, &err, bucketType, expansionCount) - 4 args; the
         // dead 3rd pointer arg of the TU<=2.01 prototype is gone and
@@ -84,6 +84,7 @@ namespace trinity::game
         using CommitPlacement_t = void*(__fastcall*)(void* holder, int* err, void* unused,
                                                      void* placement, uint16_t slotIdx,
                                                      uint16_t pad, void* vec1, void* vec2);
+        using CommitPlacement4_t = void*(__fastcall*)(void* holder, int* err, void* placement, uint16_t slotIdx);
         using FreePlacements_t  = void(__fastcall*)(void* vec);
         using ItemValueDtor_t   = void(__fastcall*)(void* itemVal);
         GetItemQty_t      oGetItemQty      = nullptr;
@@ -94,6 +95,7 @@ namespace trinity::game
         SetExpandSlots_t      oSetExpandSlots      = nullptr;
         ItemValueCtor_t   oItemValueCtor   = nullptr;
         CommitPlacement_t oCommitPlacement = nullptr;
+        CommitPlacement4_t oCommitPlacement4 = nullptr;
         FreePlacements_t  oFreePlacements  = nullptr;
         ItemValueDtor_t   oItemValueDtor   = nullptr;
         void*          g_qtyTarget   = nullptr;
@@ -1393,14 +1395,11 @@ namespace trinity::game
         // Durable path: core global -> +0x30 -> +0x50 = container, then the
         // holder. Works from load; live-confirmed to resolve the same container
         // the hook captures.
+        uintptr_t ResolveClientContainer();
         uintptr_t ResolveHolderByWalk()
         {
-            if (!g_coreGlobal) return 0;
-            uintptr_t g = 0, mid = 0, container = 0;
-            if (!ReadPtr(g_coreGlobal, &g) || g < kMinPointer) return 0;
-            if (!ReadPtr(g + kOff_Global_Mid, &mid) || mid < kMinPointer) return 0;
-            if (!ReadPtr(mid + kOff_Mid_Container, &container) || container < kMinPointer) return 0;
-            return HolderForContainer(container);
+            const uintptr_t container = ResolveClientContainer();
+            return container ? HolderForContainer(container) : 0;
         }
 
         // The client inventory CONTAINER (one step short of the holder): core
@@ -1408,6 +1407,10 @@ namespace trinity::game
         // from the server one in the holder-insert hook.
         uintptr_t ResolveClientContainer()
         {
+            // TU 2.04 moved the old mid+0x50 link; the container IS the controlled
+            // client character, which the player code already resolves and validates.
+            if (core::GetGameVersion().revision >= 3400)
+                return Player::Ready() ? Player::GetControlledOwner() : 0;
             if (!g_coreGlobal) return 0;
             uintptr_t g = 0, mid = 0, container = 0;
             if (!ReadPtr(g_coreGlobal, &g) || g < kMinPointer) return 0;
@@ -1473,6 +1476,14 @@ namespace trinity::game
         // even when this fails: 0xFF = never read (the chain broke earlier),
         // anything else is the raw byte. Purely diagnostic - the silent add
         // failures needed a way to tell "no TLS chain" from "byte not a bool".
+        bool WriteRealmFlagsImpl(uintptr_t heapFlag, uint8_t value)
+        {
+            if (core::GetGameVersion().revision >= 3400 &&
+                !RawWrite8(heapFlag - kTls_RealmHeap_TU204 + kTls_RealmGlobals_TU204, value))
+                return false;
+            return RawWrite8(heapFlag, value);
+        }
+
         uintptr_t RealmFlagAddr(uint8_t* outVal = nullptr)
         {
             if (outVal) *outVal = 0xFF;
@@ -1488,6 +1499,15 @@ namespace trinity::game
             uintptr_t tlsArray = 0, tls = 0;
             if (!RawReadPtr(teb + kOff_Teb_TlsPointer, &tlsArray) || !tlsArray) return 0;
             if (!RawReadPtr(tlsArray, &tls) || !tls) return 0;
+            if (core::GetGameVersion().revision >= 3400)
+            {
+                const uintptr_t addr = tls + kTls_RealmHeap_TU204;
+                uint8_t v = 0;
+                if (!RawRead8(addr, &v) || v > 1) return 0;
+                if (outVal) *outVal = v;
+                return addr;
+            }
+
             // Try TU 2.01+ offset (509 = 0x1FD) first, then TU 2.00 / legacy (498 = 0x1F2)
             constexpr uintptr_t kRealmOffsets[] = { kTls_RealmFlag_TU201, kTls_RealmFlag };
             for (uintptr_t off : kRealmOffsets)
@@ -1950,18 +1970,37 @@ namespace trinity::game
 
         // --- The commit hook: where the server container shows up at load ---
         void* __fastcall hkCommit(void* holder, void* err, void* a3, void* items,
-                                  void* out, uint8_t a6, uint8_t a7)
+                                  void* out, void* a6, void* a7, void* a8, void* a9,
+                                  void* a10, void* a11, void* a12)
         {
             if (!oCommit) return nullptr;
             g_commitActive.fetch_add(1, std::memory_order_acq_rel);
             __try
             {
                 __try { NoteHolder(holder); } __except (EXCEPTION_EXECUTE_HANDLER) {}
-                void* ret = oCommit(holder, err, a3, items, out, a6, a7);
+                void* ret = oCommit(holder, err, a3, items, out, a6, a7, a8, a9, a10, a11, a12);
                 __try { NoteHolder(holder); } __except (EXCEPTION_EXECUTE_HANDLER) {}
                 return ret;
             }
             __finally { g_inventoryMutation.fetch_add(1, std::memory_order_release); g_commitActive.fetch_sub(1, std::memory_order_release); }
+        }
+
+        // TU 2.04 capture path: the per-placement commit also receives the holder, in
+        // both realms. The old transaction commit no longer carries a container.
+        void* g_commitPlacementTarget = nullptr;
+        void* __fastcall hkCommitPlacement4(void* holder, int* err, void* placement, uint16_t slotIdx)
+        {
+            g_commitActive.fetch_add(1, std::memory_order_acq_rel);
+            __try
+            {
+                __try { NoteHolder(holder); } __except (EXCEPTION_EXECUTE_HANDLER) {}
+                return oCommitPlacement4(holder, err, placement, slotIdx);
+            }
+            __finally
+            {
+                g_inventoryMutation.fetch_add(1, std::memory_order_release);
+                g_commitActive.fetch_sub(1, std::memory_order_acq_rel);
+            }
         }
 
         // --- The holder-insert hook: second capture path ---------------------
@@ -2188,6 +2227,21 @@ namespace trinity::game
         // Matches 1.14 (0x40 frame), 1.18 (0x50 frame) and TU 2.00 table resolver clone prologues
         uintptr_t FindItemPrologueAbove(uintptr_t match)
         {
+            // TU 2.04 resolver: key arrives in edx (`mov edi,edx; mov rbx,cs:<table>`).
+            // Checked first: the loader beside it opens with the old prologue.
+            for (size_t back = 0x10; back <= 0x120; ++back)
+            {
+                __try
+                {
+                    const uint8_t* p = reinterpret_cast<const uint8_t*>(match - back);
+                    if (p[0] == 0x8B && p[1] == 0xFA && p[2] == 0x48 && p[3] == 0x8B && p[4] == 0x1D)
+                        return match - back + 2;
+                }
+                __except (EXCEPTION_EXECUTE_HANDLER) {}
+            }
+            // Anything else holding the table name is its loader, not the resolver.
+            if (core::GetGameVersion().revision >= 3400) return 0;
+
             for (size_t back = 0x10; back <= 0x120; ++back)
             {
                 const uintptr_t cand = match - back;
@@ -2259,7 +2313,8 @@ namespace trinity::game
 
             // Fallback for TU 2.00.01 (PE 1.0.0.2625 / 1.0.0.2658)
             uintptr_t gameBase = reinterpret_cast<uintptr_t>(GetModuleHandleA(nullptr));
-            if (core::GetGameVersion().revision >= 2625)
+            const uint16_t revision = core::GetGameVersion().revision;
+            if (revision >= 2625 && revision < 3400)
             {
                 if (_stricmp(name, "WantedInfo") == 0)
                 {
@@ -2356,11 +2411,15 @@ namespace trinity::game
         // and crash at 0x1E4F217 during world loading. No Bounty feature still
         // works via hkEvaluateCrimeWantedState above.
 
+        // TU 2.04 has no standalone item-count accessor to hook. It only ever was a
+        // capture convenience: the holder also comes from the controlled character.
         if (!mem::InstallHook("inventory: item-count accessor", kSig_InvGetItemQty, nullptr,
                               &hkGetItemQty, &oGetItemQty, &g_qtyTarget, 4))
         {
-            if (!mem::InstallHook("inventory: item-count accessor legacy", kSig_InvGetItemQty_Legacy, "inventory disabled",
-                                  &hkGetItemQty, &oGetItemQty, &g_qtyTarget, 4))
+            if (!mem::InstallHook("inventory: item-count accessor legacy", kSig_InvGetItemQty_Legacy,
+                                  "holder capture uses the controlled character",
+                                  &hkGetItemQty, &oGetItemQty, &g_qtyTarget, 4) &&
+                core::GetGameVersion().revision < 3400)
                 return false;
         }
 
@@ -2423,6 +2482,35 @@ namespace trinity::game
         if (commitAddr) oCommitPlacement = reinterpret_cast<CommitPlacement_t>(commitAddr);
         if (freeAddr)   oFreePlacements  = reinterpret_cast<FreePlacements_t>(freeAddr);
         if (dtorAddr)   oItemValueDtor   = reinterpret_cast<ItemValueDtor_t>(dtorAddr);
+        if (core::GetGameVersion().revision >= 3400)
+        {
+            oFreePlacements = nullptr;
+            const auto recipe = mem::FindAllMatches(kSig_AddItemRecipe, 2);
+            if (recipe.size() == 1)
+            {
+                const uintptr_t a = recipe[0];
+                oHolderInsert     = reinterpret_cast<HolderInsert_t>(mem::ResolveCall(a + kOff_AddItemRecipe_Plan));
+                oCommitPlacement4 = reinterpret_cast<CommitPlacement4_t>(mem::ResolveCall(a + kOff_AddItemRecipe_Commit));
+                oFreePlacements   = reinterpret_cast<FreePlacements_t>(mem::ResolveCall(a + kOff_AddItemRecipe_Free));
+                oItemValueDtor    = reinterpret_cast<ItemValueDtor_t>(mem::ResolveCall(a + kOff_AddItemRecipe_Dtor));
+                LOG_OK("inventory: native add-item recipe resolved @ %p.", reinterpret_cast<void*>(a));
+                void* target = reinterpret_cast<void*>(oCommitPlacement4);
+                void* original = nullptr;
+                if (MH_CreateHook(target, reinterpret_cast<void*>(&hkCommitPlacement4), &original) == MH_OK &&
+                    MH_EnableHook(target) == MH_OK)
+                {
+                    oCommitPlacement4 = reinterpret_cast<CommitPlacement4_t>(original);
+                    g_commitPlacementTarget = target;
+                }
+                else
+                    LOG_WARN("inventory: placement commit hook failed - server holder may stay unresolved.");
+            }
+            else
+            {
+                oCommitPlacement = nullptr; // refuses Add Item
+                LOG_WARN("inventory: add-item recipe anchor not unique (%zu) - Add Item disabled.", recipe.size());
+            }
+        }
         // The TEB lookup for the realm flag. Deliberately NtQueryInformationThread
         // rather than a hand-rolled `mov rax, gs:[30h]` stub: that was tried and
         // fails (bogus TEB, then an access violation on the second call - almost
@@ -2502,7 +2590,10 @@ namespace trinity::game
 
         // Secondary capture path: fires on a real add/drop/buy, not at load.
         // Catches containers that only appear later (e.g. character swap).
-        if (!mem::InstallHook("inventory: holder-insert", kSig_InvHolderInsert, nullptr,
+        // TU 2.04: not hooked (the legacy signature lands on an unrelated equipment
+        // function); the planner comes from kSig_AddItemRecipe and is called directly.
+        if (core::GetGameVersion().revision < 3400 &&
+            !mem::InstallHook("inventory: holder-insert", kSig_InvHolderInsert, nullptr,
                               &hkHolderInsert, &oHolderInsert, &g_insTarget, 2))
         {
             if (!mem::InstallHook("inventory: holder-insert (TU 2.00)", kSig_InvHolderInsert_TU200, nullptr,
@@ -2542,7 +2633,8 @@ namespace trinity::game
 
         // TU 2.02 wearer identity comes from native CharacterInfo, not equipment.
         // This resolves the table address once; callers only read resident rows.
-        g_characterTableGlobal = FindTableGlobal("characterinfo");
+        if (core::GetGameVersion().revision < 3400)
+            g_characterTableGlobal = FindTableGlobal("characterinfo");
 
         // The category tree (optional - without it everything lands in one group).
         g_grpTableGlobal = FindTableGlobal(kStr_ItemGroupInfoTable);
@@ -2569,6 +2661,12 @@ namespace trinity::game
         if (g_slotApplied)  { SetAllSlotSizes(false, 0);     g_slotApplied  = false; }
 
         mem::RemoveHook(&g_qtyTarget);
+        if (g_commitPlacementTarget)
+        {
+            MH_DisableHook(g_commitPlacementTarget);
+            MH_RemoveHook(g_commitPlacementTarget);
+            g_commitPlacementTarget = nullptr;
+        }
         mem::RemoveHook(&g_insTarget);
         mem::RemoveHook(&g_commitTarget);
         mem::RemoveHook(&g_expandTarget); // after the restore above, which
@@ -2957,7 +3055,11 @@ namespace trinity::game
 
         bool SetAllCharacterCooldowns(bool enable)
         {
-            if (!g_characterTableGlobal)
+            // TU 2.04: _callMercenaryCoolTime at +0x158. The table is found by row data
+            // (ResolveCharacterTable), never by this name, which no resolver references.
+            const bool tu204 = core::GetGameVersion().revision >= 3400;
+            const uintptr_t coolOff = tu204 ? 0x158 : 0x70;
+            if (!g_characterTableGlobal && !tu204)
                 g_characterTableGlobal = FindTableGlobal("characterinfo");
             if (!g_characterTableGlobal) return false;
             uintptr_t table = 0;
@@ -2973,7 +3075,7 @@ namespace trinity::game
                     uintptr_t def = 0;
                     if (!DefForRow(g_characterTableGlobal, static_cast<uint16_t>(row), &def)) continue;
                     int64_t ct = 0;
-                    Read64(def + 0x70, &ct);
+                    Read64(def + coolOff, &ct);
                     g_origCharCooltimes[row] = ct;
                 }
                 g_charCooltimesCaptured = true;
@@ -2985,8 +3087,49 @@ namespace trinity::game
                 uintptr_t def = 0;
                 if (!DefForRow(g_characterTableGlobal, static_cast<uint16_t>(row), &def)) continue;
                 const int64_t targetCt = enable ? 0 : g_origCharCooltimes[row];
-                if (Write64(def + 0x70, targetCt))
+                if (Write64(def + coolOff, targetCt))
                     any = true;
+            }
+            return any;
+        }
+
+        // TU 2.04 ItemInfo: _cooltime is a per-row object of three i64 at def+0x1D8;
+        // _respawnTimeSeconds is i64 at def+0x220 (-1 = never, left alone).
+        bool SetAllItemCooldowns204(bool enable)
+        {
+            struct Saved { int64_t cool[3]; int64_t respawn; };
+            static std::vector<Saved> s_saved;
+            uintptr_t table = 0;
+            uint32_t count = 0;
+            if (!g_itemTableGlobal || !ReadPtr(g_itemTableGlobal, &table) ||
+                !Read32(table + kOff_ItemTable_Count, &count) || count == 0 || count > 65536)
+                return false;
+            if (s_saved.size() != count)
+            {
+                if (!enable) return false;
+                s_saved.assign(count, Saved{});
+                for (uint32_t row = 0; row < count; ++row)
+                {
+                    uintptr_t def = 0, cool = 0;
+                    if (!DefForRow(g_itemTableGlobal, static_cast<uint16_t>(row), &def)) continue;
+                    Read64(def + 0x220, &s_saved[row].respawn);
+                    if (ReadPtr(def + 0x1D8, &cool) && cool >= kMinPointer)
+                        for (int k = 0; k < 3; ++k)
+                            Read64(cool + k * 8, &s_saved[row].cool[k]);
+                }
+            }
+            bool any = false;
+            for (uint32_t row = 0; row < count; ++row)
+            {
+                uintptr_t def = 0, cool = 0;
+                if (!DefForRow(g_itemTableGlobal, static_cast<uint16_t>(row), &def)) continue;
+                const Saved& saved = s_saved[row];
+                if (ReadPtr(def + 0x1D8, &cool) && cool >= kMinPointer)
+                    for (int k = 0; k < 3; ++k)
+                        if (saved.cool[k] > 0 && Write64(cool + k * 8, enable ? 0 : saved.cool[k]))
+                            any = true;
+                if (saved.respawn > 0)
+                    Write64(def + 0x220, enable ? 0 : saved.respawn);
             }
             return any;
         }
@@ -2994,6 +3137,7 @@ namespace trinity::game
         bool SetAllItemCooldowns(bool enable)
         {
             SetAllCharacterCooldowns(enable);
+            if (core::GetGameVersion().revision >= 3400) return SetAllItemCooldowns204(enable);
 
             if (!g_itemTableGlobal) return false;
             uintptr_t table = 0;
@@ -3666,6 +3810,37 @@ namespace trinity::game
     // collide with the Inventory::IdentifyCharacterFromComp re-export below -
     // an unqualified call inside that member would otherwise resolve to the
     // member itself and recurse forever.
+    // TU 2.04: the characterinfo resolver is virtualized, so no code references its
+    // name. Its global sits among the other table globals and is recognized by data:
+    // row 0's key is "Kliff". Rows load with the world, hence the throttled retry.
+    static uintptr_t ResolveCharacterTable()
+    {
+        if (g_characterTableGlobal) return g_characterTableGlobal;
+        static ULONGLONG s_lastTry = 0;
+        const ULONGLONG now = GetTickCount64();
+        if (!g_itemTableGlobal || now - s_lastTry < 2000) return 0;
+        s_lastTry = now;
+        for (uintptr_t g = g_itemTableGlobal - 0x400; g <= g_itemTableGlobal + 0x400; g += 8)
+        {
+            uintptr_t table = 0, defs = 0, def = 0, key = 0, text = 0;
+            uint32_t count = 0;
+            char name[8]{};
+            if (ReadPtr(g, &table) && table >= kMinPointer &&
+                Read32(table + kOff_ItemTable_Count, &count) && count > 0 && count <= 65536 &&
+                ReadPtr(table + kOff_ItemTable_Defs, &defs) && defs >= kMinPointer &&
+                ReadPtr(defs, &def) && def >= kMinPointer &&
+                ReadPtr(def, &key) && key >= kMinPointer &&
+                ReadPtr(key, &text) && text >= kMinPointer &&
+                ReadCString(text, name, sizeof(name)) && strcmp(name, "Kliff") == 0)
+            {
+                g_characterTableGlobal = g;
+                LOG_OK("inventory: table 'characterinfo' resolved by row data -> %p", reinterpret_cast<void*>(g));
+                return g;
+            }
+        }
+        return 0;
+    }
+
     static int IdentifyCharacterIdentity(uintptr_t comp)
     {
         const EquipTableDesc table = ReadNativeEquipmentTable(comp);
@@ -3677,6 +3852,8 @@ namespace trinity::game
             uintptr_t owner = 0;
             if (!ReadPtr(comp + kOff_EquipComp_Owner, &owner) || owner < kMinPointer) return -1;
 
+            if (core::GetGameVersion().revision >= 3400)
+                return ReadNativeCharacterIdentity(owner, ResolveCharacterTable(), 0);
             if (core::GetGameVersion().revision >= 2800)
                 return ReadNativeCharacterIdentity(owner, g_characterTableGlobal);
 
@@ -4085,6 +4262,7 @@ namespace trinity::game
         return -1; // Loading/unknown must not silently select Kliff.
     }
 
+    bool Inventory::WriteRealmFlags(uintptr_t flagAddress, uint8_t value) { return WriteRealmFlagsImpl(flagAddress, value); }
     uintptr_t Inventory::RealmFlagAddress(uint8_t* outVal) { return RealmFlagAddr(outVal); }
 
     namespace
@@ -4102,7 +4280,7 @@ namespace trinity::game
             // compare with bucket+0x10. 225 hits across binary vs 7 for +0x420.
             // TU 1.17/1.18: BucketType at ItemDef+0x418 (game's own bucket lookup).
             // Legacy TU <= 1.16: +0x42 (66).
-            const uintptr_t bucketOff = (core::GetGameVersion().revision >= 2625) ? 0x428 : 0x418;
+            const uintptr_t bucketOff = core::GetItemDefBucketTypeOffset();
             if (!Read16(def + bucketOff, &want) || want == 0 || want > 64)
             {
                 if (!Read16(def + 66, &want) || want == 0 || want > 64)
@@ -4203,6 +4381,7 @@ namespace trinity::game
         int AddInRealm(uintptr_t holder, uintptr_t container, uintptr_t bucket,
                        uint16_t typeId, int64_t qty, int64_t id, uintptr_t def, const char* realm)
         {
+            const bool tu204 = core::GetGameVersion().revision >= 3400;
             alignas(16) uint8_t itemVal[kItemVal_Size] = {}; // ZEROED: the ctor
             // leaves holes (+0x0C, +0x3A, +0x54, +0x8A..) that would otherwise
             // reach the live slot - the game only gets away with an
@@ -4236,6 +4415,7 @@ namespace trinity::game
                     oItemValueCtor(itemVal, &typeId, qty);
                     built = true;
                     *reinterpret_cast<int64_t*>(itemVal + kOff_ItemVal_InstanceId) = id;
+                    if (tu204) *reinterpret_cast<uint16_t*>(itemVal + kOff_ItemVal_Subtype) = 0;
                 }
                 else
                 {
@@ -4265,8 +4445,12 @@ namespace trinity::game
                 // the planner deep-copies this vector, and an uninitialised
                 // capacity corrupts the heap (a delayed, misleading crash).
 
-                oHolderInsert(reinterpret_cast<void*>(holder), &err,
-                              reinterpret_cast<void*>(container), arr, 0, out, 1, 1, 0);
+                if (tu204)
+                    oHolderInsert(reinterpret_cast<void*>(bucket), &err,
+                                  reinterpret_cast<void*>(container), arr, 0, out, 0, 0, 1);
+                else
+                    oHolderInsert(reinterpret_cast<void*>(holder), &err,
+                                  reinterpret_cast<void*>(container), arr, 0, out, 1, 1, 0);
                 planned = true;
 
                 if (err == 0)
@@ -4282,6 +4466,14 @@ namespace trinity::game
                         const uint16_t slotIdx =
                             *reinterpret_cast<uint16_t*>(p + slotIdxOffset);
                         int err2 = 0;
+                        if (tu204)
+                        {
+                            oCommitPlacement4(reinterpret_cast<void*>(holder), &err2,
+                                              reinterpret_cast<void*>(p), slotIdx);
+                            if (err2 == 0) ++committed;
+                            else if (!firstErr2) firstErr2 = err2;
+                            continue;
+                        }
                         struct DummyVec { void* ptr = nullptr; uint32_t count = 0; uint32_t cap = 0; };
                         DummyVec dummy1{}, dummy2{};
                         oCommitPlacement(reinterpret_cast<void*>(holder), &err2, nullptr,
@@ -4316,7 +4508,8 @@ namespace trinity::game
 
                 // Direct container placement fallback:
                 // If the native planner failed (err != 0) or produced no placements, place directly into bucket's slots
-                if (committed == 0 && bucket >= kMinPointer)
+                // Never on TU 2.04: a hand-placed slot skips the native bookkeeping.
+                if (!tu204 && committed == 0 && bucket >= kMinPointer)
                 {
                     uintptr_t slots = 0;
                     uint16_t scount = 0;
@@ -4405,7 +4598,7 @@ namespace trinity::game
 
             // Freed in the target realm, exactly once each, whatever happened.
             if (planned) { __try { oFreePlacements(out); } __except (EXCEPTION_EXECUTE_HANDLER) {} }
-            if (built && oItemValueDtor && committed == 0) { __try { oItemValueDtor(itemVal); } __except (EXCEPTION_EXECUTE_HANDLER) {} }
+            if (built && oItemValueDtor && (committed == 0 || tu204)) { __try { oItemValueDtor(itemVal); } __except (EXCEPTION_EXECUTE_HANDLER) {} }
             return committed;
         }
 
@@ -4441,7 +4634,7 @@ namespace trinity::game
             }
             uint8_t prev = 0;
             if (!RawRead8(flagAddr, &prev)) return false;
-            if (!RawWrite8(flagAddr, serverRealm ? 1 : 0))
+            if (!WriteRealmFlagsImpl(flagAddr, serverRealm ? 1 : 0))
             {
                 LOG_WARN("inventory: add[%s] %u: realm flag not writable", realm, typeId);
                 return false;
@@ -4451,7 +4644,7 @@ namespace trinity::game
 
             // Never skipped: leaving a game thread in the wrong realm would
             // corrupt whatever it touches next.
-            RawWrite8(flagAddr, prev);
+            WriteRealmFlagsImpl(flagAddr, prev);
             return committed > 0;
         }
 
@@ -4502,6 +4695,7 @@ namespace trinity::game
         bool CommitAdd(uint16_t typeId, int64_t qty)
         {
             const bool ready = oHolderInsert && oCommitPlacement &&
+                               (core::GetGameVersion().revision < 3400 || oCommitPlacement4) &&
                                oFreePlacements && oNtQueryInfoThread;
             uintptr_t def = 0;
             const bool haveDef = DefForRow(g_itemTableGlobal, typeId, &def);
@@ -4620,7 +4814,7 @@ namespace trinity::game
             // Both server and client add failed. Log bucket info for diagnosis.
             {
                 uint16_t bucketWant = 0;
-                const uintptr_t bucketOff = (core::GetGameVersion().revision >= 2625) ? 0x428 : 0x418;
+                const uintptr_t bucketOff = core::GetItemDefBucketTypeOffset();
                 uintptr_t dbgDef = 0;
                 if (DefForRow(g_itemTableGlobal, typeId, &dbgDef))
                     Read16(dbgDef + bucketOff, &bucketWant);

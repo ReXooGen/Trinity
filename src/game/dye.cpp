@@ -95,11 +95,10 @@ namespace trinity::game
         // matches 0x140B689CE; the error-store (89 06) distinguishes this site.
         // Resolve the RIP global, never an absolute address or a profile root.
         constexpr const char* kSig_DyeClientRegistry =
-            "48 8B 05 ?? ?? ?? ?? 4C 8B 60 38 48 8B 45 80 4C 8B 48 08 "
-            "48 8D 05 ?? ?? ?? ?? 41 B8 04 00 00 00 48 8D 95 F0 07 00 00 "
+            "48 8B 05 ?? ?? ?? ?? 4C 8B 60 38 48 8B 45 80 4C 8B 48 28 "
+            "48 8D 05 ?? ?? ?? ?? 41 B8 04 00 00 00 48 8D 95 D0 00 00 00 "
             "48 8D 4D 80 4C 3B C8 75 07 E8 ?? ?? ?? ?? EB 03 41 FF D1 "
-            "84 C0 75 15 8B 05 ?? ?? ?? ?? 89 06 4C 89 75 80 48 89 5D 80 "
-            "E9 ?? ?? ?? ?? 8B 95 F0 07 00 00 85 D2 74 2F";
+            "84 C0 75 15 8B 05 ?? ?? ?? ?? 89 06";
         uintptr_t g_clientRegistryGlobal = 0;
 
         // Set while the auto-restore replays batches: the toast hook drops the
@@ -1645,8 +1644,8 @@ namespace trinity::game
             uint8_t previous = 0;
             uintptr_t address = Inventory::RealmFlagAddress(&previous);
             bool active = false;
-            explicit DyeRealmGuard(uint8_t realm) { active = address && RawWrite8(address, realm); }
-            ~DyeRealmGuard() { if (active) RawWrite8(address, previous); }
+            explicit DyeRealmGuard(uint8_t realm) { active = address && Inventory::WriteRealmFlags(address, realm); }
+            ~DyeRealmGuard() { if (active) Inventory::WriteRealmFlags(address, previous); }
         };
 
         bool SourceItemValid(const DyeItemIdentity& item)

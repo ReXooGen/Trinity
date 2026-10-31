@@ -171,3 +171,19 @@ python -B "scripts/inspect_dye_material_native.py" --va 0x14074A930 --bytes 304
 ```
 
 Older binary addresses, test counts, and results above are observations for their recorded build. Future builds must record a fresh stamp/hash and rerun the relevant checks.
+
+## 11. Title Update 2.04.02 (PE 1.0.0.3446)
+
+Static analysis of EXE SHA-256 `fec07be1b725a46624d31fcd74bf3730ea809765226cea6bde01607ab2d79f66`; no value below has run in-game yet. Revision gate: `>= 3400`.
+
+- **Table resolvers**: key by value in `edx` (rcx ignored), prologue `4C 8B DC`, anchor `8B FA 48 8B 1D`. Table count +0x08, defs +0x58.
+- **Definitions re-laid out**: ItemDef, ItemGroup, Inventory, stringinfo, WantedInfo, LevelGimmickSceneObjectInfo and its nodes; see `offsets.h`.
+- **TLS realm**: 0x1EB selects client/server globals, 0x1FE the allocator. `Inventory::WriteRealmFlags` flips both; that both move together is inferred, not observed.
+- **Pak manifests**: name blobs use LEB128 parent distance, with a trailing extension table indexed by `FileEntry::flag`.
+- **Add Item**: follows the native create-item function through `kSig_AddItemRecipe`. Direct slot placement stays off.
+- **No Cooldown**: item `_cooltime` is an object of three i64 at def+0x1D8, respawn is i64 at def+0x220, character `_callMercenaryCoolTime` is at def+0x158.
+- **Trust Multiplier**: no setter was found, so the mod polls owner+0x68 -> +0x140, entry -> record +0x08, and mirrors rises to the server copy. Pet records are not covered.
+- **Time of day**: the manager is EnvManager+0x60; hour, lower and upper limits are at +0x3B8/+0x3BC/+0x3C0.
+- **characterinfo**: found by row data near iteminfo, key at def+0.
+- **EquipEffectRefresh**: `kSig_EquipEffectRefresh_TU204`, `(comp, int* err)`. It applies with an empty old list, so removal is not stripped and repeated calls must be checked for stacking in-game.
+- **No GetItemQty hook**: the client container now comes from the controlled character. The NPC-gift quantity override went with it.

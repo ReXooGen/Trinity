@@ -73,7 +73,8 @@ namespace trinity::game
         // sibling resolvers, so each is anchored on its unique table-name
         // string; see offsets.h). Each takes &key and returns the row pointer,
         // lazy-loading the row on first touch => call on the game thread only.
-        using TableResolve_t = uintptr_t(__fastcall*)(uint32_t*);
+        // TU 2.04 takes the key by value in edx; older builds read *rcx. Passing both serves either.
+        using TableResolve_t = uintptr_t(__fastcall*)(uint32_t*, uint32_t);
         TableResolve_t g_sceneResolver = nullptr; // LevelGimmickSceneObjectInfo
         uintptr_t      g_registryGlobal = 0;      // qword holding the scene registry ptr
         TableResolve_t g_lvlResolver = nullptr;   // FieldLevelNameTableInfo (area names)
@@ -632,7 +633,7 @@ namespace trinity::game
         bool InstallAuthoritativeSetPinHook(uintptr_t target)
         {
             static const uint8_t kExpected[16] = {
-                0xC5, 0xF8, 0x10, 0x87, 0xF0, 0x05, 0x00, 0x00,
+                0xC5, 0xF8, 0x10, 0x87, 0xB0, 0x05, 0x00, 0x00,
                 0xC5, 0xF8, 0x11, 0x83, 0xF8, 0x01, 0x00, 0x00
             };
             InlineHook hook{ target, 16 };
@@ -659,16 +660,16 @@ namespace trinity::game
             AppendVal(code, reinterpret_cast<uintptr_t>(&g_destMarkerController));
             AppendBytes(code, { 0x48, 0x89, 0x01 });
 
-            // mov rax, [rdi + 0x5F0] (X, Y floats)
-            AppendBytes(code, { 0x48, 0x8B, 0x87, 0xF0, 0x05, 0x00, 0x00 });
+            // mov rax, [rdi + 0x5B0] (X, Y floats)
+            AppendBytes(code, { 0x48, 0x8B, 0x87, 0xB0, 0x05, 0x00, 0x00 });
 
             // mov rcx, &g_destMarkerXY; mov [rcx], rax
             AppendBytes(code, { 0x48, 0xB9 });
             AppendVal(code, reinterpret_cast<uintptr_t>(&g_destMarkerXY));
             AppendBytes(code, { 0x48, 0x89, 0x01 });
 
-            // mov eax, [rdi + 0x5F8] (Z float)
-            AppendBytes(code, { 0x8B, 0x87, 0xF8, 0x05, 0x00, 0x00 });
+            // mov eax, [rdi + 0x5B8] (Z float)
+            AppendBytes(code, { 0x8B, 0x87, 0xB8, 0x05, 0x00, 0x00 });
 
             // mov rcx, &g_destMarkerZ; mov [rcx], eax
             AppendBytes(code, { 0x48, 0xB9 });
@@ -692,8 +693,8 @@ namespace trinity::game
             code.push_back(0x9D);
 
             // original instructions:
-            // vmovups xmm0, [rdi + 0x5F0]
-            AppendBytes(code, { 0xC5, 0xF8, 0x10, 0x87, 0xF0, 0x05, 0x00, 0x00 });
+            // vmovups xmm0, [rdi + 0x5B0]
+            AppendBytes(code, { 0xC5, 0xF8, 0x10, 0x87, 0xB0, 0x05, 0x00, 0x00 });
             // vmovups [rbx + 0x1F8], xmm0
             AppendBytes(code, { 0xC5, 0xF8, 0x11, 0x83, 0xF8, 0x01, 0x00, 0x00 });
 
@@ -1114,7 +1115,7 @@ namespace trinity::game
         uintptr_t CallTableResolver(TableResolve_t fn, uint32_t key)
         {
             if (!fn) return 0;
-            __try { return fn(&key); }
+            __try { return fn(&key, key); }
             __except (EXCEPTION_EXECUTE_HANDLER) { return 0; }
         }
 
@@ -1534,8 +1535,10 @@ namespace trinity::game
                     }
                     else
                     {
-                        uintptr_t g = 0;
-                        if (ReadPtr(node + kOff_Node_Gimmick, &g)) raw = ReadNodeLabel(g);
+                        char label[128]{};
+                        if (ReadEngineString(node + kOff_Node_AliasName, label, sizeof(label)) ||
+                            ReadEngineString(node + kOff_Node_LevelName, label, sizeof(label)))
+                            raw = label;
                     }
                     if (raw.empty())
                     {
@@ -2115,6 +2118,21 @@ namespace trinity::game
                 0x48, 0x89, 0x5C, 0x24, 0x10, 0x48, 0x89, 0x6C, 0x24, 0x18,
                 0x56, 0x57, 0x41, 0x56
             };
+            // TU 2.04 clone: `mov r11,rsp ... mov edi,edx; mov rbx,cs:<table>`.
+            for (size_t back = 0x20; back <= kMax_LeaToPrologue; ++back)
+            {
+                __try
+                {
+                    const auto* p = reinterpret_cast<const uint8_t*>(lea - back);
+                    if (p[0] != 0x8B || p[1] != 0xFA || p[2] != 0x48 || p[3] != 0x8B || p[4] != 0x1D)
+                        continue;
+                    for (ptrdiff_t up = 0; up <= 0x30; ++up)
+                        if (p[-up] == 0x4C && p[1 - up] == 0x8B && p[2 - up] == 0xDC)
+                            return reinterpret_cast<uintptr_t>(p - up);
+                }
+                __except (EXCEPTION_EXECUTE_HANDLER) {}
+            }
+
             const uint8_t* pro = key16 ? kPrologue16 : kPrologue32;
             const size_t   len = key16 ? sizeof(kPrologue16) : sizeof(kPrologue32);
             for (size_t back = 0x20; back <= kMax_LeaToPrologue; ++back)
@@ -2163,6 +2181,21 @@ namespace trinity::game
             *globalOut = 0;
 
             const uintptr_t movOff = key16 ? kOff_ItemResolver_MovGlobal : kOff_TableResolver_MovGlobal;
+            const bool compactClone = *reinterpret_cast<const uint8_t*>(scan.fn) == 0x4C; // TU 2.04: mov r11,rsp
+            if (compactClone)
+            {
+                // The table is still empty this early, so resolve the global from code alone.
+                for (uintptr_t p = scan.fn; p + 5 <= scan.fn + 0x40; ++p)
+                {
+                    const uint8_t* b = reinterpret_cast<const uint8_t*>(p);
+                    if (b[0] == 0x8B && b[1] == 0xFA && b[2] == 0x48 && b[3] == 0x8B && b[4] == 0x1D)
+                    {
+                        *globalOut = mem::ResolveRipAt(p + 2, kLen_MovGlobalInstr);
+                        return *globalOut >= kMinPointer;
+                    }
+                }
+                return false;
+            }
             uintptr_t candGlobal = mem::ResolveRipAt(scan.fn + movOff, kLen_MovGlobalInstr);
             if (candGlobal >= kMinPointer)
             {

@@ -194,9 +194,8 @@ namespace trinity::game
     // window byte from outWindows. Forcing return 1 + *outWindows=true promotes
     // a normal guard/dodge into a native perfect parry/evade with counters.
     inline constexpr const char* kSig_JustWindowEval =
-        "48 8B C4 41 55 41 56 41 57 48 83 EC 70 C5 78 29 40 A8 48 89 58 08 "
-        "4C 8D 2D ? ? ? ? 48 89 68 10 41 B8 02 00 00 00 44 39 05 ? ? ? ? "
-        "4C 8B FA 48 89 70 18 4C 8B F1";
+        
+        "48 8B C4 48 89 58 10 44 88 48 20 48 89 48 08 55 56 57 41 54 41 55 41 56 41 57 48 8D A8 D8 FD FF FF 48 81 EC F0 02 00 00 C5 F8 29 70 B8";
 
     // --- Just Core: Just Guard (Perfect Parry) & Just Evade (Perfect Dodge) ---
     // Evaluates timing windows for Perfect Parry (a4 != 0) and Perfect Dodge (a4 == 0).
@@ -459,8 +458,8 @@ namespace trinity::game
     //   char sub_505140(void* /*ignored*/, int sceneId, unsigned nodeIndex)
     // TU 2.03.00 Fast Travel trigger (unique match @ 0x1406550b0):
     inline constexpr const char* kSig_TravelToNode =
-        "48 89 5C 24 18 89 54 24 10 48 89 4C 24 08 55 56 57 41 56 41 57 "
-        "48 8D AC 24 50 FE FF FF 48 81 EC B0 02 00 00 41 8B F9 45 8B F8 33 DB 45 85 C9";
+        
+        "48 89 5C 24 10 48 89 4C 24 08 55 56 41 54 41 56 41 57 48 8D AC 24 70 FE FF FF 48 81 EC 90 02 00 00 41 8B D9 45 8B E0 8B F2 45 85 C9";
 
     // TU 2.01.00 / TU 2.02.00 Fast Travel trigger (kept for fallback):
     inline constexpr const char* kSig_TravelToNode_TU201 =
@@ -506,13 +505,14 @@ namespace trinity::game
     inline constexpr const char* kStr_GimmickSceneTable = "LevelGimmickSceneObjectInfo";
 
     inline constexpr uintptr_t kOff_Registry_SceneCount = 0x08; // u32
-    inline constexpr uintptr_t kOff_Registry_SceneTable = 0x50; // ptr[]
-    inline constexpr uintptr_t kOff_SceneDesc_NodeCount = 0x28; // u32
-    inline constexpr uintptr_t kOff_SceneDesc_NodeArray = 0x20; // ptr
-    inline constexpr uintptr_t kNode_Stride             = 0xD8; // TU 2.03+ (0xD8 stride)
+    inline constexpr uintptr_t kOff_Registry_SceneTable = 0x58; // ptr[]
+    inline constexpr uintptr_t kOff_SceneDesc_NodeCount = 0x60; // u32
+    inline constexpr uintptr_t kOff_SceneDesc_NodeArray = 0x58; // ptr
+    inline constexpr uintptr_t kNode_Stride             = 0xD0; // TU 2.03+ (0xD8 stride)
     inline constexpr uintptr_t kNode_Stride_Legacy      = 0xC0; // TU 2.01/legacy (0xC0 stride)
-    inline constexpr uintptr_t kOff_Node_Gimmick        = 0x10; // ptr -> gimmick object
-    inline constexpr uintptr_t kOff_Node_Position       = 0x84; // f32 x,y,z in TU 2.03+
+    inline constexpr uintptr_t kOff_Node_AliasName      = 0x50; // TU 2.04 engine string (_gimmickAliasName)
+    inline constexpr uintptr_t kOff_Node_LevelName      = 0x18; // TU 2.04 engine string (_levelName)
+    inline constexpr uintptr_t kOff_Node_Position       = 0x74; // f32 x,y,z in TU 2.03+
     inline constexpr uintptr_t kOff_Node_Position_Legacy= 0x6C; // f32 x,y,z in TU 2.01/legacy
 
     // The scene descriptor is the reflected class LevelGimmickSceneObjectInfo
@@ -529,11 +529,11 @@ namespace trinity::game
     //                 Everything else (ores, chests, bells, shops...) is not a
     //                 travel destination, which is why the unfiltered v1 menu
     //                 "barely worked".
-    inline constexpr uintptr_t kOff_SceneDesc_StringKey   = 0x08; // engine string
-    inline constexpr uintptr_t kOff_SceneDesc_IsBlocked   = 0x10; // bool
-    inline constexpr uintptr_t kOff_SceneDesc_LevelName   = 0x18; // engine string
-    inline constexpr uintptr_t kOff_SceneDesc_UseTeleport = 0x49; // bool
-    inline constexpr uintptr_t kOff_SceneDesc_IsEmpty     = 0x6C; // bool
+    inline constexpr uintptr_t kOff_SceneDesc_StringKey   = 0x00; // engine string
+    inline constexpr uintptr_t kOff_SceneDesc_IsBlocked   = 0x0C; // bool
+    inline constexpr uintptr_t kOff_SceneDesc_LevelName   = 0x50; // engine string
+    inline constexpr uintptr_t kOff_SceneDesc_UseTeleport = 0x10; // bool
+    inline constexpr uintptr_t kOff_SceneDesc_IsEmpty     = 0x13; // bool
 
     // --- Named area boxes (waypoint display names) --------------------------
     // The game has NO per-node names; its map labels AREAS. The data table
@@ -571,10 +571,10 @@ namespace trinity::game
 
     // FieldLevelNameTableInfo row (64 bytes): the LevelNameInfo container is
     // an engine hash map at +0x20..0x3F.
-    inline constexpr uintptr_t kOff_LvlRow_BucketCount = 0x20; // u32
-    inline constexpr uintptr_t kOff_LvlRow_Size        = 0x24; // u32 (entry count)
-    inline constexpr uintptr_t kOff_LvlRow_Buckets     = 0x30; // ptr (0x100-byte buckets)
-    inline constexpr uintptr_t kOff_LvlRow_Entries     = 0x38; // ptr (entry* array)
+    inline constexpr uintptr_t kOff_LvlRow_BucketCount = 0x18; // u32
+    inline constexpr uintptr_t kOff_LvlRow_Size        = 0x1C; // u32 (entry count)
+    inline constexpr uintptr_t kOff_LvlRow_Buckets     = 0x28; // ptr (0x100-byte buckets)
+    inline constexpr uintptr_t kOff_LvlRow_Entries     = 0x30; // ptr (entry* array)
     // Bucket: [count u32 @0, pad, then (hash u32, entryIdx u32) pairs @ +8].
     inline constexpr uintptr_t kLvlBucket_Stride       = 0x100;
     inline constexpr uintptr_t kOff_LvlBucket_Pairs    = 0x08;
@@ -603,13 +603,15 @@ namespace trinity::game
 
     // Unique dispatcher where the game routes the user's destination marker (type 0x0C) into SetDestinationMarker
     inline constexpr const char* kSig_SetDestinationMarker_Dispatcher =
-        "C6 44 24 28 0C FF 90 48 05 00 00 48 85 C0 0F 84 ?? ?? ?? ?? 48 8B D6 48 8B C8 E8";
+        
+        "C6 44 24 28 0C FF 90 68 05 00 00 48 85 C0 0F 84 ?? ?? ?? ?? 48 8B D6 48 8B C8 E8";
 
     // Authoritative destination pin placement in sub_14374FA00 (TU 2.01+ and legacy)
     // Directly captures the player's map click destination pin placement:
     // rbx = authoritative destination marker controller, [rdi + 0x5F0] = clicked world coordinate float[3]
     inline constexpr const char* kSig_Authoritative_SetPin =
-        "C5 F8 10 87 F0 05 00 00 C5 F8 11 83 F8 01 00 00";
+        
+        "C5 F8 10 87 B0 05 00 00 C5 F8 11 83 F8 01 00 00";
 
     // Authoritative destination pin clear site in sub_140718BD0 / sub_140718C36
     // Intercepts the engine clearing/cancelling the destination marker pin:
@@ -678,7 +680,8 @@ namespace trinity::game
     inline constexpr const char* kSig_InvGetItemQty_Legacy =
         "48 89 5C 24 ? 48 89 6C 24 ? 48 89 74 24 ? 57 48 83 EC 20 49 8B E8 0F B7 DA";
     inline constexpr const char* kSig_InvGetHolder =
-        "40 53 48 83 EC 20 48 8B 41 68 48 8B D9 48 8B 48 20 0F B7 41 30";
+        
+        "40 53 48 83 EC 20 48 8B 41 68 48 8B D9 48 8B 50 20 0F B7 52 30";
 
     // The engine's OWN slot-expansion setter (TU 2.00 IDB sub_1CE8190;
     // TU 2.02 rebuild @ 0x1420801E0 - it moved into the bucket-cluster region
@@ -726,8 +729,8 @@ namespace trinity::game
     // It is the only function in the image writing +0x16, +0x1A and +0x14 in
     // sequence; exactly 2 E8 callers image-wide (0x140b3f50d, 0x142a8e384).
     inline constexpr const char* kSig_InvSetExpandSlots =
-        "48 89 6C 24 10 48 89 74 24 18 48 89 7C 24 20 41 56 48 83 EC 20 "
-        "48 8B 41 18 41 0F B7 E9 8B 49 20";
+        
+        "48 89 5C 24 08 48 89 74 24 10 57 48 83 EC 20 48 8B 41 18 41 0F B7 F1 8B 49 20 48 8B FA";
     // TU <=2.01 setter (5-arg convention). 0 hits in TU 2.02.00.
     inline constexpr const char* kSig_InvSetExpandSlots_Legacy =
         "48 89 5C 24 ?? 56 48 83 EC 20 48 8B 41 ?? 48 8B F2 8B 49";
@@ -1018,11 +1021,27 @@ namespace trinity::game
     // goes anywhere; we hand ours straight to the planner, so ZERO IT FIRST or
     // the holes reach the live slot (live-seen: garbage at +0x0C).
 
+    // TU 2.04 native create-item sequence (the game's own ctor -> id -> plan ->
+    // commit -> free recipe). One anchor proves and resolves all of its callees:
+    //   plan(bucket, &err, container, &items, u16 0, &placements, 0, 0, 1)
+    //   commit(holder, &err, placement, u16 placement[+0xD8])
+    //   free(&placements); dtor(itemVal)
+    inline constexpr const char* kSig_AddItemRecipe =
+        "C6 44 24 40 01 C6 44 24 38 00 C6 44 24 30 00 48 8D 45 ?? 48 89 44 24 28 66 44 89 7C 24 20 "
+        "4C 8D 4D ?? 4D 8B C4 48 8D 55 ?? 48 8B CB E8 ?? ?? ?? ?? 48 8B 5D ?? 8B 45 ?? 48 69 F0 E0 00 00 00 "
+        "48 03 F3 48 3B DE 74 ?? 0F 1F 80 00 00 00 00 44 0F B7 8B D8 00 00 00 4C 8B C3 48 8D 55 ?? 49 8B CE "
+        "E8 ?? ?? ?? ?? 48 81 C3 E0 00 00 00 48 3B DE 75 ?? 48 8D 4D ?? E8 ?? ?? ?? ?? 90 48 8D 4D ?? "
+        "E8 ?? ?? ?? ?? 90 48 8D 8D ?? ?? ?? ?? E8 ?? ?? ?? ??";
+    inline constexpr uintptr_t kOff_AddItemRecipe_Plan   = 44;
+    inline constexpr uintptr_t kOff_AddItemRecipe_Commit = 96;
+    inline constexpr uintptr_t kOff_AddItemRecipe_Free   = 117;
+    inline constexpr uintptr_t kOff_AddItemRecipe_Dtor   = 140;
+
     // TrItemValue ctor (TU 2.01 verified @ 0x14234F210): void f(itemVal, u16* typeId, i64 qty).
     // Self-contained - fills subtype/durability/flags/sub-lists from the item
     inline constexpr const char* kSig_TrItemValueCtor =
-        "48 89 5C 24 18 48 89 4C 24 08 55 56 57 41 54 41 55 41 56 41 57 "
-        "48 8B EC 48 83 EC 70 4C 8B F2 4C 8B E1 48 C7 01 FF FF FF FF 0F B7 02 66 89 41 08";
+        
+        "48 89 5C 24 18 48 89 4C 24 08 55 56 57 41 54 41 55 41 56 41 57 48 8B EC 48 83 EC 70 4C 8B FA 4C 8B F1 48 C7 01 FF FF FF FF 0F B7 02 66 89 41 08";
 
     // Legacy (TU 1.14 - 1.18.02) TrItemValue ctor
     // OBSOLETE in TU 2.02.00 (0 hits in final scan; kept for reference).
@@ -1072,7 +1091,7 @@ namespace trinity::game
     // default. The commit re-reads it, but we need it to pick the bucket too.
     // Working 0.13.2 ASI FUN_180012840 reads the holder bucket type from
     // itemDef+0x418 before selecting the matching client/server bucket.
-    inline constexpr uintptr_t kOff_ItemDef_BucketType  = 0x418; // u16, TU 1.17-1.18.02
+    inline constexpr uintptr_t kOff_ItemDef_BucketType  = 0x240; // u16, TU 1.17-1.18.02
     // TU 2.00+ (PE rev >= 2625): moved to 0x428 — confirmed from binary:
     // InvHolderInsert (VA 0x142091150) reads def+0x428 then compares with bucket+0x10,
     // InvCommitPlacement (VA 0x141DF9CF0) same pattern. 225 binary hits at 0x428 vs 1 at 0x418.
@@ -1128,6 +1147,11 @@ namespace trinity::game
     // was tried and fails (bogus TEB, then an access violation on the second
     // call, almost certainly CFG rejecting an indirect call into our own page).
     inline constexpr uintptr_t kOff_Teb_TlsPointer = 0x58; // TEB.ThreadLocalStoragePointer
+    // TU 2.04 (PE rev >= 3400) splits the realm into two TLS bytes, seen side by
+    // side in the item paths: 0x1EB selects the client/server globals and 0x1FE
+    // the matching allocator. A server thread has both set, so flip both.
+    inline constexpr uintptr_t kTls_RealmGlobals_TU204 = 0x1EB; // u8
+    inline constexpr uintptr_t kTls_RealmHeap_TU204    = 0x1FE; // u8
     inline constexpr uintptr_t kTls_RealmFlag_TU201 = 509; // u8: 0 = client, 1 = server (TU 2.01+ PE rev >= 2760, 0x1FD)
     inline constexpr uintptr_t kTls_RealmFlag       = 498; // u8: 0 = client, 1 = server (TU 2.00 / legacy, 0x1F2)
 
@@ -1147,7 +1171,7 @@ namespace trinity::game
     inline constexpr uintptr_t kOff_ItemTable_Count = 0x08; // u32
     // Working 0.13.2 ASI FUN_180014390 reads this pointer at +0x58 in 1.17.
     inline constexpr uintptr_t kOff_ItemTable_Defs  = 0x58; // ptr[]
-    inline constexpr uintptr_t kOff_ItemDef_Key     = 0x08; // ptr -> string obj
+    inline constexpr uintptr_t kOff_ItemDef_Key     = 0x00; // ptr -> string obj
 
     // --- Storages: what each bucket IS ---------------------------------------
     // "InventoryInfo" is the table describing every storage in the game - one
@@ -1187,15 +1211,15 @@ namespace trinity::game
     //
     // InventoryInfo fields we consume (field->offset recovered from the
     // deserializer's own per-field error strings, exactly as for ItemInfo):
-    inline constexpr uintptr_t kOff_InvDef_Key      = 0x08; // _stringKey -> "WareHouse"
+    inline constexpr uintptr_t kOff_InvDef_Key      = 0x00; // _stringKey -> "WareHouse"
     // _InventoryNameUIText is the game's own label, but it is NOT unique: several
     // rows share "Inventory", because in the game's own screens the surrounding
     // UI says which one you are looking at (the warehouse has both a "focus
     // Inventory" and a "focus WareHouse" pane). A flat list has to qualify the
     // repeats itself - see the storage naming in inventory.cpp.
-    inline constexpr uintptr_t kOff_InvDef_Name     = 0x70; // _InventoryNameUIText (loc-string)
-    inline constexpr uintptr_t kOff_InvDef_DefSlots = 0x48; // u16 _defaultSlotCount
-    inline constexpr uintptr_t kOff_InvDef_MaxSlots = 0x4A; // u16 _maxSlotCount
+    inline constexpr uintptr_t kOff_InvDef_Name     = 0x68; // _InventoryNameUIText (loc-string)
+    inline constexpr uintptr_t kOff_InvDef_DefSlots = 0x10; // u16 _defaultSlotCount
+    inline constexpr uintptr_t kOff_InvDef_MaxSlots = 0x14; // u16 _maxSlotCount
     // _InventoryNameUIText is built by the SAME builder as ItemInfo._itemName
     // (IDB sub_FF6460), so the localised-name walk below reads it verbatim.
 
@@ -1211,16 +1235,16 @@ namespace trinity::game
     // for this binary; reuse it for any table.
     //
     // ItemInfo fields we consume (offsets into the def resolved above):
-    inline constexpr uintptr_t kOff_ItemDef_Name   = 0x20;  // _itemName (loc-string struct)
-    inline constexpr uintptr_t kOff_ItemDef_Groups = 0x350; // _itemGroupInfoList (vector)
-    inline constexpr uintptr_t kOff_ItemDef_Tier   = 0x210; // u8 _itemTier (rarity 0..5)
+    inline constexpr uintptr_t kOff_ItemDef_Name   = 0x90;  // _itemName (loc-string struct)
+    inline constexpr uintptr_t kOff_ItemDef_Groups = 0x1F0; // _itemGroupInfoList (vector)
+    inline constexpr uintptr_t kOff_ItemDef_Tier   = 0x39; // u8 _itemTier (rarity 0..5)
     // _maxStackCount / _applyMaxStackCap: the per-item stack cap. Most rows
     // already carry 999999 (an effectively-unlimited default) - the cap that
     // actually bites for outliers (equipment, key items, some consumables) is
     // whatever _applyMaxStackCap gates. Inventory::SetAllMaxStackSizes forces
     // both to one uniform value/enabled across every row in one pass.
-    inline constexpr uintptr_t kOff_ItemDef_MaxStackCount    = 0x18;  // i64
-    inline constexpr uintptr_t kOff_ItemDef_ApplyMaxStackCap = 0x111; // u8 bool
+    inline constexpr uintptr_t kOff_ItemDef_MaxStackCount    = 0x10;  // i64
+    inline constexpr uintptr_t kOff_ItemDef_ApplyMaxStackCap = 0x31; // u8 bool
     //
     // "ItemGroupInfo" (note the capitals - it is NOT lowercase like "iteminfo")
     // is the inventory's category tree, and it is what the UI actually shows.
@@ -1253,7 +1277,7 @@ namespace trinity::game
     // category. Nothing about this is hardcoded, and it tracks game updates.
     inline constexpr const char* kStr_ItemGroupInfoTable = "ItemGroupInfo";
     inline constexpr uintptr_t kOff_GrpDef_Name    = 0x18; // loc-string struct
-    inline constexpr uintptr_t kOff_GrpDef_Order   = 0x68; // u16 _orderIndex
+    inline constexpr uintptr_t kOff_GrpDef_Order   = 0x10; // u16 _orderIndex
     inline constexpr uint16_t  kGrpOrder_Internal  = 0xFFFF; // never displayed
     inline constexpr uint16_t  kGrpOrder_MaxTopTab = 5;      // 1..5 = top tabs
     // Engine vector shape shared by the *List fields above.
@@ -1292,17 +1316,17 @@ namespace trinity::game
     // already populated at load (live-checked: 38 of 38 items, zero nulls), so
     // this stays a pure pointer walk and never calls into the game.
     inline constexpr const char* kStr_StringInfoTable = "stringinfo";
-    inline constexpr uintptr_t kOff_StrDef_Buffer  = 0x18; // ptr -> string obj
-    inline constexpr uintptr_t kOff_ItemDef_Icons  = 0x90; // _itemIconList (vector)
+    inline constexpr uintptr_t kOff_StrDef_Buffer  = 0x10; // ptr -> string obj
+    inline constexpr uintptr_t kOff_ItemDef_Icons  = 0x108; // _itemIconList (vector)
     inline constexpr uintptr_t kOff_IconData_Path  = 0x00; // u16 -> stringinfo row
-    inline constexpr uintptr_t kOff_GrpDef_Icon    = 0x6C; // u16 -> stringinfo row
+    inline constexpr uintptr_t kOff_GrpDef_Icon    = 0x12; // u16 -> stringinfo row
     inline constexpr uint16_t  kIconPath_None      = 0xFFFF;
 
     // --- Wanted level & Bounty (WantedInfo table & Crime Evaluator hook) ----
     // _increasePrice is how much a crime adds to your bounty (WantedInfo+0x18).
     inline constexpr const char* kStr_WantedInfoTable = "WantedInfo";
-    inline constexpr uintptr_t kOff_WantedDef_IncreasePrice = 0x18; // i64
-    inline constexpr uintptr_t kOff_WantedDef_IsBlocked     = 0x10; // u8
+    inline constexpr uintptr_t kOff_WantedDef_IncreasePrice = 0x10; // i64
+    inline constexpr uintptr_t kOff_WantedDef_IsBlocked     = 0x0A; // u8
     inline constexpr uint32_t  kWantedRows_Max = 4096;
 
     // Evaluates crime records on actors; returning 7 (eWantedState_None) blocks Witness/Pursuit/Bounty
@@ -1336,7 +1360,7 @@ namespace trinity::game
     // Checked against the shipped data: of the 50 SubCategory rows, 43 derive to
     // a .dds that exists. That is a rule, not a coincidence - and a derived name
     // that happens to miss just draws blank, exactly as the row does today.
-    inline constexpr uintptr_t   kOff_GrpDef_Key      = 0x08; // ptr -> string obj
+    inline constexpr uintptr_t   kOff_GrpDef_Key      = 0x00; // ptr -> string obj
     inline constexpr const char* kGrpKey_SubCatPrefix = "ItemGroup_SubCategory_";
     inline constexpr const char* kIconPrefix_ItemGroup = "ItemIcon_ItemGroup_";
     // Last resort, for a category we can name no icon for at all - chiefly our
@@ -1470,7 +1494,8 @@ namespace trinity::game
     // (make_signature_for_function, unique in this build).
     // TU 2.01+ FieldTimeTick (unique match @ 0x1409BC623)
     inline constexpr const char* kSig_FieldTimeTick =
-        "48 89 5C 24 08 48 89 74 24 10 48 89 7C 24 18 4C 89 64 24 20 55 41 56 41 57 48 8B EC 48 83 EC 70 48 8B F9 C5 F2 58 41 2C";
+        
+        "48 89 5C 24 08 48 89 74 24 10 48 89 7C 24 18 4C 89 74 24 20 55 48 8B EC 48 83 EC 70 48 8B F9 C5 F2 58 41 2C";
 
     // Legacy (TU 2.00 and earlier) FieldTimeTick
     // OBSOLETE in TU 2.02.00 (0 hits in final scan; kept for reference).
@@ -1514,20 +1539,23 @@ namespace trinity::game
     inline constexpr uintptr_t kOff_TodEngineGlobal_Mov = 9; // the `48 89 1D <disp32>`
     inline constexpr int       kLen_TodEngineGlobal_Mov = 7; // 3-byte opcode + disp32
     inline constexpr uintptr_t kOff_Tod_Manager     = 0x2F8; // engine -> render manager
-    inline constexpr uintptr_t kOff_Tod_CurrentHour = 0x3D0; // f32 hours 0..24
-    inline constexpr uintptr_t kOff_Tod_LowerLimit  = 0x3D4; // f32 clamp lower
-    inline constexpr uintptr_t kOff_Tod_UpperLimit  = 0x3D8; // f32 clamp upper
+    inline constexpr uintptr_t kOff_Tod_CurrentHour = 0x3B8; // f32 hours 0..24
+    inline constexpr uintptr_t kOff_Tod_LowerLimit  = 0x3BC; // f32 clamp lower
+    inline constexpr uintptr_t kOff_Tod_UpperLimit  = 0x3C0; // f32 clamp upper
 
     // --- Weather & Atmosphere (world.cpp) ------------------------------------
     // Dynamic AOB patterns for weather intensity hooks in TU 1.18.00+:
     inline constexpr const char* kSig_WeatherRain =
-        "48 8B 51 ?? 4C 8B D1 48 85 D2 B9 40 00 00 00 48 8D 42 18 48 0F 44 C1 41 80 7A 31 00 4C 8B 08 4D 8D 81 6C 01 00 00";
+        
+        "48 8B 51 60 4C 8B D1 48 85 D2 B9 48 00 00 00 48 8D 42 20 48 0F 44 C1 41 80 7A 31 00 4C 8B 08 4D 8D 81 70 01 00 00";
 
     inline constexpr const char* kSig_WeatherSnow =
-        "48 8B 51 ?? 4C 8B D1 48 85 D2 B9 40 00 00 00 48 8D 42 18 48 0F 44 C1 41 80 7A 31 00 4C 8B 08 4D 8D 81 68 01 00 00";
+        
+        "48 8B 51 60 4C 8B D1 48 85 D2 B9 48 00 00 00 48 8D 42 20 48 0F 44 C1 41 80 7A 31 00 4C 8B 08 4D 8D 81 6C 01 00 00";
 
     inline constexpr const char* kSig_WeatherDust =
-        "48 8B 41 ?? 41 B8 40 00 00 00 48 85 C0 41 B9 60 01 00 00 48 8D 50 18 B8 CC 01 00 00 49 0F 44 D0";
+        
+        "48 8B 41 60 41 B8 48 00 00 00 48 85 C0 41 B9 60 01 00 00 48 8D 50 20 B8 D4 01 00 00 49 0F 44 D0";
 
     // TU 2.01+ WindPack (unique match @ 0x143CC9B10)
     inline constexpr const char* kSig_WindPack =
@@ -1551,7 +1579,8 @@ namespace trinity::game
     // Old (TU 1.18-2.01, FAIL on 2.02):
     //     "48 8B 0D ?? ?? ?? ?? 48 8B 01 FF 50 40 48 8B D7 48 8B 88 E0 0E 00 00"
     inline constexpr const char* kSig_EnvManager =
-        "48 8B 0D ?? ?? ?? ?? 48 8B 01 FF 50 60 48 8B 88 E0 0E 00 00 48 8B 81 90 00 00 00";
+        
+        "48 8B 0D ?? ?? ?? ?? 48 8B 01 FF 50 60 48 8B 88 70 0F 00 00 48 8B 81 90 00 00 00";
     inline constexpr uintptr_t kOff_EnvManager_Mov = 3;
     inline constexpr int       kLen_EnvManager_Mov = 7;
 
@@ -1561,11 +1590,11 @@ namespace trinity::game
         inline constexpr ptrdiff_t CLOUD_TOP       = 0x13C;
         inline constexpr ptrdiff_t CLOUD_THICK     = 0x140;
         inline constexpr ptrdiff_t CLOUD_BASE      = 0x144;
-        inline constexpr ptrdiff_t DUST_WIND_SCALE = 0x158;
-        inline constexpr ptrdiff_t DUST_THRESH     = 0x198;
-        inline constexpr ptrdiff_t STORM_THRESH    = 0x19C;
-        inline constexpr ptrdiff_t FOG_B           = 0x1A0;
-        inline constexpr ptrdiff_t DUST_ADD        = 0x1A4;
+        inline constexpr ptrdiff_t DUST_WIND_SCALE = 0x15C;
+        inline constexpr ptrdiff_t DUST_THRESH     = 0x1A0;
+        inline constexpr ptrdiff_t STORM_THRESH    = 0x1A4;
+        inline constexpr ptrdiff_t FOG_B           = 0x1A8;
+        inline constexpr ptrdiff_t DUST_ADD        = 0x1AC;
     }
 
     namespace WN {
@@ -1784,9 +1813,8 @@ namespace trinity::game
     // Builds the material parameter block from `rec` and pushes the override
     // into the item's GPU material instance (call 0x1403847d0 inside).
     inline constexpr const char* kSig_DyeVisualSet =
-        "48 89 5C 24 18 55 56 57 41 54 41 55 41 56 41 57 "
-        "48 8D AC 24 50 FF FF FF 48 81 EC B0 01 00 00 "
-        "45 0F B7 F1";
+        
+        "48 89 5C 24 18 55 56 57 41 54 41 55 41 56 41 57 48 8D AC 24 40 FF FF FF 48 81 EC C0 01 00 00 45 0F B7 F1";
     // OBSOLETE in TU 2.02.00 (0 hits in final scan; kept for reference).
     inline constexpr const char* kSig_DyeVisualSet_Legacy =
         "48 89 5C 24 18 55 56 57 41 54 41 55 41 56 41 57 "
@@ -1799,8 +1827,8 @@ namespace trinity::game
     //     void f(void* comp, void* entry, uint16_t slotTag,
     //            uint8_t channel, uint8_t stackZero /*=0*/)
     inline constexpr const char* kSig_DyeVisualClear =
-        "48 89 5C 24 18 55 56 57 41 54 41 55 41 56 41 57 "
-        "48 8B EC 48 83 EC 70 45 0F B6 E9 45 0F B7";
+        
+        "48 89 5C 24 18 44 88 4C 24 20 55 56 57 41 54 41 55 41 56 41 57 48 8B EC 48 83 EC 70 45 0F B7 F0 48 8B FA 48 8B F1";
     // OBSOLETE in TU 2.02.00 (0 hits in final scan; kept for reference).
     inline constexpr const char* kSig_DyeVisualClear_Legacy =
         "48 89 5C 24 18 44 88 4C 24 20 55 56 57 41 54 41 55 41 56 41 57 "
@@ -1926,6 +1954,14 @@ namespace trinity::game
         "48 89 5C 24 10 55 56 57 48 83 EC 40 48 8B DA 48 8B F9 80 49 22 20 4C 8D";
     // Modern TU 1.17 - 1.18+ EquipEffectRefresh
     // OBSOLETE in TU 2.02.00 (0 hits in final scan; kept for reference).
+    // TU 2.04: void* f(equipComponent, int* err). Holds the owner's lock, walks the
+    // character's slot list and re-applies each equipped item through the diff apply
+    // with an empty old list. Native callers: EquipSlotListCacheData and
+    // TrocTrCharacterViewModeEquipDevAck.
+    inline constexpr const char* kSig_EquipEffectRefresh_TU204 =
+        "48 89 5C 24 20 48 89 54 24 10 55 56 57 41 54 41 55 41 56 41 57 48 8D AC 24 ?? ?? ?? ?? "
+        "B8 ?? ?? ?? ?? E8 ?? ?? ?? ?? 48 2B E0 4C 8B E2 4C 8B F9 48 8B 41 08 48 8D 50 08 33 FF "
+        "48 85 C0 48 0F 44 D7 41 B0 01";
     inline constexpr const char* kSig_EquipEffectRefresh_Legacy =
         "48 89 5C 24 10 55 56 57 41 54 41 55 41 56 41 57 48 8B EC 48 83 EC 60 4C 8B F2 48 8B F1 80 49 22 20 4C 8D 81 00 01 00 00";
 
@@ -2031,6 +2067,15 @@ namespace trinity::game
     };
 
     // Direct SetNpc and SetPet function prologues for TU 2.01 (stack frame 0x68):
+    // TU 2.04: both setters are gone/inlined, so the multiplier polls the component:
+    // owner -> +0x68 -> +0x140 friendly comp; +0x1C u32 size, +0x30 entry*[];
+    // entry +0x00/+0x04 identify the relationship, +0x08 -> record, record +0x08 i64 trust.
+    inline constexpr uintptr_t kOff_Sub_FriendlyComp     = 0x140;
+    inline constexpr uintptr_t kOff_FriendlyComp_Size    = 0x1C;
+    inline constexpr uintptr_t kOff_FriendlyComp_Entries = 0x30;
+    inline constexpr uintptr_t kOff_FriendlyEntry_Record = 0x08;
+    inline constexpr uintptr_t kOff_FriendlyRecord_Value = 0x08;
+
     inline constexpr const char* kSig_FriendlySetNpc =
         "4C 8B DC 53 55 56 57 41 56 41 57 48 83 EC 68 48 8B FA 48 8B F1 0F B7 42 04";
 
