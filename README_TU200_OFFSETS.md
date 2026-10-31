@@ -1,10 +1,10 @@
 # Trinity — Title Update 2.02.00 Offset & Data Reference (PE 1.0.0.2850)
 
 > **Game Build**: Crimson Desert TU **2.02.00** · PE Revision **`1.0.0.2850`**  
-> **Revision Ladder** (runtime fingerprint source, `src/core/version_detect.cpp`): `1.0.0.2474` = TU 1.18.02 · `1.0.0.2625` = TU 2.00.00 · `1.0.0.2658` = TU 2.00.01 · `1.0.0.2692` = TU 2.00.02 · `1.0.0.2760` = TU 2.01.00 · **`1.0.0.2850` = TU 2.02.00**  
+> **Revision Ladder** (runtime fingerprint source, `src/core/version_detect.cpp`): `1.0.0.2474` = TU 1.18.02 · `1.0.0.2625` = TU 2.00.00 · `1.0.0.2658` = TU 2.00.01 · `1.0.0.2692` = TU 2.00.02 · `1.0.0.2760` = TU 2.01.00 · **`1.0.0.2850` = TU 2.02.00** · `1.0.0.2944/2976` = TU 2.03.x · **`1.0.0.3446` = TU 2.04.02 (current, gate `>= 3400`)**  
 > **Preferred Image Base**: `0x140000000` · PE timestamp **`0x6AA22ABB`** for the inspected game build. Addresses below are preferred VAs, not reusable heap pointers.
 >
-> **Updated**: 2026-09-16, through the material-control fix, mod v1.4.1. The filename retains its TU200 name for existing links.
+> **Updated**: 2026-11-01, through the TU 2.04.02 live-validation pass, mod v1.4.3. The filename retains its TU200 name for existing links. **2.04 note**: everything on this page describes the 2.02 layout; the current offsets live in `src/game/offsets.h` (revision-gated) and the 2.04-specific findings are recorded in [TU200_RE_NOTES.md § 11](TU200_RE_NOTES.md). Key 2.04 deltas, all live-verified: ItemDef re-laid out (BucketType +0x428 → **+0x240**; enchant/cooldown/charge offsets from the 2.03 fork are NOT valid on 3446), TLS realm split into **two** bytes (0x1EB globals + 0x1FE allocator, both flipped by `WriteRealmFlagsImpl`), FrameTimerUpdate struct `appMgr+0x68` / delta `+0x6C`, and the storage UI denominator is `_defaultSlotCount` (+0x10), not `_maxSlotCount`.
 >
 > **Scanner**: `src/mem/scanner.cpp` primarily selects committed, readable spans with `VirtualQuery`, excluding guard/no-access pages. If no spans are found, a PE-section-header fallback is used. Readable spans can still contain unrelated matching code: a unique AOB is not an ABI or ownership proof.
 

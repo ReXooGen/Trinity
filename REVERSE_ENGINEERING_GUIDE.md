@@ -1,8 +1,10 @@
 # Trinity architecture and reverse-engineering guide
 > **Target Game**: Crimson Desert (BlackSpace Engine)  
-> **Current mod**: v1.4.1 (vTweak by Lian), updated 2026-09-16 through the material-control fix.
+> **Current mod**: v1.4.3 (vTweak by Lian), updated 2026-11-01 through the TU 2.04.02 live-validation pass.
 >
-> **Current evidence target**: **TU 2.02.00**, PE **1.0.0.2850**, timestamp **0x6AA22ABB**, preferred base **0x140000000**. Legacy branches are implementation history, not universal compatibility certification.
+> **Current evidence target**: **TU 2.04.02**, PE **1.0.0.3446**, preferred base **0x140000000**. Earlier targets (TU 2.02.00 / PE 1.0.0.2850, timestamp 0x6AA22ABB) remain documented below and in the offset reference as version-specific history. Legacy branches are implementation history, not universal compatibility certification.
+>
+> **2.04 revision context**: signature re-derivations for this target were contributed by **lucasfelipe24** (PR #2, authored against PE 3460; the `>= 3400` gate admits 3446), then live-validated and repaired by **ReXooGen / Lian** in game on 3446. See [TU200_RE_NOTES.md § 11](TU200_RE_NOTES.md) for the validation table. Fork research by **patoangolano** (TU 2.03.02) supplied the swapchain-recreation crash fix.
 >
 > **Author / Reference**: Lian
 
@@ -55,16 +57,21 @@ The engine executes two parallel internal worlds inside a single `CrimsonDesert.
 ```
 
 ### The Per-Thread TLS Realm Flag
-The engine determines which realm a thread is operating on via a flag in Thread Local Storage (TLS). **The flag slot moved in TU 2.01 (PE rev >= 2760 / 1.0.0.2760+)**:
+The engine determines which realm a thread is operating on via a flag in Thread Local Storage (TLS). **The flag slot moved in TU 2.01 (PE rev >= 2760 / 1.0.0.2760+)**, and **split into two bytes in TU 2.04 (PE rev >= 3400)**:
 ```cpp
 inline constexpr uintptr_t kOff_Teb_TlsPointer = 0x58;  // TEB.ThreadLocalStoragePointer
 inline constexpr uintptr_t kTls_RealmFlag_TU201 = 509;  // u8: 0 = Client, 1 = Server (TU 2.01+ / PE rev >= 2760, 0x1FD)
 inline constexpr uintptr_t kTls_RealmFlag       = 498;  // u8: 0 = Client, 1 = Server (TU 2.00 and earlier, 0x1F2)
+// TU 2.04 (PE 3446): 0x1EB selects the client/server GLOBALS, 0x1FE the matching ALLOCATOR.
+inline constexpr uintptr_t kTls_RealmGlobals_TU204 = 0x1EB; // live values are NOT boolean: 0x11/0x4F/0x50/0x10 seen
+inline constexpr uintptr_t kTls_RealmHeap_TU204    = 0x1FE; // 0 = client, server observed nonzero
 ```
 
 > [!IMPORTANT]
 > **The Dual-Realm Write Rule**:
 > Resolve and validate **distinct objects for each realm**. Toggling TLS does not turn a server component into a client renderer. Writes are sequential, can partially succeed, and are not an atomic save transaction. Visual native calls require client RTTI/render state; allocation-capable native writes must execute in the appropriate realm with the previous TLS value restored.
+>
+> **TU 2.04 semantics (live-verified)**: the engine's own insert-plan code selects between two rip-relative globals via `cmp byte [tls0+0x1EB], 0` + `cmovne` — **any nonzero value selects the server global set**, so writing 0/1 remains valid even though the engine's resting values are bitmasks like 0x11. Both bytes must be flipped together through `Inventory::WriteRealmFlagsImpl`; a single-byte flip leaves the allocator on the wrong realm.
 
 `Inventory::RealmFlagAddress` obtains the calling thread's TEB via `NtQueryInformationThread`, then reads the TLS pointer chain. It probes the current and legacy flag locations and requires a boolean value. `DyeRealmGuard` restores the prior byte. A read of `gs:[0x58]` is not itself the final realm-byte address.
 

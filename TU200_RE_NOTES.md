@@ -2,8 +2,10 @@
 
 > **Inspected binary**: TU 2.02.00, PE timestamp `0x6AA22ABB` · **Preferred image base**: `0x140000000`.
 >
-> **Revision Ladder** (runtime fingerprint source, `src/core/version_detect.cpp`): `1.0.0.2474` = TU 1.18.02 · `1.0.0.2625` = TU 2.00.00 · `1.0.0.2658` = TU 2.00.01 · `1.0.0.2692` = TU 2.00.02 · `1.0.0.2760` = TU 2.01.00 · **`1.0.0.2850` = TU 2.02.00** (detected at `revision >= 2800`).  
-> **Updated**: 2026-09-16, mod v1.4.1 through the material-control fix; the TU200 filename is retained for existing links.
+> **Current target**: TU **2.04.02** (PE **1.0.0.3446**) — see **§ 11** for the 2.04 findings, the live-validation table for PR #2, and the 3446 repair pass. The filename is retained for existing links.
+>
+> **Revision Ladder** (runtime fingerprint source, `src/core/version_detect.cpp`): `1.0.0.2474` = TU 1.18.02 · `1.0.0.2625` = TU 2.00.00 · `1.0.0.2658` = TU 2.00.01 · `1.0.0.2692` = TU 2.00.02 · `1.0.0.2760` = TU 2.01.00 · **`1.0.0.2850` = TU 2.02.00** (detected at `revision >= 2800`) · `1.0.0.2944/2976` = TU 2.03.x · **`1.0.0.3446` = TU 2.04.02** (gate `>= 3400`).  
+> **Updated**: 2026-11-01, mod v1.4.3 — TU 2.04.02 live validation and repair pass on top of PR #2 by **lucasfelipe24**; the TU200 filename is retained for existing links.
 >
 > **Scanner**: primarily VirtualQuery-based readable committed spans, with a PE-section fallback if no spans are found. A match still needs caller/ABI validation.
 >
@@ -174,16 +176,32 @@ Older binary addresses, test counts, and results above are observations for thei
 
 ## 11. Title Update 2.04.02 (PE 1.0.0.3446)
 
-Static analysis of EXE SHA-256 `fec07be1b725a46624d31fcd74bf3730ea809765226cea6bde01607ab2d79f66`; no value below has run in-game yet. Revision gate: `>= 3400`.
+Static analysis of EXE SHA-256 `fec07be1b725a46624d31fcd74bf3730ea809765226cea6bde01607ab2d79f66`, contributed by **lucasfelipe24** (PR #2, merged 2026-10-31, authored against PE 3460; the gate `>= 3400` also admits 3446). Live validation below by **ReXooGen / Lian**, 2026-10-31 sessions (builds `Oct 31 21:29` → `23:54`, PIDs 41612/12156/38012, game EXE 3446). Revision gate: `>= 3400`.
 
-- **Table resolvers**: key by value in `edx` (rcx ignored), prologue `4C 8B DC`, anchor `8B FA 48 8B 1D`. Table count +0x08, defs +0x58.
+**Live status — every finding below has now run in-game** (the static-only caveat above is closed):
+
+| PR finding | Live result on 3446 |
+|---|---|
+| Table resolvers (`edx` key, count +0x08, defs +0x58) | Confirmed — `iteminfo` (7064 rows), `Inventory` (21 rows), `WantedInfo` (35 rows), `characterinfo` (by-row near iteminfo, key at def+0) all resolve and read correctly |
+| ItemDef re-layout, BucketType → +0x240 | Confirmed by row vote: 299/300 rows give a plausible type at +0x240; legacy +66/+0x418/+0x428 values are dead |
+| TLS realm split 0x1EB + 0x1FE | Confirmed live: game threads carry nonzero 0x1EB (0x11/0x4F/0x50/0x10) and 0x1FE == 0; the engine's own plan code uses `cmovne` on 0x1EB (any nonzero = server globals), so the flip semantics hold |
+| Add Item via `kSig_AddItemRecipe` @ `0x142DCEB72` | Anchor unique; plan/commit/free/dtor call targets decoded and match their prologues. **Known gap**: server-realm write is skipped (`ServerHolder()` = 0 — the per-placement commit hook never observes a distinct server container on 3446), so client-only items are wiped by the next server reconcile. The commit succeeded and the item existed in memory (InstID verified by scan) before the wipe. Next work item: the native create path at dispatcher `0x1424A7C85` / create site `0x1424A7D84` documented in `work/session-20261031-untracked/TU204_LAYOUT.json` |
+| Trust poll `owner+0x68 → +0x140` | Confirmed; component walk valid on all three party bodies. First-gain-of-a-relationship escaped scaling through the seeding branch (fixed in `499e7f3`: baseline snapshot on enable). SetNpc/SetPet signatures remain absent — expected, the setters are gone/inlined |
+| EquipEffectRefresh `kSig_EquipEffectRefresh_TU204` | Resolves @ `0x140A93080`; the fault-guarded call logged one SEH catch during an edit test — "applies on reload" fallback works, stacking behavior still unverified |
+| No GetItemQty hook | Confirmed absent on 3446; the durable core-global walk (`core+0x30 → +0x50 → container+0x68 → sub+0xB8`) feeds the holder and matches the walk the engine itself uses |
+
+**Additional 3446 findings from the live sessions** (not part of the PR):
+
+- **FrameTimerUpdate layout moved**: time struct is `appMgr+0x68` (was +0x60), delta `+0x6C`, scaled delta `+0x68` — decoded from the engine body behind the installed hook (`4C 8B ... 48 8B 51 68 8B 42 6C 89 42 68`). Game Speed was silently inert before this re-derivation.
+- **InventoryInfo**: 21 rows; the storage UI renders `used / _defaultSlotCount` (+0x10), NOT `_maxSlotCount` (+0x14). Slot Size must raise both columns to show the new denominator.
+- **`kSig_InvSetExpandSlots`** still unique and hooked on 3446; bucket caps written through it persist (verified externally: a foreign write to bucket+0x14 was not reverted by the engine).
+- **Dye visual chain**: `resource+0x78` (part map) is no longer a valid render-component discriminator on 3446 (float pair in the live client replica); the context chain (`comp+8 → +0x68 → +0x40 → +0x130` pointer vs float pair) is the surviving test — matching the realm classification in `TU204_LAYOUT.json`.
+- **Overlay/swapchain**: recreation (FG toggle, resolution) goes through `CreateSwapChainForHwnd`, not ResizeBuffers; the fork's release-before-recreate fix (commit `6d81c98`) is ported for the graphics-options crash.
+
+**PR #2 original findings, retained for reference** (superseded statuses are noted in the table above):
+
 - **Definitions re-laid out**: ItemDef, ItemGroup, Inventory, stringinfo, WantedInfo, LevelGimmickSceneObjectInfo and its nodes; see `offsets.h`.
-- **TLS realm**: 0x1EB selects client/server globals, 0x1FE the allocator. `Inventory::WriteRealmFlags` flips both; that both move together is inferred, not observed.
-- **Pak manifests**: name blobs use LEB128 parent distance, with a trailing extension table indexed by `FileEntry::flag`.
-- **Add Item**: follows the native create-item function through `kSig_AddItemRecipe`. Direct slot placement stays off.
+- **TLS realm**: 0x1EB selects client/server globals, 0x1FE the allocator. `Inventory::WriteRealmFlags` flips both; "both move together" is now live-observed, not inferred.
+- **Pak manifests**: name blobs use LEB128 parent distance, with a trailing extension table indexed by `FileEntry::flag` (27739/27739 name offsets resolved in `0012/0.pamt` during the live session).
 - **No Cooldown**: item `_cooltime` is an object of three i64 at def+0x1D8, respawn is i64 at def+0x220, character `_callMercenaryCoolTime` is at def+0x158.
-- **Trust Multiplier**: no setter was found, so the mod polls owner+0x68 -> +0x140, entry -> record +0x08, and mirrors rises to the server copy. Pet records are not covered.
 - **Time of day**: the manager is EnvManager+0x60; hour, lower and upper limits are at +0x3B8/+0x3BC/+0x3C0.
-- **characterinfo**: found by row data near iteminfo, key at def+0.
-- **EquipEffectRefresh**: `kSig_EquipEffectRefresh_TU204`, `(comp, int* err)`. It applies with an empty old list, so removal is not stripped and repeated calls must be checked for stacking in-game.
-- **No GetItemQty hook**: the client container now comes from the controlled character. The NPC-gift quantity override went with it.
