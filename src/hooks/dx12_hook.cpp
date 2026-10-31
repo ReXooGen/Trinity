@@ -1218,7 +1218,20 @@ namespace trinity::hooks
         ULONG STDMETHODCALLTYPE Release() override
         {
             const ULONG r = InterlockedDecrement(&m_ref);
-            if (r == 0) { m_inner->Release(); delete this; }
+            if (r == 0)
+            {
+                // Our RTVs hold references to the back buffers, which keep the real
+                // swapchain alive: creating its replacement on the same window would
+                // then fail with ACCESS_DENIED. ReconcileSwapChain rebuilds them.
+                if (g_imguiReady && g_swapChain == m_inner)
+                {
+                    WaitForOverlayIdle();
+                    CleanupRenderTargets();
+                    g_swapChain = nullptr;
+                }
+                m_inner->Release();
+                delete this;
+            }
             return r;
         }
 
