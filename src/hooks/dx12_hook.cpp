@@ -1140,6 +1140,25 @@ namespace trinity::hooks
         }
     }
 
+    // Drop every reference we hold to the current swapchain's back buffers.
+    // A graphics-settings change (frame generation toggle, resolution) makes
+    // the game DESTROY and RECREATE its swapchain - not ResizeBuffers. Our
+    // RTVs kept the old back buffers - and through them the old swapchain -
+    // alive, so the new CreateSwapChainForHwnd on the same window could fail,
+    // the game kept a null swapchain and crashed in its present path. Ported
+    // from the patoangolano mount fork's recreation crash fix.
+    static void ReleaseSwapChainRefs(const char* why)
+    {
+        if (!g_imguiReady) return;
+        bool held = false;
+        for (const auto& f : g_frames) held |= f.renderTarget != nullptr;
+        if (!held && !g_swapChain) return;
+        WaitForOverlayIdle();
+        CleanupRenderTargets();
+        g_swapChain = nullptr;    // forces ReconcileSwapChain to rebuild
+        LOG("Overlay released swapchain back buffers (%s).", why);
+    }
+
     // Native-swapchain Present/ResizeBuffers byte-detours (from the dummy vtable).
     // These are the drawing path ONLY when no wrapper is active (wrapping failed,
     // or a legacy no-proxy path). Once a wrapper owns drawing they forward
@@ -1218,7 +1237,15 @@ namespace trinity::hooks
         ULONG STDMETHODCALLTYPE Release() override
         {
             const ULONG r = InterlockedDecrement(&m_ref);
-            if (r == 0) { m_inner->Release(); delete this; }
+            if (r == 0)
+            {
+                // The game is done with this chain: let go of its buffers first
+                // so the inner swapchain really dies and a new one can be
+                // created on the same window (graphics-settings recreation).
+                ReleaseSwapChainRefs("swapchain released");
+                m_inner->Release();
+                delete this;
+            }
             return r;
         }
 
@@ -1374,6 +1401,7 @@ namespace trinity::hooks
         // through the same patched slot during an FG toggle - let it complete
         // untouched, otherwise we recurse into the interposer mid-rebuild.
         const bool nested = t_inSwapChainCreate;
+        if (!nested) ReleaseSwapChainRefs("swapchain recreation");
         t_inSwapChainCreate = true;
         const HRESULT hr = oFactoryCreateSwapChainForHwnd(self, device, hwnd, desc, fsDesc, restrictOut, ppSwapChain);
         if (!nested)
