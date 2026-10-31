@@ -298,10 +298,23 @@ namespace trinity::game
                     return;
                 }
                 s_nextWrite[key] = now + 2000;
+                uint64_t serverHit = 0;
                 ForEachTrust(server, [&](uint64_t serverKey, uintptr_t serverValue)
                 {
-                    if (serverKey == key) Write64(serverValue, static_cast<uint64_t>(target));
+                    if (serverKey == key)
+                    {
+                        Write64(serverValue, static_cast<uint64_t>(target));
+                        serverHit = serverValue;
+                    }
                 });
+                // Scale trace: proves whether the scaled write happened and on
+                // which realm. serverHit==0 means client-only - the same wound
+                // add-item has, where the server reconcile wipes the gain.
+                LOG_INFO("friendly: scale key=%llu base=%lld gain=%lld mult=%.2f target=%lld client=%llx server=%llx",
+                         static_cast<unsigned long long>(key), static_cast<long long>(seen->second),
+                         static_cast<long long>(gain), mult, static_cast<long long>(target),
+                         static_cast<unsigned long long>(valueAddr),
+                         static_cast<unsigned long long>(serverHit));
                 Write64(valueAddr, static_cast<uint64_t>(target));
             });
             if (walked == 0)
