@@ -298,7 +298,7 @@ namespace trinity
         st.freeFlight    = vals.freeFlight;
         st.flightSpeed   = ClampF(vals.flightSpeed, 1.0f, 40.0f);
         st.trustMult     = vals.trustMult;
-        st.trustMultVal  = ClampF(vals.trustMultVal, 1.0f, 25.0f);
+        st.trustMultVal  = ClampF(vals.trustMultVal, 1.0f, 100.0f);
         st.maxTrust      = vals.maxTrust;
         st.petSlotLimit    = vals.petSlotLimit;
         st.petSlotLimitVal = ClampI(vals.petSlotLimitVal, 30, 999);

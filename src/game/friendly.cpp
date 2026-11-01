@@ -504,18 +504,31 @@ namespace trinity::game
             }
         }
 
-        // TU 2.04.03 gain-writer hook. Prologue shape: (rcx component, dx tag u16,
-        // r8 ?, r9 record*). The record is the 0x78-byte relationship event the
-        // caller built; +8 i64 value, +96 u32 / +100 u16 identity - the same
-        // layout the 3446 writer consumed. Scaling +8 in-flight changes both the
-        // popup amount and the ledger copy the game itself performs.
+        // TU 2.04.03 gain-writer hook, aligned with the reference implementation's
+        // semantics: same-character filter (only scale the possessed body's own
+        // ledger - foreign components are left alone, which is also the crash
+        // guard), only raises are scaled (never lowers), the gain is multiplied
+        // and the result clamped to the friendship cap the game itself enforces.
+        // Prologue shape: (rcx component, dx tag u16, r8 ?, r9 record*). The
+        // record is the 0x78-byte relationship event the caller built; +8 i64
+        // value, +96 u32 / +100 u16 identity.
         __int64 __fastcall hkLedgerWrite3460(void* component, unsigned __int16 tag, void* a3, void* record)
         {
             const State& st = State::Get();
-            if (st.trustMult && st.trustMultVal > 1.0f && record)
+            if (record && component)
             {
                 __try
                 {
+                    // Same-character guard: the component must be the possessed
+                    // body's own ledger (controlled owner -> actor -> sub+0x140).
+                    const uintptr_t owner = Player::GetControlledOwner();
+                    uintptr_t sub = 0, ownComp = 0;
+                    if (owner >= kMinPointer &&
+                        mem::ReadPtr(owner + kOff_Owner_Actor, &sub) && sub >= kMinPointer &&
+                        mem::ReadPtr(sub + kOff_Sub_FriendlyComp, &ownComp) &&
+                        reinterpret_cast<uintptr_t>(component) != ownComp)
+                        return oLedgerWrite3460(component, tag, a3, record);
+
                     const uintptr_t r = reinterpret_cast<uintptr_t>(record);
                     if (r >= kMinPointer)
                     {
@@ -524,11 +537,11 @@ namespace trinity::game
                         const uint64_t key = static_cast<uint64_t>(k32v) | (static_cast<uint64_t>(k16) << 32);
                         const int64_t incoming = *reinterpret_cast<int64_t*>(r + 8);
                         int64_t& last = g_writerLast[key];
-                        if (incoming > last && incoming > 0)
+                        if (st.trustMult && st.trustMultVal > 1.0f && incoming > last && incoming > 0)
                         {
                             // The gain = incoming - last. Scale it, no per-step
-                            // cap: the popup should show the full scaled jump,
-                            // and the ledger copy clamps at the game's own max.
+                            // cap: the popup shows the full scaled jump and the
+                            // game clamps the stored value at its own maximum.
                             const int64_t gain = incoming - last;
                             const int64_t target = (std::min)(last + static_cast<int64_t>(gain * st.trustMultVal + 0.5f), kFriendly_Max);
                             if (target != incoming)
@@ -538,27 +551,13 @@ namespace trinity::game
                             }
                             last = target;
                         }
-                        else if (incoming < last)
+                        else if (incoming != last)
                         {
+                            // Never lower, and keep the cache tracking while the
+                            // multiplier is off so re-enabling never treats the
+                            // accumulated ledger as one giant gain.
                             last = incoming;
                         }
-                    }
-                }
-                __except (EXCEPTION_EXECUTE_HANDLER) {}
-            }
-            else if (record)
-            {
-                // Multiplier off: keep the cache tracking so re-enabling doesn't
-                // treat the accumulated ledger as one giant gain.
-                __try
-                {
-                    const uintptr_t r = reinterpret_cast<uintptr_t>(record);
-                    if (r >= kMinPointer)
-                    {
-                        const uint32_t k32v = *reinterpret_cast<uint32_t*>(r + 96);
-                        const uint16_t k16 = *reinterpret_cast<uint16_t*>(r + 100);
-                        g_writerLast[static_cast<uint64_t>(k32v) | (static_cast<uint64_t>(k16) << 32)] =
-                            *reinterpret_cast<int64_t*>(r + 8);
                     }
                 }
                 __except (EXCEPTION_EXECUTE_HANDLER) {}
