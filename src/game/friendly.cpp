@@ -530,20 +530,50 @@ namespace trinity::game
             const uintptr_t client = Player::GetControlledOwner();
             if (client < kMinPointer) return;
             static ULONGLONG s_next = 0;
+            static uint32_t s_prevSize = 0xFFFFFFFFu;
+            static uintptr_t s_prevEntries = 0;
             const ULONGLONG now = GetTickCount64();
             if (now < s_next) return;
             s_next = now + 2000;
-            int raised = 0, seen = 0;
-            ForEachTrust(client, [&](uint64_t key, uintptr_t valueAddr)
+            // The game rebuilds this ledger during world load (appending records
+            // and reallocating the entries array). Sweeping while it grows is a
+            // TOCTOU: the size read here can be stale the moment the game
+            // reallocates, and writes land in freed memory - the delayed crash
+            // on first world entry. Only sweep when size AND entries base are
+            // identical two passes in a row, and re-read the base before every
+            // record.
+            uint32_t size = 0;
+            uintptr_t entries = 0;
+            uintptr_t comp = 0;
+            if (!mem::ReadPtr(client + kOff_Owner_Actor, &comp) || comp < kMinPointer ||
+                !mem::ReadPtr(comp + kOff_Sub_FriendlyComp, &comp) || comp < kMinPointer ||
+                !Read32(comp + kOff_FriendlyComp_Size, &size) || !size || size > 4096 ||
+                !mem::ReadPtr(comp + kOff_FriendlyComp_Entries, &entries) || entries < kMinPointer)
+                return;
+            if (size != s_prevSize || entries != s_prevEntries)
             {
+                s_prevSize = size;
+                s_prevEntries = entries;
+                return; // still building - leave it alone this pass
+            }
+            int raised = 0, seen = 0;
+            for (uint32_t i = 0; i < size; ++i)
+            {
+                // Re-derive per record: the game may reallocate mid-sweep.
+                uintptr_t e = 0, rec = 0;
+                uint32_t liveSize = 0;
+                if (!Read32(comp + kOff_FriendlyComp_Size, &liveSize) || liveSize < size) return;
+                if (!mem::ReadPtr(comp + kOff_FriendlyComp_Entries, &entries) || entries < kMinPointer) return;
+                if (!mem::ReadPtr(entries + static_cast<uintptr_t>(i) * 8, &e) || e < kMinPointer) continue;
+                if (!mem::ReadPtr(e + 8, &rec) || rec < kMinPointer) continue;
                 ++seen;
                 int64_t value = 0;
-                if (!Read64(valueAddr, reinterpret_cast<uint64_t*>(&value)) || value < 0 || value > kFriendly_Max)
-                    return;
-                if (value >= kFriendly_Max) return;
-                Write64(valueAddr, static_cast<uint64_t>(kFriendly_Max));
+                if (!Read64(rec + 8, reinterpret_cast<uint64_t*>(&value)) || value < 0 || value > kFriendly_Max)
+                    continue;
+                if (value >= kFriendly_Max) continue;
+                Write64(rec + 8, static_cast<uint64_t>(kFriendly_Max));
                 ++raised;
-            });
+            }
             if (raised > 0)
             {
                 LOG_OK("friendly: max trust raised %d/%d relationship(s) to %lld.",
