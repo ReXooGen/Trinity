@@ -2472,67 +2472,8 @@ namespace trinity::game
         // unchanged and provide the No Bounty feature without this hook.
     }
 
-        // --- The game's own create dispatcher (see offsets.h) ----------------
-        // 3460->3462 re-derivation proved the body byte-identical except one
-        // RIP-relative imm32, so a wildcarded signature pins it per build.
-        static uintptr_t FindAddDispatcher()
-        {
-            static uintptr_t cached = 0;
-            if (cached) return cached;
-            // 3462 lea uses modrm C5 (rax*8); 3460 json showed FD. Wildcard it -
-            // the surrounding sequence is the real fingerprint.
-            const char* sig =
-                "48 8D 34 ?? 00 00 00 00 48 8B 43 18 48 8B 0C 06 48 89 8D 00 01 00 00 "
-                "48 83 C1 08 48 89 8D 08 01 00 00 FF 41 0C";
-            const uintptr_t a = mem::FindPattern(sig);
-            if (a < kMinPointer) return 0;
-            // The dispatcher starts 0x27 bytes before this fingerprint's tail.
-            constexpr intptr_t kBack = -0x1F;
-            const uintptr_t fn = static_cast<uintptr_t>(
-                static_cast<intptr_t>(a) + kBack);
-            cached = fn;
-            LOG("inventory: add dispatcher resolved at 0x%p", reinterpret_cast<void*>(fn));
-            return fn;
-        }
 
 
-        // --- Dispatcher capture: learn the request layout from the game ------
-        // The game's own adds (buy/loot/quest) run this dispatcher with a fully
-        // built request. One logged call gives us the exact case byte and
-        // request shape; then our add can build the same. Throttled to 8 dumps.
-        typedef void* (__fastcall *AddDispatch_t)(void* buckets2, int* err,
-                                                  void* request, void* a4);
-        static AddDispatch_t   oAddDispatch   = nullptr;
-        static void*           g_dispatchTarget = nullptr;
-
-
-        static void DumpRequest(const char* tag, void* request)
-        {
-            const int n = g_dispatchDumps.fetch_add(1, std::memory_order_relaxed);
-            if (n >= 8 || !request) return;
-            uint8_t buf[0x40]{};
-            for (int i = 0; i < 0x40; ++i)
-                if (!Read8(reinterpret_cast<uintptr_t>(request) + i, &buf[i])) break;
-            char hex[0x40 * 3 + 1]{};
-            for (int i = 0; i < 0x40; ++i)
-                snprintf(hex + i * 3, 4, "%02X ", buf[i]);
-            LOG("inventory: dispatch %s #%d request: %s", tag, n, hex);
-        }
-
-        static void* __fastcall hkAddDispatch(void* buckets2, int* err,
-                                              void* request, void* a4)
-        {
-            if (!oAddDispatch) return nullptr;
-            g_commitActive.fetch_add(1, std::memory_order_acq_rel);
-            __try
-            {
-                DumpRequest("pre", request);
-                void* ret = oAddDispatch(buckets2, err, request, a4);
-                DumpRequest("post", request);
-                return ret;
-            }
-            __finally { g_commitActive.fetch_sub(1, std::memory_order_acq_rel); }
-        }
 
     bool Inventory::Install()
     {
@@ -2643,24 +2584,6 @@ namespace trinity::game
                     LOG_WARN("inventory: placement commit hook failed - server holder may stay unresolved.");
             }
 
-            // The game's own create dispatcher: hook from Init so WORLD LOAD
-            // calls are captured (the loader builds every request shape). The
-            // dump itself is gated post-load + pointer-validated, so menu-time
-            // calls stay cheap and safe.
-            if (const uintptr_t disp = FindAddDispatcher())
-            {
-                void* dt = reinterpret_cast<void*>(disp);
-                void* dorig = nullptr;
-                if (MH_CreateHook(dt, reinterpret_cast<void*>(&hkAddDispatch), &dorig) == MH_OK &&
-                    MH_EnableHook(dt) == MH_OK)
-                {
-                    oAddDispatch = reinterpret_cast<AddDispatch_t>(dorig);
-                    g_dispatchTarget = dt;
-                    LOG_OK("inventory: add dispatcher hook installed @ 0x%p - load the world once, then buy or pick up an item.", dt);
-                }
-                else
-                    LOG_WARN("inventory: add dispatcher hook failed - will keep the manual-write path.");
-            }
 
             else
             {
@@ -2824,12 +2747,7 @@ namespace trinity::game
             MH_RemoveHook(g_commitPlacementTarget);
             g_commitPlacementTarget = nullptr;
         }
-        if (g_dispatchTarget)
-        {
-            MH_DisableHook(g_dispatchTarget);
-            MH_RemoveHook(g_dispatchTarget);
-            g_dispatchTarget = nullptr;
-        }
+
         mem::RemoveHook(&g_insTarget);
         mem::RemoveHook(&g_commitTarget);
         mem::RemoveHook(&g_expandTarget); // after the restore above, which
