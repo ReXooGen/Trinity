@@ -309,12 +309,37 @@ namespace trinity::game
                 std::memcpy(stub + 0x19, &fnAddr, 8);
                 std::memcpy(stub + 0x34, &jmpAddr, 8);
 
-                void* cave = VirtualAlloc(nullptr, sizeof(stub),
-                                          MEM_COMMIT | MEM_RESERVE, PAGE_EXECUTE_READWRITE);
+                // The 5-byte jmp back to the thunk is a rel32, so the cave must
+                // sit within +-2 GB of the game image. A plain VirtualAlloc(nullptr)
+                // returns a high address outside that range. Walk a hint downward
+                // from the top of the image until an allocation lands close enough.
+                void* cave = nullptr;
+                {
+                    const uintptr_t hintBase = applyAddr & ~uintptr_t(0xFFFF);
+                    for (int64_t delta = 0x1000000; delta <= 0x78000000; delta += 0x1000000)
+                    {
+                        for (int64_t sign : { -1, 1 })
+                        {
+                            const uintptr_t hint = hintBase + sign * delta;
+                            cave = VirtualAlloc(reinterpret_cast<void*>(hint), sizeof(stub),
+                                                MEM_COMMIT | MEM_RESERVE, PAGE_EXECUTE_READWRITE);
+                            if (cave)
+                            {
+                                const int64_t d = static_cast<int64_t>(
+                                    reinterpret_cast<uintptr_t>(cave)) - static_cast<int64_t>(applyAddr);
+                                if (d >= INT32_MIN && d <= INT32_MAX)
+                                    break;
+                                VirtualFree(cave, 0, MEM_RELEASE);
+                                cave = nullptr;
+                            }
+                        }
+                        if (cave) break;
+                    }
+                }
                 DWORD oldProt = 0;
                 if (!cave)
                 {
-                    LOG_ERR("friendly: could not allocate the trust apply cave.");
+                    LOG_ERR("friendly: could not allocate a trust apply cave within jmp range.");
                 }
                 else if (!VirtualProtect(reinterpret_cast<void*>(applyAddr), 5,
                                          PAGE_EXECUTE_READWRITE, &oldProt))
