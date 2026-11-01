@@ -2067,6 +2067,8 @@ namespace trinity::game
         DyeSelectionKey  s_uiKey{};
         ULONGLONG        s_uiLastAttempt = 0, s_uiLastSuccess = 0;
         bool             s_uiReady = false, s_uiAttempted = false;
+        // Game-thread-published hint for render-thread tooltip calls (Dye::ReadyHint).
+        std::atomic<bool> s_readyHint{ false };
 
         uintptr_t FindSlotByInstance(uintptr_t holder, int64_t targetInstId)
         {
@@ -2257,6 +2259,7 @@ namespace trinity::game
                 s_uiKey = key;
                 g_slotCount = 0;
                 s_uiReady = s_uiAttempted = false;
+                s_readyHint.store(false, std::memory_order_release);
             }
             const ULONGLONG now = GetTickCount64();
             // Ready/SlotCount share a 200ms sample; an epoch change during the
@@ -2276,6 +2279,7 @@ namespace trinity::game
                 memcpy(s_uiRows, next.rows, sizeof(s_uiRows));
                 g_slotCount = next.count;
                 s_uiReady = true;
+                s_readyHint.store(true, std::memory_order_release);
                 s_uiLastSuccess = GetTickCount64();
             }
             // Failure/lock contention retains only owned copies, never live
@@ -3014,6 +3018,16 @@ namespace trinity::game
         return UiSnapshotUsable();
     }
 
+    bool Dye::ReadyHint()
+    {
+        // Render-thread safe hint for tooltip/description text: the game-thread
+        // Tick publishes UI-snapshot readiness; this reads it without
+        // triggering a mid-frame EnsureUiSnapshot rebuild (the PLAYER-tab
+        // probe measured that rebuild inside the description path at 14-25 ms
+        // per frame). Dye menus keep the full Ready().
+        return s_readyHint.load(std::memory_order_acquire);
+    }
+
     uintptr_t Dye::ClientRegistryGlobal() { return g_clientRegistryGlobal; }
 
     void Dye::SetActiveCharacter(int index)
@@ -3214,6 +3228,10 @@ namespace trinity::game
         uintptr_t root = 0;
         if (g_clientRegistryGlobal) ReadPtr(g_clientRegistryGlobal, &root);
         const bool ready = Player::Ready();
+        // Publish the lock-free readiness hint for render-thread tooltip calls
+        // BEFORE any early return: the hint reflects the last known state even
+        // while Tick skips heavy work this pass.
+        s_readyHint.store(UiSnapshotUsable(), std::memory_order_release);
         if (world != lastWorld || root != lastRoot)
         {
             lastWorld = world;

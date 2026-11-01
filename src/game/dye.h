@@ -34,6 +34,7 @@ namespace trinity::game
         // reads back sane. False until the player has loaded into the world
         // (or, worst case, until they change any equipment piece once).
         static bool Ready();
+        static bool ReadyHint();
         static uintptr_t ActiveClientComp();
         static uintptr_t ClientRegistryGlobal(); // resolved native anchor, read-only consumers
 

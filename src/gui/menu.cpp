@@ -174,7 +174,7 @@ namespace trinity::gui
         QueryPerformanceCounter(&qSub);
 
         if (ui::Submenu(LOC("Dye Equipment"), "dyeslots",
-                    game::Dye::Ready()
+                    game::Dye::ReadyHint()
                         ? LOC("Recolor your equipped gear.")
                         : LOC("Recolor your equipped gear. Load into the world first.")))
         {
