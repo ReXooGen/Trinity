@@ -542,25 +542,17 @@ namespace trinity::game
 
     void Friendly::Tick()
     {
-        // 3446-pinned: the component walk offsets and the ledger-hook site were
-        // derived on PE 3446. The 2.04.03 (3460) image moved code (exe shrank
-        // ~3.7 MB), so run nothing pinned there until the re-derivation ships -
-        // a drifted hook lands on an unrelated hot function and the walk probes
-        // stale chains (both observed as during-play stutter on 3460).
-        if (core::GetGameVersion().revision >= 3460)
-        {
-            // 3460 re-derivation, in-process (external RPM is refused by the
-            // updated anti-tamper). Read-only, throttled: maps the friendly
-            // component by RTTI, probes the copy-tail/category-table sites,
-            // and dumps what a greet/gift changes - the same ladder that
-            // cracked 3446, run from inside where reads still work.
-            static ULONGLONG s_lastDiag3460 = 0;
-            const ULONGLONG dnow = GetTickCount64();
-            if (dnow - s_lastDiag3460 < 5000) return;
-            s_lastDiag3460 = dnow;
-            __try { Diagnose3460(); } __except (EXCEPTION_EXECUTE_HANDLER) {}
-            return;
-        }
+        // 2.04.03 (3460, live-verified via the f3460 in-process diagnostic):
+        // the actor's sub+0x140 slot now resolves DIRECTLY to
+        // ServerFriendlyActorComponent - the authoritative ledger the HUD reads
+        // (on 3446 the same slot held the client replica). The 3446 poll and
+        // its offsets work unchanged on the new layout, with the writes landing
+        // in the ledger itself, so the poll is re-enabled here. The old
+        // client-replica revert wound is gone by construction.
+        // The ledger writer prologue sig is NOT re-armed on 3460 (the writer
+        // moved to 0x142079B40 and the old pattern's uniqueness is unproven);
+        // the poll alone carries the feature.
+        const bool is3460 = core::GetGameVersion().revision >= 3460;
         if (core::GetGameVersion().revision < 3400) return;
         const State& st = State::Get();
         if (!st.trustMult || st.trustMultVal <= 1.0f)
