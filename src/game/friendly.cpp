@@ -219,53 +219,37 @@ namespace trinity::game
             }
         }
 
-        // 0b. TU 2.04.03 (3460): the gain popup + ledger consume the relationship
-        //     record in-flight through this writer (f3460 probe hit @ 0x1418E5615).
-        //     Hooking it scales the gain BEFORE the game renders the popup and
-        //     copies the record into the ledger - the popup itself shows the
-        //     scaled amount, like the pre-2.04 builds did. Uniqueness is checked
-        //     first: a drifted match here is a hot-function stutter.
+        // 0b. TU 2.04.03 (3460): hook the realm-processing function the dispatcher
+        //     calls (sub_1418E3650, runtime-image-verified unique) - the gain event
+        //     record (r9) flows through here BEFORE the popup renders and before
+        //     the ledger copy, so scaling it in-flight changes the popup amount
+        //     like the pre-2.04 builds did. The dispatcher prologue itself carries
+        //     no copy tail (the tails live in callees) and stays unhooked.
         if (core::GetGameVersion().revision >= 3460)
         {
-            if (const size_t matches = mem::CountMatches(kSig_FriendlyWriter3460); matches == 1)
+            const char* realmSig = kSig_FriendlyRealmWriter3460;
+            if (const size_t matches = mem::CountMatches(realmSig); matches == 1)
             {
-                if (uintptr_t wAddr = mem::FindPattern(kSig_FriendlyWriter3460))
+                if (uintptr_t wAddr = mem::FindPattern(realmSig))
                 {
-                    // Code-only site verification: the matched function must
-                    // actually contain the record-copy tail (the YMM store pair
-                    // the 3446 family used) within its first 0x400 bytes. A
-                    // prologue collision without the tail would be an unrelated
-                    // hot function - refuse it instead of stuttering.
-                    bool hasTail = false;
-                    for (uintptr_t p = wAddr; p < wAddr + 0x400 && !hasTail; ++p)
-                    {
-                        // vmovups [rcx+0x20],ymm1 = C5 FC 11 49 20
-                        uint8_t b[5] = {};
-                        bool ok = true;
-                        for (int k = 0; k < 5; ++k)
-                            if (!mem::Read8(p + static_cast<uintptr_t>(k), &b[k])) { ok = false; break; }
-                        if (ok && b[0] == 0xC5 && b[1] == 0xFC && b[2] == 0x11 &&
-                            b[3] == 0x49 && b[4] == 0x20)
-                            hasTail = true;
-                    }
-                    if (!hasTail)
-                    {
-                        LOG_WARN("friendly: 3460 gain-writer candidate @ 0x%p has no record-copy tail - not hooking, poll only.",
-                                 reinterpret_cast<void*>(wAddr));
-                    }
-                    else if (MH_CreateHook(reinterpret_cast<void*>(wAddr),
-                                           reinterpret_cast<void*>(&hkLedgerWrite3460),
-                                           reinterpret_cast<void**>(&oLedgerWrite3460)) == MH_OK)
+                    // The 48-byte prologue match is unique in the whole runtime
+                    // image (offline-verified from Trinity_runtime_3460.bin), so
+                    // the match IS the verification - the record-copy tail lives
+                    // in a deeper callee of this function and cannot be used as a
+                    // local sanity check here.
+                    if (MH_CreateHook(reinterpret_cast<void*>(wAddr),
+                                      reinterpret_cast<void*>(&hkLedgerWrite3460),
+                                      reinterpret_cast<void**>(&oLedgerWrite3460)) == MH_OK)
                     {
                         g_ledgerTarget = reinterpret_cast<void*>(wAddr);
                         MH_EnableHook(g_ledgerTarget);
-                        LOG_OK("friendly: 3460 gain-writer hook installed @ 0x%p (unique, tail verified)", g_ledgerTarget);
+                        LOG_OK("friendly: 3460 realm-writer hook installed @ 0x%p (image-unique)", g_ledgerTarget);
                         g_hooksInstalled = true;
                         ui::Toast("Trust hook verified in-game");
                     }
                     else
                     {
-                        LOG_ERR("friendly: 3460 gain-writer hook failed @ 0x%p", reinterpret_cast<void*>(wAddr));
+                        LOG_ERR("friendly: 3460 realm-writer hook failed @ 0x%p", reinterpret_cast<void*>(wAddr));
                         g_ledgerTarget = nullptr;
                     }
                 }
