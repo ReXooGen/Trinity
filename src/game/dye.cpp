@@ -3221,12 +3221,12 @@ namespace trinity::game
 
     void Dye::Tick()
     {
-        // 2.04.03 (3460): the always-on tick metrics caught Dye::Tick at 6-71 ms
-        // per pass on the new image (0.6 ms on 3446) - the restore-replay walks
-        // structures that moved in this update. Gate it off until the 3460
-        // re-derivation; dye menus still work on demand, only the per-tick
-        // replay/pump stops.
-        if (core::GetGameVersion().revision >= 3460) return;
+        // 2.04.03 (3460): the always-on metrics caught Dye::Tick at 6-71 ms per
+        // pass (0.6 ms on 3446) — the cost is in the restore-replay walk, not
+        // the whole tick. The dye FEATURE (apply pump + profiles) stays live on
+        // 3460; only the replay sweep is gated until its 3460 re-derivation,
+        // and segment timers below name the exact hot path if it still stings.
+        const bool replayAllowed = core::GetGameVersion().revision < 3460;
         DyeOperationGuard operation;
         if (!operation.acquired) return; // native calls may re-enter the movement pump
         static uintptr_t lastWorld = 0, lastRoot = 0;
@@ -3276,6 +3276,7 @@ namespace trinity::game
         constexpr int kRestoreSlots = (3 + 4) * 32;
         constexpr ULONGLONG kRestoreTickMs = 100;
         constexpr ULONGLONG kRestoreSlotMs = 2500;
+        if (!replayAllowed) return; // 3460: replay walk is the measured hot path
         static int cursor = 0;
         static ULONGLONG nextTick = 0, nextSlot[kRestoreSlots]{};
         const ULONGLONG now = GetTickCount64();

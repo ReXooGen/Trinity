@@ -536,6 +536,36 @@ namespace trinity::game
                     DiagnoseFriendlyChainOnce(client);
                 }
             }
+            // 30s ledger snapshot: proves the scaled writes stick in the ledger
+            // (3460: sub+0x140 IS ServerFriendlyActorComponent - the authority).
+            static ULONGLONG s_lastDump = 0;
+            if (now - s_lastDump > 30000)
+            {
+                s_lastDump = now;
+                uintptr_t comp = 0;
+                if (mem::ReadPtr(client + kOff_Owner_Actor, &comp) && comp >= kMinPointer &&
+                    mem::ReadPtr(comp + kOff_Sub_FriendlyComp, &comp) && comp >= kMinPointer)
+                {
+                    uint32_t size = 0;
+                    if (Read32(comp + kOff_FriendlyComp_Size, &size) && size)
+                    {
+                        uintptr_t entries = 0;
+                        if (mem::ReadPtr(comp + kOff_FriendlyComp_Entries, &entries) && entries >= kMinPointer)
+                        {
+                            for (uint32_t i = size >= 4 ? size - 4 : 0; i < size; ++i)
+                            {
+                                uintptr_t e = 0, rec = 0; uint64_t key = 0; int64_t val = 0;
+                                if (!mem::ReadPtr(entries + static_cast<uintptr_t>(i) * 8, &e) || e < kMinPointer) continue;
+                                Read64(e, &key);
+                                if (!mem::ReadPtr(e + 8, &rec) || rec < kMinPointer) continue;
+                                Read64(rec + 8, reinterpret_cast<uint64_t*>(&val));
+                                LOG_INFO("friendly: ledger rec[%u] key=%llx val=%lld", i,
+                                         static_cast<unsigned long long>(key), static_cast<long long>(val));
+                            }
+                        }
+                    }
+                }
+            }
             g_trustSeeded = true;
         }
     }
