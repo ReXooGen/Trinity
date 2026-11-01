@@ -2706,20 +2706,29 @@ namespace trinity::game
     // Game-thread refinement queue and optional older-build effect upkeep.
     void Equipment::Tick()
     {
-        // 2.04.03 (3460): steady 4-5 ms per pass on the new image (vs ~0.1 on
-        // 3446) - the durability/refine paths walk moved structures. Gate the
-        // pump until the 3460 re-derivation; the equipment menu still works on
-        // demand through its own locked paths.
-        if (core::GetGameVersion().revision >= 3460)
-        {
-            PumpEquipProfileSave();
-            return;
-        }
+        // 2.04.03 (3460): the per-frame upkeep below the executor (snapshot
+        // hint pump, durability auto-repair, dirty-flag effect rebuild)
+        // walks moved structures and costs 4-5 ms per pass - it stays gated
+        // until the 3460 re-derivation. The queued-edit executor above runs
+        // on every revision. The equipment menu still works on demand
+        // through its own locked paths.
         PumpEquipProfileSave();
         if (!Player::Ready())
         {
             ClearRefineRequests();
             g_snapshotReadyHint.store(false, std::memory_order_release);
+            return;
+        }
+        // 3460: the queued-edit executor stays live - it is event-driven
+        // (16 ms pump, empty-queue early-out) and its guarded component
+        // walks are the same paths the menus already use on demand. Gating
+        // it left every socket/refine edit Pending forever. What remains
+        // gated below is the per-frame upkeep: the snapshot hint pump, the
+        // durability auto-repair, and the dirty-flag effect rebuild, whose
+        // native equip-refresh walks moved structures on 2.04.03.
+        if (core::GetGameVersion().revision >= 3460)
+        {
+            ProcessPendingRefines();
             return;
         }
         PumpSnapshotHint();
