@@ -788,6 +788,9 @@ namespace trinity::game
         // Max Trust is folded into the single toggle: every pass sweeps the
         // ledger to the cap alongside the multiplier poll.
         __try { SweepMaxTrust(); } __except (EXCEPTION_EXECUTE_HANDLER) {}
+        // 3460 site dumps + ledger snapshot (one-shot sigs; 5s snapshot cadence
+        // lives inside) - feeds the offline disassembly of the gift path.
+        __try { Diagnose3460(); } __except (EXCEPTION_EXECUTE_HANDLER) {}
         static ULONGLONG s_lastPoll = 0;
         const ULONGLONG now = GetTickCount64();
         if (now - s_lastPoll < 120) return;
