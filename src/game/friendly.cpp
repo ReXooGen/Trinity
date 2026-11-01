@@ -41,6 +41,11 @@ namespace trinity::game
         bool g_hooksInstalled = false;
         bool g_hooksEnabled = false;
 
+        // 3460 gain-writer hook (see the definition below PollTrustMultiplier).
+        using Writer3460_t = __int64(__fastcall*)(void* component, unsigned __int16 tag, void* a3, void* record);
+        Writer3460_t oLedgerWrite3460 = nullptr;
+        __int64 __fastcall hkLedgerWrite3460(void* component, unsigned __int16 tag, void* a3, void* record);
+
         // Tracks last known trust value per record key to scale trust gains accurately (thread-safe)
         std::mutex s_trustMutex;
         std::unordered_map<uint32_t, int64_t> s_lastTrustMap;
@@ -137,6 +142,8 @@ namespace trinity::game
 
         // Per-relationship last-seen value: key = u32@(record+96) ^ (u16@(record+100)<<32)
         std::unordered_map<uint64_t, int64_t> g_ledgerLast;
+        // 3460 gain-writer cache (same keying; separate from the 3446 map).
+        std::unordered_map<uint64_t, int64_t> g_writerLast;
 
         __int64 __fastcall hkLedgerWrite(void* component, unsigned __int16 tag, void* record)
         {
@@ -208,6 +215,39 @@ namespace trinity::game
             else
             {
                 LOG_INFO("friendly: ledger writer signature not present on this TU - component poll only.");
+            }
+        }
+
+        // 0b. TU 2.04.03 (3460): the gain popup + ledger consume the relationship
+        //     record in-flight through this writer (f3460 probe hit @ 0x1418E5615).
+        //     Hooking it scales the gain BEFORE the game renders the popup and
+        //     copies the record into the ledger - the popup itself shows the
+        //     scaled amount, like the pre-2.04 builds did. Uniqueness is checked
+        //     first: a drifted match here is a hot-function stutter.
+        if (core::GetGameVersion().revision >= 3460)
+        {
+            if (const size_t matches = mem::CountMatches(kSig_FriendlyWriter3460); matches == 1)
+            {
+                if (uintptr_t wAddr = mem::FindPattern(kSig_FriendlyWriter3460))
+                {
+                    g_ledgerTarget = reinterpret_cast<void*>(wAddr);
+                    if (MH_CreateHook(g_ledgerTarget, reinterpret_cast<void*>(&hkLedgerWrite3460),
+                                      reinterpret_cast<void**>(&oLedgerWrite3460)) == MH_OK)
+                    {
+                        MH_EnableHook(g_ledgerTarget);
+                        LOG_OK("friendly: 3460 gain-writer hook installed @ 0x%p (unique)", g_ledgerTarget);
+                        g_hooksInstalled = true;
+                    }
+                    else
+                    {
+                        LOG_ERR("friendly: 3460 gain-writer hook failed @ 0x%p", g_ledgerTarget);
+                        g_ledgerTarget = nullptr;
+                    }
+                }
+            }
+            else
+            {
+                LOG_INFO("friendly: 3460 gain-writer signature matched %zu time(s) - not hooking, poll only.", matches);
             }
         }
 
@@ -462,6 +502,68 @@ namespace trinity::game
                 ui::Toast("Max Trust: %d relationship(s) -> %lld", raised,
                           static_cast<long long>(kFriendly_Max));
             }
+        }
+
+        // TU 2.04.03 gain-writer hook. Prologue shape: (rcx component, dx tag u16,
+        // r8 ?, r9 record*). The record is the 0x78-byte relationship event the
+        // caller built; +8 i64 value, +96 u32 / +100 u16 identity - the same
+        // layout the 3446 writer consumed. Scaling +8 in-flight changes both the
+        // popup amount and the ledger copy the game itself performs.
+        __int64 __fastcall hkLedgerWrite3460(void* component, unsigned __int16 tag, void* a3, void* record)
+        {
+            const State& st = State::Get();
+            if (st.trustMult && st.trustMultVal > 1.0f && record)
+            {
+                __try
+                {
+                    const uintptr_t r = reinterpret_cast<uintptr_t>(record);
+                    if (r >= kMinPointer)
+                    {
+                        const uint32_t k32v = *reinterpret_cast<uint32_t*>(r + 96);
+                        const uint16_t k16 = *reinterpret_cast<uint16_t*>(r + 100);
+                        const uint64_t key = static_cast<uint64_t>(k32v) | (static_cast<uint64_t>(k16) << 32);
+                        const int64_t incoming = *reinterpret_cast<int64_t*>(r + 8);
+                        int64_t& last = g_writerLast[key];
+                        if (incoming > last && incoming > 0)
+                        {
+                            // The gain = incoming - last. Scale it, no per-step
+                            // cap: the popup should show the full scaled jump,
+                            // and the ledger copy clamps at the game's own max.
+                            const int64_t gain = incoming - last;
+                            const int64_t target = (std::min)(last + static_cast<int64_t>(gain * st.trustMultVal + 0.5f), kFriendly_Max);
+                            if (target != incoming)
+                            {
+                                *reinterpret_cast<int64_t*>(r + 8) = target;
+                                ui::Toast("Trust +%lld (x%.2f)", static_cast<long long>(target - last), st.trustMultVal);
+                            }
+                            last = target;
+                        }
+                        else if (incoming < last)
+                        {
+                            last = incoming;
+                        }
+                    }
+                }
+                __except (EXCEPTION_EXECUTE_HANDLER) {}
+            }
+            else if (record)
+            {
+                // Multiplier off: keep the cache tracking so re-enabling doesn't
+                // treat the accumulated ledger as one giant gain.
+                __try
+                {
+                    const uintptr_t r = reinterpret_cast<uintptr_t>(record);
+                    if (r >= kMinPointer)
+                    {
+                        const uint32_t k32v = *reinterpret_cast<uint32_t*>(r + 96);
+                        const uint16_t k16 = *reinterpret_cast<uint16_t*>(r + 100);
+                        g_writerLast[static_cast<uint64_t>(k32v) | (static_cast<uint64_t>(k16) << 32)] =
+                            *reinterpret_cast<int64_t*>(r + 8);
+                    }
+                }
+                __except (EXCEPTION_EXECUTE_HANDLER) {}
+            }
+            return oLedgerWrite3460(component, tag, a3, record);
         }
 
         void PollTrustMultiplier(float mult)

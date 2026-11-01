@@ -2092,6 +2092,14 @@ namespace trinity::game
         "48 89 5C 24 08 55 56 57 41 54 41 55 41 56 41 57 48 83 EC 70 49 8B F8 4C 8B E9 "
         "65 48 8B 04 25 58 00 00 00";
 
+    // TU 2.04.03 (3460): the gain-writer prologue shape, found live by the f3460
+    // in-process probe @ 0x1418E5615 (same family as the 3446 writer: pushes,
+    // sub rsp,70h, mov r8,rcx; mov r13,rcx; movzx ebx,dx; mov rsi,rcx; test r9,r9).
+    // The relationship record rides in r9; scaling it in-flight changes what the
+    // gain popup shows AND what the ledger copy stores.
+    inline constexpr const char* kSig_FriendlyWriter3460 =
+        "48 89 6C 24 10 48 89 74 24 18 57 48 83 EC 70 49 8B C1 49 8B E8 0F B7 DA 48 8B F1 4D 85 C9";
+
     inline constexpr const char* kSig_FriendlySetPet =
         "49 89 E3 53 55 56 57 41 56 41 57 48 83 EC 68 48 89 D7 48 89 CE 0F B7 42 04";
 
