@@ -5,6 +5,7 @@
 #include <Windows.h>
 #include <Xinput.h>
 #include <imgui.h>
+#include <mutex>
 #include <cfloat>
 #include <cmath>
 #include <cstdarg>
@@ -2026,6 +2027,10 @@ namespace trinity::ui
 
     void Toast(const char* fmt, ...)
     {
+        // Locked: Toast() is also called from the game thread (trust scaling),
+        // while DrawToasts()/ToastsActive() run on the render thread.
+        static std::mutex s_toastMutex;
+        std::lock_guard<std::mutex> lock(s_toastMutex);
         // Newest first; the oldest falls off the end.
         if (g_toastCount < 4) ++g_toastCount;
         for (int i = g_toastCount - 1; i > 0; --i)
@@ -2040,6 +2045,8 @@ namespace trinity::ui
 
     bool ToastsActive()
     {
+        static std::mutex s_activeMutex;
+        std::lock_guard<std::mutex> lock(s_activeMutex);
         const ULONGLONG now = GetTickCount64();
         for (int i = 0; i < g_toastCount; ++i)
             if (now - g_toasts[i].born < kToastLife)
@@ -2049,6 +2056,8 @@ namespace trinity::ui
 
     void DrawToasts()
     {
+        static std::mutex s_drawMutex;
+        std::lock_guard<std::mutex> lock(s_drawMutex);
         if (g_toastCount == 0)
             return;
 

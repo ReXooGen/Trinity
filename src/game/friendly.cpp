@@ -17,6 +17,7 @@
 #include "../mem/scanner.h"
 #include "../core/logger.h"
 #include "../core/state.h"
+#include "../gui/framework.h"
 
 namespace trinity::game
 {
@@ -484,6 +485,7 @@ namespace trinity::game
                              mult, static_cast<long long>(target),
                              static_cast<unsigned long long>(valueAddr),
                              static_cast<unsigned long long>(serverHit));
+                    ui::Toast("Trust +%lld (x%.2f)", static_cast<long long>(target), mult);
                     Write64(valueAddr, static_cast<uint64_t>(target));
                     return;
                 }
@@ -521,6 +523,7 @@ namespace trinity::game
                          static_cast<long long>(gain), mult, static_cast<long long>(target),
                          static_cast<unsigned long long>(valueAddr),
                          static_cast<unsigned long long>(serverHit));
+                ui::Toast("Trust +%lld (x%.2f)", static_cast<long long>(target), mult);
                 Write64(valueAddr, static_cast<uint64_t>(target));
             });
             if (walked == 0)
