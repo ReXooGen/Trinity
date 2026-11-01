@@ -45,66 +45,55 @@ namespace trinity::game
         // ---------------------------------------------------------------------
         // TU 2.04.03+ trust APPLY hook.
         //
-        // This is the point that makes the game's own "+N Trust" popup scale.
-        // The realm processor does: read value -> apply delta -> read value again
-        // -> popup delta = after - before. A poll can only write AFTER that popup
-        // has already rendered, which is why the popup stayed at the base amount
-        // while the ledger moved. Scaling the delta inside apply fixes both.
+        // The game's "+N Trust" popup scales only if the delta changes HERE: the
+        // realm processor reads the value, calls apply, then reads it AGAIN to
+        // compute the popup delta. A poll writes after that and cannot move it.
         //
-        // Why this site and not the realm processor: sub_1418E3650 opens with
-        // `mov [rsp+0x18],rbx`, a 5-byte RSP-relative store. MinHook has to copy
-        // those bytes into a trampoline, the trampoline is entered by CALL (RSP-8),
-        // and the spill lands in the wrong argument home - that was the four-crash
-        // loop. The apply entry has no such problem: reached through a 5-byte jmp
-        // thunk it is a single `jmp` with no stack frame at all.
+        // THE CRASH and why this is a code cave, not a MinHook detour:
+        //   game   : call 0x1418EAAF0     -> rsp = R   (return address at R)
+        //   detour : call handler         -> rsp = R-8
+        //   handler: ret -> trampoline    -> enters 0x14B5D5B40 at rsp = R-8
+        // The apply body reads its 5th argument from [rsp+0x50] after
+        // push rdi + sub rsp,0x20 - it needs the entry frame to be R. Entered at
+        // R-8 it reads the wrong slot and stores through garbage (fault at
+        // 0x14B5D5B89, mov [rdx],ecx with rdx=0x493E0).
         //
-        // ABI: rcx = component, rdx = tag (u16), r8 = delta, r9 = secondary.
-        // HARD RULE: no game-function calls inside this handler. It runs inside
-        // the game's own ledger update; re-entering the engine from here is what
-        // faulted before. Only reads of already-known pointers.
-        using FriendlyApply_t = __int64(__fastcall*)(void* component, unsigned __int16 tag,
-                                                     __int64 delta, void* secondary);
-        FriendlyApply_t oFriendlyApply = nullptr;
+        // The stub is entered by a 5-byte jmp placed OVER the thunk, keeps rsp
+        // exactly where the caller left it, rewrites only r8, and tail-jumps into
+        // the trampoline. No return address is added, so the frame stays intact.
+        extern "C" void* g_applyTrampoline = nullptr;
         void* g_applyTarget = nullptr;
 
-        // Tags seen on the trust path. The dispatcher compares [rec+0x28] against
-        // 0x11 for the people/pets relationship record; 0x13 is the tag the realm
-        // processor stamps for the same update.
         inline bool IsTrustTag(unsigned __int16 tag)
         {
+            // 0x11: the relationship record tag the dispatcher compares against.
+            // 0x13: the tag the realm processor stamps for the same update.
             return tag == 0x11 || tag == 0x13;
         }
 
-        __int64 __fastcall hkFriendlyApply(void* component, unsigned __int16 tag,
-                                           __int64 delta, void* secondary)
+        // Called from the cave stub with the caller's frame fully intact.
+        // Pure arithmetic: no game calls, no pointer dereferences - it runs inside
+        // the game's own ledger update, and re-entering the engine faults.
+        extern "C" __int64 ScaleTrustDelta(unsigned __int16 tag, __int64 delta)
         {
             const State& st = State::Get();
-            if (st.trustMult && st.trustMultVal > 1.0f && delta > 0 && IsTrustTag(tag))
+            if (!st.trustMult || st.trustMultVal <= 1.0f || delta <= 0 || !IsTrustTag(tag))
+                return delta;
+            const double scaled = static_cast<double>(delta) * static_cast<double>(st.trustMultVal);
+            __int64 out = static_cast<__int64>(scaled + 0.5);
+            if (out > kFriendly_Max) out = kFriendly_Max;
+            if (out <= delta) return delta;
+            static ULONGLONG s_nextLog = 0;
+            const ULONGLONG now = GetTickCount64();
+            if (now >= s_nextLog)
             {
-                // Only gains are scaled, never losses, and never a value that is
-                // already at or above the game's own cap.
-                const double scaled = static_cast<double>(delta) * static_cast<double>(st.trustMultVal);
-                __int64 out = static_cast<__int64>(scaled + 0.5);
-                if (out > kFriendly_Max) out = kFriendly_Max;
-                if (out > delta)
-                {
-                    // Log every scaled gain once per second at most: the apply
-                    // path is hot during world load.
-                    static ULONGLONG s_nextLog = 0;
-                    const ULONGLONG now = GetTickCount64();
-                    if (now >= s_nextLog)
-                    {
-                        s_nextLog = now + 1000;
-                        LOG_INFO("friendly: apply tag=0x%X delta=%lld -> %lld (x%.2f)",
-                                 static_cast<unsigned>(tag), static_cast<long long>(delta),
-                                 static_cast<long long>(out), st.trustMultVal);
-                    }
-                    return oFriendlyApply(component, tag, out, secondary);
-                }
+                s_nextLog = now + 1000;
+                LOG_INFO("friendly: apply tag=0x%X delta=%lld -> %lld (x%.2f)",
+                         static_cast<unsigned>(tag), static_cast<long long>(delta),
+                         static_cast<long long>(out), st.trustMultVal);
             }
-            return oFriendlyApply(component, tag, delta, secondary);
+            return out;
         }
-
 
         // Tracks last known trust value per record key to scale trust gains accurately (thread-safe)
         std::mutex s_trustMutex;
@@ -276,43 +265,86 @@ namespace trinity::game
             }
         }
 
-        // 0c. TU 2.04.03+ (3460/3462): the trust APPLY hook. This is what makes
-        //     the game's own "+N Trust" popup scale, because the realm processor
-        //     reads the value again AFTER apply to compute the popup delta.
-        //     Prefer the 5-byte jmp thunk (no stack frame at all); fall back to
-        //     the function entry only if the thunk is not found.
+        // 0c. TU 2.04.03+ (3460/3462): trust APPLY hook via a 5-byte jmp cave.
+        //     MinHook is deliberately NOT used: its detour costs a return address,
+        //     which shifts the frame the apply body reads its 5th argument from.
         if (core::GetGameVersion().revision >= 3460)
         {
-            uintptr_t applyAddr = mem::FindPattern(kSig_FriendlyApplyThunk3460);
-            const char* sigUsed = kSig_FriendlyApplyThunk3460;
-            const char* how = "thunk";
-            if (!applyAddr)
+            const uintptr_t applyAddr = mem::FindPattern(kSig_FriendlyApplyThunk3460);
+            if (applyAddr && mem::CountMatches(kSig_FriendlyApplyThunk3460) == 1)
             {
-                applyAddr = mem::FindPattern(kSig_FriendlyApply3460);
-                sigUsed = kSig_FriendlyApply3460;
-                how = "entry";
-            }
-            if (applyAddr && mem::CountMatches(sigUsed) == 1)
-            {
-                g_applyTarget = reinterpret_cast<void*>(applyAddr);
-                if (MH_CreateHook(g_applyTarget, reinterpret_cast<void*>(&hkFriendlyApply),
-                                  reinterpret_cast<void**>(&oFriendlyApply)) == MH_OK)
+                const int32_t rel0 = *reinterpret_cast<const int32_t*>(applyAddr + 1);
+                const uintptr_t tramp = applyAddr + 5 + rel0;
+                g_applyTrampoline = reinterpret_cast<void*>(tramp);
+
+                // Stub: save volatile args, call ScaleTrustDelta, put the result in
+                // r8, restore, tail-jump. rsp is untouched at entry and exit.
+                // NOTE: r8 is deliberately NOT saved/restored - it carries the
+                // scaled delta on the way out. Saving it would clobber the result.
+                uint8_t stub[64] = {
+                    0x51, 0x52,                                     // push rcx, rdx
+                    0x41, 0x51, 0x41, 0x52, 0x41, 0x53,             // push r9,r10,r11
+                    0x48, 0x83, 0xEC, 0x28,                         // sub rsp,28h
+                    0x0F, 0xB7, 0xCA,                               // movzx ecx, dx
+                    0x4C, 0x89, 0xC2,                               // mov rdx, r8
+                    0x48, 0xB8, 0,0,0,0,0,0,0,0,                    // movabs rax,<fn>
+                    0xFF, 0xD0,                                     // call rax
+                    0x49, 0x89, 0xC0,                               // mov r8, rax   (result)
+                    0x48, 0x83, 0xC4, 0x28,                         // add rsp,28h
+                    0x41, 0x5B, 0x41, 0x5A, 0x41, 0x59,             // pop r11,r10,r9
+                    0x5A, 0x59,                                     // pop rdx, rcx
+                    0x48, 0xB8, 0,0,0,0,0,0,0,0,                    // movabs rax,<tramp>
+                    0xFF, 0xE0                                      // jmp rax
+                };
+                const uint64_t fnAddr = reinterpret_cast<uint64_t>(&ScaleTrustDelta);
+                const uint64_t jmpAddr = static_cast<uint64_t>(tramp);
+                std::memcpy(stub + 0x14, &fnAddr, 8);
+                std::memcpy(stub + 0x2F, &jmpAddr, 8);
+
+                void* cave = VirtualAlloc(nullptr, sizeof(stub),
+                                          MEM_COMMIT | MEM_RESERVE, PAGE_EXECUTE_READWRITE);
+                DWORD oldProt = 0;
+                if (!cave)
                 {
-                    MH_EnableHook(g_applyTarget);
-                    LOG_OK("friendly: trust apply hook installed @ 0x%p (%s) - popup will scale.",
-                           g_applyTarget, how);
-                    g_hooksInstalled = true;
+                    LOG_ERR("friendly: could not allocate the trust apply cave.");
+                }
+                else if (!VirtualProtect(reinterpret_cast<void*>(applyAddr), 5,
+                                         PAGE_EXECUTE_READWRITE, &oldProt))
+                {
+                    VirtualFree(cave, 0, MEM_RELEASE);
+                    LOG_ERR("friendly: trust apply thunk is not writable.");
                 }
                 else
                 {
-                    LOG_ERR("friendly: trust apply hook failed @ 0x%p (%s)", g_applyTarget, how);
-                    g_applyTarget = nullptr;
-                    oFriendlyApply = nullptr;
+                    std::memcpy(cave, stub, sizeof(stub));
+                    FlushInstructionCache(GetCurrentProcess(), cave, sizeof(stub));
+
+                    const int64_t rel = static_cast<int64_t>(reinterpret_cast<uintptr_t>(cave)) - static_cast<int64_t>(applyAddr + 5);
+                    if (rel < INT32_MIN || rel > INT32_MAX)
+                    {
+                        VirtualProtect(reinterpret_cast<void*>(applyAddr), 5, oldProt, &oldProt);
+                        VirtualFree(cave, 0, MEM_RELEASE);
+                        LOG_ERR("friendly: trust apply cave landed out of jmp range.");
+                    }
+                    else
+                    {
+                        uint8_t patch[5] = { 0xE9, 0, 0, 0, 0 };
+                        const int32_t r32 = static_cast<int32_t>(rel);
+                        std::memcpy(patch + 1, &r32, 4);
+                        std::memcpy(reinterpret_cast<void*>(applyAddr), patch, 5);
+                        FlushInstructionCache(GetCurrentProcess(),
+                                              reinterpret_cast<void*>(applyAddr), 5);
+                        VirtualProtect(reinterpret_cast<void*>(applyAddr), 5, oldProt, &oldProt);
+                        g_applyTarget = reinterpret_cast<void*>(applyAddr);
+                        LOG_OK("friendly: trust apply cave installed @ 0x%p (tramp 0x%p) - popup will scale.",
+                               reinterpret_cast<void*>(applyAddr), reinterpret_cast<void*>(tramp));
+                        g_hooksInstalled = true;
+                    }
                 }
             }
             else
             {
-                LOG_WARN("friendly: trust apply site not found/unique - popup stays at the base amount.");
+                LOG_WARN("friendly: trust apply thunk not found/unique - popup stays at the base amount.");
             }
         }
 
@@ -856,7 +888,7 @@ namespace trinity::game
         //     only path that also moves the popup. If the apply site was not found
         //     the poll falls back to being the scaler so the feature still works.
         const bool is3460 = core::GetGameVersion().revision >= 3460;
-        const bool applyHookLive = is3460 && oFriendlyApply != nullptr;
+        const bool applyHookLive = is3460 && g_applyTarget != nullptr;
         const bool writerAuthoritative = (!is3460 && g_hooksInstalled) || applyHookLive;
         if (core::GetGameVersion().revision < 3400) return;
         const State& st = State::Get();
@@ -889,10 +921,23 @@ namespace trinity::game
     {
         if (g_applyTarget)
         {
-            MH_DisableHook(g_applyTarget);
-            MH_RemoveHook(g_applyTarget);
+            // Restore the original `jmp` thunk bytes. The cave itself is left
+            // allocated: freeing code that may be executing is worse than a
+            // 64-byte leak on shutdown.
+            DWORD oldProt = 0;
+            if (VirtualProtect(g_applyTarget, 5, PAGE_EXECUTE_READWRITE, &oldProt))
+            {
+                uint8_t orig[5] = { 0xE9, 0, 0, 0, 0 };
+                const uintptr_t applyAddr = reinterpret_cast<uintptr_t>(g_applyTarget);
+                const int64_t rel = static_cast<int64_t>(reinterpret_cast<uintptr_t>(g_applyTrampoline)) - static_cast<int64_t>(applyAddr + 5);
+                const int32_t r32 = static_cast<int32_t>(rel);
+                std::memcpy(orig + 1, &r32, 4);
+                std::memcpy(g_applyTarget, orig, 5);
+                FlushInstructionCache(GetCurrentProcess(), g_applyTarget, 5);
+                VirtualProtect(g_applyTarget, 5, oldProt, &oldProt);
+            }
             g_applyTarget = nullptr;
-            oFriendlyApply = nullptr;
+            g_applyTrampoline = nullptr;
         }
 
         if (g_ledgerTarget)
