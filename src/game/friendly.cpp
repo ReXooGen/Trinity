@@ -16,6 +16,7 @@
 #include "../mem/safe_memory.h"
 #include "../mem/scanner.h"
 #include "../core/logger.h"
+#include "../core/tick_metrics.h"
 #include "../core/state.h"
 #include "../core/mod.h"
 #include "../gui/framework.h"
@@ -805,7 +806,8 @@ namespace trinity::game
                             serverHit = serverValue;
                         }
                     });
-                    LOG_INFO("friendly: scale(new) key=%llu gain=%lld mult=%.2f target=%lld client=%llx server=%llx",
+                    if (core::TickMetrics::enabled.load(std::memory_order_acquire))
+                        LOG_INFO("friendly: scale(new) key=%llu gain=%lld mult=%.2f target=%lld client=%llx server=%llx",
                              static_cast<unsigned long long>(key), static_cast<long long>(gain),
                              mult, static_cast<long long>(target),
                              static_cast<unsigned long long>(valueAddr),
@@ -842,7 +844,8 @@ namespace trinity::game
                 // Scale trace: proves whether the scaled write happened and on
                 // which realm. serverHit==0 means client-only - the same wound
                 // add-item has, where the server reconcile wipes the gain.
-                LOG_INFO("friendly: scale key=%llu base=%lld gain=%lld mult=%.2f target=%lld client=%llx server=%llx",
+                if (core::TickMetrics::enabled.load(std::memory_order_acquire))
+                    LOG_INFO("friendly: scale key=%llu base=%lld gain=%lld mult=%.2f target=%lld client=%llx server=%llx",
                          static_cast<unsigned long long>(key), static_cast<long long>(seen->second),
                          static_cast<long long>(gain), mult, static_cast<long long>(target),
                          static_cast<unsigned long long>(valueAddr),
@@ -862,10 +865,10 @@ namespace trinity::game
                     DiagnoseFriendlyChainOnce(client);
                 }
             }
-            // 30s ledger snapshot: proves the scaled writes stick in the ledger
-            // (3460: sub+0x140 IS ServerFriendlyActorComponent - the authority).
+            // 5-min ledger snapshot (diagnostics only - behind perfLogging so
+            // normal sessions stay quiet).
             static ULONGLONG s_lastDump = 0;
-            if (now - s_lastDump > 30000)
+            if (core::TickMetrics::enabled.load(std::memory_order_acquire) && now - s_lastDump > 300000)
             {
                 s_lastDump = now;
                 uintptr_t comp = 0;

@@ -22,8 +22,8 @@ namespace trinity
         // CombatVerbose: console-only, NEVER written to file (prevents 72GB log runaway)
         enum Level { Debug, Info, Good, Warn, Error, CombatVerbose };
 
-        // Hard cap: 50 MB. When exceeded, current log is rotated to Trinity.1.log and a fresh file begins.
-        static constexpr size_t kMaxLogBytes = 50ULL * 1024ULL * 1024ULL;
+        // Hard cap: 5 MB. When exceeded, current log is rotated to Trinity.1.log and a fresh file begins.
+        static constexpr size_t kMaxLogBytes = 5ULL * 1024ULL * 1024ULL;
 
         static void InitFileLogging(HMODULE module)
         {
@@ -39,6 +39,14 @@ namespace trinity
                 {
                     strcpy_s(slash + 1, static_cast<size_t>(path + MAX_PATH - slash - 1), "Trinity.log");
                     s_logPath = path;
+                    // Fresh session: drop the previous session's rotated log so
+                    // at most one backup ever exists.
+                    {
+                        std::string old1 = s_logPath;
+                        const size_t dot = old1.rfind('.');
+                        if (dot != std::string::npos) old1.insert(dot, ".1"); else old1 += ".1";
+                        DeleteFileA(old1.c_str());
+                    }
                     TruncateOversizedLog(path);
                     s_logFp = _fsopen(path, "a", _SH_DENYNO);
                     s_logBytesWritten = GetLogFileSize(path);
@@ -289,7 +297,7 @@ namespace trinity
             // Write a rotation notice at the top of the new file
             if (s_logFp)
             {
-                const char* notice = "[LOGGER] Log rotated – previous log saved to Trinity.1.log (50MB cap)\n";
+                const char* notice = "[LOGGER] Log rotated – previous log saved to Trinity.1.log (5MB cap)\n";
                 std::fputs(notice, s_logFp);
                 s_logBytesWritten += strlen(notice);
                 std::fflush(s_logFp);
@@ -305,7 +313,7 @@ namespace trinity
                                         l.stamp.c_str(), l.tid, names[l.lvl], l.text.c_str());
             if (n <= 0) return;
 
-            // Enforce 50MB cap: rotate before write if needed
+            // Enforce 5MB cap: rotate before write if needed
             if (s_logBytesWritten + static_cast<size_t>(n) > kMaxLogBytes)
                 RotateLog();
 
