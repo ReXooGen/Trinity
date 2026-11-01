@@ -3700,6 +3700,12 @@ namespace trinity::gui
         if (st.rebindCapture && (ui::CurrentTab() != TabSystem || strcmp(cur, "keybinds") != 0))
             st.rebindCapture = false;
 
+        // Stage timer: attribute ui-build ms between (toasts+status) and the
+        // page body + End(). Logged 1/s while perf diagnostics is on.
+        LARGE_INTEGER qStage0{}, qStage1{}, qStage2{};
+        QueryPerformanceCounter(&qStage0);
+
+        QueryPerformanceCounter(&qStage1);
         if (!*cur)
         {
             switch (ui::CurrentTab())
@@ -3751,5 +3757,19 @@ namespace trinity::gui
         else if (!strcmp(cur, "world_time_presets")) RenderTimePresets();
         else if (!strcmp(cur, "world_weather")) RenderWeatherAtmosphere();
         else                              RenderPlayer();
+
+        QueryPerformanceCounter(&qStage2);
+        {
+            static ULONGLONG s_lastStageLog = 0;
+            const ULONGLONG now = GetTickCount64();
+            if (st.perfLogging && now - s_lastStageLog >= 1000)
+            {
+                s_lastStageLog = now;
+                const double t0 = (qStage1.QuadPart - qStage0.QuadPart) * 1000.0 / core::TickMetrics::frequency;
+                const double t1 = (qStage2.QuadPart - qStage1.QuadPart) * 1000.0 / core::TickMetrics::frequency;
+                LOG_WARN("perf: render stages pre=%.2f ms page=%.2f ms (menu='%s')",
+                         t0, t1, cur && *cur ? cur : "<root>");
+            }
+        }
     }
 }
