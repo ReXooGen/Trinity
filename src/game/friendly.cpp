@@ -475,6 +475,45 @@ namespace trinity::game
 
         void Diagnose3460()
         {
+            // One-shot full runtime image dump: the disk exe is packed, so
+            // offline analysis (IDA/capstone) of the popup path needs the
+            // unpacked image that only exists in memory. Written once, on a
+            // detached thread (guarded reads only, no game-state mutation);
+            // skipped when the dump already exists.
+            static bool s_dumpStarted = false;
+            if (!s_dumpStarted)
+            {
+                s_dumpStarted = true;
+                char dir[MAX_PATH]{};
+                if (GetModuleFileNameA(Mod::Get().Module(), dir, MAX_PATH))
+                {
+                    char* slash = strrchr(dir, '\\');
+                    if (slash) *slash = '\0';
+                    std::string path = std::string(dir) + "\\Trinity_runtime_3460.bin";
+                    std::thread([path]()
+                    {
+                        const uintptr_t base = 0x140000000ULL;
+                        const uintptr_t size = 329084312ULL;
+                        FILE* f = fopen(path.c_str(), "wb");
+                        if (!f) { LOG_ERR("f3460: runtime dump open failed: %s", path.c_str()); return; }
+                        uint8_t zero[4096] = {};
+                        for (uintptr_t a = base; a < base + size; a += 4096)
+                        {
+                            uint8_t page[4096];
+                            bool any = false;
+                            for (uintptr_t k = 0; k < 4096; ++k)
+                            {
+                                uint8_t b = 0;
+                                if (Read8(a + k, &b)) { page[k] = b; any = true; }
+                                else page[k] = zero[k];
+                            }
+                            fwrite(any ? page : zero, 1, 4096, f);
+                        }
+                        fclose(f);
+                        LOG_OK("f3460: runtime image dumped -> %s", path.c_str());
+                    }).detach();
+                }
+            }
             static bool s_sigOnce = false;
             if (!s_sigOnce)
             {
