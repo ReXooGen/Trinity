@@ -53,24 +53,31 @@ namespace trinity::core
             LONGLONG old = overlayWait.load(std::memory_order_relaxed);
             while (elapsed > old && !overlayWait.compare_exchange_weak(old, elapsed, std::memory_order_relaxed)) {}
         }
-        // Called by render, not the measured game tick. One summary per 10s.
-        // Always on: the maxima are the ONLY window into game-thread cost, and
-        // play-time stutter (Operator: drop saat bermain, bukan saat menu) was
-        // invisible while this was gated behind the perfLogging opt-in.
+        // Called by render, not the measured game tick. One summary per 10s,
+        // logged only while a part is hot (>= 2 ms) - always-on collection,
+        // quiet output. The full per-part line stays available for opt-in
+        // diagnostics via the Performance Diagnostics toggle.
         static void Report()
         {
+            const bool verbose = enabled.load(std::memory_order_acquire);
             const ULONGLONG now = GetTickCount64();
             ULONGLONG due = nextReport.load(std::memory_order_relaxed);
             if (now < due || !frequency || !nextReport.compare_exchange_strong(due, now + 10000, std::memory_order_relaxed)) return;
             double values[6]{};
+            bool hot = false;
             for (unsigned i = 0; i < 6; ++i)
             {
                 values[i] = maxima[i].exchange(0, std::memory_order_relaxed) * 1000.0 / frequency;
+                hot |= values[i] >= 2.0;
             }
-            LOG_INFO("perf: game-tick max/10s ms player=%.3f world=%.3f inventory=%.3f dye=%.3f equipment=%.3f friendly=%.3f",
-                     values[0], values[1], values[2], values[3], values[4], values[5]);
+            if (verbose)
+                LOG_INFO("perf: game-tick max/10s ms player=%.3f world=%.3f inventory=%.3f dye=%.3f equipment=%.3f friendly=%.3f",
+                         values[0], values[1], values[2], values[3], values[4], values[5]);
+            else if (hot)
+                LOG_WARN("perf: game-tick hot max/10s ms player=%.3f world=%.3f inventory=%.3f dye=%.3f equipment=%.3f friendly=%.3f",
+                         values[0], values[1], values[2], values[3], values[4], values[5]);
             const double waitMs = overlayWait.exchange(0, std::memory_order_relaxed) * 1000.0 / frequency;
-            LOG_INFO("perf: overlay fence-wait max/10s ms=%.3f", waitMs);
+            if (verbose || waitMs >= 2.0) LOG_INFO("perf: overlay fence-wait max/10s ms=%.3f", waitMs);
         }
     };
 }

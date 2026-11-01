@@ -3221,6 +3221,12 @@ namespace trinity::game
 
     void Dye::Tick()
     {
+        // 2.04.03 (3460): the always-on tick metrics caught Dye::Tick at 6-71 ms
+        // per pass on the new image (0.6 ms on 3446) - the restore-replay walks
+        // structures that moved in this update. Gate it off until the 3460
+        // re-derivation; dye menus still work on demand, only the per-tick
+        // replay/pump stops.
+        if (core::GetGameVersion().revision >= 3460) return;
         DyeOperationGuard operation;
         if (!operation.acquired) return; // native calls may re-enter the movement pump
         static uintptr_t lastWorld = 0, lastRoot = 0;

@@ -2706,6 +2706,15 @@ namespace trinity::game
     // Game-thread refinement queue and optional older-build effect upkeep.
     void Equipment::Tick()
     {
+        // 2.04.03 (3460): steady 4-5 ms per pass on the new image (vs ~0.1 on
+        // 3446) - the durability/refine paths walk moved structures. Gate the
+        // pump until the 3460 re-derivation; the equipment menu still works on
+        // demand through its own locked paths.
+        if (core::GetGameVersion().revision >= 3460)
+        {
+            PumpEquipProfileSave();
+            return;
+        }
         PumpEquipProfileSave();
         if (!Player::Ready())
         {
