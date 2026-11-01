@@ -772,10 +772,14 @@ namespace trinity::game
         // its offsets work unchanged on the new layout, with the writes landing
         // in the ledger itself, so the poll is re-enabled here. The old
         // client-replica revert wound is gone by construction.
-        // The ledger writer prologue sig is NOT re-armed on 3460 (the writer
-        // moved to 0x142079B40 and the old pattern's uniqueness is unproven);
-        // the poll alone carries the feature.
+        // Authority split: when the 3460 gain-writer hook is installed, THE
+        // HOOK owns scaling (it sees the event before the popup renders and
+        // before the ledger copy) and the poll's scale writes are disabled -
+        // a poll write poisons the writer's per-key cache (ledger 20 vs event
+        // 5 reads as a lower value and the gain passes unscaled). The poll
+        // keeps only the Max Trust sweep and the ledger snapshot.
         const bool is3460 = core::GetGameVersion().revision >= 3460;
+        const bool writerAuthoritative = is3460 && g_hooksInstalled;
         if (core::GetGameVersion().revision < 3400) return;
         const State& st = State::Get();
         if (!st.trustMult || st.trustMultVal <= 1.0f)
@@ -791,6 +795,7 @@ namespace trinity::game
         // 3460 site dumps + ledger snapshot (one-shot sigs; 5s snapshot cadence
         // lives inside) - feeds the offline disassembly of the gift path.
         __try { Diagnose3460(); } __except (EXCEPTION_EXECUTE_HANDLER) {}
+        if (writerAuthoritative) return; // the gain-writer hook owns scaling
         static ULONGLONG s_lastPoll = 0;
         const ULONGLONG now = GetTickCount64();
         if (now - s_lastPoll < 120) return;
