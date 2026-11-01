@@ -17,6 +17,7 @@
 #include "../mem/scanner.h"
 #include "../core/logger.h"
 #include "../core/state.h"
+#include "../core/mod.h"
 #include "../gui/framework.h"
 
 namespace trinity::game
@@ -489,6 +490,30 @@ namespace trinity::game
                 {
                     const uintptr_t a = mem::FindPattern(s.sig);
                     LOG("f3460: site %-9s -> %p", s.name, reinterpret_cast<void*>(a));
+                    // Offline-analysis aid: dump 2 KB at each candidate so the
+                    // disassembly happens out-of-band (the disk exe is packed;
+                    // only the runtime image holds real code).
+                    if (a >= kMinPointer)
+                    {
+                        char path[MAX_PATH]{};
+                        char dir[MAX_PATH]{};
+                        if (GetModuleFileNameA(Mod::Get().Module(), dir, MAX_PATH))
+                        {
+                            char* slash = strrchr(dir, '\\');
+                            if (slash) *slash = '\0';
+                            snprintf(path, sizeof(path), "%s\\Trinity_site_%s.bin", dir, s.name);
+                        }
+                        else
+                            snprintf(path, sizeof(path), "Trinity_site_%s.bin", s.name);
+                        if (FILE* f = fopen(path, "wb"))
+                        {
+                            uint8_t buf[2048]{};
+                            for (int k = 0; k < 2048; ++k) Read8(a + k, &buf[k]);
+                            fwrite(buf, 1, sizeof(buf), f);
+                            fclose(f);
+                            LOG("f3460: dumped %s -> %s", s.name, path);
+                        }
+                    }
                 }
             }
             SnapshotFriendly3460();
@@ -758,15 +783,11 @@ namespace trinity::game
             // Re-arm the seeding so the next enable snapshots fresh baselines
             // instead of treating accumulated offline gains as one event.
             g_trustSeeded = false;
-            if (!st.maxTrust) return;
-            // Max Trust alone: sweep without the multiplier poll.
-            __try { SweepMaxTrust(); } __except (EXCEPTION_EXECUTE_HANDLER) {}
             return;
         }
-        if (st.maxTrust)
-        {
-            __try { SweepMaxTrust(); } __except (EXCEPTION_EXECUTE_HANDLER) {}
-        }
+        // Max Trust is folded into the single toggle: every pass sweeps the
+        // ledger to the cap alongside the multiplier poll.
+        __try { SweepMaxTrust(); } __except (EXCEPTION_EXECUTE_HANDLER) {}
         static ULONGLONG s_lastPoll = 0;
         const ULONGLONG now = GetTickCount64();
         if (now - s_lastPoll < 120) return;
