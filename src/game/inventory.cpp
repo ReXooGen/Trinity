@@ -2040,12 +2040,32 @@ namespace trinity::game
         // TU 2.04 capture path: the per-placement commit also receives the holder, in
         // both realms. The old transaction commit no longer carries a container.
         void* g_commitPlacementTarget = nullptr;
+        static std::atomic<int> g_dispatchDumps{ 0 };
+        static std::atomic<int> g_placementDumps{ 0 };
+
         void* __fastcall hkCommitPlacement4(void* holder, int* err, void* placement, uint16_t slotIdx)
         {
             g_commitActive.fetch_add(1, std::memory_order_acq_rel);
             __try
             {
                 __try { NoteHolder(holder); } __except (EXCEPTION_EXECUTE_HANDLER) {}
+                // Placement capture: the dispatcher's output for ONE call. On a
+                // game-side add (buy/loot) this names the slot layout our add
+                // must reproduce. Max 8 dumps.
+                {
+                    const int n = g_placementDumps.fetch_add(1, std::memory_order_relaxed);
+                    if (n < 8 && placement)
+                    {
+                        uint8_t buf[0x20]{};
+                        for (int i = 0; i < 0x20; ++i)
+                            if (!Read8(reinterpret_cast<uintptr_t>(placement) + i, &buf[i])) break;
+                        char hex[0x20 * 3 + 1]{};
+                        for (int i = 0; i < 0x20; ++i)
+                            snprintf(hex + i * 3, 4, "%02X ", buf[i]);
+                        LOG("inventory: placement #%d holder=%p slot=%u: %s",
+                            n, holder, static_cast<unsigned>(slotIdx), hex);
+                    }
+                }
                 return oCommitPlacement4(holder, err, placement, slotIdx);
             }
             __finally
@@ -2484,7 +2504,7 @@ namespace trinity::game
                                                   void* request, void* a4);
         static AddDispatch_t   oAddDispatch   = nullptr;
         static void*           g_dispatchTarget = nullptr;
-        static std::atomic<int> g_dispatchDumps{ 0 };
+
 
         static void DumpRequest(const char* tag, void* request)
         {
