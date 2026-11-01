@@ -212,12 +212,6 @@ namespace trinity::game
             }
         }
 
-        // 0b. TU 2.04.03 (3460): hook the realm-processing function the dispatcher
-        //     calls (sub_1418E3650, runtime-image-verified unique) - the gain event
-        //     record (r9) flows through here BEFORE the popup renders and before
-        //     the ledger copy, so scaling it in-flight changes the popup amount
-        //     like the pre-2.04 builds did. The dispatcher prologue itself carries
-        //     no copy tail (the tails live in callees) and stays unhooked.
         // 1. Install SetNpc prologue hook (Strictly for dialogue & gift giving)
         uintptr_t npcAddr = mem::FindPattern(kSig_FriendlySetNpc);
         if (!npcAddr)
@@ -428,6 +422,17 @@ namespace trinity::game
                     char* slash = strrchr(dir, '\\');
                     if (slash) *slash = '\0';
                     std::string path = std::string(dir) + "\\Trinity_runtime_3460.bin";
+                    // 329 MB of I/O per session for a dump that is identical
+                    // across sessions of the same build. Skip when it is already
+                    // on disk and large enough to be complete.
+                    WIN32_FILE_ATTRIBUTE_DATA fa{};
+                    const bool haveDump =
+                        GetFileAttributesExA(path.c_str(), GetFileExInfoStandard, &fa) &&
+                        fa.nFileSizeHigh == 0 && fa.nFileSizeLow > 300u * 1024u * 1024u;
+                    if (haveDump)
+                        LOG_INFO("f3460: runtime dump already present (%lu MB) - skipping.",
+                                 fa.nFileSizeLow / (1024u * 1024u));
+                    else
                     std::thread([path]()
                     {
                         const uintptr_t base = 0x140000000ULL;
@@ -557,17 +562,22 @@ namespace trinity::game
         }
 
         // Trust scaling runs entirely through PollTrustMultiplier + SweepMaxTrust.
-        // A realm-writer detour was tried twice on 3460 and reverted: every
-        // session that installed it crashed on world entry at the same function
-        // (sub_1418E3650, faults at +0x9A/+0xF6/+0x106) with a stable register
-        // set - RDI 0xFFFFFFFFFFFB6C20, RAX 0x493E0 (RDI == -RAX), and RCX
-        // holding UTF-16 text where a pointer belongs. That is a wrong struct
-        // layout, not heap corruption: the world-load call sites do not pass the
-        // (component, tag, a3, record) shape the dispatcher uses at runtime, so
-        // the handler read and wrote fields of an unrelated object. Do not
-        // re-add a detour here without first dumping the live call-site ABI.
-        // (The earlier +0x20/+0x28 field writes were a second, independent bug:
-        // on the 3460 record those offsets hold pointers the callee dereferences.)
+        //
+        // A detour on the 3460 realm-processing function (sub_1418E3650) was tried
+        // and reverted. The reason is NOT the record layout - it is the prologue:
+        //     1418E3650  mov [rsp+0x18], rbx    <- 5-byte RSP-relative store
+        //     1418E3655  mov [rsp+0x20], r9     <- and another
+        // MinHook has to copy >= 5 bytes, so that store is relocated into the
+        // trampoline. The trampoline is entered by CALL (RSP shifted 8), so the
+        // spill lands in the wrong argument-home slot and the callee dereferences
+        // garbage. Every session with the detour installed crashed on world entry
+        // inside this function (+0x9A/+0xF6/+0x106) with an identical register set:
+        // RAX 0x493E0 in a pointer slot, RDI = -0x493E0, and UTF-16 text read as a
+        // vtable. No Trinity trust write appeared in any of those logs.
+        // Do not re-add a detour here without a prologue-aware install.
+        // (An earlier attempt also wrote record +0x20/+0x28; those are pointers on
+        // the 3460 record - a second, independent bug, now gone with the hook.)
+
         void PollTrustMultiplier(float mult)
         {
             static std::unordered_map<uint64_t, int64_t> s_last;
@@ -720,14 +730,14 @@ namespace trinity::game
         // its offsets work unchanged on the new layout, with the writes landing
         // in the ledger itself, so the poll is re-enabled here. The old
         // client-replica revert wound is gone by construction.
-        // Authority split: when the 3460 gain-writer hook is installed, THE
-        // HOOK owns scaling (it sees the event before the popup renders and
-        // before the ledger copy) and the poll's scale writes are disabled -
-        // a poll write poisons the writer's per-key cache (ledger 20 vs event
-        // 5 reads as a lower value and the gain passes unscaled). The poll
-        // keeps only the Max Trust sweep and the ledger snapshot.
+        // Authority split: on 3446 the ledger-writer hook owns scaling (it sees
+        // the event before the popup renders and before the ledger copy) and the
+        // poll's scale writes are disabled - a poll write poisons the writer's
+        // per-key cache (ledger 20 vs event 5 reads as a lower value and the gain
+        // passes unscaled). On 3460+ no writer detour exists (see the crash note
+        // above PollTrustMultiplier), so the poll is the only scaler and MUST run.
         const bool is3460 = core::GetGameVersion().revision >= 3460;
-        const bool writerAuthoritative = is3460 && g_hooksInstalled;
+        const bool writerAuthoritative = !is3460 && g_hooksInstalled;
         if (core::GetGameVersion().revision < 3400) return;
         const State& st = State::Get();
         if (!st.trustMult || st.trustMultVal <= 1.0f)

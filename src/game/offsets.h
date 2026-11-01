@@ -2095,18 +2095,29 @@ namespace trinity::game
     // TU 2.04.03 (3460): the gain-writer prologue shape, found live by the f3460
     // in-process probe @ 0x1418E5615 (same family as the 3446 writer: pushes,
     // sub rsp,70h, mov r8,rcx; mov r13,rcx; movzx ebx,dx; mov rsi,rcx; test r9,r9).
-    // The relationship record rides in r9; scaling it in-flight changes what the
-    // gain popup shows AND what the ledger copy stores.
+    // NOT HOOKED: it is reached from the world-load path through the same ledger
+    // build the reverted detour corrupted, and the popup value is produced by the
+    // poll/sweep path already. Kept as a locator for offline analysis.
     inline constexpr const char* kSig_FriendlyWriter3460 =
         "48 89 6C 24 10 48 89 74 24 18 57 48 83 EC 70 49 8B C1 49 8B E8 0F B7 DA 48 8B F1 4D 85 C9";
 
-    // TU 2.04.03 (3460) realm-processing function sub_1418E3650 - signature kept
-    // ONLY as a locator for offline analysis; it is NOT hooked. Four sessions
-    // crashed on world entry inside it (+0x9A/+0xF6/+0x106) with an identical
-    // register set (RDI 0xFFFFFFFFFFFB6C20, RAX 0x493E0 where RDI == -RAX, and
-    // RCX holding UTF-16 text in a pointer slot). The world-load call sites do
-    // not pass the (component, tag, a3, record) shape the runtime dispatcher
-    // uses, so any detour that assumed that shape read/wrote the wrong object.
+    // TU 2.04.03 (3460) realm-processing function sub_1418E3650 - locator kept
+    // for OFFLINE ANALYSIS ONLY; it must never be detoured.
+    //
+    // Proof from the unpacked runtime image (Trinity_runtime_3460.bin @ 0x18E3650):
+    //     1418E3650  48 89 5C 24 18   mov [rsp+0x18], rbx    <- 5-byte RSP-relative store
+    //     1418E3655  4C 89 4C 24 20   mov [rsp+0x20], r9     <- another one
+    // MinHook needs >= 5 bytes, so it copies that first store into the trampoline.
+    // The trampoline is reached by CALL (RSP shifted by 8), so the spill lands in
+    // the wrong argument-home slot and the callee reads garbage: observed faults
+    // at +0x9A (call [rax+0x1A8] - vtable dispatch through a non-vtable first
+    // qword, RAX held UTF-16 text), +0xF6 (mov [rcx], rax with rcx = -0x493E0)
+    // and +0x106 (mov rax,[rcx+0x88] with rcx = 0x493E0, a millisecond duration
+    // where a pointer belongs). Four sessions, identical register sets, every one
+    // of them with this detour installed and no Trinity trust write logged.
+    //
+    // A working detour needs a prologue-aware install (relocate the RSP-relative
+    // stores, or place the detour past them) - not a plain 5-byte patch.
     inline constexpr const char* kSig_FriendlyRealmWriter3460 =
         "48 89 5C 24 18 4C 89 4C 24 20 48 89 54 24 10 48 89 4C 24 08 "
         "55 56 57 41 54 41 55 41 56 41 57 48 8D AC 24 20 FF FF FF "
