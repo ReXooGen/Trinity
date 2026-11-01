@@ -205,3 +205,46 @@ Static analysis of EXE SHA-256 `fec07be1b725a46624d31fcd74bf3730ea809765226cea6b
 - **Pak manifests**: name blobs use LEB128 parent distance, with a trailing extension table indexed by `FileEntry::flag` (27739/27739 name offsets resolved in `0012/0.pamt` during the live session).
 - **No Cooldown**: item `_cooltime` is an object of three i64 at def+0x1D8, respawn is i64 at def+0x220, character `_callMercenaryCoolTime` is at def+0x158.
 - **Time of day**: the manager is EnvManager+0x60; hour, lower and upper limits are at +0x3B8/+0x3BC/+0x3C0.
+
+## 12. TU 2.04.03 (PE 3460) cutover — trust site B dispatch notes
+
+Game updated 2026-11-01 ~08:00 to PE 1.0.0.3460 (exe 329,084,312 bytes; was 332,786,072 on
+3446). Every 3446-pinned pattern/offset needs re-verification on the new image.
+
+### Evidence extracted from the working reference implementation
+(v9.7 ASI, confirmed on 2.4.03/3209 and 2.04.02/3446):
+
+- Trust write path has TWO sites:
+  - **Site A — "the historic site"**: the SetNpc/SetPet-style writer. Expected ABSENT on
+    2.04+ ("site A is not on this build, which is expected and costs nothing").
+  - **Site B — "the virtual dispatch"**: the 2.04 path. The ledger write goes through a
+    VIRTUAL CALL, so hooking any single concrete function (like our 3446
+    `sub_142076590` ledger-writer hook, eeef76b) misses the gain write. This explains the
+    live evidence: ledger hook installed, zero `ledger-scale` lines, popups still +5/+10.
+- Discovery method (the implementation's Status page): FOUR candidate sites, each with a
+  hit counter ("greet, gift or pet someone twice with the cheat ON... whichever row moved
+  is the trust path"), then Max Trust "touches only that counter".
+- Gain model: "last gain: amount %lld -> %lld on value %lld, actor %llX id %u
+  (component %llX); you: id %u component %llX" + "friendship maximum %d (game global
+  exe+%llX); the game clamps every gain to it itself. A gain above max is left alone."
+  → scale the gain at the dispatch, clamp to the friendship max global, let the game
+  propagate (same propagation insight as our eeef76b, correct site though).
+- Category table (people/pets/horse): probe signature used by the implementation:
+  `0F B7 39 48 8B 1D ?? ?? ?? ?? 3B 7B 08 0F 83 ?? ?? ?? ?? 48 8D 34 FD 00 00 00 00
+   48 8B 43 58 48 8B 04 06` (movzx edi,[rcx]; mov rbx,[rip+..]; cmp edi,[rbx+8];
+   lea rsi,[rdi*8]; mov rax,[rbx+0x58]; mov rax,[rsi+rax]) — per-category array at
+  global+0x58. The learned site/category persist as settings.
+- 2.0X-era record-copy tail (XMM): `C5 FC 11 49 20 C5 F8 10 47 40 C5 F8 11 41 40`;
+  our 3446 YMM variant: `C5 FC 11 49 20 C5 FC 10 47 40 C5 FC 11 41 40`.
+- Client-vs-ledger truth (our live 3446 tests, still true): client friendly component
+  records are a replica; writes there are reverted by sync/reload; the HUD reads the
+  ledger reached through the dispatch.
+
+### 3460 re-derivation checklist (next session)
+1. version_detect: revision 3460 label + gate sanity (>=3400 already covers it).
+2. Re-scan all kSig_* on the new image; expect shifts. The reference sigs (listed
+   above) are known-good anchors on 3460.
+3. Trust: implement Site-B discovery — probe the candidate sites with hit counters,
+   learn the dispatch site on first greet/gift, then scale there.
+4. Frame drop: re-measure on 3460 (PLAYER root clean at a49906e on 3446; dyeslots hint
+   shipped in the same build).
