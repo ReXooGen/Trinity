@@ -640,13 +640,13 @@ namespace trinity::game
                             const int64_t target = (std::min)(last + static_cast<int64_t>(gain * st.trustMultVal + 0.5f), kFriendly_Max);
                             if (target != incoming)
                             {
-                                // Scale every value-bearing field of the event
-                                // record: +8 i64 total, +0x20 u32, +0x28 u64 -
-                                // the pre-2.04 working build scaled exactly these
-                                // three, and the popup reads one of them.
+                                // Scale ONLY the +8 value field. The pre-2.04
+                                // build also wrote +0x20/+0x28, but on the 3460
+                                // layout those hold pointers/sizes this very
+                                // callee dereferences - writing them smashed a
+                                // pointer and crashed world entry (RIP inside
+                                // the original function reading -1).
                                 *reinterpret_cast<int64_t*>(r + 8) = target;
-                                *reinterpret_cast<uint32_t*>(r + 0x20) = static_cast<uint32_t>(target);
-                                *reinterpret_cast<uint64_t*>(r + 0x28) = static_cast<uint64_t>(target);
                                 ui::Toast("Trust +%lld (x%.2f)", static_cast<long long>(target - last), st.trustMultVal);
                             }
                             last = target;
