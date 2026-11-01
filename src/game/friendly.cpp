@@ -20,6 +20,7 @@
 
 namespace trinity::game
 {
+    using mem::Read8;
     using mem::Read16;
     using mem::Read32;
     using mem::Read64;
@@ -334,6 +335,100 @@ namespace trinity::game
         // Lives at namespace scope: Friendly::Tick re-arms it on disable.
         bool g_trustSeeded = false;
 
+        // ---- TU 2.04.03 (3460) re-derivation ladder, in-process ----------------
+        // External RPM is refused by the updated anti-tamper, so the 3446 method
+        // (probe the live process from outside) moved here. Read-only, 5s cadence:
+        // 1. controlled owner -> actor -> scan component slots 0x00..0x400 for a
+        //    component whose vtable RTTI name contains "Friendly" (same COL->TD
+        //    read that verified the 3446 layout externally).
+        // 2. dump that component's entry count + the last few record values.
+        // 3. FindPattern the copy-tail anchors (XMM/YMM) + the category-table
+        //    probe - the site candidates for the virtual dispatch (site B).
+        // Every greet/gift diff between two dumps = the live ledger path.
+        void SnapshotFriendly3460()
+        {
+            const uintptr_t owner = Player::GetControlledOwner();
+            if (owner < kMinPointer) { LOG("f3460: no controlled owner"); return; }
+            uintptr_t sub = 0;
+            if (!mem::ReadPtr(owner + kOff_Owner_Actor, &sub) || sub < kMinPointer)
+            { LOG("f3460: owner=%p no actor", reinterpret_cast<void*>(owner)); return; }
+            uintptr_t fcomp = 0; int foff = -1;
+            for (int off = 0x000; off <= 0x400; off += 8)
+            {
+                uintptr_t cand = 0;
+                if (!mem::ReadPtr(sub + static_cast<uintptr_t>(off), &cand) || cand < kMinPointer) continue;
+                uintptr_t vt = 0;
+                if (!mem::ReadPtr(cand, &vt) || vt < 0x140000000ULL || vt > 0x155000000ULL) continue;
+                uintptr_t col = 0;
+                if (!mem::ReadPtr(vt - 8, &col) || col < 0x140000000ULL || col > 0x155000000ULL) continue;
+                uint32_t tdRva = 0;
+                if (!Read32(col + 12, &tdRva) || !tdRva || tdRva > 0x14000000u) continue;
+                char name[96]{};
+                const uintptr_t tdAddr = 0x140000000ULL + tdRva;
+                for (unsigned c = 0; c < 90; ++c)
+                {
+                    uint8_t ch = 0;
+                    if (!Read8(tdAddr + 16 + c, &ch) || !ch) break;
+                    name[c] = static_cast<char>(ch);
+                }
+                if (name[0] != '.') continue;
+                if (strstr(name, "Friendly"))
+                {
+                    fcomp = cand; foff = off;
+                    LOG("f3460: friendly comp sub+%#X -> %p %s", off, reinterpret_cast<void*>(cand), name);
+                }
+            }
+            if (!fcomp)
+            {
+                LOG("f3460: no Friendly component found under sub=%p (owner=%p)", reinterpret_cast<void*>(sub), reinterpret_cast<void*>(owner));
+                return;
+            }
+            // dump the record table of the friendly component using the 3446 shape
+            // (likely still close): +0x1C size, +0x30 entries, entry+0 key, entry+8 rec, rec+8 value
+            uint32_t size = 0;
+            if (Read32(fcomp + 0x1C, &size) && size > 0 && size <= 4096)
+            {
+                uintptr_t entries = 0;
+                if (mem::ReadPtr(fcomp + 0x30, &entries) && entries >= kMinPointer)
+                {
+                    LOG("f3460: comp=%p size=%u entries=%p", reinterpret_cast<void*>(fcomp), size, reinterpret_cast<void*>(entries));
+                    for (uint32_t i = size >= 6 ? size - 6 : 0; i < size; ++i)
+                    {
+                        uintptr_t e = 0, rec = 0; uint64_t key = 0; int64_t val = 0;
+                        if (!mem::ReadPtr(entries + static_cast<uintptr_t>(i) * 8, &e) || e < kMinPointer) continue;
+                        Read64(e, &key);
+                        if (!mem::ReadPtr(e + 8, &rec) || rec < kMinPointer) continue;
+                        Read64(rec + 8, reinterpret_cast<uint64_t*>(&val));
+                        LOG("f3460: rec[%u] key=%llx val=%lld", i, static_cast<unsigned long long>(key), static_cast<long long>(val));
+                    }
+                }
+                else LOG("f3460: comp=%p size=%u but entries unreadable", reinterpret_cast<void*>(fcomp), size);
+            }
+            else LOG("f3460: comp=%p size unreadable at +0x1C", reinterpret_cast<void*>(fcomp));
+        }
+
+        void Diagnose3460()
+        {
+            static bool s_sigOnce = false;
+            if (!s_sigOnce)
+            {
+                s_sigOnce = true;
+                struct Site { const char* name; const char* sig; };
+                const Site sites[] = {
+                    { "xmm-tail", "C5 FC 11 49 20 C5 F8 10 47 40 C5 F8 11 41 40" },
+                    { "ymm-tail", "C5 FC 11 49 20 C5 FC 10 47 40 C5 FC 11 41 40" },
+                    { "category", "0F B7 39 48 8B 1D ?? ?? ?? ?? 3B 7B 08 0F 83 ?? ?? ?? ?? 48 8D 34 FD 00 00 00 00 48 8B 43 58 48 8B 04 06" },
+                    { "writer",   "48 89 6C 24 10 48 89 74 24 18 57 48 83 EC 70 49 8B C1 49 8B E8 0F B7 DA 48 8B F1 4D 85 C9" },
+                };
+                for (const Site& s : sites)
+                {
+                    const uintptr_t a = mem::FindPattern(s.sig);
+                    LOG("f3460: site %-9s -> %p", s.name, reinterpret_cast<void*>(a));
+                }
+            }
+            SnapshotFriendly3460();
+        }
+
         void PollTrustMultiplier(float mult)
         {
             static std::unordered_map<uint64_t, int64_t> s_last;
@@ -452,7 +547,20 @@ namespace trinity::game
         // ~3.7 MB), so run nothing pinned there until the re-derivation ships -
         // a drifted hook lands on an unrelated hot function and the walk probes
         // stale chains (both observed as during-play stutter on 3460).
-        if (core::GetGameVersion().revision >= 3460) return;
+        if (core::GetGameVersion().revision >= 3460)
+        {
+            // 3460 re-derivation, in-process (external RPM is refused by the
+            // updated anti-tamper). Read-only, throttled: maps the friendly
+            // component by RTTI, probes the copy-tail/category-table sites,
+            // and dumps what a greet/gift changes - the same ladder that
+            // cracked 3446, run from inside where reads still work.
+            static ULONGLONG s_lastDiag3460 = 0;
+            const ULONGLONG dnow = GetTickCount64();
+            if (dnow - s_lastDiag3460 < 5000) return;
+            s_lastDiag3460 = dnow;
+            __try { Diagnose3460(); } __except (EXCEPTION_EXECUTE_HANDLER) {}
+            return;
+        }
         if (core::GetGameVersion().revision < 3400) return;
         const State& st = State::Get();
         if (!st.trustMult || st.trustMultVal <= 1.0f)
