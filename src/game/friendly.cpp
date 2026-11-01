@@ -182,25 +182,31 @@ namespace trinity::game
     {
         // 0. TU 2.04 ledger writer hook (SetNpc/SetPet were inlined; this shared
         //    record writer is their 3446 successor and serves both realms).
-        if (uintptr_t ledgerAddr = mem::FindPattern(kSig_FriendlyLedgerWrite))
+        //    3446-pinned: skip on 3460+ - the prologue bytes repeat across the
+        //    image, and on the moved 2.04.03 layout FindPattern can land on an
+        //    unrelated hot function (observed as during-play stutter).
+        if (core::GetGameVersion().revision < 3460)
         {
-            g_ledgerTarget = reinterpret_cast<void*>(ledgerAddr);
-            if (MH_CreateHook(g_ledgerTarget, reinterpret_cast<void*>(&hkLedgerWrite),
-                              reinterpret_cast<void**>(&oLedgerWrite)) == MH_OK)
+            if (uintptr_t ledgerAddr = mem::FindPattern(kSig_FriendlyLedgerWrite))
             {
-                MH_EnableHook(g_ledgerTarget);
-                LOG_OK("friendly: ledger writer hook installed & enabled @ 0x%p", g_ledgerTarget);
-                g_hooksInstalled = true;
+                g_ledgerTarget = reinterpret_cast<void*>(ledgerAddr);
+                if (MH_CreateHook(g_ledgerTarget, reinterpret_cast<void*>(&hkLedgerWrite),
+                                  reinterpret_cast<void**>(&oLedgerWrite)) == MH_OK)
+                {
+                    MH_EnableHook(g_ledgerTarget);
+                    LOG_OK("friendly: ledger writer hook installed & enabled @ 0x%p", g_ledgerTarget);
+                    g_hooksInstalled = true;
+                }
+                else
+                {
+                    LOG_ERR("friendly: failed to create ledger writer hook @ 0x%p", g_ledgerTarget);
+                    g_ledgerTarget = nullptr;
+                }
             }
             else
             {
-                LOG_ERR("friendly: failed to create ledger writer hook @ 0x%p", g_ledgerTarget);
-                g_ledgerTarget = nullptr;
+                LOG_INFO("friendly: ledger writer signature not present on this TU - component poll only.");
             }
-        }
-        else
-        {
-            LOG_INFO("friendly: ledger writer signature not present on this TU - component poll only.");
         }
 
         // 1. Install SetNpc prologue hook (Strictly for dialogue & gift giving)
@@ -441,6 +447,12 @@ namespace trinity::game
 
     void Friendly::Tick()
     {
+        // 3446-pinned: the component walk offsets and the ledger-hook site were
+        // derived on PE 3446. The 2.04.03 (3460) image moved code (exe shrank
+        // ~3.7 MB), so run nothing pinned there until the re-derivation ships -
+        // a drifted hook lands on an unrelated hot function and the walk probes
+        // stale chains (both observed as during-play stutter on 3460).
+        if (core::GetGameVersion().revision >= 3460) return;
         if (core::GetGameVersion().revision < 3400) return;
         const State& st = State::Get();
         if (!st.trustMult || st.trustMultVal <= 1.0f)
