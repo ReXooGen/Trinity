@@ -1677,9 +1677,23 @@ namespace trinity::game
             // what make an added item visible in live play, not just after a
             // load. It is found among the holders the commit hook captured
             // during the save load (no scan, no hook of our own).
+            // The cache is pinned to ONE world load. After a reload the old
+            // holder is freed and its pages get reused, so writing through it
+            // faults inside the engine's own setter (live-caught: first load
+            // fine, second load crashed). Every use re-validates against the
+            // live client signature instead of trusting the pointer.
             static uintptr_t s_saveCopy = 0;
-            if (s_saveCopy && !HolderLooksValid(s_saveCopy)) s_saveCopy = 0;
-            if (!s_saveCopy)
+            static uintptr_t s_saveCopyContainer = 0;
+            static uintptr_t s_saveCopyClientSlots = 0;
+            uintptr_t clientContainerNow = ResolveClientContainer();
+            if (s_saveCopy && (!HolderLooksValid(s_saveCopy) ||
+                               s_saveCopyContainer != clientContainerNow))
+            {
+                s_saveCopy = 0;
+                s_saveCopyContainer = 0;
+                s_saveCopyClientSlots = 0;
+            }
+            if (!s_saveCopy && clientContainerNow)
             {
                 const uintptr_t ch = CurrentHolder();
                 uintptr_t clientBuckets = 0, pack = 0;
@@ -1711,6 +1725,8 @@ namespace trinity::game
                             if (LooksLikeSaveCopy(h, clientSlots, wantCount))
                             {
                                 s_saveCopy = h;
+                                s_saveCopyContainer = clientContainerNow;
+                                s_saveCopyClientSlots = clientSlots;
                                 LOG_OK("inventory: SAVE copy of the inventory found @ 0x%p - "
                                        "added items now land where live play reads them.",
                                        reinterpret_cast<void*>(h));
@@ -1722,8 +1738,42 @@ namespace trinity::game
             }
             if (s_saveCopy && HolderLooksValid(s_saveCopy))
             {
-                g_serverHolder.store(s_saveCopy, std::memory_order_release);
-                return s_saveCopy;
+                // Cheap liveness check: the mirrored slot array must still be
+                // the one behind the current client pack, and its first id must
+                // still match. A reload breaks both.
+                uintptr_t stillPackSlots = 0; uint16_t stillCount = 0;
+                const uintptr_t chNow = CurrentHolder();
+                bool stillValid = false;
+                if (chNow >= kMinPointer && s_saveCopyClientSlots)
+                {
+                    uintptr_t cb = 0; uint32_t cn = 0;
+                    if (ReadPtr(chNow + kOff_InvHolder_Buckets, &cb) && cb >= kMinPointer &&
+                        Read32(chNow + kOff_InvHolder_Count, &cn) && cn && cn < 4096)
+                    {
+                        for (uint32_t i = 0; i < cn; ++i)
+                        {
+                            uintptr_t b = 0; uint16_t t = 0;
+                            if (!ReadPtr(cb + static_cast<uintptr_t>(i) * 8, &b) || b < kMinPointer) continue;
+                            if (Read16(b + kOff_InvBucket_Type, &t) && t == 1)
+                            {
+                                uintptr_t sl = 0;
+                                if (ReadPtr(b + kOff_InvBucket_Slots, &sl) && sl == s_saveCopyClientSlots &&
+                                    Read16(b + kOff_InvBucket_Count, &stillCount))
+                                    stillValid = true;
+                                break;
+                            }
+                        }
+                    }
+                }
+                if (stillValid)
+                {
+                    g_serverHolder.store(s_saveCopy, std::memory_order_release);
+                    return s_saveCopy;
+                }
+                LOG_INFO("inventory: SAVE copy cache dropped (world reloaded) - will re-resolve.");
+                s_saveCopy = 0;
+                s_saveCopyContainer = 0;
+                s_saveCopyClientSlots = 0;
             }
             // Realm-pawn path next: exact, self-validating, realm-independent.
             if (const uintptr_t direct = ServerPawnHolder();
