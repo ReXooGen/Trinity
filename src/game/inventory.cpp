@@ -1626,9 +1626,106 @@ namespace trinity::game
             return holder;
         }
 
+        // --- The SAVE copy of the inventory (live-verified 3462) -------------
+        // The game keeps TWO independent inventories. What we used to call the
+        // "server holder" (possessor+0xD8 -> pawn -> sub+0xB8) turned out to be
+        // a THIRD, near-empty holder (count=100, used=1, max=50) that the live
+        // systems never read - which is exactly why an added item only appeared
+        // after a save+load.
+        //
+        // The real second copy is a parallel bucket array carrying the SAME
+        // instance ids at the same indices (proven by a memory-wide scan: one
+        // mirror across 3.3 GB, its own holder, its own container).
+        //
+        // Resolving it needs NO scan: the commit hook already captures every
+        // holder during a save load, so the copy is sitting in g_cand. The old
+        // filter rejected it because it demanded IsLiveCharacter(container) -
+        // the save copy's container is not a possessed pawn. The discriminator
+        // that actually works is the slot signature: the twin's pack bucket has
+        // the same COUNT and the same instance id in slot 0 as the client's.
+        bool LooksLikeSaveCopy(uintptr_t holder, uintptr_t clientPackSlot0, uint16_t wantCount)
+        {
+            if (holder < kMinPointer || !clientPackSlot0) return false;
+            uintptr_t buckets = 0; uint32_t n = 0;
+            if (!ReadPtr(holder + kOff_InvHolder_Buckets, &buckets) || buckets < kMinPointer) return false;
+            if (!Read32(holder + kOff_InvHolder_Count, &n) || !n || n > 4096) return false;
+            for (uint32_t i = 0; i < n; ++i)
+            {
+                uintptr_t b = 0; uint16_t t = 0;
+                if (!ReadPtr(buckets + static_cast<uintptr_t>(i) * 8, &b) || b < kMinPointer) continue;
+                if (!Read16(b + kOff_InvBucket_Type, &t) || t != 1) continue;
+                uint16_t cnt = 0;
+                if (!Read16(b + kOff_InvBucket_Count, &cnt) || cnt != wantCount) return false;
+                uintptr_t slots = 0;
+                if (!ReadPtr(b + kOff_InvBucket_Slots, &slots) || slots < kMinPointer) return false;
+                if (slots == clientPackSlot0) return false; // that IS the client array
+                uint64_t a = 0, bb = 0;
+                if (!Read64(slots, &a) || !Read64(clientPackSlot0, &bb) || a != bb || !a) return false;
+                // second slot must line up as well - kills coincidental matches
+                uint64_t a2 = 0, b2 = 0;
+                if (wantCount > 1 && (!Read64(slots + SlotStride(), &a2) ||
+                                      !Read64(clientPackSlot0 + SlotStride(), &b2) || a2 != b2))
+                    return false;
+                return true;
+            }
+            return false;
+        }
+
         uintptr_t ServerHolder()
         {
-            // Realm-pawn path first: exact, self-validating, realm-independent.
+            // The REAL save copy wins over every heuristic: writes there are
+            // what make an added item visible in live play, not just after a
+            // load. It is found among the holders the commit hook captured
+            // during the save load (no scan, no hook of our own).
+            static uintptr_t s_saveCopy = 0;
+            if (s_saveCopy && !HolderLooksValid(s_saveCopy)) s_saveCopy = 0;
+            if (!s_saveCopy)
+            {
+                const uintptr_t ch = CurrentHolder();
+                uintptr_t clientBuckets = 0, pack = 0;
+                uint32_t bn = 0;
+                if (ch >= kMinPointer &&
+                    ReadPtr(ch + kOff_InvHolder_Buckets, &clientBuckets) && clientBuckets >= kMinPointer &&
+                    Read32(ch + kOff_InvHolder_Count, &bn) && bn && bn < 4096)
+                {
+                    for (uint32_t i = 0; i < bn; ++i)
+                    {
+                        uintptr_t b = 0; uint16_t t = 0;
+                        if (!ReadPtr(clientBuckets + static_cast<uintptr_t>(i) * 8, &b) || b < kMinPointer) continue;
+                        if (Read16(b + kOff_InvBucket_Type, &t) && t == 1) { pack = b; break; }
+                    }
+                }
+                if (pack)
+                {
+                    uintptr_t clientSlots = 0; uint16_t wantCount = 0;
+                    if (ReadPtr(pack + kOff_InvBucket_Slots, &clientSlots) && clientSlots >= kMinPointer &&
+                        Read16(pack + kOff_InvBucket_Count, &wantCount) && wantCount)
+                    {
+                        Candidate snap[kMaxCandidates] = {};
+                        const int n = SnapshotCandidates(snap);
+                        for (int i = 0; i < n; ++i)
+                        {
+                            const uintptr_t h = snap[i].holder ? snap[i].holder
+                                                               : HolderForContainer(snap[i].container);
+                            if (!h || h == ch) continue;
+                            if (LooksLikeSaveCopy(h, clientSlots, wantCount))
+                            {
+                                s_saveCopy = h;
+                                LOG_OK("inventory: SAVE copy of the inventory found @ 0x%p - "
+                                       "added items now land where live play reads them.",
+                                       reinterpret_cast<void*>(h));
+                                break;
+                            }
+                        }
+                    }
+                }
+            }
+            if (s_saveCopy && HolderLooksValid(s_saveCopy))
+            {
+                g_serverHolder.store(s_saveCopy, std::memory_order_release);
+                return s_saveCopy;
+            }
+            // Realm-pawn path next: exact, self-validating, realm-independent.
             if (const uintptr_t direct = ServerPawnHolder();
                 direct && direct != CurrentHolder() && HolderLooksValid(direct))
             {
