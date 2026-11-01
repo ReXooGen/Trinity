@@ -2100,13 +2100,13 @@ namespace trinity::game
     inline constexpr const char* kSig_FriendlyWriter3460 =
         "48 89 6C 24 10 48 89 74 24 18 57 48 83 EC 70 49 8B C1 49 8B E8 0F B7 DA 48 8B F1 4D 85 C9";
 
-    // TU 2.04.03 (3460), runtime-image-verified: the realm-processing function the
-    // dispatcher calls (sub_1418E3650). Receives (rcx component, dx tag u16, r8,
-    // r9 record*) and resolves the relationship id pair via the TLS 0x1EB realm
-    // registry (u16 at +0xA0/+0xA2) before the component vtable dispatch (+0x1A8) -
-    // the gain event record flows through here before the popup and ledger consume
-    // it. The 48-byte prologue occurs exactly once in the whole 330 MB unpacked
-    // runtime image (counted offline from Trinity_runtime_3460.bin).
+    // TU 2.04.03 (3460) realm-processing function sub_1418E3650 - signature kept
+    // ONLY as a locator for offline analysis; it is NOT hooked. Four sessions
+    // crashed on world entry inside it (+0x9A/+0xF6/+0x106) with an identical
+    // register set (RDI 0xFFFFFFFFFFFB6C20, RAX 0x493E0 where RDI == -RAX, and
+    // RCX holding UTF-16 text in a pointer slot). The world-load call sites do
+    // not pass the (component, tag, a3, record) shape the runtime dispatcher
+    // uses, so any detour that assumed that shape read/wrote the wrong object.
     inline constexpr const char* kSig_FriendlyRealmWriter3460 =
         "48 89 5C 24 18 4C 89 4C 24 20 48 89 54 24 10 48 89 4C 24 08 "
         "55 56 57 41 54 41 55 41 56 41 57 48 8D AC 24 20 FF FF FF "

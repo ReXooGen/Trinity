@@ -42,11 +42,6 @@ namespace trinity::game
         bool g_hooksInstalled = false;
         bool g_hooksEnabled = false;
 
-        // 3460 gain-writer hook (see the definition below PollTrustMultiplier).
-        using Writer3460_t = __int64(__fastcall*)(void* component, unsigned __int16 tag, void* a3, void* record);
-        Writer3460_t oLedgerWrite3460 = nullptr;
-        __int64 __fastcall hkLedgerWrite3460(void* component, unsigned __int16 tag, void* a3, void* record);
-
         // Tracks last known trust value per record key to scale trust gains accurately (thread-safe)
         std::mutex s_trustMutex;
         std::unordered_map<uint32_t, int64_t> s_lastTrustMap;
@@ -143,8 +138,6 @@ namespace trinity::game
 
         // Per-relationship last-seen value: key = u32@(record+96) ^ (u16@(record+100)<<32)
         std::unordered_map<uint64_t, int64_t> g_ledgerLast;
-        // 3460 gain-writer cache (same keying; separate from the 3446 map).
-        std::unordered_map<uint64_t, int64_t> g_writerLast;
 
         __int64 __fastcall hkLedgerWrite(void* component, unsigned __int16 tag, void* record)
         {
@@ -225,41 +218,6 @@ namespace trinity::game
         //     the ledger copy, so scaling it in-flight changes the popup amount
         //     like the pre-2.04 builds did. The dispatcher prologue itself carries
         //     no copy tail (the tails live in callees) and stays unhooked.
-        if (core::GetGameVersion().revision >= 3460)
-        {
-            const char* realmSig = kSig_FriendlyRealmWriter3460;
-            if (const size_t matches = mem::CountMatches(realmSig); matches == 1)
-            {
-                if (uintptr_t wAddr = mem::FindPattern(realmSig))
-                {
-                    // The 48-byte prologue match is unique in the whole runtime
-                    // image (offline-verified from Trinity_runtime_3460.bin), so
-                    // the match IS the verification - the record-copy tail lives
-                    // in a deeper callee of this function and cannot be used as a
-                    // local sanity check here.
-                    if (MH_CreateHook(reinterpret_cast<void*>(wAddr),
-                                      reinterpret_cast<void*>(&hkLedgerWrite3460),
-                                      reinterpret_cast<void**>(&oLedgerWrite3460)) == MH_OK)
-                    {
-                        g_ledgerTarget = reinterpret_cast<void*>(wAddr);
-                        MH_EnableHook(g_ledgerTarget);
-                        LOG_OK("friendly: 3460 realm-writer hook installed @ 0x%p (image-unique)", g_ledgerTarget);
-                        g_hooksInstalled = true;
-                        ui::Toast("Trust hook verified in-game");
-                    }
-                    else
-                    {
-                        LOG_ERR("friendly: 3460 realm-writer hook failed @ 0x%p", reinterpret_cast<void*>(wAddr));
-                        g_ledgerTarget = nullptr;
-                    }
-                }
-            }
-            else
-            {
-                LOG_INFO("friendly: 3460 gain-writer signature matched %zu time(s) - not hooking, poll only.", matches);
-            }
-        }
-
         // 1. Install SetNpc prologue hook (Strictly for dialogue & gift giving)
         uintptr_t npcAddr = mem::FindPattern(kSig_FriendlySetNpc);
         if (!npcAddr)
@@ -598,75 +556,18 @@ namespace trinity::game
             }
         }
 
-        // TU 2.04.03 gain-writer hook, aligned with the reference implementation's
-        // semantics: same-character filter (only scale the possessed body's own
-        // ledger - foreign components are left alone, which is also the crash
-        // guard), only raises are scaled (never lowers), the gain is multiplied
-        // and the result clamped to the friendship cap the game itself enforces.
-        // Prologue shape: (rcx component, dx tag u16, r8 ?, r9 record*). The
-        // record is the 0x78-byte relationship event the caller built; +8 i64
-        // value, +96 u32 / +100 u16 identity.
-        // CRITICAL: no game-function calls inside this handler (the writer runs
-        // during the world-load ledger build; calling back into the game from
-        // here re-enters unresolved systems and faults). The own-component
-        // identity is cached by Tick and read atomically.
-        std::atomic<uintptr_t> g_ownLedgerComp{ 0 };
-        __int64 __fastcall hkLedgerWrite3460(void* component, unsigned __int16 tag, void* a3, void* record)
-        {
-            const State& st = State::Get();
-            if (record && component)
-            {
-                __try
-                {
-                    // Same-character guard via the Tick-cached component - NO
-                    // game-function calls here (the writer runs during the
-                    // world-load ledger build; re-entering the game from inside
-                    // it faults with an unresolved registry chain).
-                    if (reinterpret_cast<uintptr_t>(component) != g_ownLedgerComp.load(std::memory_order_acquire))
-                        return oLedgerWrite3460(component, tag, a3, record);
-
-                    const uintptr_t r = reinterpret_cast<uintptr_t>(record);
-                    if (r >= kMinPointer)
-                    {
-                        const uint32_t k32v = *reinterpret_cast<uint32_t*>(r + 96);
-                        const uint16_t k16 = *reinterpret_cast<uint16_t*>(r + 100);
-                        const uint64_t key = static_cast<uint64_t>(k32v) | (static_cast<uint64_t>(k16) << 32);
-                        const int64_t incoming = *reinterpret_cast<int64_t*>(r + 8);
-                        int64_t& last = g_writerLast[key];
-                        if (st.trustMult && st.trustMultVal > 1.0f && incoming > last && incoming > 0)
-                        {
-                            // The gain = incoming - last. Scale it, no per-step
-                            // cap: the popup shows the full scaled jump and the
-                            // game clamps the stored value at its own maximum.
-                            const int64_t gain = incoming - last;
-                            const int64_t target = (std::min)(last + static_cast<int64_t>(gain * st.trustMultVal + 0.5f), kFriendly_Max);
-                            if (target != incoming)
-                            {
-                                // Scale ONLY the +8 value field. The pre-2.04
-                                // build also wrote +0x20/+0x28, but on the 3460
-                                // layout those hold pointers/sizes this very
-                                // callee dereferences - writing them smashed a
-                                // pointer and crashed world entry (RIP inside
-                                // the original function reading -1).
-                                *reinterpret_cast<int64_t*>(r + 8) = target;
-                                ui::Toast("Trust +%lld (x%.2f)", static_cast<long long>(target - last), st.trustMultVal);
-                            }
-                            last = target;
-                        }
-                        else if (incoming != last)
-                        {
-                            // Never lower, and keep the cache tracking while the
-                            // multiplier is off so re-enabling never treats the
-                            // accumulated ledger as one giant gain.
-                            last = incoming;
-                        }
-                    }
-                }
-                __except (EXCEPTION_EXECUTE_HANDLER) {}
-            }
-            return oLedgerWrite3460(component, tag, a3, record);
-        }
-
+        // Trust scaling runs entirely through PollTrustMultiplier + SweepMaxTrust.
+        // A realm-writer detour was tried twice on 3460 and reverted: every
+        // session that installed it crashed on world entry at the same function
+        // (sub_1418E3650, faults at +0x9A/+0xF6/+0x106) with a stable register
+        // set - RDI 0xFFFFFFFFFFFB6C20, RAX 0x493E0 (RDI == -RAX), and RCX
+        // holding UTF-16 text where a pointer belongs. That is a wrong struct
+        // layout, not heap corruption: the world-load call sites do not pass the
+        // (component, tag, a3, record) shape the dispatcher uses at runtime, so
+        // the handler read and wrote fields of an unrelated object. Do not
+        // re-add a detour here without first dumping the live call-site ABI.
+        // (The earlier +0x20/+0x28 field writes were a second, independent bug:
+        // on the 3460 record those offsets hold pointers the callee dereferences.)
         void PollTrustMultiplier(float mult)
         {
             static std::unordered_map<uint64_t, int64_t> s_last;
@@ -829,18 +730,6 @@ namespace trinity::game
         const bool writerAuthoritative = is3460 && g_hooksInstalled;
         if (core::GetGameVersion().revision < 3400) return;
         const State& st = State::Get();
-        // Publish the possessed body's ledger component for the writer hook's
-        // same-character guard (the hook must not call game functions itself).
-        {
-            const uintptr_t own = Player::GetControlledOwner();
-            uintptr_t sub = 0, comp = 0;
-            if (own >= kMinPointer &&
-                mem::ReadPtr(own + kOff_Owner_Actor, &sub) && sub >= kMinPointer &&
-                mem::ReadPtr(sub + kOff_Sub_FriendlyComp, &comp) && comp >= kMinPointer)
-                g_ownLedgerComp.store(comp, std::memory_order_release);
-            else
-                g_ownLedgerComp.store(0, std::memory_order_release);
-        }
         if (!st.trustMult || st.trustMultVal <= 1.0f)
         {
             // Re-arm the seeding so the next enable snapshots fresh baselines
