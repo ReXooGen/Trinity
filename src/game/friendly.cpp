@@ -415,12 +415,8 @@ namespace trinity::game
                 if (!Read32(col + 12, &tdRva) || !tdRva || tdRva > 0x14000000u) continue;
                 char name[96]{};
                 const uintptr_t tdAddr = 0x140000000ULL + tdRva;
-                for (unsigned c = 0; c < 90; ++c)
-                {
-                    uint8_t ch = 0;
-                    if (!Read8(tdAddr + 16 + c, &ch) || !ch) break;
-                    name[c] = static_cast<char>(ch);
-                }
+                if (!mem::ReadBytes(tdAddr + 16, name, 90)) continue;
+                name[95] = '\0';
                 if (name[0] != '.') continue;
                 if (strstr(name, "Friendly"))
                 {
@@ -484,14 +480,10 @@ namespace trinity::game
                         for (uintptr_t a = base; a < base + size; a += 4096)
                         {
                             uint8_t page[4096];
-                            bool any = false;
-                            for (uintptr_t k = 0; k < 4096; ++k)
-                            {
-                                uint8_t b = 0;
-                                if (Read8(a + k, &b)) { page[k] = b; any = true; }
-                                else page[k] = zero[k];
-                            }
-                            fwrite(any ? page : zero, 1, 4096, f);
+                            if (mem::ReadBytes(a, page, 4096))
+                                fwrite(page, 1, 4096, f);
+                            else
+                                fwrite(zero, 1, 4096, f);
                         }
                         fclose(f);
                         LOG_OK("f3460: runtime image dumped -> %s", path.c_str());
@@ -845,9 +837,12 @@ namespace trinity::game
         // Max Trust is folded into the single toggle: every pass sweeps the
         // ledger to the cap alongside the multiplier poll.
         __try { SweepMaxTrust(); } __except (EXCEPTION_EXECUTE_HANDLER) {}
-        // 3460 site dumps + ledger snapshot (one-shot sigs; 5s snapshot cadence
-        // lives inside) - feeds the offline disassembly of the gift path.
-        __try { Diagnose3460(); } __except (EXCEPTION_EXECUTE_HANDLER) {}
+        // 3460 site dumps + ledger snapshot (one-shot sigs; 60s cadence inside) -
+        // feeds the offline disassembly of the gift path. Skipped while a menu is
+        // open: the diagnostic's memory probing competes with the menu's own
+        // on-demand snapshots and shows up as stutter inside Dye/Edit Equipment.
+        if (!st.menuOpen)
+            __try { Diagnose3460(); } __except (EXCEPTION_EXECUTE_HANDLER) {}
         if (writerAuthoritative) return; // the gain-writer hook owns scaling
         static ULONGLONG s_lastPoll = 0;
         const ULONGLONG now = GetTickCount64();
