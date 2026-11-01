@@ -606,6 +606,11 @@ namespace trinity::game
         // Prologue shape: (rcx component, dx tag u16, r8 ?, r9 record*). The
         // record is the 0x78-byte relationship event the caller built; +8 i64
         // value, +96 u32 / +100 u16 identity.
+        // CRITICAL: no game-function calls inside this handler (the writer runs
+        // during the world-load ledger build; calling back into the game from
+        // here re-enters unresolved systems and faults). The own-component
+        // identity is cached by Tick and read atomically.
+        std::atomic<uintptr_t> g_ownLedgerComp{ 0 };
         __int64 __fastcall hkLedgerWrite3460(void* component, unsigned __int16 tag, void* a3, void* record)
         {
             const State& st = State::Get();
@@ -613,14 +618,11 @@ namespace trinity::game
             {
                 __try
                 {
-                    // Same-character guard: the component must be the possessed
-                    // body's own ledger (controlled owner -> actor -> sub+0x140).
-                    const uintptr_t owner = Player::GetControlledOwner();
-                    uintptr_t sub = 0, ownComp = 0;
-                    if (owner >= kMinPointer &&
-                        mem::ReadPtr(owner + kOff_Owner_Actor, &sub) && sub >= kMinPointer &&
-                        mem::ReadPtr(sub + kOff_Sub_FriendlyComp, &ownComp) &&
-                        reinterpret_cast<uintptr_t>(component) != ownComp)
+                    // Same-character guard via the Tick-cached component - NO
+                    // game-function calls here (the writer runs during the
+                    // world-load ledger build; re-entering the game from inside
+                    // it faults with an unresolved registry chain).
+                    if (reinterpret_cast<uintptr_t>(component) != g_ownLedgerComp.load(std::memory_order_acquire))
                         return oLedgerWrite3460(component, tag, a3, record);
 
                     const uintptr_t r = reinterpret_cast<uintptr_t>(record);
@@ -827,6 +829,18 @@ namespace trinity::game
         const bool writerAuthoritative = is3460 && g_hooksInstalled;
         if (core::GetGameVersion().revision < 3400) return;
         const State& st = State::Get();
+        // Publish the possessed body's ledger component for the writer hook's
+        // same-character guard (the hook must not call game functions itself).
+        {
+            const uintptr_t own = Player::GetControlledOwner();
+            uintptr_t sub = 0, comp = 0;
+            if (own >= kMinPointer &&
+                mem::ReadPtr(own + kOff_Owner_Actor, &sub) && sub >= kMinPointer &&
+                mem::ReadPtr(sub + kOff_Sub_FriendlyComp, &comp) && comp >= kMinPointer)
+                g_ownLedgerComp.store(comp, std::memory_order_release);
+            else
+                g_ownLedgerComp.store(0, std::memory_order_release);
+        }
         if (!st.trustMult || st.trustMultVal <= 1.0f)
         {
             // Re-arm the seeding so the next enable snapshots fresh baselines
