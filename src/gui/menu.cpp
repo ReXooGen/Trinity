@@ -3610,7 +3610,7 @@ namespace trinity::gui
         save |= ui::Toggle(LOC("Show FPS Counter"), &st.showFps, LOC("Shows your FPS in the corner of the screen.")) && st.autoSave;
 
         if (ui::Toggle(LOC("Performance Diagnostics"), &st.perfLogging,
-                       LOC("Log subsystem timing every 10 seconds when a call exceeds 2 ms. Off by default.")))
+                       LOC("Reserved for deep-dive diagnostics. Game-thread and overlay timing now log every 10 seconds automatically.")))
         {
             core::TickMetrics::SetEnabled(st.perfLogging);
             save |= st.autoSave;

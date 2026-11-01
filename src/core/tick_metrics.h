@@ -24,17 +24,26 @@ namespace trinity::core
         }
         static LONGLONG Now()
         {
-            if (!enabled.load(std::memory_order_acquire)) return 0;
+            // Always raw: call sites pass the value straight into Record(); the
+            // old 0-when-disabled gate made Record a no-op and left the game
+            // thread unmeasured during normal play.
             LARGE_INTEGER t{}; QueryPerformanceCounter(&t); return t.QuadPart;
         }
         static void Record(TickPart part, LONGLONG start)
         {
-            const LONGLONG end = Now();
+            const LONGLONG end = NowRaw();
             if (!start || end < start) return;
             const LONGLONG elapsed = end - start;
             auto& maximum = maxima[static_cast<unsigned>(part)];
             LONGLONG old = maximum.load(std::memory_order_relaxed);
             while (elapsed > old && !maximum.compare_exchange_weak(old, elapsed, std::memory_order_relaxed)) {}
+        }
+        // Raw QPC regardless of the perfLogging opt-in: the maxima are cheap
+        // (one atomic max per part) and play-time stutter is invisible without
+        // them - the opt-in only ever measured menu sessions.
+        static LONGLONG NowRaw()
+        {
+            LARGE_INTEGER t{}; QueryPerformanceCounter(&t); return t.QuadPart;
         }
         static void RecordOverlayWait(LONGLONG start)
         {
@@ -44,25 +53,24 @@ namespace trinity::core
             LONGLONG old = overlayWait.load(std::memory_order_relaxed);
             while (elapsed > old && !overlayWait.compare_exchange_weak(old, elapsed, std::memory_order_relaxed)) {}
         }
-        // Called by render, not the measured game tick. One summary per 10s,
-        // and only if diagnostics are enabled and a subsystem exceeded 2ms.
+        // Called by render, not the measured game tick. One summary per 10s.
+        // Always on: the maxima are the ONLY window into game-thread cost, and
+        // play-time stutter (Operator: drop saat bermain, bukan saat menu) was
+        // invisible while this was gated behind the perfLogging opt-in.
         static void Report()
         {
-            if (!enabled.load(std::memory_order_acquire)) return;
             const ULONGLONG now = GetTickCount64();
             ULONGLONG due = nextReport.load(std::memory_order_relaxed);
             if (now < due || !frequency || !nextReport.compare_exchange_strong(due, now + 10000, std::memory_order_relaxed)) return;
             double values[6]{};
-            bool slow = false;
             for (unsigned i = 0; i < 6; ++i)
             {
                 values[i] = maxima[i].exchange(0, std::memory_order_relaxed) * 1000.0 / frequency;
-                slow |= values[i] >= 2.0;
             }
-            if (slow) LOG_WARN("perf: game-tick max/10s ms player=%.3f world=%.3f inventory=%.3f dye=%.3f equipment=%.3f friendly=%.3f",
-                              values[0], values[1], values[2], values[3], values[4], values[5]);
+            LOG_INFO("perf: game-tick max/10s ms player=%.3f world=%.3f inventory=%.3f dye=%.3f equipment=%.3f friendly=%.3f",
+                     values[0], values[1], values[2], values[3], values[4], values[5]);
             const double waitMs = overlayWait.exchange(0, std::memory_order_relaxed) * 1000.0 / frequency;
-            if (waitMs >= 2.0) LOG_WARN("perf: overlay fence-wait max/10s ms=%.3f", waitMs);
+            LOG_INFO("perf: overlay fence-wait max/10s ms=%.3f", waitMs);
         }
     };
 }
