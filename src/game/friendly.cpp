@@ -69,22 +69,18 @@ namespace trinity::game
         // tag argument is a dynamic relationship id - there is no fixed trust tag
         // to filter on. Ownership is decided by component identity instead: only
         // gains landing on YOUR ledger are scaled.
-        std::atomic<uintptr_t> g_ownFriendlyComp{ 0 };
-
-        // Same-character filter, evaluated with the caller's frame intact.
-        inline bool IsOwnComponent(void* component)
-        {
-            const uintptr_t own = g_ownFriendlyComp.load(std::memory_order_acquire);
-            return own != 0 && reinterpret_cast<uintptr_t>(component) == own;
-        }
-
         // Called from the cave stub with the caller's frame fully intact.
         // Pure arithmetic plus one atomic load: no game calls, no pointer
         // dereferences - it runs inside the game's own ledger update.
-        extern "C" __int64 ScaleTrustDelta(unsigned __int16 tag, __int64 delta, void* component)
+        // The thunk is shared by five call sites and the trust one passes a
+        // service pointer in rcx, not the player component - so there is no
+        // ownership to check here. Base greet/gift gains are 5/10/20, so a
+        // small positive delta is the discriminator; everything else passes
+        // through untouched.
+        extern "C" __int64 ScaleTrustDelta(unsigned __int16 tag, __int64 delta)
         {
             const State& st = State::Get();
-            if (!st.trustMult || st.trustMultVal <= 1.0f || delta <= 0 || !IsOwnComponent(component))
+            if (!st.trustMult || st.trustMultVal <= 1.0f || delta <= 0 || delta > kFriendly_Max)
                 return delta;
             const double scaled = static_cast<double>(delta) * static_cast<double>(st.trustMultVal);
             __int64 out = static_cast<__int64>(scaled + 0.5);
@@ -294,7 +290,6 @@ namespace trinity::game
                     0x48, 0x83, 0xEC, 0x28,                         // sub rsp,28h
                     0x0F, 0xB7, 0xCA,                               // movzx ecx, dx
                     0x4C, 0x89, 0xC2,                               // mov rdx, r8
-                    0x48, 0x8B, 0x4C, 0x24, 0x48,                   // mov rcx,[rsp+48h] (comp)
                     0x48, 0xB8, 0,0,0,0,0,0,0,0,                    // movabs rax,<fn>
                     0xFF, 0xD0,                                     // call rax
                     0x49, 0x89, 0xC0,                               // mov r8, rax   (result)
@@ -306,8 +301,8 @@ namespace trinity::game
                 };
                 const uint64_t fnAddr = reinterpret_cast<uint64_t>(&ScaleTrustDelta);
                 const uint64_t jmpAddr = static_cast<uint64_t>(tramp);
-                std::memcpy(stub + 0x19, &fnAddr, 8);
-                std::memcpy(stub + 0x34, &jmpAddr, 8);
+                std::memcpy(stub + 0x14, &fnAddr, 8);
+                std::memcpy(stub + 0x2F, &jmpAddr, 8);
 
                 // The 5-byte jmp back to the thunk is a rel32, so the cave must
                 // sit within +-2 GB of the game image. A plain VirtualAlloc(nullptr)
@@ -920,18 +915,6 @@ namespace trinity::game
         //   - 3460+: the apply hook owns it when it installed, because that is the
         //     only path that also moves the popup. If the apply site was not found
         //     the poll falls back to being the scaler so the feature still works.
-        // Publish the possessed body's friendly component for the apply cave's
-        // same-character filter (the cave must not resolve it itself).
-        {
-            const uintptr_t own = Player::GetControlledOwner();
-            uintptr_t sub = 0, comp = 0;
-            if (own >= kMinPointer &&
-                mem::ReadPtr(own + kOff_Owner_Actor, &sub) && sub >= kMinPointer &&
-                mem::ReadPtr(sub + kOff_Sub_FriendlyComp, &comp) && comp >= kMinPointer)
-                g_ownFriendlyComp.store(comp, std::memory_order_release);
-            else
-                g_ownFriendlyComp.store(0, std::memory_order_release);
-        }
         const bool is3460 = core::GetGameVersion().revision >= 3460;
         const bool applyHookLive = is3460 && g_applyTarget != nullptr;
         const bool writerAuthoritative = (!is3460 && g_hooksInstalled) || applyHookLive;
