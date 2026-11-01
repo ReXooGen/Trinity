@@ -42,6 +42,70 @@ namespace trinity::game
         bool g_hooksInstalled = false;
         bool g_hooksEnabled = false;
 
+        // ---------------------------------------------------------------------
+        // TU 2.04.03+ trust APPLY hook.
+        //
+        // This is the point that makes the game's own "+N Trust" popup scale.
+        // The realm processor does: read value -> apply delta -> read value again
+        // -> popup delta = after - before. A poll can only write AFTER that popup
+        // has already rendered, which is why the popup stayed at the base amount
+        // while the ledger moved. Scaling the delta inside apply fixes both.
+        //
+        // Why this site and not the realm processor: sub_1418E3650 opens with
+        // `mov [rsp+0x18],rbx`, a 5-byte RSP-relative store. MinHook has to copy
+        // those bytes into a trampoline, the trampoline is entered by CALL (RSP-8),
+        // and the spill lands in the wrong argument home - that was the four-crash
+        // loop. The apply entry has no such problem: reached through a 5-byte jmp
+        // thunk it is a single `jmp` with no stack frame at all.
+        //
+        // ABI: rcx = component, rdx = tag (u16), r8 = delta, r9 = secondary.
+        // HARD RULE: no game-function calls inside this handler. It runs inside
+        // the game's own ledger update; re-entering the engine from here is what
+        // faulted before. Only reads of already-known pointers.
+        using FriendlyApply_t = __int64(__fastcall*)(void* component, unsigned __int16 tag,
+                                                     __int64 delta, void* secondary);
+        FriendlyApply_t oFriendlyApply = nullptr;
+        void* g_applyTarget = nullptr;
+
+        // Tags seen on the trust path. The dispatcher compares [rec+0x28] against
+        // 0x11 for the people/pets relationship record; 0x13 is the tag the realm
+        // processor stamps for the same update.
+        inline bool IsTrustTag(unsigned __int16 tag)
+        {
+            return tag == 0x11 || tag == 0x13;
+        }
+
+        __int64 __fastcall hkFriendlyApply(void* component, unsigned __int16 tag,
+                                           __int64 delta, void* secondary)
+        {
+            const State& st = State::Get();
+            if (st.trustMult && st.trustMultVal > 1.0f && delta > 0 && IsTrustTag(tag))
+            {
+                // Only gains are scaled, never losses, and never a value that is
+                // already at or above the game's own cap.
+                const double scaled = static_cast<double>(delta) * static_cast<double>(st.trustMultVal);
+                __int64 out = static_cast<__int64>(scaled + 0.5);
+                if (out > kFriendly_Max) out = kFriendly_Max;
+                if (out > delta)
+                {
+                    // Log every scaled gain once per second at most: the apply
+                    // path is hot during world load.
+                    static ULONGLONG s_nextLog = 0;
+                    const ULONGLONG now = GetTickCount64();
+                    if (now >= s_nextLog)
+                    {
+                        s_nextLog = now + 1000;
+                        LOG_INFO("friendly: apply tag=0x%X delta=%lld -> %lld (x%.2f)",
+                                 static_cast<unsigned>(tag), static_cast<long long>(delta),
+                                 static_cast<long long>(out), st.trustMultVal);
+                    }
+                    return oFriendlyApply(component, tag, out, secondary);
+                }
+            }
+            return oFriendlyApply(component, tag, delta, secondary);
+        }
+
+
         // Tracks last known trust value per record key to scale trust gains accurately (thread-safe)
         std::mutex s_trustMutex;
         std::unordered_map<uint32_t, int64_t> s_lastTrustMap;
@@ -209,6 +273,46 @@ namespace trinity::game
             else
             {
                 LOG_INFO("friendly: ledger writer signature not present on this TU - component poll only.");
+            }
+        }
+
+        // 0c. TU 2.04.03+ (3460/3462): the trust APPLY hook. This is what makes
+        //     the game's own "+N Trust" popup scale, because the realm processor
+        //     reads the value again AFTER apply to compute the popup delta.
+        //     Prefer the 5-byte jmp thunk (no stack frame at all); fall back to
+        //     the function entry only if the thunk is not found.
+        if (core::GetGameVersion().revision >= 3460)
+        {
+            uintptr_t applyAddr = mem::FindPattern(kSig_FriendlyApplyThunk3460);
+            const char* sigUsed = kSig_FriendlyApplyThunk3460;
+            const char* how = "thunk";
+            if (!applyAddr)
+            {
+                applyAddr = mem::FindPattern(kSig_FriendlyApply3460);
+                sigUsed = kSig_FriendlyApply3460;
+                how = "entry";
+            }
+            if (applyAddr && mem::CountMatches(sigUsed) == 1)
+            {
+                g_applyTarget = reinterpret_cast<void*>(applyAddr);
+                if (MH_CreateHook(g_applyTarget, reinterpret_cast<void*>(&hkFriendlyApply),
+                                  reinterpret_cast<void**>(&oFriendlyApply)) == MH_OK)
+                {
+                    MH_EnableHook(g_applyTarget);
+                    LOG_OK("friendly: trust apply hook installed @ 0x%p (%s) - popup will scale.",
+                           g_applyTarget, how);
+                    g_hooksInstalled = true;
+                }
+                else
+                {
+                    LOG_ERR("friendly: trust apply hook failed @ 0x%p (%s)", g_applyTarget, how);
+                    g_applyTarget = nullptr;
+                    oFriendlyApply = nullptr;
+                }
+            }
+            else
+            {
+                LOG_WARN("friendly: trust apply site not found/unique - popup stays at the base amount.");
             }
         }
 

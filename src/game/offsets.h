@@ -2118,6 +2118,36 @@ namespace trinity::game
     //
     // A working detour needs a prologue-aware install (relocate the RSP-relative
     // stores, or place the detour past them) - not a plain 5-byte patch.
+    // TU 2.04.03/2.04.04 (3460/3462): the TRUST APPLY function. This is the one
+    // hookable point on the whole gain path, and it is the point that decides what
+    // the game's own "+N Trust" popup shows.
+    //
+    // The realm processor reads the value, calls this to apply the delta, then
+    // reads the value AGAIN to compute the popup delta:
+    //     1418E38BB  call lookup      ; value before
+    //     1418E3935  call APPLY       ; <- 0x1418EAAF0 -> 0x14B5D5B40
+    //     1418E3960  call lookup      ; value after  <- popup uses this
+    //     1418E3982  mov rax,[rax+8]  ; delta = after - before
+    // so scaling the delta HERE scales the popup, unlike a poll that writes after
+    // the popup has already rendered.
+    //
+    // ABI, agreed by all five call sites (0x1418CD5A8, 0x1418E3935, 0x1418E5CD4,
+    // 0x142BB2598, 0x142BB2CB0):
+    //     rcx = component      rdx = tag (u16)      r8 = DELTA (signed)
+    //     r9  = secondary arg  [rsp+0x20] = out
+    // The apply body re-derives the record from (rcx,dx) via 0x1418E5260, then
+    // calls the upsert 0x14B5D7FC0(rec, delta, secondary) which clamps to the
+    // record's own min/max at +0x18/+0x20/+0x28 and stores through 0x14B5DBEA0.
+    inline constexpr const char* kSig_FriendlyApply3460 =
+        "48 89 5C 24 08 48 89 6C 24 10 48 89 74 24 18 57 48 83 EC 20 0F B7 FA "
+        "4C 89 CB 0F B7 D7 4C 89 C6 E8 ?? ?? ?? ?? 49 89 D8";
+
+    // Same function reached through a 5-byte jmp thunk. Prefer this one when
+    // present: the thunk is `e9 xx xx xx xx` with no stack frame at all, so
+    // MinHook's 5-byte copy cannot disturb any argument home.
+    inline constexpr const char* kSig_FriendlyApplyThunk3460 =
+        "E9 4B B0 CE 09";
+
     inline constexpr const char* kSig_FriendlyRealmWriter3460 =
         "48 89 5C 24 18 4C 89 4C 24 20 48 89 54 24 10 48 89 4C 24 08 "
         "55 56 57 41 54 41 55 41 56 41 57 48 8D AC 24 20 FF FF FF "
