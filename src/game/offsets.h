@@ -323,7 +323,12 @@ namespace trinity::game
     // stable across combat/transitions, while the +0x48 objType count swings
     // wildly - the round-trip is the true single source of truth.
     inline constexpr uintptr_t kOff_Owner_Possessor  = 0xA0; // -> possessor/controller
-    inline constexpr uintptr_t kOff_Possessor_Pawn   = 0xD0; // -> back-ref to owner
+    inline constexpr uintptr_t kOff_Possessor_Pawn   = 0xD0; // -> back-ref to owner (client realm pawn)
+    // TU 2.04 live-verified (3462): the possessor carries BOTH realm pawns side
+    // by side - +0xD0 round-trips the client body, +0xD8 the server body. The
+    // server pawn's own holder (via sub+0xB8) is the server-authority inventory
+    // the reconcile writes to; missing it is why client-only adds get wiped.
+    inline constexpr uintptr_t kOff_Possessor_ServerPawn = 0xD8; // -> server-realm pawn
 
     // The engine's class gate in that accessor is NOT the +0x48 objType word
     // (which on the LIVE player flickers 0/3/8 and is unusable): it reads the

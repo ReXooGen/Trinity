@@ -1592,8 +1592,60 @@ namespace trinity::game
         // judging each candidate on its own merits below instead: a churned-away
         // client, a freed container and a planner copy all fail IsLiveCharacter,
         // which is what the test is for.
+        // The server-realm body hangs off the same possessor as the client
+        // one: possessor+0xD8 -> server pawn -> sub+0xB8 -> server holder
+        // (live-verified on 3462; see kOff_Possessor_ServerPawn). This is the
+        // holder the reconcile actually writes, so resolving it here removes
+        // the candidate-scan guesswork entirely.
+        uintptr_t ServerPawnHolder()
+        {
+            const uintptr_t clientC = ResolveClientContainer();
+            if (clientC < kMinPointer) return 0;
+            const uintptr_t possessor = [&] {
+                uintptr_t p = 0;
+                return ReadPtr(clientC + kOff_Owner_Possessor, &p) ? p : 0;
+            }();
+            if (possessor < kMinPointer) return 0;
+            uintptr_t serverPawn = 0;
+            if (!ReadPtr(possessor + kOff_Possessor_ServerPawn, &serverPawn) ||
+                serverPawn < kMinPointer || serverPawn == clientC)
+                return 0;
+            // Round-trip gate: the server pawn's possessor must hand it back.
+            uintptr_t back = 0;
+            if (!ReadPtr(serverPawn + kOff_Owner_Possessor, &back) || back < kMinPointer)
+                return 0;
+            uintptr_t pawn2 = 0;
+            if (!ReadPtr(back + kOff_Possessor_ServerPawn, &pawn2) || pawn2 != serverPawn)
+                return 0;
+            uintptr_t sub = 0;
+            if (!ReadPtr(serverPawn + kOff_Container_Sub, &sub) || sub < kMinPointer)
+                return 0;
+            uintptr_t holder = 0;
+            if (!ReadPtr(sub + kOff_Sub_Holder, &holder) || !HolderLooksValid(holder))
+                return 0;
+            return holder;
+        }
+
         uintptr_t ServerHolder()
         {
+            // Realm-pawn path first: exact, self-validating, realm-independent.
+            if (const uintptr_t direct = ServerPawnHolder();
+                direct && direct != CurrentHolder() && HolderLooksValid(direct))
+            {
+                const uintptr_t cc = ResolveClientContainer();
+                g_serverHolder.store(direct, std::memory_order_release);
+                if (cc >= kMinPointer)
+                {
+                    uintptr_t possessor = 0;
+                    if (ReadPtr(cc + kOff_Owner_Possessor, &possessor) && possessor >= kMinPointer)
+                    {
+                        uintptr_t sp = 0;
+                        if (ReadPtr(possessor + kOff_Possessor_ServerPawn, &sp) && sp >= kMinPointer)
+                            g_serverContainer.store(sp, std::memory_order_release);
+                    }
+                }
+                return direct;
+            }
             const uintptr_t clientC = ResolveClientContainer();
             const uintptr_t clientH = CurrentHolder();
             if (!clientC || !clientH) return 0;

@@ -206,7 +206,9 @@ namespace trinity::gui
         changed |= ui::ToggleFloat(LOC("Free Flight"), &st.freeFlight, &st.flightSpeed, 1.0f, 40.0f, 1.0f, 8.0f, "%.0f",
                         LOC("While airborne, hold Caps Lock / RB to rise or Ctrl / Right Trigger to sink. Let go and normal physics resume - jumps and aerial attacks are untouched."));
         changed |= ui::ToggleFloat(LOC("Trust Multiplier"), &st.trustMult, &st.trustMultVal, 1.0f, 25.0f, 0.25f, 3.0f, "%.2fx",
-                        LOC("Scales each trust gain in-flight - the popup shows the scaled amount - and drives every discovered relationship to the cap (100). Greet or gift someone once so they appear."));
+                        LOC("Scales each trust gain by this amount (10x on a base +5 = +50). Greet or gift someone once so they appear."));
+        changed |= ui::Toggle(LOC("Max Trust (All Relationships)"), &st.maxTrust,
+                        LOC("Drives every discovered relationship straight to the game cap (100). Independent of the multiplier above - turn this off if you want the multiplier's scaled gains to show."));
 
         if (changed && st.autoSave)
             Settings::Save();

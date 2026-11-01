@@ -572,93 +572,9 @@ namespace trinity::game
 
         void Diagnose3460()
         {
-            // One-shot full runtime image dump: the disk exe is packed, so
-            // offline analysis (IDA/capstone) of the popup path needs the
-            // unpacked image that only exists in memory. Written once, on a
-            // detached thread (guarded reads only, no game-state mutation);
-            // skipped when the dump already exists.
-            static bool s_dumpStarted = false;
-            if (!s_dumpStarted)
-            {
-                s_dumpStarted = true;
-                char dir[MAX_PATH]{};
-                if (GetModuleFileNameA(Mod::Get().Module(), dir, MAX_PATH))
-                {
-                    char* slash = strrchr(dir, '\\');
-                    if (slash) *slash = '\0';
-                    std::string path = std::string(dir) + "\\Trinity_runtime_3460.bin";
-                    // 329 MB of I/O per session for a dump that is identical
-                    // across sessions of the same build. Skip when it is already
-                    // on disk and large enough to be complete.
-                    WIN32_FILE_ATTRIBUTE_DATA fa{};
-                    const bool haveDump =
-                        GetFileAttributesExA(path.c_str(), GetFileExInfoStandard, &fa) &&
-                        fa.nFileSizeHigh == 0 && fa.nFileSizeLow > 300u * 1024u * 1024u;
-                    if (haveDump)
-                        LOG_INFO("f3460: runtime dump already present (%lu MB) - skipping.",
-                                 fa.nFileSizeLow / (1024u * 1024u));
-                    else
-                    std::thread([path]()
-                    {
-                        const uintptr_t base = 0x140000000ULL;
-                        const uintptr_t size = 329084312ULL;
-                        FILE* f = fopen(path.c_str(), "wb");
-                        if (!f) { LOG_ERR("f3460: runtime dump open failed: %s", path.c_str()); return; }
-                        uint8_t zero[4096] = {};
-                        for (uintptr_t a = base; a < base + size; a += 4096)
-                        {
-                            uint8_t page[4096];
-                            if (mem::ReadBytes(a, page, 4096))
-                                fwrite(page, 1, 4096, f);
-                            else
-                                fwrite(zero, 1, 4096, f);
-                        }
-                        fclose(f);
-                        LOG_OK("f3460: runtime image dumped -> %s", path.c_str());
-                    }).detach();
-                }
-            }
-            static bool s_sigOnce = false;
-            if (!s_sigOnce)
-            {
-                s_sigOnce = true;
-                struct Site { const char* name; const char* sig; };
-                const Site sites[] = {
-                    { "xmm-tail", "C5 FC 11 49 20 C5 F8 10 47 40 C5 F8 11 41 40" },
-                    { "ymm-tail", "C5 FC 11 49 20 C5 FC 10 47 40 C5 FC 11 41 40" },
-                    { "category", "0F B7 39 48 8B 1D ?? ?? ?? ?? 3B 7B 08 0F 83 ?? ?? ?? ?? 48 8D 34 FD 00 00 00 00 48 8B 43 58 48 8B 04 06" },
-                    { "writer",   "48 89 6C 24 10 48 89 74 24 18 57 48 83 EC 70 49 8B C1 49 8B E8 0F B7 DA 48 8B F1 4D 85 C9" },
-                };
-                for (const Site& s : sites)
-                {
-                    const uintptr_t a = mem::FindPattern(s.sig);
-                    LOG("f3460: site %-9s -> %p", s.name, reinterpret_cast<void*>(a));
-                    // Offline-analysis aid: dump 2 KB at each candidate so the
-                    // disassembly happens out-of-band (the disk exe is packed;
-                    // only the runtime image holds real code).
-                    if (a >= kMinPointer)
-                    {
-                        char path[MAX_PATH]{};
-                        char dir[MAX_PATH]{};
-                        if (GetModuleFileNameA(Mod::Get().Module(), dir, MAX_PATH))
-                        {
-                            char* slash = strrchr(dir, '\\');
-                            if (slash) *slash = '\0';
-                            snprintf(path, sizeof(path), "%s\\Trinity_site_%s.bin", dir, s.name);
-                        }
-                        else
-                            snprintf(path, sizeof(path), "Trinity_site_%s.bin", s.name);
-                        if (FILE* f = fopen(path, "wb"))
-                        {
-                            uint8_t buf[2048]{};
-                            for (int k = 0; k < 2048; ++k) Read8(a + k, &buf[k]);
-                            fwrite(buf, 1, sizeof(buf), f);
-                            fclose(f);
-                            LOG("f3460: dumped %s -> %s", s.name, path);
-                        }
-                    }
-                }
-            }
+            // Diagnostics log only - the runtime-image dump (330 MB .bin) and
+            // the per-site 2 KB dumps are removed: the mod no longer writes
+            // binary files next to itself.
             // Periodic body: one snapshot per 60 s, at most twice per session.
             // Without this the whole function ran EVERY tick - 32k log lines in
             // 11 minutes of the 17:11 session, each pass walking 128 actor slots
@@ -930,9 +846,8 @@ namespace trinity::game
             g_trustSeeded = false;
             return;
         }
-        // Max Trust is folded into the single toggle: every pass sweeps the
-        // ledger to the cap alongside the multiplier poll.
-        __try { SweepMaxTrust(); } __except (EXCEPTION_EXECUTE_HANDLER) {}
+        if (st.maxTrust)
+            __try { SweepMaxTrust(); } __except (EXCEPTION_EXECUTE_HANDLER) {}
         // 3460 site dumps + ledger snapshot (one-shot sigs; 60s cadence inside) -
         // feeds the offline disassembly of the gift path. Skipped while a menu is
         // open: the diagnostic's memory probing competes with the menu's own
