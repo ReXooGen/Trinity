@@ -512,81 +512,7 @@ namespace trinity::game
         // 3. FindPattern the copy-tail anchors (XMM/YMM) + the category-table
         //    probe - the site candidates for the virtual dispatch (site B).
         // Every greet/gift diff between two dumps = the live ledger path.
-        void SnapshotFriendly3460()
-        {
-            const uintptr_t owner = Player::GetControlledOwner();
-            if (owner < kMinPointer) { LOG("f3460: no controlled owner"); return; }
-            uintptr_t sub = 0;
-            if (!mem::ReadPtr(owner + kOff_Owner_Actor, &sub) || sub < kMinPointer)
-            { LOG("f3460: owner=%p no actor", reinterpret_cast<void*>(owner)); return; }
-            uintptr_t fcomp = 0; int foff = -1;
-            for (int off = 0x000; off <= 0x400; off += 8)
-            {
-                uintptr_t cand = 0;
-                if (!mem::ReadPtr(sub + static_cast<uintptr_t>(off), &cand) || cand < kMinPointer) continue;
-                uintptr_t vt = 0;
-                if (!mem::ReadPtr(cand, &vt) || vt < 0x140000000ULL || vt > 0x155000000ULL) continue;
-                uintptr_t col = 0;
-                if (!mem::ReadPtr(vt - 8, &col) || col < 0x140000000ULL || col > 0x155000000ULL) continue;
-                uint32_t tdRva = 0;
-                if (!Read32(col + 12, &tdRva) || !tdRva || tdRva > 0x14000000u) continue;
-                char name[96]{};
-                const uintptr_t tdAddr = 0x140000000ULL + tdRva;
-                if (!mem::ReadBytes(tdAddr + 16, name, 90)) continue;
-                name[95] = '\0';
-                if (name[0] != '.') continue;
-                if (strstr(name, "Friendly"))
-                {
-                    fcomp = cand; foff = off;
-                    LOG("f3460: friendly comp sub+%#X -> %p %s", off, reinterpret_cast<void*>(cand), name);
-                }
-            }
-            if (!fcomp)
-            {
-                LOG("f3460: no Friendly component found under sub=%p (owner=%p)", reinterpret_cast<void*>(sub), reinterpret_cast<void*>(owner));
-                return;
-            }
-            // dump the record table of the friendly component using the 3446 shape
-            // (likely still close): +0x1C size, +0x30 entries, entry+0 key, entry+8 rec, rec+8 value
-            uint32_t size = 0;
-            if (Read32(fcomp + 0x1C, &size) && size > 0 && size <= 4096)
-            {
-                uintptr_t entries = 0;
-                if (mem::ReadPtr(fcomp + 0x30, &entries) && entries >= kMinPointer)
-                {
-                    LOG("f3460: comp=%p size=%u entries=%p", reinterpret_cast<void*>(fcomp), size, reinterpret_cast<void*>(entries));
-                    for (uint32_t i = size >= 6 ? size - 6 : 0; i < size; ++i)
-                    {
-                        uintptr_t e = 0, rec = 0; uint64_t key = 0; int64_t val = 0;
-                        if (!mem::ReadPtr(entries + static_cast<uintptr_t>(i) * 8, &e) || e < kMinPointer) continue;
-                        Read64(e, &key);
-                        if (!mem::ReadPtr(e + 8, &rec) || rec < kMinPointer) continue;
-                        Read64(rec + 8, reinterpret_cast<uint64_t*>(&val));
-                        LOG("f3460: rec[%u] key=%llx val=%lld", i, static_cast<unsigned long long>(key), static_cast<long long>(val));
-                    }
-                }
-                else LOG("f3460: comp=%p size=%u but entries unreadable", reinterpret_cast<void*>(fcomp), size);
-            }
-            else LOG("f3460: comp=%p size unreadable at +0x1C", reinterpret_cast<void*>(fcomp));
-        }
 
-        void Diagnose3460()
-        {
-            // Diagnostics log only - the runtime-image dump (330 MB .bin) and
-            // the per-site 2 KB dumps are removed: the mod no longer writes
-            // binary files next to itself.
-            // Periodic body: one snapshot per 60 s, at most twice per session.
-            // Without this the whole function ran EVERY tick - 32k log lines in
-            // 11 minutes of the 17:11 session, each pass walking 128 actor slots
-            // and RTTI-parsing every candidate on the render thread.
-            static ULONGLONG s_nextSnap = 0;
-            static int s_snaps = 0;
-            const ULONGLONG snapNow = GetTickCount64();
-            if (s_snaps >= 2 || snapNow < s_nextSnap) return;
-            s_nextSnap = snapNow + 60000;
-            ++s_snaps;
-            SnapshotFriendly3460();
-        }
 
         // Max Trust sweep: drive every discovered relationship in the ledger to
         // the game cap (100). The 3446/3460 sessions proved direct ledger writes
@@ -848,12 +774,6 @@ namespace trinity::game
         }
         if (st.maxTrust)
             __try { SweepMaxTrust(); } __except (EXCEPTION_EXECUTE_HANDLER) {}
-        // 3460 site dumps + ledger snapshot (one-shot sigs; 60s cadence inside) -
-        // feeds the offline disassembly of the gift path. Skipped while a menu is
-        // open: the diagnostic's memory probing competes with the menu's own
-        // on-demand snapshots and shows up as stutter inside Dye/Edit Equipment.
-        if (!st.menuOpen)
-            __try { Diagnose3460(); } __except (EXCEPTION_EXECUTE_HANDLER) {}
         if (writerAuthoritative) return; // the gain-writer hook owns scaling
         static ULONGLONG s_lastPoll = 0;
         const ULONGLONG now = GetTickCount64();

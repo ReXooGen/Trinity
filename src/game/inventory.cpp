@@ -2623,23 +2623,6 @@ namespace trinity::game
                     LOG_WARN("inventory: placement commit hook failed - server holder may stay unresolved.");
             }
 
-            // The game's own create dispatcher: hook for request-layout capture.
-            // Every legit add (buy/loot/quest) logs one pre/post dump (max 8);
-            // from that we replicate the exact request for our own adds.
-            if (const uintptr_t disp = FindAddDispatcher())
-            {
-                void* dt = reinterpret_cast<void*>(disp);
-                void* dorig = nullptr;
-                if (MH_CreateHook(dt, reinterpret_cast<void*>(&hkAddDispatch), &dorig) == MH_OK &&
-                    MH_EnableHook(dt) == MH_OK)
-                {
-                    oAddDispatch = reinterpret_cast<AddDispatch_t>(dorig);
-                    g_dispatchTarget = dt;
-                    LOG_OK("inventory: add dispatcher hook installed @ 0x%p - buy or pick up any item to capture the request layout.", dt);
-                }
-                else
-                    LOG_WARN("inventory: add dispatcher hook failed - will keep the manual-write path.");
-            }
             else
             {
                 oCommitPlacement = nullptr; // refuses Add Item
@@ -3740,6 +3723,28 @@ namespace trinity::game
                     g_stackApplied = false;
             }
 
+            // The dispatcher capture hook installs on first world load, not in
+            // Init: the main menu itself runs the dispatcher while building its
+            // UI lists, and hooking there froze the menu at startup.
+            static bool s_dispatchHookTried = false;
+            if (!s_dispatchHookTried && Player::Ready())
+            {
+                s_dispatchHookTried = true;
+                if (const uintptr_t disp = FindAddDispatcher())
+                {
+                    void* dt = reinterpret_cast<void*>(disp);
+                    void* dorig = nullptr;
+                    if (MH_CreateHook(dt, reinterpret_cast<void*>(&hkAddDispatch), &dorig) == MH_OK &&
+                        MH_EnableHook(dt) == MH_OK)
+                    {
+                        oAddDispatch = reinterpret_cast<AddDispatch_t>(dorig);
+                        g_dispatchTarget = dt;
+                        LOG_OK("inventory: add dispatcher hook installed @ 0x%p - buy or pick up any item to capture the request layout.", dt);
+                    }
+                    else
+                        LOG_WARN("inventory: add dispatcher hook failed - will keep the manual-write path.");
+                }
+            }
             // Slot caps live on bucket objects that a save load destroys and rebuilds.
             // SetAllSlotSizes skips buckets that already match, so re-driving it costs a u16 read per bucket.
             if (st.invSlotSize && Player::Ready() && !g_commitActive.load(std::memory_order_acquire))
