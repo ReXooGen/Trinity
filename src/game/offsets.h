@@ -2079,6 +2079,19 @@ namespace trinity::game
     inline constexpr const char* kSig_FriendlySetNpc =
         "4C 8B DC 53 55 56 57 41 56 41 57 48 83 EC 68 48 8B FA 48 8B F1 0F B7 42 04";
 
+    // TU 2.04 (PE 3446, IDA-verified 2026-11-01): SetNpc/SetPet are inlined, but the
+    // shared relationship-record writer survived as sub_142076590 (found via the YMM
+    // record-copy tail C5 FC 11 49 20 C5 FC 10 47 40 C5 FC 11 41 40). Prologue:
+    //   mov [rsp+8],rbx; pushes; sub rsp,70h; mov rdi,r8; mov r13,rcx?; mov rax,gs:[58h]
+    // The gs:[0x58] TLS fetch + the exact push sequence make it unique. The function
+    // receives (component a1/rcx?, tag a2, record a3) and copies the 0x78-byte record
+    // into the per-tag map of a1 - for BOTH realms (the realm global is picked inside
+    // via TLS byte 0x1EB). Hooking the entry lets us scale the source record BEFORE the
+    // game copies it into the ledger, whichever realm the call serves.
+    inline constexpr const char* kSig_FriendlyLedgerWrite =
+        "48 89 5C 24 08 55 56 57 41 54 41 55 41 56 41 57 48 83 EC 70 49 8B F8 4C 8B E9 "
+        "65 48 8B 04 25 58 00 00 00";
+
     inline constexpr const char* kSig_FriendlySetPet =
         "49 89 E3 53 55 56 57 41 56 41 57 48 83 EC 68 48 89 D7 48 89 CE 0F B7 42 04";
 

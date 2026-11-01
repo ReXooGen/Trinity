@@ -124,10 +124,85 @@ namespace trinity::game
             }
             return oSetPet(mapOwner, record);
         }
+
+        // TU 2.04 ledger writer (IDA-verified sub_142076590): (a1 component, a2 tag,
+        // a3 record*). The game copies the 0x78-byte record at a3 into a1's per-tag
+        // ledger for whichever realm the TLS byte selects - so scaling a3 in place
+        // propagates through the game's own copy into the server ledger too.
+        using LedgerWrite_t = __int64(__fastcall*)(void* component, unsigned __int16 tag, void* record);
+        LedgerWrite_t oLedgerWrite = nullptr;
+        void* g_ledgerTarget = nullptr;
+
+        // Per-relationship last-seen value: key = u32@(record+96) ^ (u16@(record+100)<<32)
+        std::unordered_map<uint64_t, int64_t> g_ledgerLast;
+
+        __int64 __fastcall hkLedgerWrite(void* component, unsigned __int16 tag, void* record)
+        {
+            const State& st = State::Get();
+            if (st.trustMult && st.trustMultVal > 1.0f && record)
+            {
+                __try
+                {
+                    const uintptr_t r = reinterpret_cast<uintptr_t>(record);
+                    if (r >= kMinPointer)
+                    {
+                        const uint32_t k32v = *reinterpret_cast<uint32_t*>(r + 96);
+                        const uint16_t k16 = *reinterpret_cast<uint16_t*>(r + 100);
+                        const uint64_t key = static_cast<uint64_t>(k32v) | (static_cast<uint64_t>(k16) << 32);
+                        const int64_t incoming = *reinterpret_cast<int64_t*>(r + 8);
+                        int64_t& last = g_ledgerLast[key];
+                        if (incoming > last)
+                        {
+                            const int64_t gain = incoming - last;
+                            const int64_t scaled = (std::min)(static_cast<int64_t>(gain * st.trustMultVal + 0.5f), int64_t{ 100 });
+                            const int64_t target = (std::min)(last + (std::max)(gain, scaled), int64_t{ 100 });
+                            if (target != incoming)
+                            {
+                                *reinterpret_cast<int64_t*>(r + 8) = target;
+                                LOG_INFO("friendly: ledger-scale key=%llx gain=%lld mult=%.2f -> %lld (was %lld)",
+                                         static_cast<unsigned long long>(key), static_cast<long long>(gain),
+                                         st.trustMultVal, static_cast<long long>(target),
+                                         static_cast<long long>(incoming));
+                            }
+                            last = target;
+                        }
+                        else if (incoming < last)
+                        {
+                            last = incoming;
+                        }
+                    }
+                }
+                __except (EXCEPTION_EXECUTE_HANDLER) {}
+            }
+            return oLedgerWrite(component, tag, record);
+        }
     }
 
     bool Friendly::Install()
     {
+        // 0. TU 2.04 ledger writer hook (SetNpc/SetPet were inlined; this shared
+        //    record writer is their 3446 successor and serves both realms).
+        if (uintptr_t ledgerAddr = mem::FindPattern(kSig_FriendlyLedgerWrite))
+        {
+            g_ledgerTarget = reinterpret_cast<void*>(ledgerAddr);
+            if (MH_CreateHook(g_ledgerTarget, reinterpret_cast<void*>(&hkLedgerWrite),
+                              reinterpret_cast<void**>(&oLedgerWrite)) == MH_OK)
+            {
+                MH_EnableHook(g_ledgerTarget);
+                LOG_OK("friendly: ledger writer hook installed & enabled @ 0x%p", g_ledgerTarget);
+                g_hooksInstalled = true;
+            }
+            else
+            {
+                LOG_ERR("friendly: failed to create ledger writer hook @ 0x%p", g_ledgerTarget);
+                g_ledgerTarget = nullptr;
+            }
+        }
+        else
+        {
+            LOG_INFO("friendly: ledger writer signature not present on this TU - component poll only.");
+        }
+
         // 1. Install SetNpc prologue hook (Strictly for dialogue & gift giving)
         uintptr_t npcAddr = mem::FindPattern(kSig_FriendlySetNpc);
         if (!npcAddr)
@@ -385,6 +460,13 @@ namespace trinity::game
 
     void Friendly::Remove()
     {
+        if (g_ledgerTarget)
+        {
+            MH_DisableHook(g_ledgerTarget);
+            MH_RemoveHook(g_ledgerTarget);
+            g_ledgerTarget = nullptr;
+        }
+
         if (g_npcTarget)
         {
             MH_DisableHook(g_npcTarget);
