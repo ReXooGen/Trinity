@@ -820,7 +820,9 @@ namespace trinity::hooks
         // synchronous file write on the render thread - the very frame drop we
         // are hunting.
         static ULONGLONG s_lastUiWarn = 0;
-        if (uiMs > 4.0)
+        // Logged only while Performance Diagnostics is on; during normal play
+        // a per-second render-thread file write is noise, not signal.
+        if (uiMs > 4.0 && core::TickMetrics::enabled.load(std::memory_order_acquire))
         {
             const ULONGLONG now = GetTickCount64();
             if (now - s_lastUiWarn >= 1000)

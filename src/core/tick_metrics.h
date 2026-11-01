@@ -70,14 +70,13 @@ namespace trinity::core
                 values[i] = maxima[i].exchange(0, std::memory_order_relaxed) * 1000.0 / frequency;
                 hot |= values[i] >= 2.0;
             }
+            // The hot summary is a diagnostics tool: gated behind Performance
+            // Diagnostics so normal sessions log nothing from this path.
             if (verbose)
                 LOG_INFO("perf: game-tick max/10s ms player=%.3f world=%.3f inventory=%.3f dye=%.3f equipment=%.3f friendly=%.3f",
                          values[0], values[1], values[2], values[3], values[4], values[5]);
-            else if (hot)
-                LOG_WARN("perf: game-tick hot max/10s ms player=%.3f world=%.3f inventory=%.3f dye=%.3f equipment=%.3f friendly=%.3f",
-                         values[0], values[1], values[2], values[3], values[4], values[5]);
             const double waitMs = overlayWait.exchange(0, std::memory_order_relaxed) * 1000.0 / frequency;
-            if (verbose || waitMs >= 2.0) LOG_INFO("perf: overlay fence-wait max/10s ms=%.3f", waitMs);
+            if (verbose) LOG_INFO("perf: overlay fence-wait max/10s ms=%.3f", waitMs);
         }
     };
 }
