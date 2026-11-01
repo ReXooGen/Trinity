@@ -494,6 +494,16 @@ namespace trinity::game
                     }
                 }
             }
+            // Periodic body: one snapshot per 60 s, at most twice per session.
+            // Without this the whole function ran EVERY tick - 32k log lines in
+            // 11 minutes of the 17:11 session, each pass walking 128 actor slots
+            // and RTTI-parsing every candidate on the render thread.
+            static ULONGLONG s_nextSnap = 0;
+            static int s_snaps = 0;
+            const ULONGLONG snapNow = GetTickCount64();
+            if (s_snaps >= 2 || snapNow < s_nextSnap) return;
+            s_nextSnap = snapNow + 60000;
+            ++s_snaps;
             SnapshotFriendly3460();
         }
 
@@ -608,12 +618,15 @@ namespace trinity::game
                     // RPM, entries 409/410 of the client component). First sight of
                     // a new key therefore IS the gain event - seed it AND scale it.
                     // Old relationships discovered later are no-ops: a maxed 100
-                    // computes target=100 (single-step clamp keeps scaled<=20, so
-                    // max(gain,scaled)=gain) and the target==value guard skips it.
+                    // computes target=100 and the target==value guard skips it.
                     s_last[key] = value;
                     if (value <= 0) return;
                     const int64_t gain = value;
-                    const int64_t scaled = (std::min)(static_cast<int64_t>(gain * mult + 0.5f), int64_t{ 20 });
+                    // No per-step clamp: a 100x multiplier on a +5 gift must land
+                    // on the relationship cap, not on an arbitrary 20. The game's
+                    // own ceiling (kFriendly_Max) is the only bound that matters,
+                    // and it is also what the Max Trust sweep writes.
+                    const int64_t scaled = static_cast<int64_t>(static_cast<double>(gain) * mult + 0.5);
                     const int64_t target = (std::min)((std::max)(gain, scaled), kFriendly_Max);
                     if (target == value) return;
                     const auto throttle = s_nextWrite.find(key);
@@ -633,7 +646,6 @@ namespace trinity::game
                              mult, static_cast<long long>(target),
                              static_cast<unsigned long long>(valueAddr),
                              static_cast<unsigned long long>(serverHit));
-                    ui::Toast("Trust +%lld (x%.2f)", static_cast<long long>(target), mult);
                     Write64(valueAddr, static_cast<uint64_t>(target));
                     return;
                 }
@@ -643,7 +655,7 @@ namespace trinity::game
                     return;
                 }
                 const int64_t gain = value - seen->second;
-                const int64_t scaled = (std::min)(static_cast<int64_t>(gain * mult + 0.5f), int64_t{ 20 });
+                const int64_t scaled = static_cast<int64_t>(static_cast<double>(gain) * mult + 0.5);
                 int64_t target = (std::min)(seen->second + (std::max)(gain, scaled), kFriendly_Max);
                 s_last[key] = target;
                 if (target == value) return;
@@ -671,7 +683,6 @@ namespace trinity::game
                          static_cast<long long>(gain), mult, static_cast<long long>(target),
                          static_cast<unsigned long long>(valueAddr),
                          static_cast<unsigned long long>(serverHit));
-                ui::Toast("Trust +%lld (x%.2f)", static_cast<long long>(target), mult);
                 Write64(valueAddr, static_cast<uint64_t>(target));
             });
             if (walked == 0)
