@@ -3710,6 +3710,113 @@ namespace trinity::game
         return g_commitActive.load(std::memory_order_acquire);
     }
 
+        // --- Live-memory add watcher (pure reads, no hooks) ------------------
+        // The game's own add funnel never passes through the two functions we
+        // can hook on this TU, and hooking them crashed startup. So instead of
+        // intercepting the call, WATCH ITS RESULT: the per-bucket registry
+        // vector (*(bucket+0x28) -> +0x210 array / +0x218 count) grows by one
+        // entry per real add, and the slot array grows with it. Polling both
+        // and diffing names the exact bookkeeping our manual write skips.
+        struct AddWatchState
+        {
+            uintptr_t holder = 0;
+            uintptr_t bucket = 0;
+            uintptr_t regArray = 0;
+            uint32_t  regCount = 0;
+            uint16_t  slotCount = 0;
+            bool      primed = false;
+        };
+        void WatchGameAdds(const char* realm, uintptr_t holder)
+        {
+            static AddWatchState s_client{}, s_server{};
+            static int s_dumps = 0;
+            if (s_dumps >= 12 || holder < kMinPointer) return;
+            AddWatchState& st = (realm[0] == 's') ? s_server : s_client;
+            if (st.holder != holder)
+            {
+                st = {};
+                st.holder = holder;
+            }
+            // Resolve the pack bucket (type 1 = Character) directly.
+            uintptr_t buckets = 0; uint32_t n = 0;
+            if (!ReadPtr(holder + kOff_InvHolder_Buckets, &buckets) ||
+                !Read32(holder + kOff_InvHolder_Count, &n) || !buckets || !n) return;
+            uintptr_t packBucket = 0;
+            for (uint32_t i = 0; i < n; ++i)
+            {
+                uintptr_t b = 0;
+                if (!ReadPtr(buckets + static_cast<uintptr_t>(i) * 8, &b) || b < kMinPointer) continue;
+                uint16_t t = 0;
+                if (Read16(b + kOff_InvBucket_Type, &t) && t == 1) { packBucket = b; break; }
+            }
+            if (!packBucket) return;
+            st.bucket = packBucket;
+
+            uint16_t slots = 0;
+            Read16(packBucket + kOff_InvBucket_Count, &slots);
+            uintptr_t reg = 0, regArr = 0;
+            uint32_t regCount = 0;
+            if (ReadPtr(packBucket + 0x28, &reg) && reg >= kMinPointer)
+            {
+                ReadPtr(reg + 0x210, &regArr);
+                Read32(reg + 0x218, &regCount);
+            }
+            if (!st.primed)
+            {
+                st.primed = true;
+                st.slotCount = slots;
+                st.regArray = regArr;
+                st.regCount = regCount;
+                LOG("inventory: watch[%s] primed slotCount=%u regCount=%u reg=%p",
+                    realm, static_cast<unsigned>(slots),
+                    static_cast<unsigned>(regCount), reinterpret_cast<void*>(reg));
+                return;
+            }
+            const bool grew = (slots > st.slotCount) || (regCount > st.regCount);
+            if (!grew) { st.slotCount = slots; st.regCount = regCount; st.regArray = regArr; return; }
+
+            ++s_dumps;
+            LOG("inventory: watch[%s] ADD DETECTED slotCount %u->%u regCount %u->%u",
+                realm, static_cast<unsigned>(st.slotCount), static_cast<unsigned>(slots),
+                static_cast<unsigned>(st.regCount), static_cast<unsigned>(regCount));
+            // Dump the newly appended registry entries (qwords).
+            if (regArr >= kMinPointer && regCount > st.regCount && regCount < 4096)
+            {
+                for (uint32_t i = st.regCount; i < regCount && i < st.regCount + 4; ++i)
+                {
+                    uintptr_t entry = 0;
+                    if (!ReadPtr(regArr + static_cast<uintptr_t>(i) * 8, &entry)) continue;
+                    uint8_t buf[0x20]{};
+                    for (int k = 0; k < 0x20; ++k) Read8(entry + k, &buf[k]);
+                    char hex[0x20 * 3 + 1]{};
+                    for (int k = 0; k < 0x20; ++k) snprintf(hex + k * 3, 4, "%02X ", buf[k]);
+                    LOG("inventory: watch[%s] reg[%u]=%p bytes: %s", realm,
+                        static_cast<unsigned>(i), reinterpret_cast<void*>(entry), hex);
+                }
+            }
+            // Dump the tail slots (the game's own written record = our template).
+            uintptr_t slotArr = 0;
+            if (ReadPtr(packBucket + kOff_InvBucket_Slots, &slotArr) && slotArr >= kMinPointer)
+            {
+                const uintptr_t stride = SlotStride();
+                const uint16_t from = (slots > st.slotCount) ? st.slotCount : static_cast<uint16_t>(slots ? slots - 1 : 0);
+                for (uint16_t i = from; i < slots && i < from + 3; ++i)
+                {
+                    const uintptr_t slot = slotArr + static_cast<uintptr_t>(i) * stride;
+                    uint8_t buf[0xC8]{};
+                    for (int k = 0; k < 0xC8; ++k) Read8(slot + k, &buf[k]);
+                    char hex[0xC8 * 3 + 1]{};
+                    for (int k = 0; k < 0xC8; ++k) snprintf(hex + k * 3, 4, "%02X ", buf[k]);
+                    LOG("inventory: watch[%s] slot[%u] bytes: %s", realm,
+                        static_cast<unsigned>(i), hex);
+                }
+            }
+            st.slotCount = slots;
+            st.regCount = regCount;
+            st.regArray = regArr;
+        }
+
+
     void Inventory::Tick()
     {
         static std::atomic_flag busy = ATOMIC_FLAG_INIT;
@@ -3723,6 +3830,22 @@ namespace trinity::game
             // other features alive and makes the broken one obvious in logs.
             __try { RunPendingAdd(); } __except (EXCEPTION_EXECUTE_HANDLER) {}
             __try { InventoryTickTracker(); } __except (EXCEPTION_EXECUTE_HANDLER) {}
+            // Live-memory add watcher: pure reads, catches the game's own adds
+            // (buy/loot) so our manual write can replay their bookkeeping.
+            __try
+            {
+                static ULONGLONG s_nextWatch = 0;
+                const ULONGLONG nowW = GetTickCount64();
+                if (nowW >= s_nextWatch)
+                {
+                    s_nextWatch = nowW + 250;
+                    const uintptr_t ch = CurrentHolder();
+                    if (ch) WatchGameAdds("client", ch);
+                    const uintptr_t sh = ServerHolder();
+                    if (sh && sh != ch) WatchGameAdds("server", sh);
+                }
+            }
+            __except (EXCEPTION_EXECUTE_HANDLER) {}
             __try { InventoryTickRepair(); } __except (EXCEPTION_EXECUTE_HANDLER) {}
             __try { InventoryTickStackSlots(); } __except (EXCEPTION_EXECUTE_HANDLER) {}
         }
@@ -4497,6 +4620,7 @@ namespace trinity::game
         // caller. POD locals only: __try/__except is illegal in a function that
         // needs unwinding, which is also why the realm save/restore lives one
         // level up rather than in an RAII guard.
+
 
 
         int AddInRealm(uintptr_t holder, uintptr_t container, uintptr_t bucket,
