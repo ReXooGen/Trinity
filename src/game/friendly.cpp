@@ -430,6 +430,40 @@ namespace trinity::game
             SnapshotFriendly3460();
         }
 
+        // Max Trust sweep: drive every discovered relationship in the ledger to
+        // the game cap (100). The 3446/3460 sessions proved direct ledger writes
+        // at any value <= cap are accepted and persist (105 survived minutes of
+        // play; maxed NPCs read exactly 100), so a straight write per record is
+        // safe. One full sweep per 2s; a toast fires once per sweep when at
+        // least one record was raised.
+        void SweepMaxTrust()
+        {
+            const uintptr_t client = Player::GetControlledOwner();
+            if (client < kMinPointer) return;
+            static ULONGLONG s_next = 0;
+            const ULONGLONG now = GetTickCount64();
+            if (now < s_next) return;
+            s_next = now + 2000;
+            int raised = 0, seen = 0;
+            ForEachTrust(client, [&](uint64_t key, uintptr_t valueAddr)
+            {
+                ++seen;
+                int64_t value = 0;
+                if (!Read64(valueAddr, reinterpret_cast<uint64_t*>(&value)) || value < 0 || value > kFriendly_Max)
+                    return;
+                if (value >= kFriendly_Max) return;
+                Write64(valueAddr, static_cast<uint64_t>(kFriendly_Max));
+                ++raised;
+            });
+            if (raised > 0)
+            {
+                LOG_OK("friendly: max trust raised %d/%d relationship(s) to %lld.",
+                       raised, seen, static_cast<long long>(kFriendly_Max));
+                ui::Toast("Max Trust: %d relationship(s) -> %lld", raised,
+                          static_cast<long long>(kFriendly_Max));
+            }
+        }
+
         void PollTrustMultiplier(float mult)
         {
             static std::unordered_map<uint64_t, int64_t> s_last;
@@ -593,7 +627,14 @@ namespace trinity::game
             // Re-arm the seeding so the next enable snapshots fresh baselines
             // instead of treating accumulated offline gains as one event.
             g_trustSeeded = false;
+            if (!st.maxTrust) return;
+            // Max Trust alone: sweep without the multiplier poll.
+            __try { SweepMaxTrust(); } __except (EXCEPTION_EXECUTE_HANDLER) {}
             return;
+        }
+        if (st.maxTrust)
+        {
+            __try { SweepMaxTrust(); } __except (EXCEPTION_EXECUTE_HANDLER) {}
         }
         static ULONGLONG s_lastPoll = 0;
         const ULONGLONG now = GetTickCount64();

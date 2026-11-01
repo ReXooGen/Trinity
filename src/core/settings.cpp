@@ -120,6 +120,7 @@ namespace trinity
             else if (!strcmp(key, "flightSpeed"))         vals.flightSpeed         = strtof(val, nullptr);
             else if (!strcmp(key, "trustMult"))           vals.trustMult           = atoi(val) != 0;
             else if (!strcmp(key, "trustMultVal"))        vals.trustMultVal        = strtof(val, nullptr);
+            else if (!strcmp(key, "maxTrust"))            vals.maxTrust            = atoi(val) != 0;
             else if (!strcmp(key, "petSlotLimit"))        vals.petSlotLimit        = atoi(val) != 0;
             else if (!strcmp(key, "petSlotLimitVal"))     vals.petSlotLimitVal     = atoi(val);
             else if (!strcmp(key, "invSlotSize"))         vals.invSlotSize         = atoi(val) != 0;
@@ -298,6 +299,7 @@ namespace trinity
         st.flightSpeed   = ClampF(vals.flightSpeed, 1.0f, 40.0f);
         st.trustMult     = vals.trustMult;
         st.trustMultVal  = ClampF(vals.trustMultVal, 1.0f, 25.0f);
+        st.maxTrust      = vals.maxTrust;
         st.petSlotLimit    = vals.petSlotLimit;
         st.petSlotLimitVal = ClampI(vals.petSlotLimitVal, 30, 999);
         st.invSlotSize     = vals.invSlotSize;
@@ -401,6 +403,7 @@ namespace trinity
                 "flightSpeed=%.3f\n"
                 "trustMult=%d\n"
                 "trustMultVal=%.3f\n"
+                "maxTrust=%d\n"
                 "petSlotLimit=%d\n"
                 "petSlotLimitVal=%d\n"
                 "invSlotSize=%d\n"
@@ -489,6 +492,7 @@ namespace trinity
                 st.flightSpeed,
                 st.trustMult ? 1 : 0,
                 st.trustMultVal,
+                st.maxTrust ? 1 : 0,
                 st.petSlotLimit ? 1 : 0,
                 st.petSlotLimitVal,
                 st.invSlotSize ? 1 : 0,

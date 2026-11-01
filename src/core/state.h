@@ -129,6 +129,9 @@ namespace trinity
         // just reaches max / tames in fewer gifts. 1.0x = game behavior.
         bool  trustMult    = false;
         float trustMultVal = 3.0f;
+        // Max Trust (People & Pets): drives every discovered relationship in the
+        // ledger straight to the game's cap (100). Independent of the multiplier.
+        bool  maxTrust     = false;
 
         // Mount & Pet Options (menu.cpp). Controls Pet registration capacity
         // and pet hire limit up to 999 slots.

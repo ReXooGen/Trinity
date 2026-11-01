@@ -207,6 +207,8 @@ namespace trinity::gui
                         LOC("While airborne, hold Caps Lock / RB to rise or Ctrl / Right Trigger to sink. Let go and normal physics resume - jumps and aerial attacks are untouched."));
         changed |= ui::ToggleFloat(LOC("Trust Multiplier"), &st.trustMult, &st.trustMultVal, 1.0f, 25.0f, 0.25f, 3.0f, "%.2fx",
                         LOC("Gifting NPCs or feeding animals builds trust faster. Scales each trust gain; the popup shows the game's own base amount."));
+        changed |= ui::Toggle(LOC("Max Trust (People & Pets)"), &st.maxTrust,
+                        LOC("Drives every discovered relationship straight to the game's cap (100). Greet or gift someone once so they appear, then let this run."));
 
         if (changed && st.autoSave)
             Settings::Save();
