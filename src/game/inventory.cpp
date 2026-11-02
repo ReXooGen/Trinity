@@ -5301,7 +5301,7 @@ namespace trinity::game
             *outSlots = 0; *outCount = 0;
             if (!clientPackSlots || clientCount < 1) return false;
 
-            // 1) cached holder still valid?
+            // 1) cached holder still valid? (TUs where the mirror has an owner)
             uintptr_t mh = g_mirrorHolder.load(std::memory_order_acquire);
             if (LooksLikeSaveCopy(mh, clientPackSlots, clientCount))
             {
@@ -5321,50 +5321,63 @@ namespace trinity::game
                 }
             }
 
-            // 2) bucket-scan fallback (bounded, in-process; ~1-2 s worst case)
+            // 2) 5-anchor scan for the bare array (no bucket needed - proven
+            // live on TU 2.04: the save copy has NO owning holder). Exactly
+            // the anchors ScanForMirror uses.
             const uintptr_t stride = SlotStride();
-            MEMORY_BASIC_INFORMATION mbi{};
-            uintptr_t a = 0x10000000000ULL; uint64_t budget = 0x180000000ULL, scanned = 0;
-            while (a < 0x7FF000000000ULL && scanned < budget)
+            struct Anchor { uint16_t idx; uint64_t id; };
+            Anchor anchors[5]{}; int nA = 0;
+            for (uint16_t i = 0; i < clientCount && nA < 5; i += 10)
             {
-                if (!VirtualQueryEx(GetCurrentProcess(), reinterpret_cast<LPCVOID>(a), &mbi, sizeof(mbi)))
-                { a += 0x1000000ULL; continue; }
-                const uintptr_t base = reinterpret_cast<uintptr_t>(mbi.BaseAddress);
-                const size_t size = mbi.RegionSize;
-                if (mbi.State == MEM_COMMIT && mbi.Type == MEM_PRIVATE &&
-                    mbi.Protect == PAGE_READWRITE && size >= 8 && size <= 0x10000000)
+                uint64_t v = 0;
+                if (!Read64(clientPackSlots + static_cast<uintptr_t>(i) * stride, &v)) break;
+                if (v > 0 && v < 0x1000000) { anchors[nA++] = { i, v }; }
+            }
+            if (nA >= 2)
+            {
+                MEMORY_BASIC_INFORMATION mbi{};
+                uintptr_t a = 0x10000000000ULL; uint64_t budget = 0x180000000ULL, scanned = 0;
+                while (a < 0x7FF000000000ULL && scanned < budget)
                 {
-                    static thread_local uint8_t* tbuf = nullptr; static size_t tcap = 0;
-                    if (size > tcap) { free(tbuf); tbuf = static_cast<uint8_t*>(malloc(size)); tcap = tbuf ? size : 0; }
-                    if (!tbuf) break;
-                    if (!mem::ReadBytes(base, tbuf, size)) { a = base + size; continue; }
-                    for (size_t off = 0; off + 8 <= size; off += 8)
+                    if (!VirtualQueryEx(GetCurrentProcess(), reinterpret_cast<LPCVOID>(a), &mbi, sizeof(mbi)))
+                    { a += 0x1000000ULL; continue; }
+                    const uintptr_t base = reinterpret_cast<uintptr_t>(mbi.BaseAddress);
+                    const size_t size = mbi.RegionSize;
+                    const bool containsClient = clientPackSlots >= base && clientPackSlots < base + size;
+                    if (mbi.State == MEM_COMMIT && mbi.Type == MEM_PRIVATE &&
+                        mbi.Protect == PAGE_READWRITE && size >= stride * 2 &&
+                        size <= 0x10000000 && !containsClient)
                     {
-                        uint64_t v = 0; memcpy(&v, tbuf + off, 8);
-                        if (v != clientPackSlots) continue; // some qword pointing at client slots - skip
-                        // candidate pointer TO an array; walk back to find a
-                        // bucket whose Slots pointer targets the array right
-                        // AFTER this pointer... too fuzzy; instead treat the
-                        // hit as a bucket+SlotsOffset and validate.
-                        const uintptr_t cand = base + off - kOff_InvBucket_Slots;
-                        uint16_t t = 0;
-                        if (Read16(cand + kOff_InvBucket_Type, &t) && t == 1)
+                        static thread_local uint8_t* tbuf = nullptr; static size_t tcap = 0;
+                        if (size > tcap) { free(tbuf); tbuf = static_cast<uint8_t*>(malloc(size)); tcap = tbuf ? size : 0; }
+                        if (!tbuf) break;
+                        if (!mem::ReadBytes(base, tbuf, size)) { a = base + size; continue; }
+                        const uint8_t* p = tbuf; const size_t n = size;
+                        for (size_t off = 0; off + stride + 8 <= n; off += 8)
                         {
-                            uintptr_t bts = 0; uint16_t bcnt = 0;
-                            if (ReadPtr(cand + kOff_InvBucket_Slots, &bts) && bts >= kMinPointer &&
-                                bts != clientPackSlots &&
-                                Read16(cand + kOff_InvBucket_Count, &bcnt) && bcnt == clientCount &&
-                                LooksLikeSaveCopyRange(bts, clientPackSlots, clientCount))
+                            uint64_t v0 = 0; memcpy(&v0, p + off, 8);
+                            if (v0 != anchors[0].id) continue;
+                            bool all = true;
+                            for (int k = 1; k < nA; ++k)
                             {
-                                *outSlots = bts; *outCount = bcnt;
+                                const size_t o2 = off + static_cast<size_t>(anchors[k].idx - anchors[0].idx) * stride;
+                                if (o2 + 8 > n) { all = false; break; }
+                                uint64_t vk = 0; memcpy(&vk, p + o2, 8);
+                                if (vk != anchors[k].id) { all = false; break; }
+                            }
+                            if (!all) continue;
+                            const uintptr_t cand = base + off - static_cast<uintptr_t>(anchors[0].idx) * stride;
+                            if (LooksLikeSaveCopyRange(cand, clientPackSlots, clientCount))
+                            {
+                                *outSlots = cand; *outCount = clientCount;
                                 return true;
                             }
                         }
+                        scanned += size;
                     }
-                    scanned += size;
+                    a = base + size;
+                    if (!size) a += 0x1000000ULL;
                 }
-                a = base + size;
-                if (!size) a += 0x1000000ULL;
             }
             return false;
         }
@@ -5493,65 +5506,10 @@ namespace trinity::game
             // mirror row is at the SAME index - no instance-id search needed,
             // and a dropped-then-re-added item simply gets its row rewritten.
             const uintptr_t clientSlot = slots + static_cast<uintptr_t>(idx) * stride;
-            uint16_t mirrorCount = 0;
-            if (!LooksLikeSaveCopy(g_mirrorHolder.load(std::memory_order_acquire), slots, count))
+            uint16_t mirrorCount = mCount0;
+            if (mirrorSlots == mSlots0)
             {
-                // find the mirror bucket that points at mirrorSlots
-                MEMORY_BASIC_INFORMATION mbi{};
-                uintptr_t a = 0x10000000000ULL; uint64_t budget = 0x180000000ULL, scanned2 = 0;
-                uintptr_t mirrorBucket = 0;
-                while (a < 0x7FF000000000ULL && scanned2 < budget && !mirrorBucket)
-                {
-                    if (!VirtualQueryEx(GetCurrentProcess(), reinterpret_cast<LPCVOID>(a), &mbi, sizeof(mbi)))
-                    { a += 0x1000000ULL; continue; }
-                    const uintptr_t base = reinterpret_cast<uintptr_t>(mbi.BaseAddress);
-                    const size_t size = mbi.RegionSize;
-                    if (mbi.State == MEM_COMMIT && mbi.Protect == PAGE_READWRITE && size >= 8 && size <= 0x10000000)
-                    {
-                        static thread_local uint8_t* tbuf = nullptr; static size_t tcap = 0;
-                        if (size > tcap) { free(tbuf); tbuf = static_cast<uint8_t*>(malloc(size)); tcap = tbuf ? size : 0; }
-                        if (!tbuf) break;
-                        if (!mem::ReadBytes(base, tbuf, size)) { a = base + size; continue; }
-                        for (size_t off = 0; off + 8 <= size; off += 8)
-                        {
-                            uint64_t v = 0; memcpy(&v, tbuf + off, 8);
-                            if (v != mirrorSlots) continue;
-                            uint16_t t = 0;
-                            if (!Read16(base + off + kOff_InvBucket_Type, &t) || t != 1) continue;
-                            mirrorBucket = base + off; break;
-                        }
-                        scanned2 += size;
-                    }
-                    a = base + size;
-                    if (!size) a += 0x1000000ULL;
-                }
-                if (!mirrorBucket) { *reason = "mirror bucket not found"; return false; }
-                if (!ReadPtr(mirrorBucket + kOff_InvBucket_Slots, &mirrorSlots) ||
-                    !Read16(mirrorBucket + kOff_InvBucket_Count, &mirrorCount))
-                { *reason = "mirror slots unreadable"; return false; }
-                g_mirrorHolder.store(mirrorSlots, std::memory_order_release);
-            }
-            else
-            {
-                // g_mirrorHolder currently stores the holder; re-walk to slots
-                uintptr_t mh = g_mirrorHolder.load(std::memory_order_acquire);
-                uintptr_t mbk = 0; uint32_t mbn = 0;
-                if (mh >= kMinPointer &&
-                    ReadPtr(mh + kOff_InvHolder_Buckets, &mbk) && mbk >= kMinPointer &&
-                    Read32(mh + kOff_InvHolder_Count, &mbn) && mbn && mbn < 4096)
-                {
-                    for (uint32_t i = 0; i < mbn; ++i)
-                    {
-                        uintptr_t b = 0; uint16_t t = 0;
-                        if (!ReadPtr(mbk + static_cast<uintptr_t>(i) * 8, &b) || b < kMinPointer) continue;
-                        if (Read16(b + kOff_InvBucket_Type, &t) && t == 1)
-                        {
-                            ReadPtr(b + kOff_InvBucket_Slots, &mirrorSlots);
-                            Read16(b + kOff_InvBucket_Count, &mirrorCount);
-                            break;
-                        }
-                    }
-                }
+                // bare-array mirror: count = client count, index-aligned
             }
             if (!mirrorSlots || idx >= mirrorCount) { *reason = "mirror row out of range"; return false; }
 
