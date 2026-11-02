@@ -1643,6 +1643,25 @@ namespace trinity::game
         // the save copy's container is not a possessed pawn. The discriminator
         // that actually works is the slot signature: the twin's pack bucket has
         // the same COUNT and the same instance id in slot 0 as the client's.
+        // Compare the first few rows of two slot arrays. Both -1 rows count
+        // as equal (dropped rows). Used to validate a mirror candidate.
+        bool LooksLikeSaveCopyRange(uintptr_t candSlots, uintptr_t clientSlots, uint16_t count)
+        {
+            if (candSlots < kMinPointer || clientSlots < kMinPointer || !count) return false;
+            const uintptr_t stride = SlotStride();
+            const int probes = count < 8 ? count : 8;
+            int eq = 0;
+            for (int i = 0; i < probes; ++i)
+            {
+                uint64_t a = 0, b = 0;
+                if (!Read64(candSlots + static_cast<uintptr_t>(i) * stride, &a) ||
+                    !Read64(clientSlots + static_cast<uintptr_t>(i) * stride, &b)) return false;
+                if (a == b) ++eq;
+                else if (a == 0xFFFFFFFFFFFFFFFF && b == 0xFFFFFFFFFFFFFFFF) ++eq;
+            }
+            return eq >= (probes + 1) / 2; // majority equal
+        }
+
         bool LooksLikeSaveCopy(uintptr_t holder, uintptr_t clientPackSlot0, uint16_t wantCount)
         {
             if (holder < kMinPointer || !clientPackSlot0) return false;
@@ -5272,6 +5291,103 @@ namespace trinity::game
         // client holder AND in the second copy found by the 5-anchor mirror
         // scan. No engine call, no new slot - and the change is live
         // immediately, which the ghost-holder path never achieved.
+        // Find (or re-find) the mirror pack slots for the client pack. Index-
+        // aligned to the client (proven live). Returns false if no mirror is
+        // currently resolvable; g_mirrorHolder is refreshed by the background
+        // scan and validated here on every use.
+        bool ResolveMirrorSlots(uintptr_t clientPackSlots, uint16_t clientCount,
+                                uintptr_t* outSlots, uint16_t* outCount)
+        {
+            *outSlots = 0; *outCount = 0;
+            if (!clientPackSlots || clientCount < 1) return false;
+
+            // 1) cached holder still valid?
+            uintptr_t mh = g_mirrorHolder.load(std::memory_order_acquire);
+            if (LooksLikeSaveCopy(mh, clientPackSlots, clientCount))
+            {
+                uintptr_t buckets = 0; uint32_t n = 0;
+                if (ReadPtr(mh + kOff_InvHolder_Buckets, &buckets) && buckets >= kMinPointer &&
+                    Read32(mh + kOff_InvHolder_Count, &n) && n && n < 4096)
+                {
+                    for (uint32_t i = 0; i < n; ++i)
+                    {
+                        uintptr_t b = 0; uint16_t t = 0;
+                        if (!ReadPtr(buckets + static_cast<uintptr_t>(i) * 8, &b) || b < kMinPointer) continue;
+                        if (!Read16(b + kOff_InvBucket_Type, &t) || t != 1) continue;
+                        if (ReadPtr(b + kOff_InvBucket_Slots, outSlots) &&
+                            Read16(b + kOff_InvBucket_Count, outCount))
+                            return true;
+                    }
+                }
+            }
+
+            // 2) bucket-scan fallback (bounded, in-process; ~1-2 s worst case)
+            const uintptr_t stride = SlotStride();
+            MEMORY_BASIC_INFORMATION mbi{};
+            uintptr_t a = 0x10000000000ULL; uint64_t budget = 0x180000000ULL, scanned = 0;
+            while (a < 0x7FF000000000ULL && scanned < budget)
+            {
+                if (!VirtualQueryEx(GetCurrentProcess(), reinterpret_cast<LPCVOID>(a), &mbi, sizeof(mbi)))
+                { a += 0x1000000ULL; continue; }
+                const uintptr_t base = reinterpret_cast<uintptr_t>(mbi.BaseAddress);
+                const size_t size = mbi.RegionSize;
+                if (mbi.State == MEM_COMMIT && mbi.Type == MEM_PRIVATE &&
+                    mbi.Protect == PAGE_READWRITE && size >= 8 && size <= 0x10000000)
+                {
+                    static thread_local uint8_t* tbuf = nullptr; static size_t tcap = 0;
+                    if (size > tcap) { free(tbuf); tbuf = static_cast<uint8_t*>(malloc(size)); tcap = tbuf ? size : 0; }
+                    if (!tbuf) break;
+                    if (!mem::ReadBytes(base, tbuf, size)) { a = base + size; continue; }
+                    for (size_t off = 0; off + 8 <= size; off += 8)
+                    {
+                        uint64_t v = 0; memcpy(&v, tbuf + off, 8);
+                        if (v != clientPackSlots) continue; // some qword pointing at client slots - skip
+                        // candidate pointer TO an array; walk back to find a
+                        // bucket whose Slots pointer targets the array right
+                        // AFTER this pointer... too fuzzy; instead treat the
+                        // hit as a bucket+SlotsOffset and validate.
+                        const uintptr_t cand = base + off - kOff_InvBucket_Slots;
+                        uint16_t t = 0;
+                        if (Read16(cand + kOff_InvBucket_Type, &t) && t == 1)
+                        {
+                            uintptr_t bts = 0; uint16_t bcnt = 0;
+                            if (ReadPtr(cand + kOff_InvBucket_Slots, &bts) && bts >= kMinPointer &&
+                                bts != clientPackSlots &&
+                                Read16(cand + kOff_InvBucket_Count, &bcnt) && bcnt == clientCount &&
+                                LooksLikeSaveCopyRange(bts, clientPackSlots, clientCount))
+                            {
+                                *outSlots = bts; *outCount = bcnt;
+                                return true;
+                            }
+                        }
+                    }
+                    scanned += size;
+                }
+                a = base + size;
+                if (!size) a += 0x1000000ULL;
+            }
+            return false;
+        }
+
+        // Full 0xC8 row copy client->mirror at the SAME index. Safe on a -1
+        // (dropped) row: the copy re-arms the mirror row so save/load links
+        // succeed. Returns false if the mirror row could not be written.
+        bool SyncMirrorRowAt(uintptr_t clientPackSlots, uint16_t clientCount,
+                             uint16_t idx)
+        {
+            uintptr_t mSlots = 0; uint16_t mCount = 0;
+            if (!ResolveMirrorSlots(clientPackSlots, clientCount, &mSlots, &mCount)) return false;
+            if (idx >= mCount) return false;
+            const uintptr_t stride = SlotStride();
+            const uintptr_t cSlot = clientPackSlots + static_cast<uintptr_t>(idx) * stride;
+            const uintptr_t mSlot = mSlots + static_cast<uintptr_t>(idx) * stride;
+            uint8_t row[0xC8];
+            if (!mem::ReadBytes(cSlot, row, sizeof(row))) return false;
+            for (size_t bi = 0; bi < sizeof(row); ++bi)
+                if (!Write8(mSlot + bi, row[bi])) return false;
+            return true;
+        }
+
         bool TryStackMerge(uint16_t typeId, int64_t qty, const char** reason)
         {
             *reason = "";
@@ -5306,6 +5422,12 @@ namespace trinity::game
                 idx = i; curQty = q; break;
             }
             if (idx < 0) { *reason = "no existing stack of this item"; return false; }
+
+            // find the mirror (validated save-copy walk first, bounded scan
+            // second) - identical rules to the background scan
+            uintptr_t mSlots0 = 0; uint16_t mCount0 = 0;
+            const bool haveMirror = ResolveMirrorSlots(slots, count, &mSlots0, &mCount0);
+            if (!haveMirror) { *reason = "mirror not found"; return false; }
 
             // find the mirror by the 5-anchor scan (same algorithm as the tool)
             struct Anchor { uint16_t idx; uint64_t id; } anchors[5]{}; int nA = 0;
@@ -5362,6 +5484,8 @@ namespace trinity::game
                     if (!size) a += 0x1000000ULL;
                 }
             }
+            if (!mirrorSlots) { mirrorSlots = mSlots0; }
+
             if (!mirrorSlots) { *reason = "mirror not found"; return false; }
 
             // The mirror is INDEX-ALIGNED to the client (proven live: the only
@@ -5585,6 +5709,42 @@ namespace trinity::game
                 }
             }
             const bool okClient = AddIntoHolder(clientH, /*serverRealm=*/false, typeId, qty, id, def);
+
+            // CRASH FIX: a client-only row (no mirror twin) poisons the save.
+            // After a successful native add, find the slot this instance id
+            // landed in and copy the full row into the mirror at the same
+            // index. If the mirror is not resolvable, log it - the row will
+            // then only be safe after the next stack-merge repairs it.
+            if (okClient)
+            {
+                uintptr_t cbk = 0; uint32_t cbn = 0;
+                if (ReadPtr(clientH + kOff_InvHolder_Buckets, &cbk) && cbk >= kMinPointer &&
+                    Read32(clientH + kOff_InvHolder_Count, &cbn) && cbn && cbn < 4096)
+                {
+                    for (uint32_t bi = 0; bi < cbn; ++bi)
+                    {
+                        uintptr_t b = 0; uint16_t t = 0;
+                        if (!ReadPtr(cbk + static_cast<uintptr_t>(bi) * 8, &b) || b < kMinPointer) continue;
+                        if (!Read16(b + kOff_InvBucket_Type, &t) || t != 1) continue;
+                        uintptr_t cslots = 0; uint16_t ccount = 0;
+                        if (!ReadPtr(b + kOff_InvBucket_Slots, &cslots) || cslots < kMinPointer ||
+                            !Read16(b + kOff_InvBucket_Count, &ccount) || !ccount) continue;
+                        const uintptr_t stride = SlotStride();
+                        for (uint16_t i = 0; i < ccount; ++i)
+                        {
+                            uint64_t iid = 0;
+                            if (!Read64(cslots + static_cast<uintptr_t>(i) * stride, &iid) || iid != id) continue;
+                            if (SyncMirrorRowAt(cslots, ccount, i))
+                                LOG("inventory: mirror row synced for new item %u (slot %u) - save-safe.",
+                                    typeId, static_cast<unsigned>(i));
+                            else
+                                LOG_WARN("inventory: mirror row for new item %u (slot %u) NOT synced - avoid saving until a stack-merge repairs it.",
+                                         typeId, static_cast<unsigned>(i));
+                            break;
+                        }
+                    }
+                }
+            }
 
             if (okClient || okServer)
             {
