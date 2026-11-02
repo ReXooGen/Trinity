@@ -1689,9 +1689,26 @@ namespace trinity::game
             // ScanForMirror runs on its own detached worker and never re-enters,
             // so the flag only guards against a double spawn.
 
-            uint64_t id0 = 0, id1 = 0;
-            if (!Read64(clientSlots, &id0) || !Read64(clientSlots + SlotStride(), &id1) || !id0) return;
             const uintptr_t stride = SlotStride();
+            // Five anchors spread across the pack: one match can be a
+            // coincidence, five at the same 0xC8 pitch cannot.
+            struct Anchor { uint16_t idx; uint64_t id; };
+            Anchor anchors[5]{};
+            int nAnchors = 0;
+            for (uint16_t i = 0; i < wantCount && nAnchors < 5; i += 10)
+            {
+                uint64_t v = 0;
+                if (!Read64(clientSlots + static_cast<uintptr_t>(i) * stride, &v)) break;
+                if (v > 0 && v < 0x1000000)
+                {
+                    anchors[nAnchors].idx = i;
+                    anchors[nAnchors].id = v;
+                    ++nAnchors;
+                }
+            }
+            if (nAnchors < 2) return;
+            const uint64_t id0 = anchors[0].id;
+            const uint16_t idx0 = anchors[0].idx;
 
             // Bulk reads only: a per-qword guarded Read64 over gigabytes is
             // hundreds of millions of SEH frames and would take minutes.
@@ -1727,13 +1744,20 @@ namespace trinity::game
                     const size_t n = size;
                     for (size_t off = 0; off + stride + 8 <= n; off += 8)
                     {
-                        uint64_t v = 0, v2 = 0;
+                        uint64_t v = 0;
                         memcpy(&v, p + off, 8);
                         if (v != id0) continue;
-                        memcpy(&v2, p + off + stride, 8);
-                        if (v2 != id1) continue;
-                        foundArray = base + off;
-                        break;
+                        // all anchors must sit at the same 0xC8 pitch
+                        bool all = true;
+                        for (int k = 1; k < nAnchors; ++k)
+                        {
+                            const size_t o2 = off + static_cast<size_t>(anchors[k].idx - idx0) * stride;
+                            uint64_t vk = 0;
+                            if (o2 + 8 > n) { all = false; break; }
+                            memcpy(&vk, p + o2, 8);
+                            if (vk != anchors[k].id) { all = false; break; }
+                        }
+                        if (all) { foundArray = base + off; break; }
                     }
                     scanned += size;
                 }
@@ -5281,8 +5305,187 @@ namespace trinity::game
         // The one add, on the GAME thread: resolves both holders, allocates one
         // shared instance id from the authority, and stamps the item into
         // the server mirror then the client one.
+        // Stack-merge fast path (ported from the proven Python tool): if the
+        // item already exists as a stack in the pack, bump the quantity in the
+        // client holder AND in the second copy found by the 5-anchor mirror
+        // scan. No engine call, no new slot - and the change is live
+        // immediately, which the ghost-holder path never achieved.
+        bool TryStackMerge(uint16_t typeId, int64_t qty, const char** reason)
+        {
+            *reason = "";
+            const uintptr_t clientH = CurrentHolder();
+            if (clientH < kMinPointer) { *reason = "no client holder"; return false; }
+            uintptr_t cb = 0; uint32_t bn = 0;
+            if (!ReadPtr(clientH + kOff_InvHolder_Buckets, &cb) || cb < kMinPointer ||
+                !Read32(clientH + kOff_InvHolder_Count, &bn) || !bn || bn > 4096)
+            { *reason = "no client buckets"; return false; }
+            uintptr_t pack = 0;
+            for (uint32_t i = 0; i < bn; ++i)
+            {
+                uintptr_t b = 0; uint16_t t = 0;
+                if (!ReadPtr(cb + static_cast<uintptr_t>(i) * 8, &b) || b < kMinPointer) continue;
+                if (Read16(b + kOff_InvBucket_Type, &t) && t == 1) { pack = b; break; }
+            }
+            if (!pack) { *reason = "no pack bucket"; return false; }
+            uintptr_t slots = 0; uint16_t count = 0;
+            if (!ReadPtr(pack + kOff_InvBucket_Slots, &slots) || slots < kMinPointer ||
+                !Read16(pack + kOff_InvBucket_Count, &count) || !count)
+            { *reason = "no pack slots"; return false; }
+
+            // find an existing stack of this type
+            int idx = -1; int64_t curQty = 0;
+            const uintptr_t stride = SlotStride();
+            for (uint16_t i = 0; i < count; ++i)
+            {
+                const uintptr_t s = slots + static_cast<uintptr_t>(i) * stride;
+                uint16_t tid = 0; int64_t q = 0;
+                if (!Read16(s + kOff_InvSlot_TypeId, &tid) || tid != typeId) continue;
+                if (!Read64(s + kOff_InvSlot_Quantity, reinterpret_cast<uint64_t*>(&q)) || q <= 0) continue;
+                idx = i; curQty = q; break;
+            }
+            if (idx < 0) { *reason = "no existing stack of this item"; return false; }
+
+            // find the mirror by the 5-anchor scan (same algorithm as the tool)
+            struct Anchor { uint16_t idx; uint64_t id; } anchors[5]{}; int nA = 0;
+            for (uint16_t i = 0; i < count && nA < 5; i += 10)
+            {
+                uint64_t v = 0;
+                if (!Read64(slots + static_cast<uintptr_t>(i) * stride, &v)) break;
+                if (v > 0 && v < 0x1000000) { anchors[nA++] = { i, v }; }
+            }
+            if (nA < 2) { *reason = "not enough anchors"; return false; }
+            if (g_mirrorScanBusy.exchange(true, std::memory_order_acq_rel)) { *reason = "scan busy"; return false; }
+            g_mirrorScanBusy.store(false, std::memory_order_release);
+
+            // reuse the worker: scan synchronously here (it is ~2-5 s, one-shot)
+            uintptr_t mirrorSlots = 0;
+            {
+                // inline scan (bounded) - mirrors ScanForMirror's first pass
+                MEMORY_BASIC_INFORMATION mbi{};
+                uintptr_t a = 0x10000000000ULL; uint64_t budget = 0x180000000ULL, scanned = 0;
+                while (a < 0x7FF000000000ULL && scanned < budget && !mirrorSlots)
+                {
+                    if (!VirtualQueryEx(GetCurrentProcess(), reinterpret_cast<LPCVOID>(a), &mbi, sizeof(mbi)))
+                    { a += 0x1000000ULL; continue; }
+                    const uintptr_t base = reinterpret_cast<uintptr_t>(mbi.BaseAddress);
+                    const size_t size = mbi.RegionSize;
+                    const bool containsClient = slots >= base && slots < base + size;
+                    if (mbi.State == MEM_COMMIT && mbi.Type == MEM_PRIVATE &&
+                        mbi.Protect == PAGE_READWRITE && size >= stride * 2 &&
+                        size <= 0x10000000 && !containsClient)
+                    {
+                        static thread_local uint8_t* tbuf = nullptr; static size_t tcap = 0;
+                        if (size > tcap) { free(tbuf); tbuf = static_cast<uint8_t*>(malloc(size)); tcap = tbuf ? size : 0; }
+                        if (!tbuf) break;
+                        if (!mem::ReadBytes(base, tbuf, size)) { a = base + size; continue; }
+                        const uint8_t* p = tbuf; const size_t n = size;
+                        for (size_t off = 0; off + stride + 8 <= n; off += 8)
+                        {
+                            uint64_t v0 = 0; memcpy(&v0, p + off, 8);
+                            if (v0 != anchors[0].id) continue;
+                            bool all = true;
+                            for (int k = 1; k < nA; ++k)
+                            {
+                                const size_t o2 = off + static_cast<size_t>(anchors[k].idx - anchors[0].idx) * stride;
+                                uint64_t vk = 0;
+                                if (o2 + 8 > n) { all = false; break; }
+                                memcpy(&vk, p + o2, 8);
+                                if (vk != anchors[k].id) { all = false; break; }
+                            }
+                            if (all) { mirrorSlots = base + off; break; }
+                        }
+                        scanned += size;
+                    }
+                    a = base + size;
+                    if (!size) a += 0x1000000ULL;
+                }
+            }
+            if (!mirrorSlots) { *reason = "mirror not found"; return false; }
+
+            // find the same stack in the mirror (by instance id)
+            uint64_t inst = 0;
+            const uintptr_t clientSlot = slots + static_cast<uintptr_t>(idx) * stride;
+            if (!Read64(clientSlot, &inst)) { *reason = "no instance"; return false; }
+            int midx = -1;
+            uintptr_t mSlots = 0; uint16_t mCount = 0;
+            // find the mirror bucket that points at mirrorSlots
+            MEMORY_BASIC_INFORMATION mbi{};
+            uintptr_t a = 0x10000000000ULL; uint64_t budget = 0x180000000ULL, scanned2 = 0;
+            uintptr_t mirrorBucket = 0;
+            while (a < 0x7FF000000000ULL && scanned2 < budget && !mirrorBucket)
+            {
+                if (!VirtualQueryEx(GetCurrentProcess(), reinterpret_cast<LPCVOID>(a), &mbi, sizeof(mbi)))
+                { a += 0x1000000ULL; continue; }
+                const uintptr_t base = reinterpret_cast<uintptr_t>(mbi.BaseAddress);
+                const size_t size = mbi.RegionSize;
+                if (mbi.State == MEM_COMMIT && mbi.Protect == PAGE_READWRITE && size >= 8 && size <= 0x10000000)
+                {
+                    static thread_local uint8_t* tbuf = nullptr; static size_t tcap = 0;
+                    if (size > tcap) { free(tbuf); tbuf = static_cast<uint8_t*>(malloc(size)); tcap = tbuf ? size : 0; }
+                    if (!tbuf) break;
+                    if (!mem::ReadBytes(base, tbuf, size)) { a = base + size; continue; }
+                    for (size_t off = 0; off + 8 <= size; off += 8)
+                    {
+                        uint64_t v = 0; memcpy(&v, tbuf + off, 8);
+                        if (v != mirrorSlots) continue;
+                        uint16_t t = 0;
+                        if (!Read16(base + off + kOff_InvBucket_Type, &t) || t != 1) continue;
+                        mirrorBucket = base + off; break;
+                    }
+                    scanned2 += size;
+                }
+                a = base + size;
+                if (!size) a += 0x1000000ULL;
+            }
+            if (!mirrorBucket) { *reason = "mirror bucket not found"; return false; }
+            if (!ReadPtr(mirrorBucket + kOff_InvBucket_Slots, &mSlots) ||
+                !Read16(mirrorBucket + kOff_InvBucket_Count, &mCount))
+            { *reason = "mirror slots unreadable"; return false; }
+
+            for (uint16_t i = 0; i < mCount; ++i)
+            {
+                const uintptr_t ms = mSlots + static_cast<uintptr_t>(i) * stride;
+                uint64_t v = 0;
+                if (!Read64(ms, &v) || v != inst) continue;
+                midx = i; break;
+            }
+            if (midx < 0) { *reason = "stack missing in mirror"; return false; }
+
+            // write BOTH
+            const uintptr_t mSlot = mSlots + static_cast<uintptr_t>(midx) * stride;
+            int64_t mq = 0;
+            if (!Read64(mSlot + kOff_InvSlot_Quantity, reinterpret_cast<uint64_t*>(&mq))) { *reason = "mirror qty unreadable"; return false; }
+            const int64_t newClient = curQty + qty;
+            const int64_t newMirror = mq + qty;
+            if (!Write64(clientSlot + kOff_InvSlot_Quantity, static_cast<uint64_t>(newClient)))
+            { *reason = "client write failed"; return false; }
+            if (!Write64(mSlot + kOff_InvSlot_Quantity, static_cast<uint64_t>(newMirror)))
+            { *reason = "mirror write failed"; return false; }
+            g_inventoryMutation.fetch_add(1, std::memory_order_release);
+            char nm[64] = "";
+            if (!DisplayNameForType(typeId, nm, sizeof(nm))) snprintf(nm, sizeof(nm), "Item #%u", typeId);
+            LOG("inventory: stack-merge %s +%lld (client %lld->%lld, mirror %lld->%lld) - live.",
+                nm, static_cast<long long>(qty),
+                static_cast<long long>(curQty), static_cast<long long>(newClient),
+                static_cast<long long>(mq), static_cast<long long>(newMirror));
+            return true;
+        }
+
         bool CommitAdd(uint16_t typeId, int64_t qty)
         {
+            // Stack-merge fast path: if this item already exists as a stack,
+            // bump the quantity in both copies - the proven live path.
+            {
+                const char* mergeReason = "";
+                if (TryStackMerge(typeId, qty, &mergeReason))
+                {
+                    g_addState.store(static_cast<int>(Inventory::AddState::Added), std::memory_order_release);
+                    RefreshImpl(true);
+                    return true;
+                }
+                LOG_INFO("inventory: stack-merge not applicable (%s) - using the native add path.",
+                         mergeReason);
+            }
             const bool ready = oHolderInsert && oCommitPlacement &&
                                (core::GetGameVersion().revision < 3400 || oCommitPlacement4) &&
                                oFreePlacements && oNtQueryInfoThread;
