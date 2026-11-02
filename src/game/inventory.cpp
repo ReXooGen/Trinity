@@ -5402,69 +5402,93 @@ namespace trinity::game
             }
             if (!mirrorSlots) { *reason = "mirror not found"; return false; }
 
-            // find the same stack in the mirror (by instance id)
-            uint64_t inst = 0;
+            // The mirror is INDEX-ALIGNED to the client (proven live: the only
+            // mismatches after a drop are rows the engine resets to -1). So the
+            // mirror row is at the SAME index - no instance-id search needed,
+            // and a dropped-then-re-added item simply gets its row rewritten.
             const uintptr_t clientSlot = slots + static_cast<uintptr_t>(idx) * stride;
-            if (!Read64(clientSlot, &inst)) { *reason = "no instance"; return false; }
-            int midx = -1;
-            uintptr_t mSlots = 0; uint16_t mCount = 0;
-            // find the mirror bucket that points at mirrorSlots
-            MEMORY_BASIC_INFORMATION mbi{};
-            uintptr_t a = 0x10000000000ULL; uint64_t budget = 0x180000000ULL, scanned2 = 0;
-            uintptr_t mirrorBucket = 0;
-            while (a < 0x7FF000000000ULL && scanned2 < budget && !mirrorBucket)
+            uint16_t mirrorCount = 0;
+            if (!LooksLikeSaveCopy(g_mirrorHolder.load(std::memory_order_acquire), slots, count))
             {
-                if (!VirtualQueryEx(GetCurrentProcess(), reinterpret_cast<LPCVOID>(a), &mbi, sizeof(mbi)))
-                { a += 0x1000000ULL; continue; }
-                const uintptr_t base = reinterpret_cast<uintptr_t>(mbi.BaseAddress);
-                const size_t size = mbi.RegionSize;
-                if (mbi.State == MEM_COMMIT && mbi.Protect == PAGE_READWRITE && size >= 8 && size <= 0x10000000)
+                // find the mirror bucket that points at mirrorSlots
+                MEMORY_BASIC_INFORMATION mbi{};
+                uintptr_t a = 0x10000000000ULL; uint64_t budget = 0x180000000ULL, scanned2 = 0;
+                uintptr_t mirrorBucket = 0;
+                while (a < 0x7FF000000000ULL && scanned2 < budget && !mirrorBucket)
                 {
-                    static thread_local uint8_t* tbuf = nullptr; static size_t tcap = 0;
-                    if (size > tcap) { free(tbuf); tbuf = static_cast<uint8_t*>(malloc(size)); tcap = tbuf ? size : 0; }
-                    if (!tbuf) break;
-                    if (!mem::ReadBytes(base, tbuf, size)) { a = base + size; continue; }
-                    for (size_t off = 0; off + 8 <= size; off += 8)
+                    if (!VirtualQueryEx(GetCurrentProcess(), reinterpret_cast<LPCVOID>(a), &mbi, sizeof(mbi)))
+                    { a += 0x1000000ULL; continue; }
+                    const uintptr_t base = reinterpret_cast<uintptr_t>(mbi.BaseAddress);
+                    const size_t size = mbi.RegionSize;
+                    if (mbi.State == MEM_COMMIT && mbi.Protect == PAGE_READWRITE && size >= 8 && size <= 0x10000000)
                     {
-                        uint64_t v = 0; memcpy(&v, tbuf + off, 8);
-                        if (v != mirrorSlots) continue;
-                        uint16_t t = 0;
-                        if (!Read16(base + off + kOff_InvBucket_Type, &t) || t != 1) continue;
-                        mirrorBucket = base + off; break;
+                        static thread_local uint8_t* tbuf = nullptr; static size_t tcap = 0;
+                        if (size > tcap) { free(tbuf); tbuf = static_cast<uint8_t*>(malloc(size)); tcap = tbuf ? size : 0; }
+                        if (!tbuf) break;
+                        if (!mem::ReadBytes(base, tbuf, size)) { a = base + size; continue; }
+                        for (size_t off = 0; off + 8 <= size; off += 8)
+                        {
+                            uint64_t v = 0; memcpy(&v, tbuf + off, 8);
+                            if (v != mirrorSlots) continue;
+                            uint16_t t = 0;
+                            if (!Read16(base + off + kOff_InvBucket_Type, &t) || t != 1) continue;
+                            mirrorBucket = base + off; break;
+                        }
+                        scanned2 += size;
                     }
-                    scanned2 += size;
+                    a = base + size;
+                    if (!size) a += 0x1000000ULL;
                 }
-                a = base + size;
-                if (!size) a += 0x1000000ULL;
+                if (!mirrorBucket) { *reason = "mirror bucket not found"; return false; }
+                if (!ReadPtr(mirrorBucket + kOff_InvBucket_Slots, &mirrorSlots) ||
+                    !Read16(mirrorBucket + kOff_InvBucket_Count, &mirrorCount))
+                { *reason = "mirror slots unreadable"; return false; }
+                g_mirrorHolder.store(mirrorSlots, std::memory_order_release);
             }
-            if (!mirrorBucket) { *reason = "mirror bucket not found"; return false; }
-            if (!ReadPtr(mirrorBucket + kOff_InvBucket_Slots, &mSlots) ||
-                !Read16(mirrorBucket + kOff_InvBucket_Count, &mCount))
-            { *reason = "mirror slots unreadable"; return false; }
-
-            for (uint16_t i = 0; i < mCount; ++i)
+            else
             {
-                const uintptr_t ms = mSlots + static_cast<uintptr_t>(i) * stride;
-                uint64_t v = 0;
-                if (!Read64(ms, &v) || v != inst) continue;
-                midx = i; break;
+                // g_mirrorHolder currently stores the holder; re-walk to slots
+                uintptr_t mh = g_mirrorHolder.load(std::memory_order_acquire);
+                uintptr_t mbk = 0; uint32_t mbn = 0;
+                if (mh >= kMinPointer &&
+                    ReadPtr(mh + kOff_InvHolder_Buckets, &mbk) && mbk >= kMinPointer &&
+                    Read32(mh + kOff_InvHolder_Count, &mbn) && mbn && mbn < 4096)
+                {
+                    for (uint32_t i = 0; i < mbn; ++i)
+                    {
+                        uintptr_t b = 0; uint16_t t = 0;
+                        if (!ReadPtr(mbk + static_cast<uintptr_t>(i) * 8, &b) || b < kMinPointer) continue;
+                        if (Read16(b + kOff_InvBucket_Type, &t) && t == 1)
+                        {
+                            ReadPtr(b + kOff_InvBucket_Slots, &mirrorSlots);
+                            Read16(b + kOff_InvBucket_Count, &mirrorCount);
+                            break;
+                        }
+                    }
+                }
             }
-            if (midx < 0) { *reason = "stack missing in mirror"; return false; }
+            if (!mirrorSlots || idx >= mirrorCount) { *reason = "mirror row out of range"; return false; }
 
-            // write BOTH
-            const uintptr_t mSlot = mSlots + static_cast<uintptr_t>(midx) * stride;
+            // Overwrite the FULL 0xC8 row in the mirror from the client row.
+            // This repairs -1 rows after a drop and carries every field the
+            // engine expects (both keys, durability, sockets, dye...).
+            const uintptr_t mSlot = mirrorSlots + static_cast<uintptr_t>(idx) * stride;
+            uint8_t row[0xC8];
+            if (!mem::ReadBytes(clientSlot, row, sizeof(row))) { *reason = "client row unreadable"; return false; }
+            for (size_t bi = 0; bi < sizeof(row); ++bi)
+                if (!Write8(mSlot + bi, row[bi])) { *reason = "mirror row write failed"; return false; }
+
+            // Then bump the quantity on both sides.
             int64_t mq = 0;
-            if (!Read64(mSlot + kOff_InvSlot_Quantity, reinterpret_cast<uint64_t*>(&mq))) { *reason = "mirror qty unreadable"; return false; }
+            Read64(mSlot + kOff_InvSlot_Quantity, reinterpret_cast<uint64_t*>(&mq));
             const int64_t newClient = curQty + qty;
             const int64_t newMirror = mq + qty;
-            if (!Write64(clientSlot + kOff_InvSlot_Quantity, static_cast<uint64_t>(newClient)))
-            { *reason = "client write failed"; return false; }
-            if (!Write64(mSlot + kOff_InvSlot_Quantity, static_cast<uint64_t>(newMirror)))
-            { *reason = "mirror write failed"; return false; }
+            Write64(clientSlot + kOff_InvSlot_Quantity, static_cast<uint64_t>(newClient));
+            Write64(mSlot + kOff_InvSlot_Quantity, static_cast<uint64_t>(newMirror));
             g_inventoryMutation.fetch_add(1, std::memory_order_release);
             char nm[64] = "";
             if (!DisplayNameForType(typeId, nm, sizeof(nm))) snprintf(nm, sizeof(nm), "Item #%u", typeId);
-            LOG("inventory: stack-merge %s +%lld (client %lld->%lld, mirror %lld->%lld) - live.",
+            LOG("inventory: stack-merge %s +%lld (client %lld->%lld, mirror %lld->%lld, row synced) - live.",
                 nm, static_cast<long long>(qty),
                 static_cast<long long>(curQty), static_cast<long long>(newClient),
                 static_cast<long long>(mq), static_cast<long long>(newMirror));
