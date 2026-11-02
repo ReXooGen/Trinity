@@ -1714,9 +1714,11 @@ namespace trinity::game
                 }
                 const uintptr_t base = reinterpret_cast<uintptr_t>(mbi.BaseAddress);
                 const size_t size = mbi.RegionSize;
+                const bool containsClient =
+                    clientSlots >= base && clientSlots < base + size;
                 if (mbi.State == MEM_COMMIT && mbi.Type == MEM_PRIVATE &&
                     mbi.Protect == PAGE_READWRITE && size >= stride * 2 &&
-                    size <= 0x10000000 && base != clientSlots)
+                    size <= 0x10000000 && !containsClient)
                 {
                     if (size > t_cap) { free(t_buf); t_buf = static_cast<uint8_t*>(malloc(size)); t_cap = t_buf ? size : 0; }
                     if (!t_buf) return;
