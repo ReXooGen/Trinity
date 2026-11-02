@@ -1671,6 +1671,163 @@ namespace trinity::game
             return false;
         }
 
+        // --- Background mirror scan (offset-free) ----------------------------
+        // The save copy cannot be found from any hardcoded offset: it is a
+        // parallel allocation carrying the SAME instance ids at the same slot
+        // indices. A memory-wide scan finds exactly one such array (proven at
+        // 3462, one mirror in 3.3 GB). Doing that on the game thread would
+        // stall for seconds, so it runs on a worker and only publishes.
+        std::atomic<uintptr_t> g_mirrorHolder{ 0 };
+        std::atomic<uintptr_t> g_mirrorScanGeneration{ 0 };
+        std::atomic<bool>      g_mirrorScanBusy{ false };
+
+        void ScanForMirror(uintptr_t clientSlots, uint16_t wantCount)
+        {
+            if (!clientSlots || wantCount < 2) return;
+            if (g_mirrorScanBusy.exchange(true, std::memory_order_acq_rel)) return;
+            g_mirrorScanBusy.store(false, std::memory_order_release); // release immediately:
+            // ScanForMirror runs on its own detached worker and never re-enters,
+            // so the flag only guards against a double spawn.
+
+            uint64_t id0 = 0, id1 = 0;
+            if (!Read64(clientSlots, &id0) || !Read64(clientSlots + SlotStride(), &id1) || !id0) return;
+            const uintptr_t stride = SlotStride();
+
+            // Bulk reads only: a per-qword guarded Read64 over gigabytes is
+            // hundreds of millions of SEH frames and would take minutes.
+            // No std::vector: __try cannot coexist with object unwinding in
+            // this function. A raw block keeps SEH legal.
+            static thread_local uint8_t* t_buf = nullptr;
+            static thread_local size_t   t_cap = 0;
+
+            uintptr_t foundArray = 0;
+            MEMORY_BASIC_INFORMATION mbi{};
+            uintptr_t a = 0x10000000000ULL;
+            uint64_t scanned = 0;
+            const uint64_t budget = 0x180000000ULL; // 6 GB cap
+            while (a < 0x7FF000000000ULL && scanned < budget && !foundArray)
+            {
+                if (!VirtualQueryEx(GetCurrentProcess(), reinterpret_cast<LPCVOID>(a), &mbi, sizeof(mbi)))
+                {
+                    a += 0x1000000ULL;
+                    continue;
+                }
+                const uintptr_t base = reinterpret_cast<uintptr_t>(mbi.BaseAddress);
+                const size_t size = mbi.RegionSize;
+                if (mbi.State == MEM_COMMIT && mbi.Type == MEM_PRIVATE &&
+                    mbi.Protect == PAGE_READWRITE && size >= stride * 2 &&
+                    size <= 0x10000000 && base != clientSlots)
+                {
+                    if (size > t_cap) { free(t_buf); t_buf = static_cast<uint8_t*>(malloc(size)); t_cap = t_buf ? size : 0; }
+                    if (!t_buf) return;
+                    if (!mem::ReadBytes(base, t_buf, size)) { a = base + size; continue; }
+                    const uint8_t* p = t_buf;
+                    const size_t n = size;
+                    for (size_t off = 0; off + stride + 8 <= n; off += 8)
+                    {
+                        uint64_t v = 0, v2 = 0;
+                        memcpy(&v, p + off, 8);
+                        if (v != id0) continue;
+                        memcpy(&v2, p + off + stride, 8);
+                        if (v2 != id1) continue;
+                        foundArray = base + off;
+                        break;
+                    }
+                    scanned += size;
+                }
+                a = base + size;
+                if (!size) a += 0x1000000ULL;
+            }
+            if (!foundArray)
+            {
+                LOG_INFO("inventory: mirror scan found no second copy (scanned %llu MB).",
+                         static_cast<unsigned long long>(scanned / (1024ull * 1024ull)));
+                return;
+            }
+
+            // The bucket that points at the mirror array, then the holder whose
+            // bucket array contains that bucket.
+            uintptr_t bucket = 0;
+            {
+                uintptr_t a2 = 0x10000000000ULL; uint64_t s2 = 0;
+                while (a2 < 0x7FF000000000ULL && s2 < budget && !bucket)
+                {
+                    if (!VirtualQueryEx(GetCurrentProcess(), reinterpret_cast<LPCVOID>(a2), &mbi, sizeof(mbi)))
+                    { a2 += 0x1000000ULL; continue; }
+                    const uintptr_t b2 = reinterpret_cast<uintptr_t>(mbi.BaseAddress);
+                    const size_t sz2 = mbi.RegionSize;
+                    if (mbi.State == MEM_COMMIT && mbi.Type == MEM_PRIVATE &&
+                        mbi.Protect == PAGE_READWRITE && sz2 >= 0x1000 && sz2 <= 0x10000000)
+                    {
+                        if (sz2 > t_cap) { free(t_buf); t_buf = static_cast<uint8_t*>(malloc(sz2)); t_cap = t_buf ? sz2 : 0; }
+                        if (!t_buf) return;
+                        if (!mem::ReadBytes(b2, t_buf, sz2)) { a2 = b2 + sz2; continue; }
+                        const uint8_t* p = t_buf;
+                        for (size_t off = 0; off + 8 <= sz2; off += 8)
+                        {
+                            uint64_t v = 0;
+                            memcpy(&v, p + off, 8);
+                            if (v != foundArray) continue;
+                            const uintptr_t cand = b2 + off; // bucket+0x00
+                            uint16_t bt = 0;
+                            if (!Read16(cand + kOff_InvBucket_Type, &bt)) continue;
+                            if (bt == 1) { bucket = cand; break; }
+                        }
+                        s2 += sz2;
+                    }
+                    a2 = b2 + sz2;
+                    if (!sz2) a2 += 0x1000000ULL;
+                }
+            }
+
+            uintptr_t holder = 0;
+            if (bucket)
+            {
+                uintptr_t a3 = 0x10000000000ULL; uint64_t s3 = 0;
+                while (a3 < 0x7FF000000000ULL && s3 < budget && !holder)
+                {
+                    if (!VirtualQueryEx(GetCurrentProcess(), reinterpret_cast<LPCVOID>(a3), &mbi, sizeof(mbi)))
+                    { a3 += 0x1000000ULL; continue; }
+                    const uintptr_t b3 = reinterpret_cast<uintptr_t>(mbi.BaseAddress);
+                    const size_t sz3 = mbi.RegionSize;
+                    if (mbi.State == MEM_COMMIT && mbi.Type == MEM_PRIVATE &&
+                        mbi.Protect == PAGE_READWRITE && sz3 >= 0x1000 && sz3 <= 0x10000000)
+                    {
+                        if (sz3 > t_cap) { free(t_buf); t_buf = static_cast<uint8_t*>(malloc(sz3)); t_cap = t_buf ? sz3 : 0; }
+                        if (!t_buf) return;
+                        if (!mem::ReadBytes(b3, t_buf, sz3)) { a3 = b3 + sz3; continue; }
+                        const uint8_t* p = t_buf;
+                        for (size_t off = 0; off + 8 <= sz3; off += 8)
+                        {
+                            uint64_t v = 0;
+                            memcpy(&v, p + off, 8);
+                            if (v != bucket) continue;
+                            const uintptr_t cand = (b3 + off) - kOff_InvHolder_Buckets;
+                            if (cand < 0x10000000000ULL) continue;
+                            uint32_t bc = 0;
+                            if (!Read32(cand + kOff_InvHolder_Count, &bc) || !bc || bc > 4096) continue;
+                            holder = cand;
+                            break;
+                        }
+                        s3 += sz3;
+                    }
+                    a3 = b3 + sz3;
+                    if (!sz3) a3 += 0x1000000ULL;
+                }
+            }
+            if (holder)
+            {
+                g_mirrorHolder.store(holder, std::memory_order_release);
+                LOG_OK("inventory: SAVE copy resolved by memory scan @ 0x%p (array 0x%p) - "
+                       "added items land where live play reads them.",
+                       reinterpret_cast<void*>(holder), reinterpret_cast<void*>(foundArray));
+            }
+            else
+                LOG_INFO("inventory: mirror array found at 0x%p but no owning holder "
+                         "(bucket=%p).", reinterpret_cast<void*>(foundArray),
+                         reinterpret_cast<void*>(bucket));
+        }
+
         uintptr_t ServerHolder()
         {
             // The REAL save copy wins over every heuristic: writes there are
@@ -1774,6 +1931,43 @@ namespace trinity::game
                 s_saveCopy = 0;
                 s_saveCopyContainer = 0;
                 s_saveCopyClientSlots = 0;
+            }
+            // The scan result, once a worker has it.
+            if (const uintptr_t scannedHolder = g_mirrorHolder.load(std::memory_order_acquire))
+            {
+                if (HolderLooksValid(scannedHolder))
+                {
+                    g_serverHolder.store(scannedHolder, std::memory_order_release);
+                    return scannedHolder;
+                }
+                g_mirrorHolder.store(0, std::memory_order_release);
+            }
+            // Kick one background scan per world load when the cheap paths miss.
+            {
+                static uintptr_t s_scanForSlots = 0;
+                const uintptr_t ch2 = CurrentHolder();
+                uintptr_t cb2 = 0, pk2 = 0, slots2 = 0;
+                uint32_t bn2 = 0; uint16_t cnt2 = 0;
+                if (ch2 >= kMinPointer && ReadPtr(ch2 + kOff_InvHolder_Buckets, &cb2) && cb2 >= kMinPointer &&
+                    Read32(ch2 + kOff_InvHolder_Count, &bn2) && bn2 && bn2 < 4096)
+                {
+                    for (uint32_t i = 0; i < bn2; ++i)
+                    {
+                        uintptr_t b = 0; uint16_t t = 0;
+                        if (!ReadPtr(cb2 + static_cast<uintptr_t>(i) * 8, &b) || b < kMinPointer) continue;
+                        if (Read16(b + kOff_InvBucket_Type, &t) && t == 1) { pk2 = b; break; }
+                    }
+                }
+                if (pk2 && ReadPtr(pk2 + kOff_InvBucket_Slots, &slots2) && slots2 >= kMinPointer &&
+                    Read16(pk2 + kOff_InvBucket_Count, &cnt2) && slots2 != s_scanForSlots)
+                {
+                    s_scanForSlots = slots2;
+                    LOG_INFO("inventory: scheduling a background scan for the second inventory copy "
+                             "(client slots 0x%p, %u entries).", reinterpret_cast<void*>(slots2),
+                             static_cast<unsigned>(cnt2));
+                    try { std::thread([slots2, cnt2] { ScanForMirror(slots2, cnt2); }).detach(); }
+                    catch (...) {}
+                }
             }
             // Realm-pawn path next: exact, self-validating, realm-independent.
             if (const uintptr_t direct = ServerPawnHolder();
