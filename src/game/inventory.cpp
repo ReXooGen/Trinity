@@ -1988,10 +1988,7 @@ namespace trinity::game
                     Read16(pk2 + kOff_InvBucket_Count, &cnt2) && slots2 != s_scanForSlots)
                 {
                     s_scanForSlots = slots2;
-                    LOG_INFO("inventory: scheduling a background scan for the second inventory copy "
-                             "(client slots 0x%p, %u entries, holder 0x%p).",
-                             reinterpret_cast<void*>(ch2), reinterpret_cast<void*>(slots2),
-                             static_cast<unsigned>(cnt2));
+
                     try { std::thread([slots2, cnt2] { ScanForMirror(slots2, cnt2); }).detach(); }
                     catch (...) {}
                 }
@@ -4135,50 +4132,15 @@ namespace trinity::game
                 st.slotCount = slots;
                 st.regArray = regArr;
                 st.regCount = regCount;
-                LOG("inventory: watch[%s] primed slotCount=%u regCount=%u reg=%p",
-                    realm, static_cast<unsigned>(slots),
-                    static_cast<unsigned>(regCount), reinterpret_cast<void*>(reg));
+
                 return;
             }
             const bool grew = (slots > st.slotCount) || (regCount > st.regCount);
             if (!grew) { st.slotCount = slots; st.regCount = regCount; st.regArray = regArr; return; }
 
             ++s_dumps;
-            LOG("inventory: watch[%s] ADD DETECTED slotCount %u->%u regCount %u->%u",
-                realm, static_cast<unsigned>(st.slotCount), static_cast<unsigned>(slots),
-                static_cast<unsigned>(st.regCount), static_cast<unsigned>(regCount));
-            // Dump the newly appended registry entries (qwords).
-            if (regArr >= kMinPointer && regCount > st.regCount && regCount < 4096)
-            {
-                for (uint32_t i = st.regCount; i < regCount && i < st.regCount + 4; ++i)
-                {
-                    uintptr_t entry = 0;
-                    if (!ReadPtr(regArr + static_cast<uintptr_t>(i) * 8, &entry)) continue;
-                    uint8_t buf[0x20]{};
-                    for (int k = 0; k < 0x20; ++k) Read8(entry + k, &buf[k]);
-                    char hex[0x20 * 3 + 1]{};
-                    for (int k = 0; k < 0x20; ++k) snprintf(hex + k * 3, 4, "%02X ", buf[k]);
-                    LOG("inventory: watch[%s] reg[%u]=%p bytes: %s", realm,
-                        static_cast<unsigned>(i), reinterpret_cast<void*>(entry), hex);
-                }
-            }
-            // Dump the tail slots (the game's own written record = our template).
-            uintptr_t slotArr = 0;
-            if (ReadPtr(packBucket + kOff_InvBucket_Slots, &slotArr) && slotArr >= kMinPointer)
-            {
-                const uintptr_t stride = SlotStride();
-                const uint16_t from = (slots > st.slotCount) ? st.slotCount : static_cast<uint16_t>(slots ? slots - 1 : 0);
-                for (uint16_t i = from; i < slots && i < from + 3; ++i)
-                {
-                    const uintptr_t slot = slotArr + static_cast<uintptr_t>(i) * stride;
-                    uint8_t buf[0xC8]{};
-                    for (int k = 0; k < 0xC8; ++k) Read8(slot + k, &buf[k]);
-                    char hex[0xC8 * 3 + 1]{};
-                    for (int k = 0; k < 0xC8; ++k) snprintf(hex + k * 3, 4, "%02X ", buf[k]);
-                    LOG("inventory: watch[%s] slot[%u] bytes: %s", realm,
-                        static_cast<unsigned>(i), hex);
-                }
-            }
+
+
             st.slotCount = slots;
             st.regCount = regCount;
             st.regArray = regArr;
