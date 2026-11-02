@@ -1740,7 +1740,7 @@ namespace trinity::game
             }
             if (!foundArray)
             {
-                LOG_INFO("inventory: mirror scan found no second copy (scanned %llu MB).",
+                LOG_INFO("inventory: mirror scan done, no twin found (scanned %llu MB).",
                          static_cast<unsigned long long>(scanned / (1024ull * 1024ull)));
                 return;
             }
@@ -1963,7 +1963,8 @@ namespace trinity::game
                 {
                     s_scanForSlots = slots2;
                     LOG_INFO("inventory: scheduling a background scan for the second inventory copy "
-                             "(client slots 0x%p, %u entries).", reinterpret_cast<void*>(slots2),
+                             "(client slots 0x%p, %u entries, holder 0x%p).",
+                             reinterpret_cast<void*>(ch2), reinterpret_cast<void*>(slots2),
                              static_cast<unsigned>(cnt2));
                     try { std::thread([slots2, cnt2] { ScanForMirror(slots2, cnt2); }).detach(); }
                     catch (...) {}
