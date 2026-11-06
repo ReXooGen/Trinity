@@ -5478,6 +5478,91 @@ namespace trinity::game
             return ok > 0;
         }
 
+        // Direct slot-append with multi-copy propagation (rev >= 3460):
+        // the native add path writes into a holder whose container is no
+        // longer the live pack (proven: added InstIDs vanish), so instead we
+        // construct the item with the engine's own value-ctor, place it into
+        // the first free pack row, and copy that row into every parallel
+        // pack copy. The row exists everywhere -> reconcile keeps it and the
+        // UI sees it immediately.
+        bool DirectSlotAppend(uint16_t typeId, int64_t qty, int64_t id, uintptr_t def,
+                              const char** reason)
+        {
+            if (!oItemValueCtor) { *reason = "no value ctor"; return false; }
+
+            // 1) client pack bucket, exactly like TryStackMerge
+            const uintptr_t clientH = CurrentHolder();
+            if (clientH < kMinPointer) { *reason = "no client holder"; return false; }
+            uintptr_t cb = 0; uint32_t bn = 0;
+            if (!ReadPtr(clientH + kOff_InvHolder_Buckets, &cb) || cb < kMinPointer ||
+                !Read32(clientH + kOff_InvHolder_Count, &bn) || !bn || bn > 4096)
+            { *reason = "no client buckets"; return false; }
+            uintptr_t pack = 0;
+            for (uint32_t i = 0; i < bn; ++i)
+            {
+                uintptr_t b = 0; uint16_t t = 0;
+                if (!ReadPtr(cb + static_cast<uintptr_t>(i) * 8, &b) || b < kMinPointer) continue;
+                if (Read16(b + kOff_InvBucket_Type, &t) && t == 1) { pack = b; break; }
+            }
+            if (!pack) { *reason = "no pack bucket"; return false; }
+            uintptr_t slots = 0; uint16_t count = 0;
+            if (!ReadPtr(pack + kOff_InvBucket_Slots, &slots) || slots < kMinPointer ||
+                !Read16(pack + kOff_InvBucket_Count, &count) || !count)
+            { *reason = "no pack slots"; return false; }
+
+            // 2) first free row (empty marker: inst == -1)
+            const uintptr_t stride = SlotStride();
+            int freeIdx = -1;
+            for (uint16_t i = 0; i < count; ++i)
+            {
+                const uintptr_t s = slots + static_cast<uintptr_t>(i) * stride;
+                uint64_t inst = 0; uint16_t tid = 0;
+                if (!Read64(s + kOff_ItemVal_InstanceId, &inst) ||
+                    !Read16(s + kOff_InvSlot_TypeId, &tid)) continue;
+                if (inst == 0xFFFFFFFFFFFFFFFF || tid == 0 || tid == kInvSlot_EmptyType)
+                { freeIdx = i; break; }
+            }
+            if (freeIdx < 0) { *reason = "no free slot"; return false; }
+
+            // 3) construct the item with the engine's own ctor
+            alignas(16) uint8_t itemVal[kItemVal_Size] = {};
+            oItemValueCtor(itemVal, &typeId, qty);
+            *reinterpret_cast<int64_t*>(itemVal + kOff_ItemVal_InstanceId) = id;
+            *reinterpret_cast<uint16_t*>(itemVal + kOff_ItemVal_Subtype) = 0;
+            if (def)
+            {
+                uint16_t maxD = 0;
+                if (Read16(def + 0x400, &maxD) && maxD > 0)
+                {
+                    *reinterpret_cast<uint16_t*>(itemVal + 0x40) = maxD;
+                    *reinterpret_cast<uint16_t*>(itemVal + 0x42) = maxD;
+                }
+                *reinterpret_cast<uint16_t*>(itemVal + 0xA0) = 1;
+            }
+            *reinterpret_cast<uint64_t*>(itemVal + 0x30) = 0xFFFFFFFFFFFFFFFF;
+            *reinterpret_cast<uint32_t*>(itemVal + 0x8C) = 0xFFFFFFFF;
+
+            // 4) write into the client row, then propagate to all copies
+            const uintptr_t cSlot = slots + static_cast<uintptr_t>(freeIdx) * stride;
+            for (size_t bi = 0; bi < stride; ++bi)
+                if (!Write8(cSlot + bi, itemVal[bi])) { *reason = "client row write failed"; return false; }
+
+            int copies = 0;
+            SyncMirrorRowAt(slots, count, static_cast<uint16_t>(freeIdx), &copies);
+
+            // 5) used-slots bookkeeping on the pack bucket
+            uint16_t used = 0;
+            if (Read16(pack + kOff_InvBucket_UsedSlots, &used))
+                Write16(pack + kOff_InvBucket_UsedSlots, used + 1);
+
+            g_inventoryMutation.fetch_add(1, std::memory_order_release);
+            char nm[64] = "";
+            if (!DisplayNameForType(typeId, nm, sizeof(nm))) snprintf(nm, sizeof(nm), "Item #%u", typeId);
+            LOG("inventory: direct-append %s x%lld -> slot %d (propagated to %d parallel cop%s) - live.",
+                nm, static_cast<long long>(qty), freeIdx, copies, copies == 1 ? "y" : "ies");
+            return true;
+        }
+
         bool TryStackMerge(uint16_t typeId, int64_t qty, const char** reason)
         {
             *reason = "";
@@ -5691,6 +5776,22 @@ namespace trinity::game
                 if (base < 1000000) base = 1000000;
                 id = base + 1;
                 s_seqId.store(id);
+            }
+
+            // rev >= 3460 (TU 2.04.05+): the native add path writes into a
+            // ghost holder (added InstIDs vanish from memory) - append the
+            // row directly into the pack and propagate to every copy.
+            if (core::GetGameVersion().revision >= 3460)
+            {
+                const char* appendReason = "";
+                if (def && DirectSlotAppend(typeId, qty, id, def, &appendReason))
+                {
+                    g_addState.store(static_cast<int>(Inventory::AddState::Added), std::memory_order_release);
+                    RefreshImpl(true);
+                    return true;
+                }
+                LOG_INFO("inventory: direct-append not applicable (%s) - trying the native add path.",
+                         appendReason);
             }
 
             // Server first if available and distinct, then client mirror
