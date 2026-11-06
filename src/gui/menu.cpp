@@ -2101,7 +2101,11 @@ namespace trinity::gui
         if (ui::ToggleInt(LOC("Slot Size"), &st.invSlotSize, &st.invSlotSizeVal,
                           1, 700, 10, 700,
                           LOC("Sets every storage's slot count up to 700 safely directly in RAM.")))
+        {
             changed = true;
+            // Apply immediately - no 1s tick wait. Live, no save reload.
+            game::Inventory::SetAllSlotSizes(st.invSlotSize != 0, st.invSlotSizeVal);
+        }
         if (ui::Toggle(LOC("Max Stack Size"), &st.invStackSize,
                        LOC("Enables universal stack limits and automatically merges all duplicate items into 1 slot.")))
             changed = true;
