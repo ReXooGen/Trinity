@@ -5295,6 +5295,75 @@ namespace trinity::game
         // aligned to the client (proven live). Returns false if no mirror is
         // currently resolvable; g_mirrorHolder is refreshed by the background
         // scan and validated here on every use.
+        // TU 2.04.04 (3549): the engine keeps MULTIPLE parallel copies of the
+        // pack (proven live: 5 distinct groups, one per UI/shadow system).
+        // A row written into only one copy is invisible to the others. This
+        // collects every 0xC8-stride array that matches the client's
+        // 5-anchor signature, client included.
+        constexpr int kMaxPackCopies = 8;
+
+        int ResolveAllPackCopies(uintptr_t clientPackSlots, uint16_t clientCount,
+                                 uintptr_t* outSlots)
+        {
+            int n = 0;
+            outSlots[n++] = clientPackSlots;
+            const uintptr_t stride = SlotStride();
+            struct Anchor { uint16_t idx; uint64_t id; };
+            Anchor anchors[5]{}; int nA = 0;
+            for (uint16_t i = 0; i < clientCount && nA < 5; i += 10)
+            {
+                uint64_t v = 0;
+                if (!Read64(clientPackSlots + static_cast<uintptr_t>(i) * stride, &v)) break;
+                if (v > 0 && v < 0x1000000) { anchors[nA++] = { i, v }; }
+            }
+            if (nA < 2) return n;
+
+            MEMORY_BASIC_INFORMATION mbi{};
+            uintptr_t a = 0x10000000000ULL; uint64_t budget = 0x180000000ULL, scanned = 0;
+            while (a < 0x7FF000000000ULL && scanned < budget && n < kMaxPackCopies)
+            {
+                if (!VirtualQueryEx(GetCurrentProcess(), reinterpret_cast<LPCVOID>(a), &mbi, sizeof(mbi)))
+                { a += 0x1000000ULL; continue; }
+                const uintptr_t base = reinterpret_cast<uintptr_t>(mbi.BaseAddress);
+                const size_t size = mbi.RegionSize;
+                const bool containsClient = clientPackSlots >= base && clientPackSlots < base + size;
+                if (mbi.State == MEM_COMMIT && mbi.Type == MEM_PRIVATE &&
+                    mbi.Protect == PAGE_READWRITE && size >= stride * 2 &&
+                    size <= 0x10000000 && !containsClient)
+                {
+                    static thread_local uint8_t* tbuf = nullptr; static size_t tcap = 0;
+                    if (size > tcap) { free(tbuf); tbuf = static_cast<uint8_t*>(malloc(size)); tcap = tbuf ? size : 0; }
+                    if (!tbuf) break;
+                    if (!mem::ReadBytes(base, tbuf, size)) { a = base + size; continue; }
+                    const uint8_t* p = tbuf; const size_t len = size;
+                    for (size_t off = 0; off + stride + 8 <= len && n < kMaxPackCopies; off += 8)
+                    {
+                        uint64_t v0 = 0; memcpy(&v0, p + off, 8);
+                        if (v0 != anchors[0].id) continue;
+                        bool all = true;
+                        for (int k = 1; k < nA; ++k)
+                        {
+                            const size_t o2 = off + static_cast<size_t>(anchors[k].idx - anchors[0].idx) * stride;
+                            if (o2 + 8 > len) { all = false; break; }
+                            uint64_t vk = 0; memcpy(&vk, p + o2, 8);
+                            if (vk != anchors[k].id) { all = false; break; }
+                        }
+                        if (!all) continue;
+                        const uintptr_t cand = base + off - static_cast<uintptr_t>(anchors[0].idx) * stride;
+                        if (!LooksLikeSaveCopyRange(cand, clientPackSlots, clientCount)) continue;
+                        bool dup = false;
+                        for (int k = 0; k < n; ++k) if (outSlots[k] == cand) { dup = true; break; }
+                        if (!dup) outSlots[n++] = cand;
+                        break; // one match per region
+                    }
+                    scanned += size;
+                }
+                a = base + size;
+                if (!size) a += 0x1000000ULL;
+            }
+            return n;
+        }
+
         bool ResolveMirrorSlots(uintptr_t clientPackSlots, uint16_t clientCount,
                                 uintptr_t* outSlots, uint16_t* outCount)
         {
@@ -5386,19 +5455,27 @@ namespace trinity::game
         // (dropped) row: the copy re-arms the mirror row so save/load links
         // succeed. Returns false if the mirror row could not be written.
         bool SyncMirrorRowAt(uintptr_t clientPackSlots, uint16_t clientCount,
-                             uint16_t idx)
+                             uint16_t idx, int* outCopies = nullptr)
         {
-            uintptr_t mSlots = 0; uint16_t mCount = 0;
-            if (!ResolveMirrorSlots(clientPackSlots, clientCount, &mSlots, &mCount)) return false;
-            if (idx >= mCount) return false;
+            if (outCopies) *outCopies = 0;
+            uintptr_t copies[kMaxPackCopies] = {};
+            const int n = ResolveAllPackCopies(clientPackSlots, clientCount, copies);
+            if (n < 1) return false;
             const uintptr_t stride = SlotStride();
             const uintptr_t cSlot = clientPackSlots + static_cast<uintptr_t>(idx) * stride;
-            const uintptr_t mSlot = mSlots + static_cast<uintptr_t>(idx) * stride;
             uint8_t row[0xC8];
             if (!mem::ReadBytes(cSlot, row, sizeof(row))) return false;
-            for (size_t bi = 0; bi < sizeof(row); ++bi)
-                if (!Write8(mSlot + bi, row[bi])) return false;
-            return true;
+            int ok = 0;
+            for (int i = 1; i < n; ++i) // skip [0] = client itself
+            {
+                const uintptr_t mSlot = copies[i] + static_cast<uintptr_t>(idx) * stride;
+                bool w = true;
+                for (size_t bi = 0; bi < sizeof(row) && w; ++bi)
+                    if (!Write8(mSlot + bi, row[bi])) w = false;
+                if (w) ++ok;
+            }
+            if (outCopies) *outCopies = ok;
+            return ok > 0;
         }
 
         bool TryStackMerge(uint16_t typeId, int64_t qty, const char** reason)
@@ -5516,26 +5593,20 @@ namespace trinity::game
             // Overwrite the FULL 0xC8 row in the mirror from the client row.
             // This repairs -1 rows after a drop and carries every field the
             // engine expects (both keys, durability, sockets, dye...).
-            const uintptr_t mSlot = mirrorSlots + static_cast<uintptr_t>(idx) * stride;
-            uint8_t row[0xC8];
-            if (!mem::ReadBytes(clientSlot, row, sizeof(row))) { *reason = "client row unreadable"; return false; }
-            for (size_t bi = 0; bi < sizeof(row); ++bi)
-                if (!Write8(mSlot + bi, row[bi])) { *reason = "mirror row write failed"; return false; }
-
-            // Then bump the quantity on both sides.
-            int64_t mq = 0;
-            Read64(mSlot + kOff_InvSlot_Quantity, reinterpret_cast<uint64_t*>(&mq));
+            // Propagate the full row into EVERY parallel pack copy, then
+            // bump the client quantity (copies get the same bumped row).
+            Write64(clientSlot + kOff_InvSlot_Quantity, static_cast<uint64_t>(curQty + qty));
+            int copies = 0;
+            SyncMirrorRowAt(slots, count, static_cast<uint16_t>(idx), &copies);
             const int64_t newClient = curQty + qty;
-            const int64_t newMirror = mq + qty;
-            Write64(clientSlot + kOff_InvSlot_Quantity, static_cast<uint64_t>(newClient));
-            Write64(mSlot + kOff_InvSlot_Quantity, static_cast<uint64_t>(newMirror));
+            const int64_t newMirror = curQty + qty;
             g_inventoryMutation.fetch_add(1, std::memory_order_release);
             char nm[64] = "";
             if (!DisplayNameForType(typeId, nm, sizeof(nm))) snprintf(nm, sizeof(nm), "Item #%u", typeId);
-            LOG("inventory: stack-merge %s +%lld (client %lld->%lld, mirror %lld->%lld, row synced) - live.",
+            LOG("inventory: stack-merge %s +%lld (client %lld->%lld, propagated to %d cop%s) - live.",
                 nm, static_cast<long long>(qty),
                 static_cast<long long>(curQty), static_cast<long long>(newClient),
-                static_cast<long long>(mq), static_cast<long long>(newMirror));
+                copies, copies == 1 ? "y" : "ies");
             return true;
         }
 
@@ -5692,11 +5763,12 @@ namespace trinity::game
                         {
                             uint64_t iid = 0;
                             if (!Read64(cslots + static_cast<uintptr_t>(i) * stride, &iid) || iid != id) continue;
-                            if (SyncMirrorRowAt(cslots, ccount, i))
-                                LOG("inventory: mirror row synced for new item %u (slot %u) - save-safe.",
-                                    typeId, static_cast<unsigned>(i));
+                            int copies = 0;
+                            if (SyncMirrorRowAt(cslots, ccount, i, &copies))
+                                LOG("inventory: row synced into %d parallel pack cop%s for new item %u (slot %u) - save-safe.",
+                                    copies, copies == 1 ? "y" : "ies", typeId, static_cast<unsigned>(i));
                             else
-                                LOG_WARN("inventory: mirror row for new item %u (slot %u) NOT synced - avoid saving until a stack-merge repairs it.",
+                                LOG_WARN("inventory: mirror rows for new item %u (slot %u) NOT synced - avoid saving until a stack-merge repairs it.",
                                          typeId, static_cast<unsigned>(i));
                             break;
                         }
