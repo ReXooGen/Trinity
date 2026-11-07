@@ -1696,9 +1696,46 @@ namespace trinity::game
         // indices. A memory-wide scan finds exactly one such array (proven at
         // 3462, one mirror in 3.3 GB). Doing that on the game thread would
         // stall for seconds, so it runs on a worker and only publishes.
+        constexpr int kMaxPackCopies = 8;
+        int ResolveAllPackCopies(uintptr_t clientPackSlots, uint16_t clientCount,
+                                 uintptr_t* outSlots);
+
         std::atomic<uintptr_t> g_mirrorHolder{ 0 };
         std::atomic<uintptr_t> g_mirrorScanGeneration{ 0 };
         std::atomic<bool>      g_mirrorScanBusy{ false };
+        // Copy cache: the multi-copy scan takes seconds and MUST NOT run on
+        // the game thread (frame drop on every add). Resolved once in the
+        // background, reused until invalidated (save load, holder change).
+        static std::atomic<uintptr_t> g_packCopies[kMaxPackCopies] = {};
+        static std::atomic<int>       g_packCopyCount{ 0 };
+        static std::atomic<uint64_t>  g_packCopiesGen{ 0 };   // bump = re-scan wanted
+        static std::atomic<bool>      g_packCopiesBusy{ false };
+
+        void InvalidatePackCopies()
+        {
+            g_packCopiesGen.fetch_add(1, std::memory_order_release);
+            g_packCopyCount.store(0, std::memory_order_release);
+        }
+
+        // Worker: re-resolve all copies into the cache (background thread).
+        void ResolvePackCopiesWorker(uintptr_t clientPackSlots, uint16_t clientCount, uint64_t gen)
+        {
+            if (g_packCopiesBusy.exchange(true, std::memory_order_acq_rel)) return;
+            uintptr_t found[kMaxPackCopies] = {};
+            const int n = ResolveAllPackCopies(clientPackSlots, clientCount, found);
+            if (n > 0 && g_packCopiesGen.load(std::memory_order_acquire) == gen)
+            {
+                for (int i = 0; i < n; ++i)
+                    g_packCopies[i].store(found[i], std::memory_order_release);
+                g_packCopyCount.store(n, std::memory_order_release);
+            }
+            g_packCopiesBusy.store(false, std::memory_order_release);
+        }
+
+        // Fast path: cached copies that still validate (2 reads each).
+        // If the cache is empty/stale, kick a background re-scan and return
+        // just the client (caller still writes the client row synchronously).
+
 
         void ScanForMirror(uintptr_t clientSlots, uint16_t wantCount)
         {
@@ -4042,6 +4079,9 @@ namespace trinity::game
         __except (EXCEPTION_EXECUTE_HANDLER) {}
     }
 
+    // Defined in the scan section below: warms the parallel-copy cache.
+    void PrimePackCopiesFromTick();
+
     static void InventoryTickStackSlots()
     {
         __try
@@ -4062,6 +4102,19 @@ namespace trinity::game
             {
                 if (Inventory::SetAllMaxStackSizes(false, 0))
                     g_stackApplied = false;
+            }
+
+            // Keep the parallel-pack-copy cache warm so add-item never scans
+            // on the game thread (frame drop fix).
+            if (Player::Ready())
+            {
+                static ULONGLONG s_lastCopyPrime = 0;
+                const ULONGLONG nowC = GetTickCount64();
+                if (nowC - s_lastCopyPrime > 2000)
+                {
+                    s_lastCopyPrime = nowC;
+                    PrimePackCopiesFromTick();
+                }
             }
 
             // Slot caps live on bucket objects that a save load destroys and rebuilds.
@@ -4088,6 +4141,35 @@ namespace trinity::game
         }
         __except (EXCEPTION_EXECUTE_HANDLER) {}
     }
+
+        // Called from the tick: if the cache is cold and we know the client
+        // pack, start a background resolve. Never blocks.
+        void PrimePackCopiesFromTick()
+        {
+            if (g_packCopyCount.load(std::memory_order_acquire) > 0) return;
+            if (g_packCopiesBusy.load(std::memory_order_acquire)) return;
+            const uintptr_t ch = CurrentHolder();
+            if (ch < kMinPointer) return;
+            uintptr_t cbk = 0; uint32_t cbn = 0;
+            if (!ReadPtr(ch + kOff_InvHolder_Buckets, &cbk) || cbk < kMinPointer ||
+                !Read32(ch + kOff_InvHolder_Count, &cbn) || !cbn || cbn >= 4096) return;
+            for (uint32_t bi = 0; bi < cbn; ++bi)
+            {
+                uintptr_t b = 0; uint16_t t = 0;
+                if (!ReadPtr(cbk + static_cast<uintptr_t>(bi) * 8, &b) || b < kMinPointer) continue;
+                if (!Read16(b + kOff_InvBucket_Type, &t) || t != 1) continue;
+                uintptr_t cslots = 0; uint16_t ccount = 0;
+                if (ReadPtr(b + kOff_InvBucket_Slots, &cslots) && cslots >= kMinPointer &&
+                    Read16(b + kOff_InvBucket_Count, &ccount) && ccount)
+                {
+                    const uint64_t gen = g_packCopiesGen.load(std::memory_order_acquire);
+                    try { std::thread([cslots, ccount, gen]
+                          { ResolvePackCopiesWorker(cslots, ccount, gen); }).detach(); }
+                    catch (...) {}
+                }
+                break;
+            }
+        }
 
     bool Inventory::IsTransactionActive()
     {
@@ -5300,7 +5382,33 @@ namespace trinity::game
         // A row written into only one copy is invisible to the others. This
         // collects every 0xC8-stride array that matches the client's
         // 5-anchor signature, client included.
-        constexpr int kMaxPackCopies = 8;
+        int ResolveAllPackCopies(uintptr_t clientPackSlots, uint16_t clientCount,
+                                 uintptr_t* outSlots);
+
+        int CachedPackCopies(uintptr_t clientPackSlots, uint16_t clientCount,
+                             uintptr_t* outSlots)
+        {
+            const uint64_t gen = g_packCopiesGen.load(std::memory_order_acquire);
+            int n = g_packCopyCount.load(std::memory_order_acquire);
+            int ok = 0;
+            for (int i = 0; i < n; ++i)
+            {
+                const uintptr_t c = g_packCopies[i].load(std::memory_order_acquire);
+                if (c == clientPackSlots || c < kMinPointer) continue;
+                // still the same array? first row must match client row0
+                uint64_t a = 0, b = 0;
+                if (!Read64(c, &a) || !Read64(clientPackSlots, &b) || a != b) continue;
+                outSlots[ok++] = c;
+            }
+            if (ok == 0 && !g_packCopiesBusy.load(std::memory_order_acquire))
+            {
+                // find the client pack bucket slots for the worker
+                try { std::thread([clientPackSlots, clientCount, gen]
+                      { ResolvePackCopiesWorker(clientPackSlots, clientCount, gen); }).detach(); }
+                catch (...) {}
+            }
+            return ok;
+        }
 
         int ResolveAllPackCopies(uintptr_t clientPackSlots, uint16_t clientCount,
                                  uintptr_t* outSlots)
@@ -5458,15 +5566,18 @@ namespace trinity::game
                              uint16_t idx, int* outCopies = nullptr)
         {
             if (outCopies) *outCopies = 0;
+            // Cached copies only - the multi-GB scan never runs on the game
+            // thread (it was the frame drop on every add). If the cache is
+            // cold, CachedPackCopies kicks a background re-scan; the client
+            // row is still written synchronously so the item is not lost.
             uintptr_t copies[kMaxPackCopies] = {};
-            const int n = ResolveAllPackCopies(clientPackSlots, clientCount, copies);
-            if (n < 1) return false;
+            const int n = CachedPackCopies(clientPackSlots, clientCount, copies);
             const uintptr_t stride = SlotStride();
             const uintptr_t cSlot = clientPackSlots + static_cast<uintptr_t>(idx) * stride;
             uint8_t row[0xC8];
             if (!mem::ReadBytes(cSlot, row, sizeof(row))) return false;
             int ok = 0;
-            for (int i = 1; i < n; ++i) // skip [0] = client itself
+            for (int i = 0; i < n; ++i)
             {
                 const uintptr_t mSlot = copies[i] + static_cast<uintptr_t>(idx) * stride;
                 bool w = true;
@@ -5475,7 +5586,7 @@ namespace trinity::game
                 if (w) ++ok;
             }
             if (outCopies) *outCopies = ok;
-            return ok > 0;
+            return true; // client row is always written; copies may lag one add
         }
 
         // Direct slot-append with multi-copy propagation (rev >= 3460):
