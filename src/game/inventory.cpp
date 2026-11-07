@@ -1092,18 +1092,71 @@ namespace trinity::game
         // An item's icon: the first entry of _itemIconList. Later entries are
         // conditional variants (gimmick state / sealed / usable); entry 0 is
         // the plain one the inventory draws.
+        // TU 2.04.05+: ItemDef re-layouts have moved the icon list before
+        // (BucketType went 0x428 -> 0x240). When the pinned offset yields
+        // nothing, probe nearby vector-shaped fields and accept the first
+        // whose entry 0 resolves to an icon-ish stringinfo name. Resolved
+        // once per session and cached.
+        std::atomic<uintptr_t> g_iconListOffset{ 0 }; // 0 = not probed yet
+
+        bool ProbeIconListAt(uintptr_t def, uintptr_t off, char* out, size_t n)
+        {
+            uintptr_t list = 0;
+            uint32_t  count = 0;
+            if (!ReadPtr(def + off + kOff_Vec_Data, &list)) return false;
+            if (!Read32(def + off + kOff_Vec_Count, &count)) return false;
+            if (list < kMinPointer || count == 0 || count > 64) return false;
+            uint16_t row = 0;
+            if (!Read16(list + kOff_IconData_Path, &row)) return false;
+            if (!IconNameForRow(row, out, n)) return false;
+            // must look like an icon sprite, not an arbitrary string
+            return _strnicmp(out, "itemicon", 8) == 0;
+        }
+
         bool IconForType(uint16_t typeId, char* out, size_t n)
         {
             uintptr_t def = 0;
             if (!DefForRow(g_itemTableGlobal, typeId, &def)) return false;
-            uintptr_t list = 0;
-            uint32_t  count = 0;
-            if (!ReadPtr(def + kOff_ItemDef_Icons + kOff_Vec_Data, &list)) return false;
-            if (!Read32(def + kOff_ItemDef_Icons + kOff_Vec_Count, &count)) return false;
-            if (list < kMinPointer || count == 0 || count > 64) return false;
-            uint16_t row = 0;
-            if (!Read16(list + kOff_IconData_Path, &row)) return false;
-            return IconNameForRow(row, out, n);
+
+            // 1) pinned offset, or the offset a previous probe discovered
+            uintptr_t off = g_iconListOffset.load(std::memory_order_acquire);
+            if (!off) off = kOff_ItemDef_Icons;
+            if (ProbeIconListAt(def, off, out, n)) return true;
+
+            // 2) adaptive probe (once per session, on the first failure)
+            if (g_iconListOffset.load(std::memory_order_acquire) == 0)
+            {
+                static constexpr uintptr_t kCandidates[] = {
+                    0x0F8, 0x100, 0x108, 0x110, 0x118, 0x120, 0x128,
+                    0x130, 0x138, 0x140, 0x148, 0x150, 0x158, 0x160,
+                };
+                for (const uintptr_t cand : kCandidates)
+                {
+                    char probe[96]{};
+                    if (ProbeIconListAt(def, cand, probe, sizeof(probe)))
+                    {
+                        g_iconListOffset.store(cand, std::memory_order_release);
+                        LOG_OK("inventory: item icon list re-located to def+0x%llx (was 0x%llx) - probe hit '%s'.",
+                               static_cast<unsigned long long>(cand),
+                               static_cast<unsigned long long>(kOff_ItemDef_Icons), probe);
+                        memcpy(out, probe, n > sizeof(probe) ? sizeof(probe) : n);
+                        return true;
+                    }
+                }
+                // no candidate anywhere - pin the pinned offset so we don't
+                // re-probe every call; icons on this TU resolve differently.
+                g_iconListOffset.store(kOff_ItemDef_Icons, std::memory_order_release);
+                // Diagnose the chain: is stringinfo itself readable?
+                {
+                    uintptr_t sdef = 0;
+                    const bool strinfoOk = DefForRow(g_strTableGlobal, 0, &sdef) && sdef >= kMinPointer;
+                    char sname[96]{};
+                    const bool snameOk = strinfoOk && StringField(sdef + kOff_StrDef_Buffer, sname, sizeof(sname));
+                    LOG_INFO("inventory: icon probe failed - stringinfo readable=%d row0name='%s' (empty name => stringinfo layout moved, not the icon vector).",
+                             strinfoOk ? 1 : 0, sname);
+                }
+            }
+            return false;
         }
 
         // A category's icon, from the same table via ItemGroupInfo._iconPath.
