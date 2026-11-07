@@ -3850,6 +3850,11 @@ namespace trinity::game
 
             const uint16_t targetM = enable ? ((value > 700) ? 700 : value) : 0;
             bool any = false;
+            static ULONGLONG s_lastTableLog = 0;
+            const ULONGLONG nowT = GetTickCount64();
+            const bool logTable = enable && (nowT - s_lastTableLog > 30000);
+            if (logTable) s_lastTableLog = nowT;
+            int rowsWritten = 0;
             for (uint32_t row = 0; row < count; ++row)
             {
                 uintptr_t def = 0;
@@ -3872,8 +3877,15 @@ namespace trinity::game
                 uint16_t curD = 0;
                 if (Read16(def + kOff_InvDef_DefSlots, &curD) && curD != finalD &&
                     Write16(def + kOff_InvDef_DefSlots, finalD))
+                {
                     any = true;
+                    ++rowsWritten;
+                }
             }
+            if (logTable)
+                LOG("inventory: slot table: %d/%u row(s) set to def=%u (UI snapshot may read elsewhere on this TU).",
+                    rowsWritten, static_cast<unsigned>(count),
+                    static_cast<unsigned>(targetM));
             return any;
         }
     }
